@@ -330,6 +330,66 @@ def test_prune_completed_generation_deletes_retired_rows():
         assert session.get(CanonicalToolCache, "retired") is None
 
 
+def _cache_row(name, *, generation, source):
+    from backend.models import CanonicalToolCache, utcnow  # noqa: PLC0415
+
+    now = utcnow()
+    return CanonicalToolCache(
+        tool_name=name,
+        record={"name": name},
+        fetched_at=now,
+        expires_at=now,
+        stale_until=now,
+        generation=generation,
+        source=source,
+    )
+
+
+def test_a_synthesized_record_survives_a_snapshot_that_never_mentions_it():
+    from backend.models import CanonicalToolCache  # noqa: PLC0415
+    from backend.sync import SOURCE_OFFICIAL, SOURCE_WIKI_GADGET  # noqa: PLC0415
+
+    with db.session_scope() as session:
+        session.add(_cache_row("current", generation=2, source=SOURCE_OFFICIAL))
+        session.add(_cache_row("stale", generation=1, source=SOURCE_OFFICIAL))
+        # Synthesized rows carry no generation because no snapshot produced them.
+        session.add(_cache_row("gadget", generation=0, source=SOURCE_WIKI_GADGET))
+    with db.session_scope() as session:
+        # Only the row an older snapshot left behind is retired. Toolhub not
+        # listing a wiki's gadget is not Toolhub saying the gadget is gone.
+        assert canonical_tools.prune_completed_generation(session, 2, 1) == ["stale"]
+    with db.session_scope() as session:
+        assert session.get(CanonicalToolCache, "gadget") is not None
+
+
+def test_publishing_a_snapshot_leaves_synthesized_records_alone():
+    from backend.models import CanonicalToolCache  # noqa: PLC0415
+    from backend.sync import SOURCE_WIKI_GADGET  # noqa: PLC0415
+
+    with db.session_scope() as session:
+        session.add(_cache_row("gadget", generation=0, source=SOURCE_WIKI_GADGET))
+    canonical_tools.stage_snapshot_records([{"name": "alpha"}], source_url="source", generation=7)
+    with db.session_scope() as session:
+        assert canonical_tools.publish_snapshot_stage(session, 7, 1) == []
+    with db.session_scope() as session:
+        # The live path. Without this boundary every catalog sync would silently
+        # empty the catalogue of everything the wikis, rather than Toolhub, know.
+        assert session.get(CanonicalToolCache, "gadget") is not None
+        assert session.get(CanonicalToolCache, "alpha") is not None
+
+
+def test_the_snapshot_size_check_counts_only_what_the_snapshot_produced():
+    from backend.sync import SOURCE_OFFICIAL, SOURCE_WIKI_GADGET  # noqa: PLC0415
+
+    with db.session_scope() as session:
+        session.add(_cache_row("current", generation=2, source=SOURCE_OFFICIAL))
+        session.add(_cache_row("gadget", generation=2, source=SOURCE_WIKI_GADGET))
+    with db.session_scope() as session:
+        # A synthesized row sharing the number must not read as an extra page,
+        # or a complete snapshot would fail its own consistency check.
+        assert canonical_tools.prune_completed_generation(session, 2, 1) == []
+
+
 def test_snapshot_staging_validates_counts_and_publishes_new_rows():
     from backend.models import CanonicalToolCache  # noqa: PLC0415
 

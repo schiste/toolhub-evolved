@@ -6,6 +6,9 @@ from typing import Any
 SOURCE_OFFICIAL = "official"
 SOURCE_LOCAL = "local"
 SOURCE_REPOSITORY_SCAN = "repository_scan"
+# A record this codebase synthesized from what a wiki publishes about a
+# gadget, rather than one anybody wrote by hand or Toolhub handed us.
+SOURCE_WIKI_GADGET = "wiki_gadget"
 
 SYNC_OFFICIAL = "official"
 SYNC_LOCAL_DRAFT = "local_draft"
@@ -47,7 +50,7 @@ PERSON_REL_VALUES = {
 # authorization, contributor eligibility, reconciliation, and audit code.
 PUBLIC_PERSON_REL_VALUES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER)
 
-SOURCE_VALUES = {SOURCE_OFFICIAL, SOURCE_LOCAL, SOURCE_REPOSITORY_SCAN}
+SOURCE_VALUES = {SOURCE_OFFICIAL, SOURCE_LOCAL, SOURCE_REPOSITORY_SCAN, SOURCE_WIKI_GADGET}
 SYNC_VALUES = {SYNC_OFFICIAL, SYNC_LOCAL_DRAFT, SYNC_LOCAL_FALLBACK, SYNC_EVOLVED_REAL, SYNC_ERROR}
 REVIEW_VALUES = {REVIEW_OPEN, REVIEW_PENDING, REVIEW_APPROVED, REVIEW_REJECTED}
 AUTHOR_CLAIM_STATUS_VALUES = {

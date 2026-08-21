@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Structured local cache of canonical official Toolhub tool records."""
+"""Structured local cache of the tool records the catalog is built from.
+
+Mostly the official Toolhub catalog, synced wholesale as numbered
+generations. Not only that: records synthesized from public wiki data live
+here too, because a card, a facet, a search hit and an author edge all hang
+off a row existing in this table. What separates the two is `source`, and
+the generation prune is scoped by it -- see `_prune_superseded`.
+"""
 
 from __future__ import annotations
 
@@ -321,6 +328,27 @@ def upsert_records(
     return len(clean_records)
 
 
+def _prune_superseded(s: Session, generation: int) -> list[str]:
+    """Delete official rows an older generation left behind, and name them.
+
+    Scoped to official rows because upstream absence is only authoritative for
+    rows that came from upstream. The table also holds records this codebase
+    synthesizes from public wiki data -- a gadget a wiki declares is a real
+    tool, but no official snapshot has an opinion about it. Pruning on
+    generation alone would read the snapshot's silence as a deletion and erase
+    every synthesized entry each time the catalog syncs.
+    """
+    superseded = (CanonicalToolCache.source == SOURCE_OFFICIAL, CanonicalToolCache.generation != generation)
+    retired = list(
+        s.execute(
+            select(CanonicalToolCache.tool_name).where(*superseded).order_by(CanonicalToolCache.tool_name)
+        ).scalars()
+    )
+    if retired:
+        s.execute(delete(CanonicalToolCache).where(*superseded))
+    return retired
+
+
 def prune_completed_generation(s: Session, generation: int, expected_count: int) -> list[str]:
     """Delete names absent from one fully validated official catalog snapshot.
 
@@ -331,23 +359,16 @@ def prune_completed_generation(s: Session, generation: int, expected_count: int)
     """
     observed = int(
         s.scalar(
-            select(func.count()).select_from(CanonicalToolCache).where(CanonicalToolCache.generation == generation)
+            select(func.count())
+            .select_from(CanonicalToolCache)
+            .where(CanonicalToolCache.source == SOURCE_OFFICIAL, CanonicalToolCache.generation == generation)
         )
         or 0
     )
     if observed != expected_count:
         msg = f"catalog generation {generation} saw {observed} distinct rows, expected {expected_count}"
         raise ValueError(msg)
-    retired = list(
-        s.execute(
-            select(CanonicalToolCache.tool_name)
-            .where(CanonicalToolCache.generation != generation)
-            .order_by(CanonicalToolCache.tool_name)
-        ).scalars()
-    )
-    if retired:
-        s.execute(delete(CanonicalToolCache).where(CanonicalToolCache.generation != generation))
-    return retired
+    return _prune_superseded(s, generation)
 
 
 def stage_snapshot_records(records: list[dict[str, Any]], *, source_url: str, generation: int) -> int:
@@ -407,15 +428,7 @@ def publish_snapshot_stage(s: Session, generation: int, expected_count: int) -> 
         row.sync_status = SYNC_OFFICIAL
         row.fetched_at = now
         row.generation = generation
-    retired = list(
-        s.execute(
-            select(CanonicalToolCache.tool_name)
-            .where(CanonicalToolCache.generation != generation)
-            .order_by(CanonicalToolCache.tool_name)
-        ).scalars()
-    )
-    if retired:
-        s.execute(delete(CanonicalToolCache).where(CanonicalToolCache.generation != generation))
+    retired = _prune_superseded(s, generation)
     s.execute(delete(CatalogSnapshotStage).where(CatalogSnapshotStage.generation == generation))
     return retired
 

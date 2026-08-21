@@ -316,7 +316,18 @@ class ApiCacheMeta(Base):
 
 
 class CanonicalToolCache(Base):
-    """Structured local cache of canonical official Toolhub tool records."""
+    """Every tool the catalog can show, whatever established that it exists.
+
+    Mostly the official Toolhub catalog. Also records synthesized from what a
+    wiki publishes about itself, because a card, a facet, a search hit and an
+    author edge are all reached by looking a name up here -- a tool absent
+    from this table does not exist as far as the product is concerned.
+
+    `source` says which, and it decides what a catalog snapshot is allowed to
+    delete. It defaults to official because for most of this table's life
+    that was the only possibility; a writer that leaves the default in place
+    is telling the next snapshot it may prune the row.
+    """
 
     __tablename__ = "canonical_tool_cache"
     tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
