@@ -37,6 +37,7 @@ def main() -> int:
             sys.stdout.write(
                 "gadget-inventory: "
                 f"wiki={read['wiki']} read={'yes' if read['read'] else 'no'} "
+                f"reason={read['reason']} "
                 f"declared={read['declared']} added={read['added']} "
                 f"updated={read['updated']} folded={read['folded']} "
                 f"retired={read['retired']}\n",

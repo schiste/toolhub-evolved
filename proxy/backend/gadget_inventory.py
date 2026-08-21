@@ -42,6 +42,12 @@ OPTION_RIGHTS = "rights"
 # the same questions as one that read a whole wiki.
 COUNT_FIELDS = ("declared", "added", "updated", "folded", "retired")
 
+# Why a read produced what it did. Reported on every run, including successful
+# ones, so a run that read nothing says which kind of nothing it found.
+REASON_READ = "read"
+REASON_REQUEST_FAILED = "request-failed"
+REASON_NO_DEFINITION = "no-definition"
+
 
 def storage_key(name: str) -> str:
     """Return the spelling storage will compare this gadget name by.
@@ -111,9 +117,15 @@ def _store(session: Session, wiki: str, entries: tuple[wiki_sources.GadgetEntry,
     return counts
 
 
-def _unread(wiki: str) -> dict[str, Any]:
-    """Report a wiki that told us nothing, which is not a wiki with no gadgets."""
-    return {"wiki": wiki, "read": False, **dict.fromkeys(COUNT_FIELDS, 0)}
+def _unread(wiki: str, reason: str) -> dict[str, Any]:
+    """Report a wiki that told us nothing, which is not a wiki with no gadgets.
+
+    The reason is the difference between a wiki that refused us and a payload
+    we failed to read: both retire nothing and both count zero, so without it
+    a lane that has silently read every page as empty looks exactly like a
+    lane whose wikis are all down.
+    """
+    return {"wiki": wiki, "read": False, "reason": reason, **dict.fromkeys(COUNT_FIELDS, 0)}
 
 
 def ingest(request: Callable[[str, str, dict[str, Any]], Any], wiki: str) -> dict[str, Any]:
@@ -126,14 +138,14 @@ def ingest(request: Callable[[str, str, dict[str, Any]], Any], wiki: str) -> dic
     try:
         payload = request(wiki, "GET", definition_params())
     except Exception:  # noqa: BLE001 - one wiki failing is not the job failing
-        return _unread(wiki)
+        return _unread(wiki, REASON_REQUEST_FAILED)
     definition = wiki_api.definition_text(payload)
     if not definition.strip():
-        return _unread(wiki)
+        return _unread(wiki, REASON_NO_DEFINITION)
     entries = wiki_sources.gadget_entries(definition)
     with db.session_scope() as session:
         counts = _store(session, wiki, entries)
-    return {"wiki": wiki, "read": True, **counts}
+    return {"wiki": wiki, "read": True, "reason": REASON_READ, **counts}
 
 
 def live(session: Session, wiki: str) -> list[WikiGadget]:

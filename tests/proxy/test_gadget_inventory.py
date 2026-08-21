@@ -69,7 +69,16 @@ def test_one_request_reads_a_whole_wiki_of_gadgets():
     # The economics of the lane: user scripts cost thousands of requests, the
     # gadget inventory costs one.
     assert len(wiki.requests) == 1
-    assert summary == {"wiki": FRWIKI, "read": True, "declared": 3, "added": 3, "updated": 0, "folded": 0, "retired": 0}
+    assert summary == {
+        "wiki": FRWIKI,
+        "read": True,
+        "reason": "read",
+        "declared": 3,
+        "added": 3,
+        "updated": 0,
+        "folded": 0,
+        "retired": 0,
+    }
 
 
 def test_a_gadget_keeps_the_facts_the_definition_gave_it():
@@ -130,6 +139,7 @@ def test_an_unreadable_wiki_retires_nothing():
     # Silence is not a statement that the gadgets are gone. Treating it as one
     # would empty the inventory on the first bad response.
     assert summary["read"] is False
+    assert summary["reason"] == "request-failed"
     assert summary["retired"] == 0
     assert len(stored()) == 3
 
@@ -139,6 +149,10 @@ def test_an_empty_definition_page_retires_nothing():
     summary = gadget_inventory.ingest(FakeWiki("   \n").request, FRWIKI)
 
     assert summary["read"] is False
+    # Distinct from a wiki that refused us: this one answered, and the answer
+    # had no definitions in it. Reading every page as empty is a bug that
+    # looks identical to an outage until the run says which it saw.
+    assert summary["reason"] == "no-definition"
     assert len(stored()) == 3
 
 

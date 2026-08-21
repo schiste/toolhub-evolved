@@ -52,7 +52,7 @@ def test_the_job_reads_each_configured_wiki_once_and_catalogues_it(monkeypatch, 
     # is the whole inventory.
     assert wiki.asked == ["fr.wikipedia.org", "en.wikipedia.org"]
     out = capsys.readouterr().out
-    assert "gadget-inventory: wiki=fr.wikipedia.org read=yes declared=2" in out
+    assert "gadget-inventory: wiki=fr.wikipedia.org read=yes reason=read declared=2" in out
     assert "gadget-catalogue: wiki=fr.wikipedia.org declared=2 written=1" in out
     assert "hidden=1" in out
 
