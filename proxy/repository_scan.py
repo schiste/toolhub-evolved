@@ -382,6 +382,10 @@ class _Source:
     head: str
     files: list[dict[str, str]]
     context: dict[str, Any]
+    #: The wiki page this came from, with its kind settled by what was fetched,
+    #: or None for a clone. Carried because acquisition is the only step that
+    #: reads the gadget definition, and the type suggestion depends on it.
+    wiki_page: wiki_sources.WikiSource | None = None
 
 
 def _wiki_query(session: requests.Session, url: str) -> Any:  # noqa: ANN401 - one decoded API payload
@@ -399,27 +403,32 @@ def _wiki_query(session: requests.Session, url: str) -> Any:  # noqa: ANN401 - o
     return payload
 
 
-def _wiki_revisions(source: wiki_sources.WikiSource) -> tuple[wiki_api.Revision, ...]:
+def _wiki_revisions(source: wiki_sources.WikiSource) -> tuple[tuple[wiki_api.Revision, ...], wiki_sources.WikiSource]:
     """Fetch every page one wiki-hosted tool consists of, in one request or two.
 
     A user script costs one: the prefix search that finds its subpages is a
     generator feeding the revision fetch, so discovery is free. A gadget costs
     two, because its members are named in a page that has to be read first.
+
+    Returns the source back alongside the revisions, because reading that second
+    page is also what establishes whether this is a gadget at all -- an
+    unregistered `MediaWiki:Gadget-` page is a leftover or a work in progress,
+    and it is scanned alone rather than guessed at. Discarding the verdict here
+    is how the page title ended up standing in for it downstream.
     """
     with requests.Session() as session:
-        if source.kind == wiki_sources.KIND_GADGET:
+        if source.kind in wiki_sources.GADGET_KINDS:
             definition = wiki_api.definition_text(_wiki_query(session, wiki_api.definition_url(source.domain)))
-            # An unregistered MediaWiki:Gadget- page is a leftover or a work in
-            # progress rather than a gadget; scan it alone rather than guess.
-            titles = wiki_sources.gadget_pages(definition, source.filename) or (source.title,)
-            return wiki_api.revisions(_wiki_query(session, wiki_api.pages_url(source.domain, titles)))
+            source, titles = wiki_sources.registered_gadget(source, definition)
+            found = wiki_api.revisions(_wiki_query(session, wiki_api.pages_url(source.domain, titles)))
+            return found, source
         query = wiki_api.subpages_url(source.domain, source.namespace_id, source.prefix)
         found = wiki_api.revisions(_wiki_query(session, query))
     # The prefix search is broader than the script -- it also returns the same
     # author's next tool -- so what it fetched still has to be filtered down to
     # the pages that actually belong to this one.
     kept = set(wiki_sources.subpage_titles(source, [revision.title for revision in found]))
-    return tuple(revision for revision in found if revision.title in kept)
+    return tuple(revision for revision in found if revision.title in kept), source
 
 
 def _wiki_files(found: tuple[wiki_api.Revision, ...]) -> list[dict[str, str]]:
@@ -459,11 +468,16 @@ def _wiki_context(found: tuple[wiki_api.Revision, ...]) -> dict[str, Any]:
 
 def _acquire_wiki(source: wiki_sources.WikiSource) -> _Source:
     """Read one wiki-hosted tool: its pages, their text, and a head over the set."""
-    found = _wiki_revisions(source)
+    found, resolved = _wiki_revisions(source)
     if not found:
         message = "wiki page set holds no readable revision"
         raise RepositoryScanError(message)
-    return _Source(head=wiki_api.head(found), files=_wiki_files(found), context=_wiki_context(found))
+    return _Source(
+        head=wiki_api.head(found),
+        files=_wiki_files(found),
+        context=_wiki_context(found),
+        wiki_page=resolved,
+    )
 
 
 def _acquire_clone(url: str) -> _Source:
@@ -661,6 +675,7 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
             acquired.files,
             tool_name=tool_name,
             source_label=url,
+            wiki_page=acquired.wiki_page,
             repository_context=_report_context(
                 acquired.context, url=url, provider=provider, commit_sha=head, record=record
             ),

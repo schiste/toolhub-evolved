@@ -31,11 +31,50 @@ def test_a_user_subpage_with_a_code_suffix_is_a_user_script():
     assert source.kind == wiki_sources.KIND_USER_SCRIPT
 
 
-def test_a_gadget_page_is_a_gadget_and_knows_its_definition_filename():
+def test_a_gadget_url_resolves_to_a_page_rather_than_to_a_gadget():
+    # A URL shows a title, and a title is a naming convention. What makes these
+    # files a gadget is a line in a page this module has not read.
     source = wiki_sources.wiki_source(GADGET)
-    assert source.kind == wiki_sources.KIND_GADGET
+    assert source.kind == wiki_sources.KIND_GADGET_PAGE
     # This is the spelling Gadgets-definition lists, without the page prefix.
     assert source.filename == "Twinkle.js"
+
+
+def test_the_definition_is_what_turns_a_gadget_page_into_a_gadget():
+    page = wiki_sources.wiki_source(GADGET)
+    gadget, pages = wiki_sources.registered_gadget(page, DEFINITION)
+    assert gadget.kind == wiki_sources.KIND_GADGET
+    assert pages == wiki_sources.gadget_pages(DEFINITION, "Twinkle.js")
+    # Same page, same title, same everything else -- one fact was added.
+    assert (gadget.domain, gadget.title) == (page.domain, page.title)
+
+
+def test_a_gadget_page_the_definition_does_not_list_stays_a_page():
+    # A gadget retired by deleting its definition line keeps its title. So does
+    # one whose line has not been written yet. Neither is a gadget, and both
+    # still hold source, so the page comes back as its own single-page set.
+    page = wiki_sources.wiki_source("https://en.wikipedia.org/wiki/MediaWiki:Gadget-Retired.js")
+    leftover, pages = wiki_sources.registered_gadget(page, DEFINITION)
+    assert leftover.kind == wiki_sources.KIND_GADGET_PAGE
+    assert pages == ("MediaWiki:Gadget-Retired.js",)
+
+
+def test_an_empty_definition_registers_nothing():
+    # A wiki whose definition page is missing, blank, or failed to parse must
+    # not thereby promote every gadget-namespace page it hosts.
+    page = wiki_sources.wiki_source(GADGET)
+    unresolved, pages = wiki_sources.registered_gadget(page, "")
+    assert unresolved.kind == wiki_sources.KIND_GADGET_PAGE
+    assert pages == (page.title,)
+
+
+def test_a_user_script_is_not_put_through_the_gadget_registry():
+    # Registration is a gadget concept. A user script needs none, and passing
+    # one here must not rename it or invent peers for it.
+    script = wiki_sources.wiki_source(SCRIPT)
+    unchanged, pages = wiki_sources.registered_gadget(script, DEFINITION)
+    assert unchanged == script
+    assert pages == (script.title,)
 
 
 def test_a_user_script_has_no_gadget_filename():
@@ -241,7 +280,7 @@ def test_source_on_a_single_site_project_is_reachable():
 
     gadget = wiki_sources.wiki_source("https://www.mediawiki.org/wiki/MediaWiki:Gadget-Foo.js")
     assert gadget is not None
-    assert gadget.kind == wiki_sources.KIND_GADGET
+    assert gadget.kind == wiki_sources.KIND_GADGET_PAGE
 
 
 @pytest.mark.parametrize(

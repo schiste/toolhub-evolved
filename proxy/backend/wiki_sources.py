@@ -2,10 +2,21 @@
 """Pure parsing for tool source hosted on a wiki rather than in a repository.
 
 Wikimedia user scripts and gadgets are source code that never enters a forge:
-a gadget *is* a set of `MediaWiki:Gadget-*` pages, and a user script is a
-`User:` subpage with a code content model. They have revisions rather than
-commits, editors rather than contributors, and no branches at all, so the
-forge vocabulary in source_hosts only half fits -- which is why `kind` exists.
+a gadget is a set of `MediaWiki:Gadget-*` pages *registered* in
+`MediaWiki:Gadgets-definition`, and a user script is a `User:` subpage with a
+code content model. They have revisions rather than commits, editors rather
+than contributors, and no branches at all, so the forge vocabulary in
+source_hosts only half fits -- which is why `kind` exists.
+
+The two differ in what settles them, and `kind` is careful about it. A user
+script is settled by its namespace: `User:Someone/foo.js` is one, and no
+registry exists that could disagree. A gadget is not. The Gadgets extension
+serves a gadget because a line in the definition page names its files, sets
+its options and puts it in Preferences; the `MediaWiki:Gadget-` title is the
+convention those files follow, not the thing that makes them a gadget. A page
+whose definition line was removed when the gadget was retired keeps the title
+and stops being a gadget. So a URL alone yields KIND_GADGET_PAGE, and only
+`registered_gadget` -- given the definition text -- can return KIND_GADGET.
 
 Nothing here performs I/O. The two page sets a caller needs are each derived
 from one document it must fetch itself: a gadget's peers come out of
@@ -15,13 +26,22 @@ from one document it must fetch itself: a gadget's peers come out of
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import parse_qs, unquote, urlparse
 
 from backend.wikimedia_urls import clean_wiki_domain, without_format_marks
 
 KIND_USER_SCRIPT = "user-script"
+#: A page listed in MediaWiki:Gadgets-definition. Only registered_gadget returns
+#: this, because only the definition page proves it.
 KIND_GADGET = "gadget"
+#: A `MediaWiki:Gadget-*` page whose registration has not been established --
+#: either not looked up, or looked up and absent. Deliberately one kind for both:
+#: a caller that has not checked knows exactly as much as one that checked and
+#: found nothing, which is that this is a page in the gadget namespace.
+KIND_GADGET_PAGE = "gadget-page"
+#: Every kind that names a page under GADGET_PREFIX, registered or not.
+GADGET_KINDS = frozenset({KIND_GADGET, KIND_GADGET_PAGE})
 
 NAMESPACE_USER = "User"
 NAMESPACE_MEDIAWIKI = "MediaWiki"
@@ -89,7 +109,12 @@ class GadgetEntry:
 
 @dataclass(frozen=True)
 class WikiSource:
-    """One wiki page that holds a tool's source, and which kind of tool it is."""
+    """One wiki page that holds a tool's source, and which kind of tool it is.
+
+    `kind` reports only what its source of truth has established. A gadget page
+    arrives as KIND_GADGET_PAGE and becomes KIND_GADGET when, and only when,
+    `registered_gadget` finds it in the definition text.
+    """
 
     domain: str
     title: str
@@ -100,9 +125,11 @@ class WikiSource:
         """Return the gadget file name this page provides, or "" for a user script.
 
         `MediaWiki:Gadget-Twinkle.js` provides `Twinkle.js`, which is the
-        spelling `MediaWiki:Gadgets-definition` lists it under.
+        spelling `MediaWiki:Gadgets-definition` lists it under. Answered for an
+        unregistered page too: the name is what a lookup in that page needs, so
+        withholding it until the lookup succeeds would be circular.
         """
-        return self.title.removeprefix(GADGET_PREFIX) if self.kind == KIND_GADGET else ""
+        return self.title.removeprefix(GADGET_PREFIX) if self.kind in GADGET_KINDS else ""
 
     @property
     def stem(self) -> str:
@@ -194,6 +221,10 @@ def wiki_source(url: str) -> WikiSource | None:
     Deliberately strict about the suffix. A `User:` page with no extension is
     documentation, a project page, or a talk archive -- scanning it as source
     would file prose as code and score a tool on it.
+
+    Strict about `kind` for the same reason. A gadget-namespace title resolves
+    to KIND_GADGET_PAGE however conventional it looks, because registration is
+    the predicate and it lives in another page.
     """
     resolved = _url_title(url)
     if resolved is None:
@@ -202,7 +233,9 @@ def wiki_source(url: str) -> WikiSource | None:
     if not _is_source_title(title):
         return None
     if title.startswith(GADGET_PREFIX):
-        return WikiSource(domain=domain, title=title, kind=KIND_GADGET)
+        # Not KIND_GADGET: a URL cannot show a definition line, and this module
+        # performs no I/O to go and read one. See registered_gadget.
+        return WikiSource(domain=domain, title=title, kind=KIND_GADGET_PAGE)
     if title.startswith(f"{NAMESPACE_USER}:") and "/" in title:
         # A subpage, not User:Someone -- the account page itself is never source.
         return WikiSource(domain=domain, title=title, kind=KIND_USER_SCRIPT)
@@ -309,6 +342,27 @@ def gadget_pages(definition: str, filename: str) -> tuple[str, ...]:
 def gadget_titles(entry: GadgetEntry) -> tuple[str, ...]:
     """Return the full page titles of one gadget's files."""
     return tuple(f"{GADGET_PREFIX}{name}" for name in entry.pages)
+
+
+def registered_gadget(source: WikiSource, definition: str) -> tuple[WikiSource, tuple[str, ...]]:
+    """Settle whether a gadget page is registered, and return the pages to read.
+
+    Answers both questions from one document because they have one answer. The
+    definition line is what makes these files a gadget *and* what says which
+    files it consists of; finding it settles the kind and the page set together,
+    and not finding it settles neither.
+
+    An unregistered page still holds source worth reading, so it comes back as
+    its own single-page set -- read it, report on it, but do not call it a
+    gadget. Passing anything but a gadget-namespace source is a caller error and
+    returns it unchanged, since only such a page can appear in a definition.
+    """
+    if source.kind not in GADGET_KINDS:
+        return source, (source.title,)
+    pages = gadget_pages(definition, source.filename)
+    if not pages:
+        return replace(source, kind=KIND_GADGET_PAGE), (source.title,)
+    return replace(source, kind=KIND_GADGET), pages
 
 
 def subpage_titles(source: WikiSource, listed: list[str]) -> tuple[str, ...]:

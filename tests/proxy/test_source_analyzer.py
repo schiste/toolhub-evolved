@@ -9,7 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import source_analyzer  # noqa: E402
+from backend import source_analyzer, wiki_sources  # noqa: E402
 from backend.source_analyzer import (  # noqa: E402
     MAX_FILE_BYTES,
     MAX_FILES,
@@ -602,16 +602,86 @@ def test_source_analyzer_utility_branches_are_stable():
     assert source_analyzer._tool_type_suggestion([], []) is None
 
 
-def test_a_wiki_page_is_typed_by_its_namespace_rather_than_by_its_contents():
-    """Gadgets and user scripts are decided by where they live, not what they use."""
-    gadget = "https://fr.wikipedia.org/wiki/MediaWiki:Gadget-HotCat.js"
-    script = "https://fr.wikipedia.org/wiki/User:Someone/HotCat.js"
+GADGET_URL = "https://fr.wikipedia.org/wiki/MediaWiki:Gadget-HotCat.js"
+SCRIPT_URL = "https://fr.wikipedia.org/wiki/User:Someone/HotCat.js"
 
-    assert source_analyzer._tool_type_suggestion([], [], gadget) == "gadget"
-    assert source_analyzer._tool_type_suggestion([], [], script) == "user script"
+
+def test_a_wiki_page_is_typed_by_what_the_wiki_says_rather_than_by_its_contents():
+    """A user script is settled by its namespace and a gadget by its registration."""
+    assert source_analyzer._tool_type_suggestion([], [], SCRIPT_URL) == "user script"
+    assert source_analyzer._tool_type_suggestion([], [], GADGET_URL, wiki_sources.KIND_GADGET) == "gadget"
     # No code was read to reach either answer, so contradicting evidence in the
     # page cannot move it: a gadget that ships React is still a gadget.
-    assert source_analyzer._tool_type_suggestion([{"value": "React"}], [], gadget) == "gadget"
+    assert (
+        source_analyzer._tool_type_suggestion([{"value": "React"}], [], GADGET_URL, wiki_sources.KIND_GADGET)
+        == "gadget"
+    )
+
+
+def test_a_gadget_namespace_page_is_not_a_gadget_until_the_definition_says_so():
+    """The title is the convention a gadget's files follow, not its registration.
+
+    A gadget retired by removing its definition line keeps its page, and a page
+    written in advance of its line never had one. Both are `MediaWiki:Gadget-*`
+    and neither is served to a reader, so neither may fill an empty tool_type.
+    """
+    assert source_analyzer._tool_type_suggestion([], [], GADGET_URL) is None
+    assert source_analyzer._tool_type_suggestion([], [], GADGET_URL, wiki_sources.KIND_GADGET_PAGE) is None
+
+
+def test_a_wiki_page_of_unestablished_kind_does_not_fall_through_to_the_heuristics():
+    """Not-a-gadget is still a wiki page, and a wiki page is not a Flask app.
+
+    Falling through would answer "web app" for the MediaWiki JavaScript every
+    gadget page contains, which is the same mistake one namespace further on.
+    """
+    mediawiki_js = [{"value": "MediaWiki JavaScript"}, {"value": "React"}]
+    assert source_analyzer._tool_type_suggestion(mediawiki_js, [], GADGET_URL) is None
+
+
+def _wiki_report(definition):
+    """Analyze one gadget page for real, with its registration settled as the scanner does."""
+    page, _pages = wiki_sources.registered_gadget(wiki_sources.wiki_source(GADGET_URL), definition)
+    return analyze_source_files(
+        [{"path": "MediaWiki:Gadget-HotCat.js", "content": "new mw.Api().get({});\n"}],
+        tool_name="hotcat",
+        source_label=GADGET_URL,
+        wiki_page=page,
+    )
+
+
+def test_a_registered_gadget_is_suggested_as_a_gadget_and_says_why():
+    report = _wiki_report("* HotCat[ResourceLoader]|HotCat.js\n")
+    assert report["suggestions"]["toolinfoPatch"]["tool_type"] == "gadget"
+    # On file next to the suggestion it produced, so a reviewer can see what
+    # the answer was read off rather than having to re-derive it.
+    assert report["wikiPage"] == {
+        "domain": "fr.wikipedia.org",
+        "title": "MediaWiki:Gadget-HotCat.js",
+        "kind": wiki_sources.KIND_GADGET,
+    }
+
+
+def test_a_gadget_page_the_wiki_does_not_serve_gets_no_tool_type_at_all():
+    report = _wiki_report("* Something[ResourceLoader]|Else.js\n")
+    assert "tool_type" not in report["suggestions"]["toolinfoPatch"]
+    assert report["wikiPage"]["kind"] == wiki_sources.KIND_GADGET_PAGE
+
+
+def test_an_analysis_that_never_looked_at_a_definition_claims_no_gadget():
+    """The API path takes files from a request and fetches nothing.
+
+    It cannot check a registration, so it does not get to assert one -- which
+    is the same rule as everywhere else here: the suggestion states what was
+    established, and an unchecked convention was not established.
+    """
+    report = analyze_source_files(
+        [{"path": "MediaWiki:Gadget-HotCat.js", "content": "new mw.Api().get({});\n"}],
+        tool_name="hotcat",
+        source_label=GADGET_URL,
+    )
+    assert "tool_type" not in report["suggestions"]["toolinfoPatch"]
+    assert report["wikiPage"] == {}
 
 
 def test_a_repository_is_never_suggested_as_a_gadget_or_a_user_script():

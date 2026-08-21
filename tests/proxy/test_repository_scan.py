@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 import repository_scan  # noqa: E402
 from backend import db  # noqa: E402
 from backend import job_catalog  # noqa: E402
+from backend import wiki_sources  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
     JobRun,
@@ -1030,18 +1031,26 @@ def _wiki_answers(monkeypatch, answers):
     monkeypatch.setattr(
         repository_scan, "repository_head", lambda *_a: pytest.fail("a wiki page has no remote HEAD to ask for")
     )
-    monkeypatch.setattr(
-        repository_scan,
-        "analyze_source_files",
-        lambda files, **kwargs: {
+    _ANALYSES.clear()
+
+    def _fake_analysis(files, **kwargs):
+        # Recorded rather than returned: a WikiSource is not JSON, and asserting
+        # on a field this fake invented would not show that production stores it.
+        _ANALYSES.append(kwargs)
+        return {
             "filesAnalyzed": len(files),
             "healthCore": {"score": 80, "grade": "good"},
             "analyzedPaths": [file["path"] for file in files],
             "repositoryContext": kwargs["repository_context"],
-        },
-    )
+        }
+
+    monkeypatch.setattr(repository_scan, "analyze_source_files", _fake_analysis)
     monkeypatch.setattr(repository_scan.tool_summaries, "refresh", lambda *_args: 1)
     return calls
+
+
+#: Every keyword argument the scanner passed to the analyzer, newest last.
+_ANALYSES: list = []
 
 
 def _scan_wiki(url, name="wiki-tool"):
@@ -1169,6 +1178,57 @@ def test_an_unregistered_gadget_page_is_scanned_alone_rather_than_guessed_at(mon
 
     assert _scan_wiki(GADGET_URL) == "analyzed"
     assert _stored_report()["analyzedPaths"] == ["MediaWiki:Gadget-Twinkle.js"]
+
+
+def test_a_registered_gadget_reaches_the_analyzer_as_a_gadget(monkeypatch):
+    _wiki_answers(
+        monkeypatch,
+        {
+            "Gadgets-definition": {
+                "query": {"pages": [_wiki_page("MediaWiki:Gadgets-definition", content=DEFINITION)]}
+            },
+            "action=query": {"query": {"pages": [_wiki_page("MediaWiki:Gadget-Twinkle.js")]}},
+        },
+    )
+
+    assert _scan_wiki(GADGET_URL) == "analyzed"
+    # Acquisition is the only step that reads the definition page, so the kind
+    # it settled has to travel with the files it fetched.
+    assert _ANALYSES[-1]["wiki_page"].kind == wiki_sources.KIND_GADGET
+
+
+def test_an_unregistered_gadget_page_reaches_the_analyzer_as_a_page(monkeypatch):
+    """The definition was read and does not list this file, so it is not a gadget.
+
+    A gadget retired by removing its definition line keeps its page, and this
+    is what the scanner sees when it meets one. tool_type is empty upstream for
+    most wiki-hosted tools and a suggestion fills an empty field unattended, so
+    the difference between the two decides what the catalogue ends up claiming.
+    """
+    _wiki_answers(
+        monkeypatch,
+        {
+            "Gadgets-definition": {
+                "query": {"pages": [_wiki_page("MediaWiki:Gadgets-definition", content="* X[RL]|X.js")]}
+            },
+            "action=query": {"query": {"pages": [_wiki_page("MediaWiki:Gadget-Twinkle.js")]}},
+        },
+    )
+
+    assert _scan_wiki(GADGET_URL) == "analyzed"
+    assert _ANALYSES[-1]["wiki_page"].kind == wiki_sources.KIND_GADGET_PAGE
+
+
+def test_a_user_script_is_resolved_without_consulting_any_registry(monkeypatch):
+    calls = _wiki_answers(
+        monkeypatch,
+        {"generator=allpages": {"query": {"pages": [_wiki_page("User:Example/twinkle.js")]}}},
+    )
+
+    assert _scan_wiki(SCRIPT_URL) == "analyzed"
+    assert _ANALYSES[-1]["wiki_page"].kind == wiki_sources.KIND_USER_SCRIPT
+    # Its namespace settles it, so no definition page is fetched at all.
+    assert len(calls) == 1
 
 
 def test_an_unchanged_page_set_is_skipped_on_the_next_pass(monkeypatch):
