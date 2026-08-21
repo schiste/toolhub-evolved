@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # cspell:words favourite favourites favourited unfavorited unfavourited
-"""Public-feed privacy rules for user preference activity."""
+"""Public-feed privacy rules for user preference and list activity."""
 
 from __future__ import annotations
 
@@ -10,6 +10,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 PUBLIC_ACTIVITY_PATHS = {"/api/recent", "/api/auditlogs"}
+# Upstream Toolhub spells the list content type "toollist"; Evolved rows spell
+# it "list".  Both reach these feeds, so both have to be recognized.
+LIST_OBJECT_KEYS = {"list", "lists", "toollist", "toollists", "tool_list", "tool_lists"}
+SYNC_OFFICIAL = "official"
 PRIVATE_OBJECT_KEYS = {"favorite", "favorites", "favourite", "favourites", "user_favorite", "user_favourite"}
 PRIVATE_ACTION_KEYS = {
     "favorited",
@@ -34,6 +38,50 @@ def _target_type(row: dict[str, Any]) -> Any:  # noqa: ANN401 - normalized by _k
     return target.get("type") if isinstance(target, dict) else None
 
 
+def _content_id(row: dict[str, Any]) -> str:
+    target = row.get("target")
+    identifier = target.get("id") if isinstance(target, dict) else None
+    if identifier is None:
+        identifier = row.get("content_id")
+    return "" if identifier is None else str(identifier).strip()
+
+
+def _published_list_ids() -> frozenset[str]:
+    """Return the allowlist, or an empty one when the replica cannot be read."""
+    try:
+        from backend import catalog_read  # noqa: PLC0415 - deferred; keeps this module import-light
+
+        return catalog_read.published_list_ids()
+    except Exception:  # noqa: BLE001 - an unreadable replica must fail closed, not leak
+        return frozenset()
+
+
+def is_private_list_activity(row: object) -> bool:
+    """Return whether one list activity row names a list the public cannot see.
+
+    Toolhub's recent-changes feed reports revisions for *every* list, including
+    unpublished ones, so a row's own fields never say whether its list is
+    public.  The decision is therefore made against a positive allowlist and
+    fails closed: a list nobody can confirm as published stays out of the feed.
+
+    Evolved's own rows are decided without the replica.  Evolved always writes
+    lists upstream as published, so an officially-synced row is public by
+    construction, while a local fallback describes a list that was never
+    published anywhere.  Those rows also carry a local client id rather than an
+    official list id, which the replica allowlist could never match.
+    """
+    if not isinstance(row, dict):
+        return False
+    object_keys = {_key(row.get("content_type")), _key(row.get("object_type")), _key(_target_type(row))}
+    if not object_keys & LIST_OBJECT_KEYS:
+        return False
+    official_status = row.get("officialStatus")
+    if row.get("_evolved") is True or official_status is not None:
+        return official_status != SYNC_OFFICIAL
+    content_id = _content_id(row)
+    return not content_id or content_id not in _published_list_ids()
+
+
 def is_private_preference_activity(row: object) -> bool:
     """Return whether one activity row reveals a favorite preference."""
     if not isinstance(row, dict):
@@ -54,11 +102,16 @@ def is_private_preference_activity(row: object) -> bool:
     return False
 
 
+def is_private_activity(row: object) -> bool:
+    """Return whether one activity row must stay out of every shared feed."""
+    return is_private_preference_activity(row) or is_private_list_activity(row)
+
+
 def public_activity_rows(rows: object) -> list[dict[str, Any]]:
     """Return dictionary rows that are safe for shared activity surfaces."""
     if not isinstance(rows, list):
         return []
-    return [row for row in rows if isinstance(row, dict) and not is_private_preference_activity(row)]
+    return [row for row in rows if isinstance(row, dict) and not is_private_activity(row)]
 
 
 def _filtered_json(payload: bytes, keys: tuple[str, ...]) -> bytes:

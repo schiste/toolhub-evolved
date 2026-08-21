@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// cspell:words Wikitools
 import assert from "node:assert/strict";
 import { test, vi, beforeEach } from "vitest";
 // apiGet hits the network and demoFeed reads localStorage; both are made deterministic.
@@ -138,6 +139,51 @@ test("viewRecent: private favorite activity is removed from live and local rows"
 
 	assert.match(view.html, /Public tool/);
 	assert.doesNotMatch(view.html, /Private live favorite|Private local favorite/);
+});
+
+test("viewRecent: an unpublished Evolved list is removed while an officially synced one stays", async () => {
+	setSearch("");
+	api.apiGet.mockResolvedValue({ results: [] });
+	const store = await import("../../public_html/lib/core/store.js");
+	// Evolved always writes lists upstream as published, so an officially synced
+	// row is public; a local fallback names a list that was never published.
+	store.demoFeed.mockImplementationOnce((_key, live) => [
+		{
+			content_type: "list",
+			content_id: "w-private",
+			content_title: "Never published list",
+			_evolved: true,
+			officialStatus: "local_fallback"
+		},
+		{
+			content_type: "list",
+			content_id: "w-public",
+			content_title: "Published list",
+			_evolved: true,
+			officialStatus: "official"
+		},
+		...live
+	]);
+
+	const view = await viewRecent();
+
+	assert.match(view.html, /Published list/);
+	assert.doesNotMatch(view.html, /Never published list/);
+});
+
+test("viewRecent: an upstream toollist row renders as a List with a list link", async () => {
+	setSearch("");
+	// Upstream Toolhub spells the list content type "toollist"; these rows have
+	// already been vetted against the published-list replica by the backend.
+	api.apiGet.mockResolvedValue({
+		results: [{ content_type: "toollist", content_id: 861, content_title: "My Favorite Wikitools" }]
+	});
+
+	const view = await viewRecent();
+
+	assert.match(view.html, /href="\/lists\/861"/);
+	// The "lists" chip modifier proves the row also lands in the Lists filter bucket.
+	assert.match(view.html, /recent-chip--lists">List</);
 });
 
 test("viewRecent: a deferred owner is not written to the client cache", async () => {

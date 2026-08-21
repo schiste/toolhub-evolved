@@ -1,5 +1,5 @@
 """Privacy tests for shared recent and audit activity."""
-# cspell:words unfavorited
+# cspell:words unfavorited Wikitools Onnnn
 
 import json
 import sys
@@ -8,8 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import activity_privacy, db, people_index  # noqa: E402
-from backend.models import ActivityRow, User  # noqa: E402
+from backend import activity_privacy, catalog_read, db, people_index  # noqa: E402
+from backend.models import ActivityRow, Favorite, User  # noqa: E402
 from backend.v1_common import assemble_overlay  # noqa: E402, PLC2701 - integration coverage for the response assembler
 
 
@@ -151,3 +151,146 @@ def test_public_contribution_summary_excludes_favorites_and_local_fallback_event
         summary = people_index.refresh_activity_summaries(session, person_ids={person.id})[0]
 
         assert summary.contribution_count == 1
+
+
+def _seed_lists(rows: list[dict]) -> None:
+    """Persist one page of the published-list replica."""
+    from backend import api_cache  # noqa: PLC0415 - keeps the module-scope import list stable
+
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/lists/?page_size=50&page=1",
+        api_cache.CacheableResponse(
+            status=200, content_type="application/json", body=json.dumps({"results": rows}).encode()
+        ),
+        fresh_seconds=-10,
+        stale_if_error_seconds=0,
+    )
+
+
+def _upstream_list_row(list_id: int, title: str) -> dict:
+    """One `/api/recent/` revision exactly as upstream Toolhub spells it."""
+    return {
+        "content_type": "toollist",
+        "content_id": list_id,
+        "content_title": title,
+        "comment": "Added tool to list",
+        "user": {"id": 7, "username": "XAnOnnnn"},
+    }
+
+
+def test_upstream_list_activity_is_public_only_for_a_replicated_published_list() -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+    _seed_lists([{"id": 861, "title": "My Favorite Wikitools", "published": True, "tools": []}])
+
+    # 861 is genuinely published despite the name; 1511 is not in the replica at all.
+    assert not activity_privacy.is_private_activity(_upstream_list_row(861, "My Favorite Wikitools"))
+    assert activity_privacy.is_private_activity(_upstream_list_row(1511, "L1"))
+
+
+def test_unknown_list_fails_closed_when_the_replica_is_empty() -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+
+    # A cold or stale replica must hide list activity rather than leak it.
+    assert activity_privacy.is_private_activity(_upstream_list_row(861, "My Favorite Wikitools"))
+
+
+def test_published_list_ids_excludes_unpublished_and_favorites_lists() -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+    _seed_lists(
+        [
+            {"id": 861, "title": "Public", "published": True},
+            {"id": 900, "title": "Private", "published": False},
+            {"id": 901, "title": "Favorites", "published": True, "favorites": True},
+        ]
+    )
+
+    assert catalog_read.published_list_ids() == frozenset({"861"})
+
+
+def test_a_users_favorites_list_never_reaches_a_shared_feed() -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+    _seed_lists([{"id": 901, "title": "Favorites", "published": True, "favorites": True}])
+
+    # Toolhub records a favorite as an ordinary toollist revision, so the only
+    # thing keeping it private is that a favorites list is never allowlisted.
+    assert activity_privacy.is_private_activity(_upstream_list_row(901, "Favorites"))
+
+
+def test_evolved_list_rows_are_decided_by_official_status_not_the_replica() -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+
+    published = {"content_type": "list", "content_id": "w1", "_evolved": True, "officialStatus": "official"}
+    fallback = {"content_type": "list", "content_id": "w2", "_evolved": True, "officialStatus": "local_fallback"}
+
+    assert not activity_privacy.is_private_activity(published)
+    assert activity_privacy.is_private_activity(fallback)
+
+
+def test_auditlog_shaped_list_rows_are_filtered_on_target_id() -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+    _seed_lists([{"id": 861, "title": "Public", "published": True}])
+
+    assert not activity_privacy.is_private_activity(
+        {"action": "list-edited", "target": {"type": "toollist", "id": "861"}}
+    )
+    assert activity_privacy.is_private_activity({"action": "list-edited", "target": {"type": "toollist", "id": "1511"}})
+
+
+def test_recent_collection_filters_private_lists_before_it_pages() -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+    _seed_lists([{"id": 861, "title": "Public", "published": True}])
+    from backend import api_cache  # noqa: PLC0415 - keeps the module-scope import list stable
+
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/recent/?page_size=50&page=1",
+        api_cache.CacheableResponse(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "results": [
+                        _upstream_list_row(1511, "L1"),
+                        {"content_type": "tool", "content_id": "alpha", "comment": "updated"},
+                        _upstream_list_row(861, "Public"),
+                    ]
+                }
+            ).encode(),
+        ),
+        fresh_seconds=-10,
+        stale_if_error_seconds=0,
+    )
+
+    payload = catalog_read.collection_payload("/api/recent/", {"page_size": "30"})
+
+    # `count` must describe the visible rows, not the unfiltered replica.
+    assert payload["count"] == 2
+    assert [row["content_id"] for row in payload["results"]] == ["alpha", 861]
+
+
+def test_overlay_assembler_returns_only_the_viewers_own_favorites() -> None:
+    """Favorites are per account: the overlay never carries another user's."""
+    db.configure("sqlite://")
+    db.init_schema()
+    with db.session_scope() as session:
+        viewer = User(wm_sub="viewer", username="Viewer")
+        other = User(wm_sub="other", username="Other")
+        session.add_all([viewer, other])
+        session.flush()
+        viewer_id = viewer.id
+        session.add_all(
+            [
+                Favorite(user_id=viewer.id, tool_name="viewer-tool", position=0),
+                Favorite(user_id=other.id, tool_name="other-secret-tool", position=0),
+            ]
+        )
+
+    overlay = assemble_overlay(viewer_id)
+
+    assert overlay["favorites"] == ["viewer-tool"]
