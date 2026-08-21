@@ -1461,7 +1461,7 @@
 	"static.healthScore.exampleTitle": "6. Worked example",
 	"static.healthScore.filtersBody": "Source findings only affect scoring when they pass the publishable evidence filter. This prevents weak examples, fixtures, and low-confidence strings from counting the same as runtime or manifest evidence.",
 	"static.healthScore.filtersTitle": "4. Filters, thresholds, and rounding",
-	"static.healthScore.frontendAccessibilityRules": "Only created for JavaScript, TypeScript, React, Vue, or MediaWiki gadget tools. +20 for accessibility markup or tests; +20 for an axe dependency; +10 for tests.",
+	"static.healthScore.frontendAccessibilityRules": "Only created for JavaScript, TypeScript, React, Vue, or MediaWiki JavaScript tools. +20 for accessibility markup or tests; +20 for an axe dependency; +10 for tests.",
 	"static.healthScore.gradeName": "Grade",
 	"static.healthScore.gradeValue": "Legendary ($1) >= 85; Great ($2) >= 70; Needs attention ($3) >= 50; Needs attention ($4) < 50; Unknown ($5) when no score exists.",
 	"static.healthScore.includedHeader": "Included when",

@@ -70,14 +70,16 @@ def test_source_analyzer_extracts_projects_apis_rights_scopes_technology_and_red
     assert {"csrf-token"} <= values(report, "authentication")
     assert {"editpage", "uploadfile", "privateinfo"} <= values(report, "oauthScopes")
     assert {"npm:react", "pypi:pywikibot"} <= values(report, "dependencies")
-    assert {"JavaScript", "MediaWiki gadget", "Python", "Pywikibot", "React", "Node.js"} <= values(report, "technology")
+    assert {"JavaScript", "MediaWiki JavaScript", "Python", "Pywikibot", "React", "Node.js"} <= values(
+        report, "technology"
+    )
     assert "credential-like-source" in values(report, "warnings")
     assert "write-without-auth-signal" not in values(report, "warnings")
     assert "[redacted credential-like assignment]" in str(report["warnings"])
     assert "super-secret-value" not in str(report)
     assert set(report["suggestions"]["toolinfoPatch"]["for_wikis"]) == {"commonswiki", "wikidatawiki"}
-    # Pywikibot and React together: whatever this fixture is, it runs a server,
-    # so the `mw.Api` in it does not make it a gadget.
+    # A local checkout is not a wiki page, so no amount of MediaWiki JavaScript
+    # in it can make it a gadget. React and Node.js decide what it is instead.
     assert report["suggestions"]["toolinfoPatch"]["tool_type"] == "web app"
     assert {"npm:react", "pypi:pywikibot"} <= set(report["suggestions"]["evolvedMetadata"]["dependencies"])
     assert "x_toolhub_evolved_source_analysis" not in report["suggestions"]["toolinfoPatch"]
@@ -600,28 +602,50 @@ def test_source_analyzer_utility_branches_are_stable():
     assert source_analyzer._tool_type_suggestion([], []) is None
 
 
-def test_a_server_that_mentions_mediawiki_javascript_is_not_suggested_as_a_gadget():
-    """A gadget has no server, so server evidence outranks the gadget markers.
+def test_a_wiki_page_is_typed_by_its_namespace_rather_than_by_its_contents():
+    """Gadgets and user scripts are decided by where they live, not what they use."""
+    gadget = "https://fr.wikipedia.org/wiki/MediaWiki:Gadget-HotCat.js"
+    script = "https://fr.wikipedia.org/wiki/User:Someone/HotCat.js"
 
-    Toolhub Evolved itself was catalogued as a gadget: it is a Flask
-    application whose own source-analysis code and tests contain `mw.Api`,
-    upstream declares no tool type, and the suggestion filled the empty slot.
+    assert source_analyzer._tool_type_suggestion([], [], gadget) == "gadget"
+    assert source_analyzer._tool_type_suggestion([], [], script) == "user script"
+    # No code was read to reach either answer, so contradicting evidence in the
+    # page cannot move it: a gadget that ships React is still a gadget.
+    assert source_analyzer._tool_type_suggestion([{"value": "React"}], [], gadget) == "gadget"
+
+
+def test_a_repository_is_never_suggested_as_a_gadget_or_a_user_script():
+    """A gadget is a page a wiki serves, so a checkout cannot be one.
+
+    Toolhub Evolved itself was catalogued as a gadget: a Flask application
+    whose own analyzer, tests and UI all quote `mw.Api`, with no tool type
+    declared upstream for the guess to lose to.
     """
-    gadget_evidence = [{"value": "MediaWiki gadget"}]
+    mediawiki_js = [{"value": "MediaWiki JavaScript"}, {"value": "JavaScript"}]
 
-    assert source_analyzer._tool_type_suggestion(gadget_evidence, []) == "gadget"
-    for server in sorted(source_analyzer.SERVER_TECHNOLOGIES):
-        assert source_analyzer._tool_type_suggestion([*gadget_evidence, {"value": server}], []) != "gadget"
-    assert source_analyzer._tool_type_suggestion([*gadget_evidence, {"value": "Flask"}], []) == "web app"
+    for source in ("https://github.com/schiste/toolhub-evolved", "local checkout", ""):
+        assert source_analyzer._tool_type_suggestion(mediawiki_js, [], source) not in {"gadget", "user script"}
 
 
-def test_a_gadget_that_ships_a_package_json_is_still_a_gadget():
-    """Node.js is not server evidence: a gadget repository may lint with npm."""
-    suggestion = source_analyzer._tool_type_suggestion(
-        [{"value": "MediaWiki gadget"}, {"value": "Node.js"}, {"value": "JavaScript"}], []
+def test_mediawiki_javascript_is_detected_from_a_call_in_a_script_and_not_from_a_mention():
+    """The technology rule reads calls in browser JavaScript, not prose."""
+    report = analyze_source_files(
+        [
+            {"path": "docs/design.py", "content": '"""`mw.Api` says MediaWiki without naming a wiki."""'},
+            {"path": "src/notes.md", "content": "We call new mw.Api() from the gadget."},
+            {"path": "src/shouty.js", "content": "const api = new MW.API();"},
+            {"path": "src/prose.js", "content": "// mw.Api is the client we use."},
+        ],
+        tool_name="mentions-only",
     )
 
-    assert suggestion == "gadget"
+    assert "MediaWiki JavaScript" not in values(report, "technology")
+
+
+def test_a_file_named_as_a_user_script_counts_without_reading_its_contents():
+    report = analyze_source_files([{"path": "src/HotCat.user.js", "content": "var x = 1;"}], tool_name="named")
+
+    assert "MediaWiki JavaScript" in values(report, "technology")
 
 
 def test_source_class_covers_fixture_example_and_unknown_paths():
