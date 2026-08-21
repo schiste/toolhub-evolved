@@ -958,3 +958,62 @@ def test_the_reading_order_settles_the_last_tie_by_path_so_two_reads_agree():
 
 def test_the_reading_order_reads_a_windows_separator_as_a_path_separator():
     assert source_reading_rank("src\\client.py") == source_reading_rank("src/client.py")
+
+
+def bucket_finding(label, confidence, paths):
+    row = source_analyzer.Finding(
+        value=label, label=label, kind="endpoints", category="api", confidence=confidence
+    )
+    row.evidence = [{"path": path} for path in paths]
+    return row
+
+
+def test_the_bucket_cap_keeps_the_finding_that_more_files_agree_on():
+    two = bucket_finding("two", 0.74, ["src/a.py", "src/b.py"])
+    one = bucket_finding("one", 0.74, ["src/a.py"])
+    assert sorted([one, two], key=source_analyzer._finding_rank) == [two, one]
+
+
+def test_the_bucket_cap_keeps_the_finding_the_same_file_said_more_than_once():
+    twice = bucket_finding("twice", 0.74, ["src/a.py", "src/a.py"])
+    once = bucket_finding("once", 0.74, ["src/a.py"])
+    assert sorted([once, twice], key=source_analyzer._finding_rank) == [twice, once]
+
+
+def test_the_bucket_cap_keeps_what_the_code_said_over_what_only_describes_it():
+    # Equally scored and equally attested, so the tie falls to where the sighting came
+    # from -- and the tool is its code, not the page advertising the code.
+    code = bucket_finding("code", 0.74, ["src/charts.js"])
+    page = bucket_finding("page", 0.74, ["docs/index.md"])
+    assert sorted([page, code], key=source_analyzer._finding_rank) == [code, page]
+
+
+def test_the_bucket_cap_ranks_on_the_confidence_it_measured_not_the_one_it_prints():
+    # Both print as 0.74. Ranking the printed form would call them equal and then hand
+    # the tie to the alphabet, which would put the weaker of the two first.
+    stronger = bucket_finding("z", 0.744, ["src/a.py"])
+    weaker = bucket_finding("a", 0.736, ["src/a.py"])
+    assert sorted([weaker, stronger], key=source_analyzer._finding_rank) == [stronger, weaker]
+
+
+def test_the_bucket_cap_settles_the_last_tie_by_label_so_two_runs_agree():
+    later = bucket_finding("b", 0.74, ["src/a.py"])
+    earlier = bucket_finding("a", 0.74, ["src/a.py"])
+    assert sorted([later, earlier], key=source_analyzer._finding_rank) == [earlier, later]
+
+
+def test_a_short_bucket_cap_keeps_the_endpoint_the_tools_own_module_calls(monkeypatch):
+    # One slot, two endpoints scored identically, and the one that sorts first
+    # alphabetically is buried three directories down. The slot belongs to the call
+    # written in the module the package presents.
+    monkeypatch.setattr(source_analyzer, "MAX_FINDINGS_PER_BUCKET", 1)
+    report = analyze_source_files(
+        [
+            {"path": "src/client.py", "content": "requests.get('https://api.zzz-data.org/v1/things')"},
+            {
+                "path": "src/internal/legacy/shim.py",
+                "content": "requests.get('https://api.aaa-data.org/v1/things')",
+            },
+        ]
+    )
+    assert values(report, "endpoints") == {"api.zzz-data.org/v1/things"}

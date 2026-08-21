@@ -593,12 +593,18 @@ over sixteen repositories the change took the corpus from 206 endpoints to 270 a
 from 318 dependencies to 421, and cli/cli named `api.github.com` for the first time.
 
 Two limits are worth knowing when a report still looks thin. The per-bucket cap
-(`MAX_FINDINGS_PER_BUCKET`, 40) keeps the highest-confidence findings and breaks
-ties alphabetically, so on a repository that names more than forty addresses a real
-endpoint can be crowded out by a table of RDF namespaces that scores no lower. And
-the source-extension list does not include every language, so a repository written
-in one it does not read (Kotlin, C#, Swift) is judged from its markdown and its
-build files. `GET /v1/source-analysis/` and
+(`MAX_FINDINGS_PER_BUCKET`, 40) keeps the highest-confidence findings, and on a
+repository that names its addresses uniformly the cut lands inside a block of
+findings that all score the same. That block is ordered by how many separate files
+attested the finding, then how often, then by the same reading rank that decided
+which files were worth opening, so what the tool's own code said outranks what its
+landing pages said. On pageviews that swapped eleven self-referential links for the
+`wikimedia.org/api/rest_v1/metrics/*` calls its charts are built from. The cap can
+still drop a real endpoint that is genuinely outscored rather than tied -- wdqs-gui
+names `query.wikidata.org/sparql` in a config file at 0.66, below the 0.74 cut set by
+its RDF namespace table -- and no tie-break reaches that. And the source-extension
+list does not include every language, so a repository written in one it does not read
+(Kotlin, C#, Swift) is judged from its markdown and its build files. `GET /v1/source-analysis/` and
 `GET /v1/source-analysis/<id>/` are private reads for the report owner;
 `POST /v1/source-analysis/<id>/review/` lets the owner mark a report `open`,
 `approved`, or `rejected`. The same analyzer is available for local checkouts
