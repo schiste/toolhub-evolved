@@ -106,10 +106,36 @@ to schedule at all. Bodies are stored so re-analysis stays free, capped at
 `MAX_STORED_BODY` (512 KiB) per page — a limit about what is worth keeping, not
 about what fits.
 
-**Creation order comes from `discovery_rank`, not a timestamp.** The collapse's
-"earliest page wins" rule only ever compares two pages, and the search index
-hands enumeration order over for free, while asking the API for 9,919 creation
-dates is 9,919 requests.
+**Creation dates come from the Wiki Replicas; enumeration order is the
+fallback.** The collapse's "earliest page wins" rule only ever compares two
+pages, so it needs an order rather than a calendar — but the order has to be a
+real one. Three things supply it, in descending order of authority:
+
+1. `created_at_wiki`, the page's oldest revision timestamp, read from the Wiki
+   Replicas by `backend.userscript_creation_dates`. One query returns every
+   user-space `.js`/`.css` page on a wiki; frwiki's whole corpus comes back in
+   about a second. Only a title and a timestamp are read — the `revision` table
+   also carries actor ids and edit comments, and neither is selected.
+2. `discovery_rank`, the order the census enumerated the page in. This is
+   creation order because the search asks for `create_timestamp_asc`; before
+   that it was CirrusSearch relevance, which had nothing to say about which page
+   came first.
+3. Title, to break exact ties, so the directory names the same original twice
+   over identical data.
+
+A page with no creation date sorts _behind_ every page that has one. That is the
+weaker claim and the true one: being enumerated first is not evidence of
+predating a script from 2003. Every host without `replica.my.cnf` — CI, a
+laptop, anything that is not Toolforge — is in that state for its whole corpus
+and collapses on enumeration order alone, exactly as before.
+
+The Action API is not the route for this. `prop=revisions` with `rvdir=newer`
+is `invalidparammix` for more than one title, so walking histories oldest-first
+costs one request per page: measured at 0.542s anonymous, the 2,051 pages the
+collapse actually sees are roughly 20 minutes and the full 9,919-page corpus
+about an hour and a half. The `letype=create` log is not a shortcut either —
+it starts on 2018-06-27, and about 99% of the User-namespace creations in it
+are neither `.js` nor `.css`.
 
 ## The collapse: originals and instances
 
