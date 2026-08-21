@@ -186,6 +186,27 @@ test("viewRecent: an upstream toollist row renders as a List with a list link", 
 	assert.match(view.html, /recent-chip--lists">List</);
 });
 
+test("viewRecent: a cold list replica is explained instead of silently emptying the Lists filter", async () => {
+	setSearch("");
+	api.apiGet.mockResolvedValue({ listActivityAvailable: false, results: [] });
+
+	const view = await viewRecent();
+
+	assert.match(view.html, /role="status">List activity is hidden while the catalog replica/);
+});
+
+test("viewRecent: a warm replica and an unreachable feed both render without the notice", async () => {
+	setSearch("");
+	api.apiGet.mockResolvedValue({ listActivityAvailable: true, results: [] });
+	const warm = await viewRecent();
+	assert.doesNotMatch(warm.html, /List activity is hidden/);
+
+	// A failed fetch says nothing about the replica, so it must not blame it.
+	api.apiGet.mockRejectedValue(new Error("offline"));
+	const offline = await viewRecent();
+	assert.doesNotMatch(offline.html, /List activity is hidden/);
+});
+
 test("viewRecent: a deferred owner is not written to the client cache", async () => {
 	setSearch("");
 	api.apiGet.mockImplementation((path) => {

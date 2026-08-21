@@ -358,6 +358,18 @@ function ownerSensitiveRecentState(state) {
 	return Boolean(state.owner || state.q || state.sort === "owner");
 }
 
+/**
+ * A cold replica has no published-list allowlist, so every upstream list revision
+ * fails closed and the Lists filter comes up empty. Say that it is policy rather
+ * than a fault. How many rows were withheld is deliberately not shown: a count
+ * would itself disclose that an unpublished list changed.
+ * @param {{ listActivityAvailable?: boolean }} data
+ */
+function recentListNoticeHTML(data) {
+	if (data.listActivityAvailable !== false) return "";
+	return `<div class="account-directory__notice" role="status">${t("parity.recentListActivityHidden", "List activity is hidden while the catalog replica finishes its first refresh. Tool activity is unaffected.")}</div>`;
+}
+
 // Recent changes — from the local catalog replica (deep-links tools via content_id slug).
 export async function viewRecent() {
 	const state = recentState(new URLSearchParams(location.search));
@@ -389,6 +401,7 @@ export async function viewRecent() {
 				<h1 class="page__title">${t("parity.recentChanges", "Recent changes")}</h1>
 				<p class="page__intro">${t("parity.recentIntroHybrid", "Background-synchronized Toolhub activity, merged with Evolved-local write activity when a change is saved here.")}</p>
 			</header>
+			${recentListNoticeHTML(data)}
 			<form class="recent-controls" id="recent-filter-form">
 				<div class="recent-controls__filters">
 					<label class="recent-control recent-control--wide"><span class="recent-control__label">${t("parity.searchRecent", "Search")}</span><input class="le__input" id="recent-q" type="search" value="${esc(state.q)}" placeholder="${t("parity.searchRecentPlaceholder", "Title, id, comment, owner...")}"></label>

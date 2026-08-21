@@ -1036,6 +1036,7 @@
 	"parity.recentChangesTable": "TODO: document this message.",
 	"parity.recentCrawlerRuns": "TODO: document this message.",
 	"parity.recentIntroHybrid": "TODO: document this message.",
+	"parity.recentListActivityHidden": "Notice on the recent-changes page shown when the local catalog replica holds no published lists yet, so every upstream list revision is withheld.",
 	"parity.reviewState": "TODO: document this message.",
 	"parity.reviewUnknown": "TODO: document this message.",
 	"parity.run": "TODO: document this message.",

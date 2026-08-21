@@ -6,8 +6,11 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from collections.abc import Container
 
 PUBLIC_ACTIVITY_PATHS = {"/api/recent", "/api/auditlogs"}
 # Upstream Toolhub spells the list content type "toollist"; Evolved rows spell
@@ -56,7 +59,25 @@ def _published_list_ids() -> frozenset[str]:
         return frozenset()
 
 
-def is_private_list_activity(row: object) -> bool:
+class _PublishedListCache:
+    """One batch's view of the allowlist, read from the replica at most once.
+
+    Reading it parses every locally cached `/api/lists/` page, so a feed of
+    fifty rows must not repeat that work fifty times.
+    """
+
+    __slots__ = ("_ids",)
+
+    def __init__(self) -> None:
+        self._ids: frozenset[str] | None = None
+
+    def __contains__(self, list_id: object) -> bool:
+        if self._ids is None:
+            self._ids = _published_list_ids()
+        return list_id in self._ids
+
+
+def is_private_list_activity(row: object, published: Container[str] | None = None) -> bool:
     """Return whether one list activity row names a list the public cannot see.
 
     Toolhub's recent-changes feed reports revisions for *every* list, including
@@ -79,7 +100,9 @@ def is_private_list_activity(row: object) -> bool:
     if row.get("_evolved") is True or official_status is not None:
         return official_status != SYNC_OFFICIAL
     content_id = _content_id(row)
-    return not content_id or content_id not in _published_list_ids()
+    if not content_id:
+        return True
+    return content_id not in (_published_list_ids() if published is None else published)
 
 
 def is_private_preference_activity(row: object) -> bool:
@@ -102,16 +125,22 @@ def is_private_preference_activity(row: object) -> bool:
     return False
 
 
-def is_private_activity(row: object) -> bool:
+def is_private_activity(row: object, published: Container[str] | None = None) -> bool:
     """Return whether one activity row must stay out of every shared feed."""
-    return is_private_preference_activity(row) or is_private_list_activity(row)
+    return is_private_preference_activity(row) or is_private_list_activity(row, published)
 
 
-def public_activity_rows(rows: object) -> list[dict[str, Any]]:
-    """Return dictionary rows that are safe for shared activity surfaces."""
+def public_activity_rows(rows: object, published: Container[str] | None = None) -> list[dict[str, Any]]:
+    """Return dictionary rows that are safe for shared activity surfaces.
+
+    Callers that already hold the published-list allowlist pass it in; the rest
+    get a lazy one that reads the replica only if a list row turns up.
+    """
     if not isinstance(rows, list):
         return []
-    return [row for row in rows if isinstance(row, dict) and not is_private_activity(row)]
+    if published is None:
+        published = _PublishedListCache()
+    return [row for row in rows if isinstance(row, dict) and not is_private_activity(row, published)]
 
 
 def _filtered_json(payload: bytes, keys: tuple[str, ...]) -> bytes:
