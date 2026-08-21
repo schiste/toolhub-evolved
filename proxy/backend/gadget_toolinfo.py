@@ -45,7 +45,7 @@ TOOL_TYPE = "gadget"
 NAME_PREFIX = "gadget"
 MAX_TOOL_NAME = 255
 SPECIAL_GADGETS = "Special:Gadgets"
-# The row is rewritten by this lane's own job rather than refetched from
+# The row is rewritten by this lane's own job rather than fetched again from
 # Toolhub, so freshness tracks that cadence and not the catalog's.
 FRESH_SECONDS = 7 * 24 * 60 * 60
 STALE_SECONDS = 30 * 24 * 60 * 60
