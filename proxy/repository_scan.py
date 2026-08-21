@@ -447,8 +447,46 @@ def _wiki_revisions(source: wiki_sources.WikiSource) -> tuple[tuple[wiki_api.Rev
     return tuple(revision for revision in found if revision.title in kept), source
 
 
+#: A line this long was not typed by a person. Measured over the largest pages
+#: on the eight wikis in the catalogue: build output runs to 672k, 795k and 1.1M
+#: characters on a single line, while the longest line in a hand-written gadget
+#: is wikEd's 2938. The threshold sits in the empty space between the two rather
+#: than splitting a continuum, so it does not need to be tuned.
+MAX_SOURCE_LINE_CHARS = 50_000
+
+#: Anchored to the start of a line, which is what separates an annotation from a
+#: mention. The one page in the catalogue's wikis that holds the string holds it
+#: mid-line inside `"/*# sourceMappingURL=...".concat(...)` -- bundled loader
+#: runtime writing a map for the stylesheet it injects, not a map for itself.
+#: Matching that would exclude any gadget whose code talks about source maps.
+SOURCE_MAP_ANNOTATION = re.compile(r"^[ \t]*/[/*][#@][ \t]*sourceMappingURL=", re.MULTILINE)
+
+
+def _is_build_output(content: str) -> bool:
+    """Report whether a page was generated rather than written.
+
+    Two signals, because on a wiki they catch different files and neither
+    catches both. The annotation is the builder's own statement that this file
+    came from other files, and it is the honest signal -- but it seldom survives
+    wiki deployment, since a .map file has nowhere to live on a wiki and
+    pipelines aimed at one turn maps off. No page in the catalogue carries it
+    today. Line length is the weaker claim and the one that does the work.
+
+    Filtered rather than analyzed because a bundle's dependencies are the
+    libraries vendored into it rather than the tool's own, and a suggestion
+    drawn from those fills whatever Toolhub field is empty, scored as if it had
+    been measured. Reading nothing is recoverable; publishing a wrong dependency
+    list under the tool's name is not.
+    """
+    if SOURCE_MAP_ANNOTATION.search(content):
+        return True
+    return any(len(line) > MAX_SOURCE_LINE_CHARS for line in content.splitlines())
+
+
 def _wiki_files(found: tuple[wiki_api.Revision, ...]) -> list[dict[str, str]]:
     """Select the analyzable pages, under the count and total caps of the reader.
+
+    Generated pages are dropped here too, for the reason _is_build_output gives.
 
     The per-file cap is the wiki one rather than the checkout one, for the reason
     MAX_WIKI_FILE_BYTES gives. The two others are shared: a page set that reaches
@@ -465,6 +503,8 @@ def _wiki_files(found: tuple[wiki_api.Revision, ...]) -> list[dict[str, str]]:
         if len(files) >= MAX_FILES or total + raw > MAX_TOTAL_BYTES:
             break
         if raw > MAX_WIKI_FILE_BYTES or not is_supported_source_path(revision.title):
+            continue
+        if _is_build_output(revision.content):
             continue
         total += raw
         files.append({"path": revision.title, "content": revision.content})
@@ -501,8 +541,8 @@ def _acquire_wiki(source: wiki_sources.WikiSource) -> _Source:
         # did not happen -- the pages were read, and every one was filtered.
         largest = max(len(revision.content.encode("utf-8")) for revision in found)
         message = (
-            f"wiki page set holds no analyzable page: {len(found)} read, "
-            f"none under {MAX_WIKI_FILE_BYTES} bytes with a supported extension (largest {largest})"
+            f"wiki page set holds no analyzable page: {len(found)} read, none kept by the "
+            f"extension, {MAX_WIKI_FILE_BYTES}-byte and build-output filters (largest {largest})"
         )
         raise RepositoryScanError(message)
     return _Source(
