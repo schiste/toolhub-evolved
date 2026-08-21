@@ -31,7 +31,7 @@ def _database():
         yield
 
 
-def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=False):
+def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=False, created=""):
     """Store one census page, filling in what the projection reads."""
     with db.session_scope() as session:
         session.add(
@@ -43,6 +43,7 @@ def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=F
                 role=role,
                 fingerprint=fingerprint,
                 discovery_rank=rank,
+                created_at_wiki=created,
                 deleted_at=utcnow() if deleted else None,
             ),
         )
@@ -224,7 +225,8 @@ def test_entries_are_ranked_by_demand_within_each_tier():
 
 
 def test_discovery_rank_decides_which_page_is_the_original():
-    # The page enumerated first is the earlier one, whatever its title sorts as.
+    # Where no creation date could be established -- every host without a replica
+    # -- the page enumerated first is the earlier one, whatever its title sorts as.
     page("User:Zed/tool.js", rank=0, fingerprint="same")
     page("User:Aaa/tool.js", rank=1, fingerprint="same")
     projection.project(FRWIKI)
@@ -241,6 +243,27 @@ def test_ranks_sort_numerically_rather_than_as_written():
 
 def test_a_negative_rank_does_not_escape_the_sort_key():
     assert projection._sort_key(-1) == projection._sort_key(0)
+
+
+def test_the_creation_date_the_wiki_reports_beats_the_order_we_found_it_in():
+    """Enumeration order is a stand-in. Where a real date exists it is the answer."""
+    page("User:Zed/tool.js", rank=0, fingerprint="same", created="20140101000000")
+    page("User:Aaa/tool.js", rank=1, fingerprint="same", created="20090101000000")
+    projection.project(FRWIKI)
+    assert members()["User:Zed/tool.js"] == ("User:Aaa/tool.js", projection.RELATION_COPY)
+
+
+def test_a_page_with_no_creation_date_cannot_outrank_one_that_has_it():
+    """The two keys are compared as strings, so the fallback must sort behind.
+
+    Without the leading digit that puts it there, a zero-padded rank would begin
+    with a 0 and beat every real timestamp -- so a page discovered first on a
+    host with no replica would claim to predate a page created in 2003.
+    """
+    page("User:Aaa/tool.js", rank=0, fingerprint="same")
+    page("User:Bbb/tool.js", rank=1, fingerprint="same", created="20030101000000")
+    projection.project(FRWIKI)
+    assert members()["User:Aaa/tool.js"] == ("User:Bbb/tool.js", projection.RELATION_COPY)
 
 
 def test_another_wikis_directory_is_left_alone():

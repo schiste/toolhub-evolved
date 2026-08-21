@@ -1522,10 +1522,10 @@ class UserScriptPage(Base):
     # strings, and the directory's "earliest wins" rule only ever compares them.
     created_at_wiki: Mapped[str] = mapped_column(String(32), default="")
     touched_at_wiki: Mapped[str] = mapped_column(String(32), default="")
-    # Creation order, not a timestamp. Asking the API when each of 9,345 pages was
-    # created is 9,345 requests; the search index hands the same ordering over for
-    # free because enumeration already sorts by create_timestamp_asc. The directory
-    # only ever compares two pages to see which came first, and this answers that.
+    # Creation order, not a timestamp: the order the census enumerated this page
+    # in, which is creation order because the search sorts by create_timestamp_asc.
+    # It is what the directory falls back to where `created_at_wiki` is empty, and
+    # is free where a real date costs a request per page or a replica connection.
     discovery_rank: Mapped[int] = mapped_column(Integer, default=0)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)

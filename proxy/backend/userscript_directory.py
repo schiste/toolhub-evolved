@@ -81,9 +81,12 @@ class Candidate:
     """One user-space script page, as offered to the directory.
 
     `created` orders pages against each other and must be comparable across the
-    corpus -- a MediaWiki timestamp string sorts correctly as-is. `fingerprint`
-    is the normalized content hash from `backend.userscripts`; an empty one
-    never matches anything, which is what keeps blank pages from clustering.
+    corpus as a plain string. A MediaWiki timestamp sorts correctly as-is, and a
+    page whose creation date could not be established is given a stand-in that
+    sorts behind every real date -- see `backend.userscript_projection`, which
+    is the only thing that should be minting these. `fingerprint` is the
+    normalized content hash from `backend.userscripts`; an empty one never
+    matches anything, which is what keeps blank pages from clustering.
     """
 
     title: str
