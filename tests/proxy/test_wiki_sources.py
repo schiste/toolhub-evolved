@@ -23,6 +23,9 @@ DEFINITION = """
 * plain|Plain.js
 """
 
+# One line as fr.wikipedia actually writes it, underscores and padding included.
+UNDERSCORED = "* C_helper [ResourceLoader|dependencies=mediawiki.util] | C_helper.js | C_helper_util.js\n"
+
 
 def test_a_user_subpage_with_a_code_suffix_is_a_user_script():
     source = wiki_sources.wiki_source(SCRIPT)
@@ -75,6 +78,37 @@ def test_a_user_script_is_not_put_through_the_gadget_registry():
     unchanged, pages = wiki_sources.registered_gadget(script, DEFINITION)
     assert unchanged == script
     assert pages == (script.title,)
+
+
+def test_a_definition_that_writes_underscores_still_registers_the_gadget():
+    # Copied from fr.wikipedia, which registers this gadget with underscores
+    # where Commons uses spaces. Both are the same title to MediaWiki, so both
+    # have to be the same title here -- matching the raw text against a name
+    # that arrived through canonical_title found no line and retired a gadget
+    # that is live in everyone's Preferences.
+    page = wiki_sources.wiki_source("https://fr.wikipedia.org/wiki/MediaWiki:Gadget-C_helper.js")
+    gadget, pages = wiki_sources.registered_gadget(page, UNDERSCORED)
+    assert gadget.kind == wiki_sources.KIND_GADGET
+    assert pages == (
+        "MediaWiki:Gadget-C helper.js",
+        "MediaWiki:Gadget-C helper util.js",
+    )
+
+
+def test_both_spellings_of_one_title_reach_one_registration():
+    # The two URLs name one page, so nothing downstream may be able to tell
+    # which spelling a tool record happened to carry.
+    underscored = wiki_sources.wiki_source("https://fr.wikipedia.org/wiki/MediaWiki:Gadget-C_helper.js")
+    spaced = wiki_sources.wiki_source("https://fr.wikipedia.org/wiki/MediaWiki:Gadget-C%20helper.js")
+    assert wiki_sources.registered_gadget(underscored, UNDERSCORED) == wiki_sources.registered_gadget(spaced, UNDERSCORED)
+
+
+def test_an_underscored_definition_does_not_register_a_page_it_omits():
+    # The normalization must widen how a name is spelled, not what counts as a
+    # match: a page absent from an underscored definition is still absent.
+    page = wiki_sources.wiki_source("https://fr.wikipedia.org/wiki/MediaWiki:Gadget-C_helper_absent.js")
+    leftover, _ = wiki_sources.registered_gadget(page, UNDERSCORED)
+    assert leftover.kind == wiki_sources.KIND_GADGET_PAGE
 
 
 def test_a_user_script_has_no_gadget_filename():
