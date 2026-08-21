@@ -230,3 +230,98 @@ def test_refresh_candidates_selects_eligible_rows_and_bounds_processing(monkeypa
         assert s.get(ToolAssetCache, "f_changed").status == "ready"
         assert s.get(ToolAssetCache, "d_error_wait").status == "error"
         assert s.get(ToolAssetCache, "e_ready_same").status == "ready"
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        (
+            "https://commons.wikimedia.org/wiki/File:Adiutor_icon.svg",
+            "https://commons.wikimedia.org/wiki/Special:FilePath/Adiutor_icon.svg",
+        ),
+        (
+            "https://commons.wikimedia.org/wiki/File:Cdkdepict_wikidata.png",
+            "https://commons.wikimedia.org/wiki/Special:FilePath/Cdkdepict_wikidata.png?width=512",
+        ),
+        (
+            "https://commons.wikimedia.org/wiki/Image:Old_alias.png",
+            "https://commons.wikimedia.org/wiki/Special:FilePath/Old_alias.png?width=512",
+        ),
+        (
+            "https://commons.wikimedia.org/wiki/File:Caf%C3%A9.svg",
+            "https://commons.wikimedia.org/wiki/Special:FilePath/Caf%C3%A9.svg",
+        ),
+        # Not a file page, and not on a wiki at all: both are left alone.
+        ("https://commons.wikimedia.org/wiki/Commons:Welcome", "https://commons.wikimedia.org/wiki/Commons:Welcome"),
+        ("https://alpha.example/icon.png", "https://alpha.example/icon.png"),
+    ],
+)
+def test_a_commons_file_page_resolves_to_the_file_behind_it(declared, expected):
+    """The schema asks for a description page; an <img> needs what it describes."""
+    assert tool_assets._wiki_file_url(declared) == expected
+
+
+def _projection(name, icon):
+    with db.session_scope() as s:
+        s.add(
+            CatalogToolProjection(
+                tool_name=name,
+                effective_record={"name": name, "icon": icon},
+                provenance={"icon": [{"value": icon, "source": "official_toolhub", "effective": True}]},
+            )
+        )
+
+
+def test_a_commons_icon_is_fetched_from_the_file_rather_than_its_page(monkeypatch):
+    _projection("alpha", "https://commons.wikimedia.org/wiki/File:Adiutor_icon.svg")
+    asked = []
+
+    def fetch(_session, url, **_kwargs):
+        asked.append(url)
+        return outbound.BoundedResponse(
+            body=b"<svg/>", url=url, content_type="image/svg+xml", etag=None, last_modified=None
+        )
+
+    monkeypatch.setattr(outbound, "fetch_bounded_response", fetch)
+
+    assert tool_assets.refresh_tool("alpha")["status"] == "ready"
+    assert asked == ["https://commons.wikimedia.org/wiki/Special:FilePath/Adiutor_icon.svg"]
+    with db.session_scope() as s:
+        assert s.get(ToolAssetCache, "alpha").source_url == asked[0]
+
+
+def test_a_vector_too_large_to_fetch_falls_back_to_a_scaled_copy(monkeypatch):
+    _projection("alpha", "https://commons.wikimedia.org/wiki/File:Huge_drawing.svg")
+    asked = []
+
+    def fetch(_session, url, **_kwargs):
+        asked.append(url)
+        if "width=" not in url:
+            message = f"{url}: response larger than 524288 bytes"
+            raise ValueError(message)
+        return outbound.BoundedResponse(
+            body=b"\x89PNG\r\n\x1a\n", url=url, content_type="image/png", etag=None, last_modified=None
+        )
+
+    monkeypatch.setattr(outbound, "fetch_bounded_response", fetch)
+
+    assert tool_assets.refresh_tool("alpha")["status"] == "ready"
+    assert asked == [
+        "https://commons.wikimedia.org/wiki/Special:FilePath/Huge_drawing.svg",
+        "https://commons.wikimedia.org/wiki/Special:FilePath/Huge_drawing.svg?width=512",
+    ]
+
+
+def test_an_icon_that_is_not_on_a_wiki_is_not_retried_twice(monkeypatch):
+    _projection("alpha", "https://alpha.example/icon.png")
+    asked = []
+
+    def fetch(_session, url, **_kwargs):
+        asked.append(url)
+        message = f"{url}: response larger than 524288 bytes"
+        raise ValueError(message)
+
+    monkeypatch.setattr(outbound, "fetch_bounded_response", fetch)
+
+    assert tool_assets.refresh_tool("alpha")["status"] == "error"
+    assert asked == ["https://alpha.example/icon.png"]

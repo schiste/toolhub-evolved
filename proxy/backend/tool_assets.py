@@ -9,6 +9,7 @@ import tempfile
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import requests
 from sqlalchemy import select
@@ -24,6 +25,22 @@ ALLOWED_CONTENT_TYPES = {
     "image/webp": ".webp",
 }
 MAX_CANDIDATES = 200
+# Toolhub's toolinfo schema asks for a Wikimedia Commons file page as a tool's
+# icon -- https://commons.wikimedia.org/wiki/File:Adiutor_icon.svg and the like
+# -- so the URL a well-formed record declares is a description page, which is
+# HTML, and not the image an <img> needs. Every icon this cache has ever failed
+# on was one of those, 80 tools' worth, each retried on backoff forever against
+# a page whose content type will never change. `Special:FilePath` redirects a
+# file title to the file itself, which is the one resolution step between the
+# two.
+WIKI_PATH_PREFIX = "/wiki/"
+WIKI_FILE_PREFIXES = ("file:", "image:")
+FILE_PATH_TITLE = "Special:FilePath/"
+# A raster icon is often a full screenshot and larger than the fetch budget, so
+# the wiki is asked to scale it. Vectors are left whole: a width would rasterize
+# them, and an SVG is small enough to take as it is.
+THUMBNAIL_WIDTH = 512
+VECTOR_SUFFIX = ".svg"
 CALLER = outbound.Caller(
     user_agent="toolhub-evolved/0.2 (https://toolhub-evolved.toolforge.org)",
     accept=", ".join(ALLOWED_CONTENT_TYPES),
@@ -41,12 +58,59 @@ def _clean_name(value: Any) -> str:  # noqa: ANN401
     return str(value or "").strip()[:255]
 
 
+def _wiki_file_url(url: str) -> str:
+    """Resolve a wiki file-description page to a URL for the file itself.
+
+    Anything that is not such a page is returned untouched, and the rewrite
+    stays on the host the record named, so this widens no reach: it only stops
+    asking a wiki for an article when what is wanted is an image.
+    """
+    parts = urlsplit(url)
+    if not parts.path.startswith(WIKI_PATH_PREFIX):
+        return url
+    title = unquote(parts.path[len(WIKI_PATH_PREFIX) :])
+    prefix = next((item for item in WIKI_FILE_PREFIXES if title[: len(item)].casefold() == item), "")
+    name = title[len(prefix) :].strip() if prefix else ""
+    if not name:
+        return url
+    query = "" if name.casefold().endswith(VECTOR_SUFFIX) else f"width={THUMBNAIL_WIDTH}"
+    path = f"{WIKI_PATH_PREFIX}{FILE_PATH_TITLE}{quote(name, safe='')}"
+    return urlunsplit((parts.scheme, parts.netloc, path, query, ""))
+
+
+def _scaled_wiki_file_url(url: str) -> str:
+    """Ask a wiki to scale a file it is already being asked for, or say it cannot."""
+    parts = urlsplit(url)
+    if parts.query or not parts.path.startswith(f"{WIKI_PATH_PREFIX}{FILE_PATH_TITLE}"):
+        return url
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, f"width={THUMBNAIL_WIDTH}", ""))
+
+
+def _fetch_icon(session: requests.Session, url: str) -> tuple[outbound.BoundedResponse, str]:
+    """Fetch one icon, retrying once for a scaled copy the wiki can render.
+
+    Vectors are asked for whole because a width would rasterize them, but a
+    handful of them are drawings large enough to exceed the fetch budget. For
+    those the wiki can produce a bounded raster of the same file, which is a
+    better answer than a tool that never gets an icon at all.
+    """
+    try:
+        response = outbound.fetch_bounded_response(session, url, policy=outbound.PUBLIC_IMAGE, caller=CALLER)
+        return response, _content_suffix(response.content_type)
+    except ValueError:
+        scaled = _scaled_wiki_file_url(url)
+        if scaled == url:
+            raise
+    response = outbound.fetch_bounded_response(session, scaled, policy=outbound.PUBLIC_IMAGE, caller=CALLER)
+    return response, _content_suffix(response.content_type)
+
+
 def _icon_source(row: CatalogToolProjection) -> tuple[str, str]:
     record = row.effective_record if isinstance(row.effective_record, dict) else {}
     url = str(record.get("icon") or "").strip()
     evidence = row.provenance.get("icon", []) if isinstance(row.provenance, dict) else []
     source = next((str(item.get("source") or "") for item in evidence if item.get("effective")), "")
-    return url, source or "official_toolhub"
+    return _wiki_file_url(url), source or "official_toolhub"
 
 
 def _store_file(body: bytes, suffix: str) -> tuple[str, str]:
@@ -90,10 +154,7 @@ def refresh_tool(tool_name: str, *, session: requests.Session | None = None) -> 
             row.last_error = None
         return {"toolName": name, "status": "missing"}
     try:
-        response = outbound.fetch_bounded_response(
-            session or requests.Session(), url, policy=outbound.PUBLIC_IMAGE, caller=CALLER
-        )
-        suffix = _content_suffix(response.content_type)
+        response, suffix = _fetch_icon(session or requests.Session(), url)
         digest, path = _store_file(response.body, suffix)
     except (requests.RequestException, OSError, ValueError) as exc:
         with db.session_scope() as s:
