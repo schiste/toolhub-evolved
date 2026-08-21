@@ -44,6 +44,47 @@ MAX_TITLE_CHARS = 255
 MAX_PAGES = 50
 
 DEFINITION_LINE_RE = re.compile(r"^\*\s*(?P<body>.+)$")
+# Sections are declared by a heading of any depth, which is what MediaWiki's own
+# reader accepts -- frwiki nests `=== Pages ===` under `== Apparence ==` and both
+# start a section there, so treating only `==` as one would file half the wiki's
+# gadgets under the wrong heading.
+DEFINITION_SECTION_RE = re.compile(r"^=+\s*(?P<section>[^=]+?)\s*=+$")
+# Editors leave notes next to a file name (`AjoutRapide.js <!-- see T432122 -->`).
+# The comment is not part of the title, and leaving it attached makes the entry
+# stop ending in `.js`, so the file silently drops out of the gadget's page set.
+DEFINITION_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+@dataclass(frozen=True)
+class GadgetEntry:
+    """One gadget exactly as its wiki's definition page declares it.
+
+    Options are kept as parsed pairs rather than a dict so the entry stays
+    hashable and ordered the way the wiki wrote them. A bare option like
+    `default` or `hidden` is a key with no values, which is why every lookup
+    returns a tuple and `has` is a separate question from `values`.
+
+    This is a transcription, not a judgement: `hidden` is recorded, not acted
+    on. Whether a hidden gadget is a tool worth cataloguing is a decision for
+    the caller that builds catalogue records, and one this parser must not make
+    on its behalf.
+    """
+
+    name: str
+    section: str
+    options: tuple[tuple[str, tuple[str, ...]], ...]
+    pages: tuple[str, ...]
+
+    def values(self, key: str) -> tuple[str, ...]:
+        """Return the values given for one option, or () if it is absent or bare."""
+        for option, values in self.options:
+            if option == key:
+                return values
+        return ()
+
+    def has(self, key: str) -> bool:
+        """Report whether an option was declared at all, with or without values."""
+        return any(option == key for option, _values in self.options)
 
 
 @dataclass(frozen=True)
@@ -173,27 +214,81 @@ def page_url(domain: str, title: str) -> str:
     return f"https://{domain}/wiki/{title.replace(' ', '_')}"
 
 
-def _definition_entry(line: str) -> tuple[str, tuple[str, ...]] | None:
-    """Split one Gadgets-definition line into its gadget name and page files.
+def _definition_options(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Split the inside of a definition's bracket into its options.
+
+    Options are pipe-separated, and each is either bare (`hidden`) or carries a
+    comma-separated list (`dependencies=a,b`). An option with an empty value
+    list is kept as a bare one so `rights=` and `rights` cannot be told apart
+    by accident downstream.
+    """
+    parsed: list[tuple[str, tuple[str, ...]]] = []
+    for part in text.split("|"):
+        option, _equals, listed = part.strip().partition("=")
+        if not (key := option.strip()):
+            continue
+        values = tuple(value for item in listed.split(",") if (value := item.strip()))
+        parsed.append((key, values))
+    return tuple(parsed)
+
+
+def _definition_entry(line: str) -> GadgetEntry | None:
+    """Split one Gadgets-definition line into its gadget name, options and files.
 
     The documented shape is `* name[options]|File.js|File.css`, and the options
     themselves contain pipes (`dependencies=a,b|rights=c`), so the file list
     can only be found after the closing bracket -- splitting the whole line on
     `|` would read `rights=c` as a page.
+
+    The section is the caller's to supply because it is not on this line: it
+    comes from the last heading above it, which only something reading the
+    whole page can know.
     """
     match = DEFINITION_LINE_RE.match(line.strip())
     if match is None:
         return None
-    body = match.group("body")
+    body = DEFINITION_COMMENT_RE.sub("", match.group("body"))
     name, bracket, tail = body.partition("[")
+    options: tuple[tuple[str, tuple[str, ...]], ...] = ()
     if bracket:
-        _options, closed, tail = tail.partition("]")
+        declared, closed, tail = tail.partition("]")
         if not closed:
             return None
+        options = _definition_options(declared)
     else:
         name, _, tail = body.partition("|")
     files = tuple(part.strip() for part in tail.split("|") if _is_source_title(part.strip()))
-    return (name.strip(), files) if name.strip() and files else None
+    if not (name.strip() and files):
+        return None
+    return GadgetEntry(name=name.strip(), section="", options=options, pages=files[:MAX_PAGES])
+
+
+def gadget_entries(definition: str) -> tuple[GadgetEntry, ...]:
+    """Return every gadget one wiki's definition page declares, in page order.
+
+    The inventory counterpart of `gadget_pages`: that answers "what else is in
+    this gadget", this answers "what gadgets are there". Both read the same
+    line the same way, which is the point of them living together -- two
+    readers that disagreed about a gadget's file set would put one gadget in
+    the catalogue under two different page sets.
+
+    A repeated name keeps its first declaration. MediaWiki resolves a duplicate
+    that way too, and a catalogue that took the last one would disagree with
+    the wiki about which code a reader actually gets.
+    """
+    found: list[GadgetEntry] = []
+    seen: set[str] = set()
+    section = ""
+    for line in definition.splitlines():
+        if (heading := DEFINITION_SECTION_RE.match(line.strip())) is not None:
+            section = heading.group("section")
+            continue
+        entry = _definition_entry(line)
+        if entry is None or entry.name in seen:
+            continue
+        seen.add(entry.name)
+        found.append(GadgetEntry(name=entry.name, section=section, options=entry.options, pages=entry.pages))
+    return tuple(found)
 
 
 def gadget_pages(definition: str, filename: str) -> tuple[str, ...]:
@@ -206,9 +301,14 @@ def gadget_pages(definition: str, filename: str) -> tuple[str, ...]:
     """
     for line in definition.splitlines():
         entry = _definition_entry(line)
-        if entry is not None and filename in entry[1]:
-            return tuple(f"{GADGET_PREFIX}{name}" for name in entry[1])[:MAX_PAGES]
+        if entry is not None and filename in entry.pages:
+            return gadget_titles(entry)
     return ()
+
+
+def gadget_titles(entry: GadgetEntry) -> tuple[str, ...]:
+    """Return the full page titles of one gadget's files."""
+    return tuple(f"{GADGET_PREFIX}{name}" for name in entry.pages)
 
 
 def subpage_titles(source: WikiSource, listed: list[str]) -> tuple[str, ...]:
