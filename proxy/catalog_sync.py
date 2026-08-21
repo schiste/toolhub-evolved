@@ -32,9 +32,19 @@ MAX_MIN_INTERVAL_SECONDS = 60.0
 RECENT_PATH = "/api/recent/"
 RECENT_PAGE_SIZE = 50
 MAX_RECENT_PAGES_PER_RUN = 20
+# How deep the scan will hunt for its cursor across runs before giving up on
+# it. /api/recent/ is offset-paginated over a feed that only grows, so every
+# event added while a scan is in flight shifts the row it is seeking one place
+# further down. A scan that has not found its cursor within this many pages is
+# not close to finding it; it is chasing one. Recovering is bounded work and
+# correct, where hunting is unbounded work that need never converge.
+MAX_RECENT_SCAN_PAGES = 200
 MAX_RECENT_DETAILS_PER_RUN = 20
 MAX_GRAPH_DETAILS_PER_RUN = 20
 MAX_COMPLETE_PAGES = 100
+# Upstream saying a tool is not there is a durable answer, unlike every other
+# way a detail fetch can fail.
+GONE_STATUS = 404
 DEFAULT_SNAPSHOT_CONSISTENCY_RETRIES = 3
 RECONCILE_INTERVAL = timedelta(hours=12)
 STATUS_IDLE = "idle"
@@ -197,6 +207,19 @@ def _latest_marker(rows: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _guard_scan_depth(page: int, collected: list[dict[str, Any]], latest: str | None) -> None:
+    """Declare the cursor lost once the hunt has gone deeper than one can be.
+
+    Raising here hands the caller the same recovery it already performs when
+    the feed simply runs out, carrying the rows seen so far so nothing
+    observed is thrown away in the process.
+    """
+    if page <= MAX_RECENT_SCAN_PAGES:
+        return
+    message = f"Toolhub recent cursor not found within {MAX_RECENT_SCAN_PAGES} pages"
+    raise RecentCursorLostError(message, rows=collected, latest_marker=latest)
+
+
 def _recent_rows_since(
     last_marker: str | None,
     *,
@@ -213,6 +236,7 @@ def _recent_rows_since(
     last_page = first_page
     for offset in range(MAX_RECENT_PAGES_PER_RUN):
         page = first_page + offset
+        _guard_scan_depth(page, collected, latest)
         last_page = page
         rows, has_next = recent_page(page)
         if latest is None and page == 1:
@@ -407,7 +431,39 @@ def _initial_backfill(
     return {"pages": pages, "records": records, "next_page": 1 if completed else current_page, "completed": completed}
 
 
-def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[str, int]:
+def _is_gone(error: BaseException) -> bool:
+    """Say whether upstream answered that this tool no longer exists.
+
+    A 404 is an answer, not a failure to get one. Every other outcome here --
+    a timeout, a 500, a connection reset -- means the question is still open
+    and asking again later is the right move; 404 means asking again is
+    pointless, and the retry queue is the wrong place for it.
+    """
+    return isinstance(error, toolhub.ToolhubAPIError) and error.status_code == GONE_STATUS
+
+
+def _failure_reason(error: BaseException) -> str:
+    """Name one detail failure compactly enough to sit in a key=value line."""
+    if isinstance(error, toolhub.ToolhubAPIError):
+        return f"http-{error.status_code}"
+    return type(error).__name__.removesuffix("Error").lower() or "error"
+
+
+def _reason_summary(reasons: list[str]) -> str:
+    """Return why this run's detail fetches failed, as one space-free token.
+
+    The whole summary is printed as space-joined ``key=value`` pairs, so this
+    has to survive in a single field. Counting reasons rather than listing
+    names keeps it that way while still answering the question the previous
+    bare ``recent_errors=20`` could not: twenty failures of *what*.
+    """
+    if not reasons:
+        return "none"
+    counted = {reason: reasons.count(reason) for reason in sorted(set(reasons))}
+    return ",".join(f"{reason}:{count}" for reason, count in counted.items())
+
+
+def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[str, Any]:
     with db.session_scope() as s:
         state = _state(s)
         previous = state.recent_latest_marker
@@ -425,6 +481,8 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
         return {
             "recent_tools": 0,
             "recent_errors": 0,
+            "recent_gone": 0,
+            "recent_error_reasons": _reason_summary([]),
             "recent_scan_pages": scan.pages_fetched,
             "recent_scan_complete": 1,
         }
@@ -437,14 +495,17 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
         return {
             "recent_tools": 0,
             "recent_errors": 0,
+            "recent_gone": 0,
+            "recent_error_reasons": _reason_summary([]),
             "recent_scan_pages": scan.pages_fetched,
             "recent_scan_complete": 1,
         }
     digests.capture_recent_rows(scan.rows)
     names = _dedupe_names(pending + _tool_names(scan.rows))
-    successful = errors = 0
+    successful = errors = gone = 0
     refreshed_names: list[str] = []
     remaining: list[str] = []
+    reasons: list[str] = []
     for index, name in enumerate(names[:MAX_RECENT_DETAILS_PER_RUN]):
         if index:
             sleep_fn(interval)
@@ -454,8 +515,12 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
                 raise _invalid_detail_error(name)
             successful += canonical_tools.upsert_records([payload], source_url=detail_url(name), detail=True)
             refreshed_names.append(name)
-        except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError):
+        except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError) as error:
+            if _is_gone(error):
+                gone += 1
+                continue
             errors += 1
+            reasons.append(_failure_reason(error))
             remaining.append(name)
     remaining.extend(names[MAX_RECENT_DETAILS_PER_RUN:])
     abandoned_snapshot_generation = _store_recent_progress(scan, remaining)
@@ -465,6 +530,8 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
     return {
         "recent_tools": successful,
         "recent_errors": errors,
+        "recent_gone": gone,
+        "recent_error_reasons": _reason_summary(reasons),
         "recent_scan_pages": scan.pages_fetched,
         "recent_scan_complete": int(scan.complete),
     }
