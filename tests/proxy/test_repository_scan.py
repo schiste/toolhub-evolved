@@ -1346,7 +1346,83 @@ def test_a_page_over_the_checkout_cap_is_still_read(monkeypatch):
             "generator=allpages": {
                 "query": {
                     "pages": [
-                        _wiki_page("User:Example/twinkle.js", content="x" * (repository_scan.MAX_FILE_BYTES + 1)),
+                        # Written out in lines, as LiveRC is: one page over the
+                        # checkout cap is not the same thing as one long line.
+                        _wiki_page(
+                            "User:Example/twinkle.js",
+                            content="var a = 1;\n" * (repository_scan.MAX_FILE_BYTES // 10),
+                        ),
+                    ]
+                }
+            }
+        },
+    )
+    _scan_wiki(SCRIPT_URL)
+    assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.js"]
+
+
+def test_a_minified_bundle_is_not_read_as_the_tools_own_source(monkeypatch):
+    """One 60k-character line is build output, whatever the extension says.
+
+    Analyzing it would report the libraries vendored into the bundle as the
+    tool's dependencies, and a suggestion that confident fills an empty Toolhub
+    field. en.wikipedia's XFDcloser-core.js is 658 KiB on one 672,615-char line
+    and carries no source-map annotation at all, which is why length is here.
+    """
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("User:Example/twinkle.js", content="!function(){" + "a;" * 30000 + "}();"),
+                        _wiki_page("User:Example/twinkle.css", content="a{}"),
+                    ]
+                }
+            }
+        },
+    )
+    _scan_wiki(SCRIPT_URL)
+    assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.css"]
+
+
+def test_a_source_map_annotation_marks_a_page_as_generated(monkeypatch):
+    """The builder's own statement that this file came from other files."""
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("User:Example/twinkle.js", content="var a = 1;\n//# sourceMappingURL=t.js.map\n"),
+                        _wiki_page("User:Example/twinkle.css", content="a{}"),
+                    ]
+                }
+            }
+        },
+    )
+    _scan_wiki(SCRIPT_URL)
+    assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.css"]
+
+
+def test_a_page_that_only_mentions_a_source_map_is_still_read(monkeypatch):
+    """A gadget that writes source maps is not itself one.
+
+    The shape is ru.wikipedia's wefcoreRaw.js, where the string sits mid-line
+    inside a concat -- style-loader runtime annotating the stylesheet it
+    injects. Unanchored, the pattern would exclude every gadget that touches the
+    subject, which is the failure mode that makes a keyword search a bad rule.
+    """
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page(
+                            "User:Example/twinkle.js",
+                            content='var tag = "/*# sourceMappingURL=data:application/json;base64,".concat(map);\n',
+                        ),
                     ]
                 }
             }
