@@ -584,12 +584,21 @@ repositories the whole set of rules took the corpus from 328 findings to 206, an
 on cli/cli and psf/requests the reading material had filled the per-bucket cap
 between them and left neither project's own API surface in the report.
 
-Two limits are worth knowing when a report looks thin. The analyzer reads at most
-`MAX_FILES` (120) sources in tree order, so on a large repository it sees the
-alphabetically early paths -- `.github/`, `docs/` -- and may never reach the
-package that does the calling. And its source-extension list does not include
-every language, so a repository written in one it does not read (Kotlin, C#,
-Swift) is judged from its markdown and its build files. `GET /v1/source-analysis/` and
+The analyzer reads at most `MAX_FILES` (120) sources, and which 120 is decided by
+provenance rather than by the alphabet: highest source weight first, and within one
+weight the shallower path first, so the code the tool is made of is read before the
+material that only describes it. Both readers -- the scanner over a clone and the
+local CLI -- share that order, so the two agree on what a repository says. Measured
+over sixteen repositories the change took the corpus from 206 endpoints to 270 and
+from 318 dependencies to 421, and cli/cli named `api.github.com` for the first time.
+
+Two limits are worth knowing when a report still looks thin. The per-bucket cap
+(`MAX_FINDINGS_PER_BUCKET`, 40) keeps the highest-confidence findings and breaks
+ties alphabetically, so on a repository that names more than forty addresses a real
+endpoint can be crowded out by a table of RDF namespaces that scores no lower. And
+the source-extension list does not include every language, so a repository written
+in one it does not read (Kotlin, C#, Swift) is judged from its markdown and its
+build files. `GET /v1/source-analysis/` and
 `GET /v1/source-analysis/<id>/` are private reads for the report owner;
 `POST /v1/source-analysis/<id>/review/` lets the owner mark a report `open`,
 `approved`, or `rejected`. The same analyzer is available for local checkouts

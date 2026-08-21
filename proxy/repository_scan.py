@@ -61,6 +61,7 @@ from backend.source_analyzer import (
     SourceAnalysisError,
     analyze_source_files,
     is_supported_source_path,
+    source_reading_rank,
 )
 from backend.sync import REVIEW_APPROVED, SOURCE_REPOSITORY_SCAN, SYNC_ERROR, SYNC_EVOLVED_REAL, clean_error
 from backend.v1_common import build_local_tool_summary
@@ -327,11 +328,15 @@ def _parse_batch(stream: bytes) -> dict[str, bytes]:
 
 def _read_repository_tree(repo: Path) -> list[dict[str, str]]:
     """Select and read analyzable sources under the same caps as the local reader."""
-    candidates = [
-        (oid, path)
-        for oid, path in _tree_entries(repo)
-        if not ({part.lower() for part in Path(path).parts} & IGNORED_SOURCE_DIRS) and is_supported_source_path(path)
-    ]
+    candidates = sorted(
+        (
+            (oid, path)
+            for oid, path in _tree_entries(repo)
+            if not ({part.lower() for part in Path(path).parts} & IGNORED_SOURCE_DIRS)
+            and is_supported_source_path(path)
+        ),
+        key=lambda entry: source_reading_rank(entry[1]),
+    )
     files: list[dict[str, str]] = []
     total = 0
     # Read in chunks rather than all at once. MAX_FILES counts files that were

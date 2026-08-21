@@ -10,7 +10,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import source_analyzer  # noqa: E402
-from backend.source_analyzer import MAX_FILE_BYTES, MAX_FILES, SourceAnalysisError, analyze_source_files  # noqa: E402
+from backend.source_analyzer import (  # noqa: E402
+    MAX_FILE_BYTES,
+    MAX_FILES,
+    SourceAnalysisError,
+    analyze_source_files,
+    source_reading_rank,
+)
 
 
 def values(report, bucket):
@@ -918,3 +924,37 @@ def test_a_line_with_no_token_boundary_is_still_read():
     assert " " not in content
     report = analyze_source_files([{"path": "src/app.js", "content": content}])
     assert [item["value"] for item in report["endpoints"]] == ["api.acme-data.org/v1"]
+
+
+def test_the_reading_order_takes_the_tools_own_code_before_what_describes_it():
+    paths = [
+        "tests/test_client.py",
+        "docs/guide.md",
+        ".github/workflows/ci.yml",
+        "src/client.py",
+        "package.json",
+        "examples/demo.py",
+    ]
+
+    assert sorted(paths, key=source_reading_rank) == [
+        "package.json",
+        "src/client.py",
+        "docs/guide.md",
+        ".github/workflows/ci.yml",
+        "tests/test_client.py",
+        "examples/demo.py",
+    ]
+
+
+def test_the_reading_order_takes_the_shallow_file_of_a_class_before_the_deep_one():
+    paths = ["src/update/internal/refresh.py", "src/client.py", "main.py"]
+
+    assert sorted(paths, key=source_reading_rank) == ["main.py", "src/client.py", "src/update/internal/refresh.py"]
+
+
+def test_the_reading_order_settles_the_last_tie_by_path_so_two_reads_agree():
+    assert sorted(["src/b.py", "src/a.py"], key=source_reading_rank) == ["src/a.py", "src/b.py"]
+
+
+def test_the_reading_order_reads_a_windows_separator_as_a_path_separator():
+    assert source_reading_rank("src\\client.py") == source_reading_rank("src/client.py")
