@@ -242,3 +242,24 @@ def test_source_on_a_single_site_project_is_reachable():
     gadget = wiki_sources.wiki_source("https://www.mediawiki.org/wiki/MediaWiki:Gadget-Foo.js")
     assert gadget is not None
     assert gadget.kind == wiki_sources.KIND_GADGET
+
+
+@pytest.mark.parametrize(
+    "marked",
+    [
+        # Literal, as a body or a catalogue field would carry it.
+        "https://en.wikipedia.org/wiki/User:Example/twinkle.js‎",
+        # Percent-encoded, as a URL copied out of a browser bar carries it.
+        "https://en.wikipedia.org/wiki/User:Example/twinkle.js%E2%80%8E",
+    ],
+)
+def test_an_invisible_mark_resolves_to_the_same_source_page(marked):
+    clean = wiki_sources.wiki_source(SCRIPT)
+    found = wiki_sources.wiki_source(marked)
+
+    assert clean is not None
+    assert found is not None
+    # Same page, so the same enrichment key: a mark nobody can see must not
+    # split one gadget into two repositories.
+    assert (found.domain, found.title) == (clean.domain, clean.title)
+    assert wiki_sources.page_url(found.domain, found.title) == wiki_sources.page_url(clean.domain, clean.title)

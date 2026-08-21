@@ -178,7 +178,13 @@ def _replace_imports(session: Session, wiki: str, analysis: userscripts.ScriptPa
     ).delete(synchronize_session=False)
     # `userscripts.script_imports` already reduces repeated loads to one per
     # (verb, wiki, title, url), which is exactly this table's unique key, so no
-    # second pass is needed here.
+    # second pass is needed here. That holds only while every title and URL
+    # reaching it is already in storage's spelling, which is what the format-mark
+    # strip in `canonical_title` and `_resolve` is for: Python compares these
+    # strings byte by byte, MySQL compares them under a collation that ignores
+    # invisible marks, and where the two disagree it is this INSERT that fails
+    # and takes the whole wiki's ingest down with it. The tests run on SQLite,
+    # which compares bytes, so they cannot be the thing that catches a new gap.
     for found in analysis.imports:
         session.add(
             UserScriptImport(

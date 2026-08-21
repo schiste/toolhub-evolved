@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote, urlparse
 
-from backend.wikimedia_urls import clean_wiki_domain
+from backend.wikimedia_urls import clean_wiki_domain, without_format_marks
 
 KIND_USER_SCRIPT = "user-script"
 KIND_GADGET = "gadget"
@@ -110,8 +110,14 @@ def canonical_title(value: str) -> str:
     capitalizes the first character after the namespace and leaves the rest
     alone, so this does the same: `Gadget-twinkle.js` and `Gadget-Twinkle.js`
     are one page, `morebits.js` and `Morebits.js` are two.
+
+    Invisible formatting marks go too, after decoding rather than before: a
+    toolinfo URL can carry one percent-encoded, and it is only a character to
+    drop once unquote has turned it back into one. A marked title reaches the
+    same page as the clean one, so leaving the mark in would enrich that page
+    twice under two keys that no reader can tell apart.
     """
-    clean = " ".join(unquote(str(value or "")).replace("_", " ").split())
+    clean = " ".join(without_format_marks(unquote(str(value or ""))).replace("_", " ").split())
     prefix, separator, remainder = clean.partition(":")
     namespace = NAMESPACES.get(prefix.casefold()) if separator else None
     if namespace is None:

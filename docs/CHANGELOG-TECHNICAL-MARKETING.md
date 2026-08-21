@@ -1,13 +1,13 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: user-script-creation-dates -->
-<!-- Release title: Real Creation Dates for User Scripts -->
-<!-- Source range: 5ab372a..1b72aee (9 commits) -->
+<!-- Release id: invisible-character-collisions -->
+<!-- Release title: Scripts That Differ by Nothing You Can See -->
+<!-- Source range: 1b72aee..4afa859 (7 commits) -->
 
 # Technical Release Notes
 
-- Sorts the census search by `create_timestamp_asc`. `discovery_rank` is recorded as creation order and the collapse reads it as such, but CirrusSearch defaults to relevance, so the "earliest wins" rule had been settling on search score -- a number that is unrelated to creation order and not required to be stable between passes.
-- Adds `backend.wiki_replica` and `backend.userscript_creation_dates`: one query reads every user-space `.js`/`.css` page's oldest revision timestamp from the Wiki Replicas and stamps `user_script_pages.created_at_wiki`, a column that had existed unwritten since the table. The Action API cannot batch this -- `rvdir=newer` is `invalidparammix` past one title, so it is one request per page, about an hour and a half on frwiki against roughly a second on the replica. Only a title and a timestamp are selected; actor ids and edit comments are not.
-- Runs the stamp from the census job between the sweep and the projection, reporting whether a replica was reached separately from how many rows were written. No credentials, an unreachable replica, or an unknown wiki writes nothing and raises nothing, so every host that is not Toolforge finishes the census normally.
-- Breaks the collapse tie on `created_at_wiki`, falling back to `discovery_rank` only where no date exists. Both are compared as strings, so the fallback is rendered behind a leading 9 and sorts after every real timestamp: a page whose creation date is unknown cannot outrank one whose date is known.
-- Restores `npm run spell`, which had been exiting 1 on main since 2bed430, and replaces every pilot-era corpus figure in USERSCRIPTS.md with the first production sweep's: 13,616 frwiki pages, 6,556 scripts, 1,453 originals, measured 2026-08-21.
+- Drops Unicode format characters (category Cf) in `userscripts.canonical_title` and `_resolve`. Meta's census aborted on a duplicate-key `IntegrityError`: a `global.js` there loads `User:Hoo man/tagger.js` twice, once with a trailing U+200E, and `script_imports` dedupes on the Python tuple where the two strings differ while MySQL's collation ignores the mark and its unique key saw one row. The whole wiki's ingest rolled back each pass.
+- Applies the same strip in `wiki_sources.canonical_title`, where the failure was silent rather than loud. A mark lands after the extension, `.js` stops being the suffix, `_is_source_title` rejects the title and `wiki_source` returns `None`, so `repository_scan` did not recognize the tool as wiki-hosted and dropped it from enrichment. The strip runs after `unquote`, because a URL copied from a browser bar carries the mark percent-encoded.
+- Moves the strip into `backend.wikimedia_urls` as `without_format_marks`, next to the `canonical_username` and `normalized_username` spelling rules it belongs with. Both `canonical_title` functions now share one definition; the alternative was a second copy of a rule whose first copy had already been shown to be reachable from paths that did not have it.
+- Records at the import `INSERT` that the Python dedup key matches the table's unique key only while every title and URL reaching it is already in storage's spelling. The comment there previously asserted the match unconditionally, which is the belief the abort disproved.
+- Notes in the same place that the suite runs on SQLite, which compares text byte by byte and therefore cannot fail on a collation disagreement. Every bug in this class is invisible to the tests and appears only against MySQL on Toolforge.
