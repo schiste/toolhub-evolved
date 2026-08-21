@@ -8,6 +8,7 @@ reads while live Toolhub data is stale or unavailable.
 """
 
 from datetime import UTC, datetime
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -682,6 +683,13 @@ class ToolSummaryCache(Base):
     """Materialized public health + maintainer summary for one tool."""
 
     __tablename__ = "tool_summary_cache"
+    # Several workers invalidate a tool's summary independently, so a DELETE
+    # that matches no row means another of them got there first -- the intended
+    # end state, reached by someone else. SQLAlchemy warns on that by default
+    # because for an entity table it usually signals a lost update; for a cache
+    # keyed only by tool name there is nothing to lose, and the warning was
+    # arriving in production stderr as though it were a fault.
+    __mapper_args__: ClassVar[dict[str, Any]] = {"confirm_deleted_rows": False}
     tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
