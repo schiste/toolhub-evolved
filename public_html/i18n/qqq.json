@@ -2186,6 +2186,7 @@
 	"toolforms.sourceRegisteredToolinfo": "TODO: document this message.",
 	"toolforms.sourceRepositoryAnalysis": "TODO: document this message.",
 	"toolforms.sourceUnknown": "TODO: document this message.",
+	"toolforms.sourceWikimediaUserScript": "Effective-source label shown when a field came from the tool's own page in a wiki User: namespace, which is where a user script lives.",
 	"toolforms.submitATool": "TODO: document this message.",
 	"toolforms.submitLocalCorrection": "TODO: document this message.",
 	"toolforms.submitTool": "TODO: document this message.",

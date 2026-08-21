@@ -1559,3 +1559,28 @@ def test_annotation_lift_does_not_reorder_top_level_field_precedence():
     with db.session_scope() as s:
         fields = {row.field for row in s.query(CatalogFacetValue).filter_by(tool_name="narrow")}
     assert fields == {"tasks"}
+
+
+# --- display labels ----------------------------------------------------------
+
+VIEWS = ROOT / "public_html" / "views"
+
+
+@pytest.mark.parametrize(
+    ("view", "marker"),
+    [("tool.js", "CATALOG_SOURCE_LABELS = {"), ("toolforms.js", "const sourceLabels = {")],
+)
+def test_every_projection_source_has_a_display_label(view, marker):
+    """A source the frontend cannot name is rendered as its raw key.
+
+    Both maps fall back to `row.source`, so a source added here without a label
+    there does not fail anything -- it just puts `wikimedia_user_script` on a
+    tool page in front of a reader. That is how two sources reached production
+    unlabelled, and neither map is reachable from Python except by reading it.
+    """
+    text = (VIEWS / view).read_text(encoding="utf-8")
+    start = text.index(marker)
+    block = text[start : text.index("};", start)]
+    missing = sorted(source for source in catalog_projection.SOURCE_CONFIDENCE if f"{source}:" not in block)
+
+    assert not missing, f"{view} has no label for: {', '.join(missing)}"
