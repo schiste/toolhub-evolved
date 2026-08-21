@@ -377,7 +377,7 @@ function healthComponentRulesTable() {
 				esc(
 					t(
 						"static.healthScore.frontendAccessibilityRules",
-						"Only created for JavaScript, TypeScript, React, Vue, or MediaWiki gadget tools. +20 for accessibility markup or tests; +20 for an axe dependency; +10 for tests."
+						"Only created for JavaScript, TypeScript, React, Vue, or MediaWiki JavaScript tools. +20 for accessibility markup or tests; +20 for an axe dependency; +10 for tests."
 					)
 				)
 			],
