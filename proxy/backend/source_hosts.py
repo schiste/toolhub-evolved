@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from backend import wiki_sources
 
@@ -115,13 +115,20 @@ MAX_TOPIC_CHARS = 80
 # Gerrit web URLs wrap the real project name in one of several UI prefixes.
 # Longest first, so "/r/plugins/gitiles/x" does not match the bare "/r/" rule
 # and keep "plugins/gitiles/x" as the project name.
+GERRIT_ENCODED_PREFIX = "r/admin/repos/"
 GERRIT_PATH_PREFIXES = (
     "r/plugins/gitiles/",
-    "r/admin/repos/",
+    GERRIT_ENCODED_PREFIX,
     "plugins/gitiles/",
     "g/",
     "r/",
 )
+
+# Where each host serves anonymous git, relative to its own origin. Only Gerrit
+# needs an entry: it publishes the browse UI at /g/ and /r/plugins/gitiles/ but
+# git itself only under /r/, and cloning either of the other two answers 403.
+# Every other forge serves git at the same path it shows the project at.
+CLONE_PATH_PREFIXES = {API_GERRIT: "/r/"}
 
 
 @dataclass(frozen=True)
@@ -133,6 +140,11 @@ class ProjectRef:
     kind: str
     path: str
     api_base: str
+    # The host the project lives on, which api_base cannot always supply:
+    # GitHub and Bitbucket serve their APIs from a different origin than their
+    # repositories, so deriving one from the other would aim a clone at
+    # api.github.com.
+    host: str = ""
 
     @property
     def encoded_path(self) -> str:
@@ -311,11 +323,23 @@ def _gitlab_path(segments: list[str]) -> str:
 
 
 def _gerrit_path(path: str) -> str:
-    """Strip whichever Gerrit UI prefix wraps the real project name."""
+    """Strip whichever Gerrit UI prefix wraps the real project name.
+
+    The admin view is the one form that percent-encodes the project's own
+    slashes, so `mediawiki/extensions/GWToolset` reaches us spelled
+    `mediawiki%2Fextensions%2FGWToolset`. Left as-is it is not a project name
+    at all: the API lane would encode it a second time and the clone would ask
+    Gerrit for a repository whose name contains three literal percent signs.
+    Only that prefix is decoded, because it is the only one that encodes.
+    """
     trimmed = path.lstrip("/")
     for prefix in GERRIT_PATH_PREFIXES:
-        if trimmed.startswith(prefix):
-            return _without_git_suffix(trimmed[len(prefix) :].strip("/"))
+        if not trimmed.startswith(prefix):
+            continue
+        project = trimmed[len(prefix) :].strip("/")
+        if prefix == GERRIT_ENCODED_PREFIX:
+            project = unquote(project).strip("/")
+        return _without_git_suffix(project)
     return ""
 
 
@@ -333,6 +357,7 @@ def _wiki_ref(url: str) -> ProjectRef | None:
     if source is None:
         return None
     return ProjectRef(
+        host=source.domain,
         provider=PROVIDER_MEDIAWIKI_WIKIMEDIA,
         api=API_MEDIAWIKI,
         kind=KIND_WIKI,
@@ -371,12 +396,31 @@ def project_ref(url: str) -> ProjectRef | None:
         path = _forge_path(_segments(parsed.path))
     if not path:
         return None
-    return ProjectRef(provider=provider, api=api, kind=KIND_FORGE, path=path, api_base=_api_base(api, host))
+    return ProjectRef(host=host, provider=provider, api=api, kind=KIND_FORGE, path=path, api_base=_api_base(api, host))
 
 
 def capabilities(ref: ProjectRef) -> HostCapabilities:
     """Return which extra requests `ref`'s host can answer."""
     return CAPABILITIES_BY_API[ref.api]
+
+
+def clone_url(ref: ProjectRef) -> str:
+    """Return the anonymous HTTPS git URL for `ref`, or "" if it holds no git.
+
+    The scanner used to clone whatever URL the tool record named, which is
+    routinely a page rather than a repository: a Gerrit browse URL, a GitHub
+    `/tree/<branch>/<dir>` deep link, a GitLab `/-/tree/<branch>` view. Git
+    answered 403 or "not found" for all three, and the tool was recorded as a
+    failure though its repository was public and healthy. project_ref has
+    always known the real project name -- the enrichment lane asks the host
+    about these same URLs successfully -- so the clone is built from that
+    rather than from the record.
+
+    Wiki pages return "": they are read through the MediaWiki API, not cloned.
+    """
+    if ref.kind != KIND_FORGE or not ref.host or not ref.path:
+        return ""
+    return f"https://{ref.host}{CLONE_PATH_PREFIXES.get(ref.api, '/')}{ref.path}"
 
 
 def project_url(ref: ProjectRef) -> str:
