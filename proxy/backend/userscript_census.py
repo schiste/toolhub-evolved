@@ -45,6 +45,15 @@ USER_NAMESPACE: Final = 2
 SEARCH_OFFSET_CAP: Final = 10_000
 SEARCH_PAGE_SIZE: Final = 500
 
+# Enumerate oldest page first. The directory's whole "earliest wins" rule rests
+# on this: `discovery_rank` is the order pages come back in, and the collapse
+# reads that order as creation order when it decides which of several identical
+# pages is the original. CirrusSearch's default sort is relevance, which on
+# frwiki interleaves 2008 and 2017 pages freely, so without this the rule
+# resolves on search score -- a number that has nothing to say about which page
+# came first, and that need not be stable between two runs over one wiki.
+SEARCH_SORT: Final = "create_timestamp_asc"
+
 # Titles per content request. Small because the API caps a response at 2 MB and
 # a single user script can run to six figures of bytes; a batch that still comes
 # back too large is halved rather than abandoned.
@@ -175,7 +184,11 @@ def batched(titles: Sequence[str], size: int = CONTENT_BATCH) -> Iterator[tuple[
 
 
 def search_params(query: str, offset: int) -> dict[str, Any]:
-    """Parameters for one page of a content-model search over user space."""
+    """Parameters for one page of a content-model search over user space.
+
+    Sorted oldest-first, because the caller records the order it receives as
+    `discovery_rank` and the directory reads that as creation order.
+    """
     params: dict[str, Any] = {
         "action": "query",
         "list": "search",
@@ -183,6 +196,7 @@ def search_params(query: str, offset: int) -> dict[str, Any]:
         "srnamespace": USER_NAMESPACE,
         "srlimit": SEARCH_PAGE_SIZE,
         "srprop": "",
+        "srsort": SEARCH_SORT,
     }
     if offset:
         params["sroffset"] = offset

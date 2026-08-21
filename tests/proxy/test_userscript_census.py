@@ -61,6 +61,23 @@ def test_the_search_is_confined_to_user_space():
     assert census.search_params("contentmodel:javascript", 0)["srnamespace"] == 2
 
 
+def test_the_search_enumerates_the_oldest_page_first():
+    """The rank the sweep stores is only creation order if the search sorts by it.
+
+    CirrusSearch defaults to relevance. Measured against frwiki, the first six
+    `intitle:.js` hits under that default were created in 2009, 2010, 2009,
+    2008, 2014 and 2017 -- so the collapse's "earliest wins" rule was settling
+    on search score. Asking for `create_timestamp_asc` returns them from 2003
+    upward instead.
+    """
+    assert census.search_params("contentmodel:javascript", 0)["srsort"] == "create_timestamp_asc"
+
+
+def test_a_later_search_page_keeps_the_same_sort():
+    """A sort that applied to only the first page would interleave the corpus."""
+    assert census.search_params("contentmodel:javascript", 500)["srsort"] == "create_timestamp_asc"
+
+
 # --- walking the index -----------------------------------------------------
 
 
