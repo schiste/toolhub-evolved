@@ -1,11 +1,13 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-worker-that-kept-the-old-code -->
-<!-- Release title: The Worker That Kept The Old Code -->
-<!-- Source range: 1abf2eb..c713ddd (4 commits) -->
+<!-- Release id: a-page-is-not-a-repository -->
+<!-- Release title: A Page Is Not A Repository -->
+<!-- Source range: c713ddd..f237913 (7 commits) -->
 
 # What's New for Users
 
-- Some of the work behind the catalogue happens in background workers that run continuously -- the one that reads tool repositories, for instance. Updating the site restarted the website itself but left those workers running the version of the code they had started with, so a fix could be released and still not reach the part of the system it was written for. That is what happened to the summary fix in the last release: it was live on the site and absent from the worker for twenty minutes, until it was restarted by hand.
-- Updates now restart those workers as part of the release. The jobs that run on a schedule were never affected, because each run starts fresh and picks up whatever is current -- which is exactly why the gap was easy to miss, with most of the system behaving correctly.
-- Separately, a set of automated checks covering the release tooling itself turned out not to be running anywhere. They passed whenever someone ran them by hand, so they looked healthy, but nothing ran them automatically and nothing would have been stopped had they failed. They now run on every change to that tooling.
+- Sixty-one tools whose code could not be read will now be read. The part of the site that analyses a tool's source was following the link the tool's record gives you -- which is usually a page you would open in a browser, not the address the code itself lives at. For repositories on Wikimedia's own Gerrit, and for any link that pointed at a single file or a subfolder rather than the whole project, that meant the analysis failed even though the code was public and perfectly healthy the entire time.
+- Those tools will fill in their health scores, licence details and other source information over the day or so after this release, as each one comes up in the normal rotation. Nothing needs to be done to them by hand.
+- Large gadgets are no longer skipped. There was a size limit on a single file that made sense for a code repository, where one oversized file among hundreds is usually a bundled library worth ignoring. A gadget is often one page and nothing else, so the same limit quietly dropped the whole tool instead. LiveRC on the French Wikipedia, one of the larger gadgets anywhere, had never once been read.
+- Tools whose code really has been deleted or made private are now checked about once a month instead of once a day. Nearly all of the time set aside for reading source code was going into re-confirming a few hundred addresses it already knew were dead, which left genuine work waiting behind them. Anything that comes back online is still picked up.
+- Records pointing at placeholder addresses -- leftovers like "your-project" that were never a real repository -- are now recognised as such instead of being retried indefinitely. Correcting the record upstream is enough to bring the tool back into the queue.
