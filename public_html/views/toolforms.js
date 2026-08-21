@@ -356,7 +356,8 @@ function withCatalogFieldProvenance(html, label, writeMeta, projection, field) {
 		official_toolinfo: t("toolforms.sourceRegisteredToolinfo", "registered toolinfo.json"),
 		self_hosted_toolinfo: t("toolforms.sourceDiscoveredToolinfo", "discovered toolinfo.json"),
 		repository_analysis: t("toolforms.sourceRepositoryAnalysis", "repository analysis"),
-		evolved_curation: t("toolforms.sourceEvolvedCuration", "reviewed Evolved correction")
+		evolved_curation: t("toolforms.sourceEvolvedCuration", "reviewed Evolved correction"),
+		wiki_gadget_definition: t("toolforms.sourceGadgetDefinition", "wiki gadget definition")
 	};
 	const source =
 		/** @type {Record<string, string>} */ (sourceLabels)[effective.source] ||

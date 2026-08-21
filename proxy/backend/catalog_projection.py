@@ -27,7 +27,7 @@ from backend.models import (
     ToolinfoSourceItem,
     utcnow,
 )
-from backend.sync import REVIEW_APPROVED
+from backend.sync import REVIEW_APPROVED, SOURCE_WIKI_GADGET
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -48,6 +48,13 @@ SOURCE_DISCOVERY = "self_hosted_toolinfo"
 SOURCE_REPOSITORY = "repository_analysis"
 SOURCE_WIKIMEDIA_USER_SCRIPT = "wikimedia_user_script"
 SOURCE_CURATION = "evolved_curation"
+SOURCE_GADGET = "wiki_gadget_definition"
+
+# A canonical row records where it came from, and the projection must report
+# that rather than assume. Labelling a synthesized gadget record
+# `official_toolhub` would have every card, facet and evidence panel say
+# Toolhub asserted something it has never heard of.
+PROJECTION_SOURCE_BY_ROW = {SOURCE_WIKI_GADGET: SOURCE_GADGET}
 
 LIST_FIELDS = (
     "keywords",
@@ -95,6 +102,12 @@ SOURCE_CONFIDENCE = {
     SOURCE_REPOSITORY: 75,
     SOURCE_WIKIMEDIA_USER_SCRIPT: 95,
     SOURCE_CURATION: 100,
+    # A wiki is authoritative about what it deploys, so this outranks a
+    # toolinfo.json found by guessing at an origin or inferred from a
+    # repository. It stays under anything a person wrote about the tool: a
+    # gadget definition states deployment facts and never claims to describe
+    # what the tool is for.
+    SOURCE_GADGET: 90,
 }
 
 # Report section -> CatalogFacetValue.field for signals detected in source.
@@ -267,8 +280,9 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
     canonical = s.execute(select(CanonicalToolCache).where(CanonicalToolCache.tool_name.in_(names))).scalars()
     for row in canonical:
         if isinstance(row.record, dict):
+            source = PROJECTION_SOURCE_BY_ROW.get(row.source, SOURCE_CANONICAL)
             sources[row.tool_name].append(
-                {"payload": row.record, "source": SOURCE_CANONICAL, "url": row.source_url, "observed": row.fetched_at}
+                {"payload": row.record, "source": source, "url": row.source_url, "observed": row.fetched_at}
             )
             tool_url = _clean_text(row.record.get("url"))
             if wikimedia_urls.user_space_javascript_page(tool_url) is not None:

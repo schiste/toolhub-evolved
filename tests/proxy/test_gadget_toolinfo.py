@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import db, gadget_inventory, gadget_toolinfo  # noqa: E402
-from backend.models import CanonicalToolCache, WikiGadget, utcnow  # noqa: E402
+from backend import catalog_projection, db, gadget_inventory, gadget_toolinfo  # noqa: E402
+from backend.models import CanonicalToolCache, CatalogFacetValue, CatalogToolProjection, WikiGadget, utcnow  # noqa: E402
 from backend.sync import SOURCE_OFFICIAL, SOURCE_WIKI_GADGET, SYNC_EVOLVED_REAL  # noqa: E402
 
 FRWIKI = "fr.wikipedia.org"
@@ -222,3 +222,40 @@ def test_a_wiki_with_no_gadgets_changes_nothing():
 
     assert summary == {"wiki": FRWIKI, **dict.fromkeys(gadget_toolinfo.COUNT_FIELDS, 0)}
     assert catalogued() == {}
+
+
+def _projected(name):
+    gadget_inventory.ingest(FakeWiki().request, FRWIKI)
+    gadget_toolinfo.synchronize(FRWIKI)
+    catalog_projection.refresh_candidates()
+    with db.session_scope() as session:
+        row = session.get(CatalogToolProjection, name)
+        facets = {
+            (facet.field, facet.value): facet.confidence_basis_points
+            for facet in session.execute(select(CatalogFacetValue).where(CatalogFacetValue.tool_name == name)).scalars()
+        }
+        return row.effective_record, row.provenance, facets
+
+
+def test_a_gadget_reaches_the_catalogue_projection_like_any_other_tool():
+    effective, _provenance, facets = _projected("gadget-fr.wikipedia.org-popups")
+
+    # The whole ask: a gadget is elevated to exactly the level of a tool. Same
+    # projection row, same facet rows, reached by the same refresh pass.
+    assert effective["title"] == "Popups"
+    assert effective["tool_type"] == "gadget"
+    assert effective["for_wikis"] == [FRWIKI]
+    assert ("tool_type", "gadget") in facets
+    assert ("wiki", FRWIKI) in facets
+
+
+def test_the_projection_says_a_wiki_declared_this_not_toolhub():
+    _effective, provenance, facets = _projected("gadget-fr.wikipedia.org-popups")
+
+    # Toolhub has never heard of this tool. Reporting the record as
+    # official_toolhub would put a claim in its mouth on every card and every
+    # evidence panel.
+    assert {entry["source"] for entry in provenance["title"]} == {catalog_projection.SOURCE_GADGET}
+    assert (
+        facets[("tool_type", "gadget")] == catalog_projection.SOURCE_CONFIDENCE[catalog_projection.SOURCE_GADGET] * 100
+    )

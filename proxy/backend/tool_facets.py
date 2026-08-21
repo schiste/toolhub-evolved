@@ -13,7 +13,8 @@ confidence_basis_points (0-10000) has two distinct meanings depending on facet f
 - DECLARED facets: SOURCE AUTHORITY. Declared facets carry confidence values from
   SOURCE_CONFIDENCE in catalog_projection.py (0-10000 basis points): 10000 for
   official/curated sources (SOURCE_CANONICAL, SOURCE_CURATION), 9500 for official
-  crawlers (SOURCE_CRAWLER), 8000 for self-hosted discovery (SOURCE_DISCOVERY).
+  crawlers (SOURCE_CRAWLER), 9000 for a wiki's own gadget declaration
+  (SOURCE_GADGET), 8000 for self-hosted discovery (SOURCE_DISCOVERY).
   Malformed or missing provenance rows result in 0 confidence.
 
 - ANALYZER facets: DETECTION CERTAINTY. Analyzer facets are converted from the
