@@ -896,6 +896,33 @@ the replica answered and every page already had a date, which is the steady
 state once a wiki has been swept. Credentials are read from `~/replica.my.cnf`,
 or from the path in `TOOLHUB_REPLICA_CONFIG`.
 
+`gadget-census` runs daily at 04:09 UTC and does two things per wiki. It reads
+`MediaWiki:Gadgets-definition` — one request, because that page is the whole
+inventory — into `wiki_gadgets`, then rebuilds a catalogue record for every
+gadget the wiki still declares:
+
+```
+gadget-inventory: wiki=fr.wikipedia.org read=yes declared=170 added=0 updated=170 folded=0 retired=0
+gadget-catalogue: wiki=fr.wikipedia.org declared=170 written=0 unchanged=144 hidden=26 unnamed=0 duplicate=0 conflicted=0 retired=0
+```
+
+`read=no` means the wiki answered with an error or an empty page, and retires
+nothing: silence is not a statement that a wiki's gadgets are gone. The
+catalogue pass talks to no wiki at all, so it runs even after `read=no` and
+takes seconds. Which wikis a run covers comes from `GADGET_WIKIS` in the job
+command, not from a Toolforge envvar.
+
+The records land in `canonical_tool_cache` under names of the form
+`gadget-<wiki>-<gadget>`, with `source = wiki_gadget`, which is what stops a
+full catalog snapshot pruning them — `canonical_tools._prune_superseded`
+deletes only official rows, because upstream absence is authoritative only for
+rows that came from upstream. They carry no description: MediaWiki keeps a
+gadget's description in `MediaWiki:Gadget-<name>`, in the wiki's own language,
+and this lane does not read it yet. `hidden` counts gadgets deliberately left
+out — a hidden gadget cannot be switched on from preferences and is machinery
+another gadget loads. A non-zero `conflicted` means a catalogue name is already
+held by a record from somewhere else, which is never overwritten.
+
 `projection-refresh` is the six-hour projection coordinator. It reuses input
 generations completed within six hours, runs stale Toolhub and Toolforge inputs
 plus the incremental catalog path concurrently, then performs one
