@@ -343,6 +343,10 @@ TECH_RULES = (
     ("MediaWiki gadget", re.compile(r"\bmw\.loader\.using\b|\bmw\.Api\b|\.user\.js\b", re.IGNORECASE), 0.9),
 )
 
+# What a project runs on a machine of its own. Named against TECH_RULES above,
+# and used only to rule the gadget suggestion out.
+SERVER_TECHNOLOGIES = frozenset({"Flask", "Django", "Pywikibot", "mwclient"})
+
 PROJECT_DOMAIN_RE = re.compile(
     r"\b(?:(?P<sub>[a-z0-9-]+)\.)?(?P<family>wikipedia|wikibooks|wikidata|wikimedia|wikinews|wikiquote|wikisource|wiktionary|wikiversity|wikivoyage|mediawiki)\.org\b",
     re.IGNORECASE,
@@ -1817,7 +1821,13 @@ def _has_write_access(rows: list[dict[str, Any]], min_confidence: float = 0.0) -
 def _tool_type_suggestion(technology: list[dict[str, Any]], apis: list[dict[str, Any]]) -> str | None:
     tech_values = {str(item.get("value")) for item in technology}
     api_values = {str(item.get("value")) for item in apis}
-    if "MediaWiki gadget" in tech_values:
+    # A gadget is JavaScript a wiki serves into a reader's page. It has no
+    # server, so nothing that ships one can be a gadget however much MediaWiki
+    # JavaScript it contains -- and the gadget rule is the loosest here, firing
+    # on a bare `mw.Api` mention anywhere in a repository, including in a test
+    # fixture or a regex. Checking the server evidence first is what stops a
+    # Flask application that talks to MediaWiki being catalogued as a gadget.
+    if "MediaWiki gadget" in tech_values and not tech_values & SERVER_TECHNOLOGIES:
         return "gadget"
     if tech_values & {"Flask", "Django", "React", "Node.js", "Vue"}:
         return "web app"
