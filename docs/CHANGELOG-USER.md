@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: what-makes-a-gadget-a-gadget -->
 <!-- Release title: What Makes A Gadget A Gadget -->
-<!-- Source range: 001243d..05de929 (1 commit) -->
+<!-- Source range: 90b9176..05de929 (2 commits) -->
 
 # What's New for Users
 
@@ -10,3 +10,4 @@
 - The difference matters most for gadgets that no longer exist. Retiring a gadget usually means deleting its line from that definition page and leaving the code behind, so the leftover page keeps a gadget's name forever. Pages written in advance of being registered look the same. Both were being catalogued as live gadgets.
 - The catalogue now reads the definition page and believes what it says. A tool whose code is registered there is a gadget; one that is not is left without a type rather than given a wrong one, which is the safer answer for a field most tool records leave empty for us to fill.
 - Nothing changes for gadgets that are genuinely registered, or for user scripts. A user script is settled by living on its author's own pages, and there is no register that could contradict that.
+- Also in this release: around eighty tools showed no icon at all, and had been quietly retrying for one. A tool record points at its icon by naming the file's page on Wikimedia Commons -- the page that describes the file, with its licence and history -- which is what the format asks for and what those tools correctly provided. The icon cache was fetching that page, finding a web page where it wanted a picture, and recording a failure it then repeated on a slower and slower schedule. It now follows the page through to the file behind it, and asks for a scaled copy of the few drawings too large to fetch whole.
