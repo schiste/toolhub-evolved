@@ -874,6 +874,22 @@ def _continuous_summary(results: dict[str, int], scanner: _Scanner) -> dict[str,
     }
 
 
+def _heartbeat_summary(results: dict[str, int], scanner: _Scanner, baseline: dict[str, int]) -> dict[str, Any]:
+    """Report the process totals alongside what this one window did.
+
+    `results` accumulates for the life of a worker that never exits, so a
+    heartbeat carrying only totals reprints the same `error` count every ten
+    minutes long after the last failure -- a fixed number that reads, line
+    after line, like a fresh disaster. Production showed `error: 1243` held
+    steady across a day of heartbeats while only 200 tools were in an error
+    state; the count was a lifetime tally of retries against the same handful
+    of private and deleted repositories. The window is what says whether
+    anything is going wrong now.
+    """
+    window = {key: value - baseline.get(key, 0) for key, value in results.items()}
+    return {**_continuous_summary(results, scanner), "window": window}
+
+
 def _record_window(window_started: datetime) -> None:
     """Publish one heartbeat window to /workers.
 
@@ -919,6 +935,7 @@ def run_continuous(
         depth=pace.depth,
     )
     results = _new_results()
+    baseline = dict(results)
     next_heartbeat = time.monotonic() + pace.heartbeat
     window_started = utcnow()
     while not stop():
@@ -937,11 +954,11 @@ def run_continuous(
         stream.scanned += 1
         _scan_one(item[0], item[1], results, force=force)
         if time.monotonic() >= next_heartbeat:
-            sys.stdout.write(
-                "repository-analysis: " + json.dumps(_continuous_summary(results, scanner), sort_keys=True) + "\n"
-            )
+            summary = _heartbeat_summary(results, scanner, baseline)
+            sys.stdout.write("repository-analysis: " + json.dumps(summary, sort_keys=True) + "\n")
             sys.stdout.flush()
             _record_window(window_started)
+            baseline = dict(results)
             window_started = utcnow()
             next_heartbeat = time.monotonic() + pace.heartbeat
     # run_job() prints the returned summary, so the shutdown window only needs

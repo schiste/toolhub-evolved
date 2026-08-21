@@ -1269,3 +1269,33 @@ def test_a_page_larger_than_the_analyzer_cap_is_dropped_not_truncated(monkeypatc
     )
     _scan_wiki(SCRIPT_URL)
     assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.css"]
+
+
+def test_a_heartbeat_separates_this_window_from_the_process_lifetime(monkeypatch, capsys):
+    """A stale error total must not read as a fresh failure on every line."""
+    clock = _Clock()
+    monkeypatch.setattr(repository_scan, "time", clock)
+    monkeypatch.setattr(repository_scan, "partition_candidates", lambda depth: ([(f"b{i}", {}) for i in range(9)], []))
+    monkeypatch.setattr(repository_scan, "_record_window", lambda started: None)
+    scanned = []
+
+    def record(name, record_, results, *, force):
+        scanned.append(name)
+        outcome = "error" if len(scanned) == 1 else "analyzed"
+        results["candidates"] += 1
+        results[outcome] += 1
+        return outcome
+
+    monkeypatch.setattr(repository_scan, "_scan_one", record)
+    repository_scan.run_continuous(
+        pace=repository_scan.ScanPace(backlog_interval=1.0, refresh_interval=1e9, heartbeat=0.5),
+        should_stop=lambda: len(scanned) >= 3,
+    )
+
+    beats = [json.loads(line.split(": ", 1)[1]) for line in capsys.readouterr().out.splitlines()]
+
+    # The one failure happened in the first window and nowhere else. The total
+    # carries it forever; only the window says the trouble has passed.
+    assert [beat["error"] for beat in beats] == [1, 1]
+    assert [beat["window"]["error"] for beat in beats] == [1, 0]
+    assert [beat["window"]["candidates"] for beat in beats] == [2, 1]
