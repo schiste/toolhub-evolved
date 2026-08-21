@@ -261,7 +261,12 @@ function recentTextFiltersMatch(r, state) {
 			updatedBy,
 			recentActionLabel(r),
 			recentReviewLabel(recentReviewState(r)),
-			r.comment || ""
+			r.comment || "",
+			// The tools a list row named. They are the only place those names are
+			// written, so without them a search for a tool finds the tool's own
+			// rows but not the list that just added it.
+			...(Array.isArray(r.toolsAdded) ? r.toolsAdded : []),
+			...(Array.isArray(r.toolsRemoved) ? r.toolsRemoved : [])
 		].join(" "),
 		state.q
 	);

@@ -254,6 +254,30 @@ test("viewRecent: a tool name in a comment is escaped rather than rendered as ma
 	assert.match(view.html, /&lt;img src=x/);
 });
 
+test("viewRecent: searching a tool name finds the list revision that added it", async () => {
+	setSearch("?q=toolforge-xwiki");
+	api.apiGet.mockResolvedValue({
+		results: [
+			{
+				content_type: "toollist",
+				content_id: 861,
+				content_title: "My Favorite Wikitools",
+				comment: "Added tool to list",
+				toolsAdded: ["toolforge-xwiki"],
+				toolsRemoved: []
+			},
+			{ content_type: "toollist", content_id: 862, content_title: "Unrelated list" }
+		]
+	});
+
+	const view = await viewRecent();
+
+	// The name appears nowhere else on the row -- not in the title, not in the
+	// upstream comment -- so matching it proves the search reads the named tools.
+	assert.match(view.html, /My Favorite Wikitools/);
+	assert.doesNotMatch(view.html, /Unrelated list/);
+});
+
 test("viewRecent: a cold list replica is explained instead of silently emptying the Lists filter", async () => {
 	setSearch("");
 	api.apiGet.mockResolvedValue({ listActivityAvailable: false, results: [] });
