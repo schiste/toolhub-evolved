@@ -1,13 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: gadgets-actually-listed -->
-<!-- Release title: The Gadget Directory Fills In -->
-<!-- Source range: 5143b43..e752848 (2 commits) -->
+<!-- Release id: source-labels-complete -->
+<!-- Release title: Every Source Says Its Name -->
+<!-- Source range: e83a9a2..bf8b687 (1 commit) -->
 
 # Technical Release Notes
 
-- Both gadget definition queries now name `ids` in `rvprop`, through a shared `DEFINITION_REVISION_PARAMS`. `wiki_api._revision` drops any revision without an integer `revid`, so asking for content alone produced payloads that parsed to the empty string: `gadget_inventory.ingest` recorded `read=no` for every wiki and the first production census stored 0 gadgets while exiting 0.
-- Omitting the id had been deliberate, to keep the definition page's revision out of a tool's head, but the request was the wrong enforcement point. `definition_text` returns wikitext and discards the `Revision` entirely, so no id can reach a head regardless of what the query asks for; the invariant is unchanged and now holds structurally rather than by starving the parser.
-- `repository_scan._wiki_revisions` read the same page through `definition_url` and hit the same blank result, so `wiki_sources.gadget_pages` resolved no members and every gadget scan took the `(source.title,)` fallback. Multi-file gadgets were analyzed as one file.
-- The fakes are why this passed review: each supplied a `revid` the query never requested, so the request and its parser drifted apart with the suite green. They now build their response from the `rvprop` they are handed, and reverting just the parameter fails 13 tests across `test_wiki_api`, `test_gadget_inventory` and `test_gadget_census` where before it failed none.
-- `ingest` now carries a reason on every summary -- `read`, `request-failed` or `no-definition` -- printed on the census line for successful runs too, so a lane discarding every response no longer logs identically to a lane whose wikis are all down.
+- Adds `wikimedia_user_script` to `CATALOG_SOURCE_LABELS` in `views/tool.js` and to `sourceLabels` in `views/toolforms.js`, each in that file's existing idiom -- a literal string in the first, a `t()` lookup in the second -- with `toolforms.sourceWikimediaUserScript` documented in en and qqq. `catalog_projection` attaches this source to any canonical row whose `url` is a user-space JavaScript page, so it reaches the evidence panel and the effective-source note on every user script in the catalogue.
+- Both maps fall back to `row.source`, which is why this shipped twice: a source constant added in Python with no label in JavaScript breaks nothing, fails no test, and renders an internal identifier to the reader. The fallback is kept -- it is the right behaviour for an unknown key -- but it is no longer the only thing standing between a new source and a raw string on a tool page.
+- Adds a test that every key of `SOURCE_CONFIDENCE` appears in both label maps, parameterized over the two files and reading them from disk. Neither map is reachable from Python by import, so stating the invariant means crossing the language boundary; removing either label now fails by name rather than silently degrading a page.
