@@ -1545,3 +1545,62 @@ def test_a_settled_placeholder_stays_out_of_the_backlog():
     backlog, _refresh = repository_scan.partition_candidates()
 
     assert [name for name, _record in backlog] == []
+
+
+# --- how long a failing repository is left alone -----------------------------
+
+
+def test_backoff_doubles_past_a_day_and_stops_at_a_month():
+    """A day was the ceiling, and 199 dead rows a day crowded out real work.
+
+    The early intervals are unchanged: a repository having a bad week should
+    still be retried within hours. What changed is that the curve no longer
+    flattens at one day, so a repository that is gone is asked about monthly
+    rather than daily.
+    """
+    now = repository_scan.utcnow()
+    hours = {n: round((repository_scan._backoff(n) - now).total_seconds() / 3600) for n in (0, 1, 3, 5, 8, 10, 40)}
+
+    assert hours[0] == 1
+    assert hours[1] == 2
+    assert hours[3] == 8
+    # Where the old curve had already flattened to 24.
+    assert hours[5] == 32
+    # Where production sits: 195 of its 199 failing rows are at eight attempts.
+    assert hours[8] == 256
+    # And where the new one flattens, for good.
+    assert hours[10] == repository_scan.MAX_BACKOFF_HOURS
+    assert hours[40] == repository_scan.MAX_BACKOFF_HOURS
+
+
+def test_a_successful_scan_puts_a_long_backoff_back_to_zero(monkeypatch):
+    """The curve is climbed only by failing, so one success undoes all of it."""
+    commit = "abc1234567890123456789012345678901234567"
+    with db.session_scope() as s:
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="recovered",
+                repository_url="https://github.com/example/recovered",
+                status="error",
+                attempts=9,
+                next_attempt_at=None,
+            )
+        )
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: commit)
+    monkeypatch.setattr(repository_scan, "clone_repository", lambda *_args: commit)
+    monkeypatch.setattr(repository_scan, "_read_repository_tree", lambda _repo: [{"path": "a.py", "content": "x = 1"}])
+    monkeypatch.setattr(repository_scan, "_local_git_context", lambda _paths: {})
+    monkeypatch.setattr(
+        repository_scan,
+        "analyze_source_files",
+        lambda files, **kwargs: {"filesAnalyzed": len(files), "healthCore": {"score": 80, "grade": "good"}},
+    )
+    monkeypatch.setattr(repository_scan.tool_summaries, "refresh", lambda *_args: 1)
+
+    repository_scan.scan_tool("recovered", {"name": "recovered", "repository": "https://github.com/example/recovered"})
+
+    with db.session_scope() as s:
+        row = s.get(RepositoryAnalysisState, "recovered")
+        assert row.status == "analyzed"
+        assert row.attempts == 0
+        assert row.next_attempt_at is None

@@ -536,8 +536,24 @@ def _state(s: Any, tool_name: str) -> RepositoryAnalysisState:  # noqa: ANN401 -
     return row
 
 
+# A day was the longest a repository was ever left alone, which is the right
+# ceiling for a repository having a bad week and the wrong one for a repository
+# that is gone. Production settled at 199 failing rows, nearly all of them at
+# the attempt cap: private, deleted, or an empty placeholder that will never
+# hold code. Retried daily they were 84-99% of everything the backlog lane
+# scanned, so the lane spent its budget re-confirming known-dead URLs while
+# real work waited behind them.
+#
+# Doubling past a day turns that into roughly seven checks a day rather than
+# 199, without ever writing a repository off: a month is short enough that one
+# coming back is picked up, and one success resets attempts to zero, so a
+# genuinely transient failure never reaches these intervals at all.
+MAX_BACKOFF_HOURS = 30 * 24
+MAX_BACKOFF_DOUBLINGS = 10
+
+
 def _backoff(attempts: int) -> datetime:
-    hours = min(24, 2 ** min(max(attempts, 0), 5))
+    hours = min(MAX_BACKOFF_HOURS, 2 ** min(max(attempts, 0), MAX_BACKOFF_DOUBLINGS))
     return utcnow() + timedelta(hours=hours)
 
 
@@ -646,7 +662,7 @@ def _save_unsupported(
         row.sync_status = SYNC_ERROR
 
 
-def _settle_unscannable(tool_name: str, raw_url: str, url: str, *, page: wiki_sources.WikiSource | None) -> bool:
+def _settle_without_request(tool_name: str, raw_url: str, url: str, *, page: wiki_sources.WikiSource | None) -> bool:
     """Record and report a verdict that needs no request to reach.
 
     Two URL shapes get one. A URL on no allowed host at all, and a URL on a
@@ -690,7 +706,7 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
     raw_url = _raw_tool_repository(record)
     url = repository_url(raw_url)
     page = wiki_sources.wiki_source(url) if url else None
-    if _settle_unscannable(tool_name, raw_url, url, page=page):
+    if _settle_without_request(tool_name, raw_url, url, page=page):
         return "unsupported"
     provider = provider_for(url)
     try:
