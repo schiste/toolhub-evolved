@@ -117,3 +117,21 @@ def test_single_site_projects_are_public_wikimedia_wikis(url, domain):
 def test_a_lookalike_of_a_single_site_project_is_not_one(domain):
     with pytest.raises(ValueError, match="public Wikimedia wiki domain"):
         wikimedia_urls.clean_wiki_domain(domain)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # The Meta spelling that aborted a whole wiki's census.
+        ("User:Hoo man/tagger.js‎", "User:Hoo man/tagger.js"),
+        ("‏User:Ada/tool.js", "User:Ada/tool.js"),
+        ("User:Ada/​tool.js", "User:Ada/tool.js"),
+        # Non-ASCII that is not a format mark survives: this must normalize
+        # spelling, not fold away the alphabets real titles are written in.
+        ("Utilisateur:Éloïse/outil.js", "Utilisateur:Éloïse/outil.js"),
+        ("User:Ada/tool.js", "User:Ada/tool.js"),
+        ("", ""),
+    ],
+)
+def test_without_format_marks_drops_only_invisible_marks(text, expected):
+    assert wikimedia_urls.without_format_marks(text) == expected

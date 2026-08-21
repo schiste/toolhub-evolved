@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -27,6 +28,30 @@ class WikimediaUserPage:
     domain: str
     username: str
     title: str
+
+
+def without_format_marks(text: str) -> str:
+    """Drop invisible formatting marks so Python agrees with storage about sameness.
+
+    A stray left-to-right mark is invisible in the editor that produced it and
+    ignorable to the database collation, so two spellings that differ only by
+    one are a single row to MySQL while staying two distinct strings to Python.
+    Every unique key built out of a wiki title assumes those two notions of
+    equality agree -- and the tests, which run on SQLite, compare bytes and so
+    never catch a place where they do not.
+
+    A Meta `global.js` is the page that proved they diverge: it loads
+    `User:Hoo man/tagger.js` twice, once with a trailing U+200E left over from
+    a copied link, and the census offered both spellings to one INSERT.
+
+    Dropping them is also the answer demand wants. A script reached through an
+    invisible character is the same script, and counting it separately would
+    split its demand across a mark nobody can see.
+    """
+    # No ASCII character is in category Cf, and almost every title is ASCII.
+    if text.isascii():
+        return text
+    return "".join(character for character in text if unicodedata.category(character) != "Cf")
 
 
 def clean_wiki_domain(value: str) -> str:
