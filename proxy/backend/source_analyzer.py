@@ -1744,9 +1744,49 @@ def _scan_warnings(findings: dict[tuple[str, str], Finding], path: str, line_num
         )
 
 
+def _finding_rank(finding: Finding) -> tuple[float, int, int, tuple[float, int, str], str]:
+    """Rank a finding for the per-bucket cap, the one most worth keeping first.
+
+    Confidence decides first, and on most repositories it decides everything. But
+    confidence is computed from a small set of ingredients, so a repository that
+    names many addresses the same way produces a long block of findings that score
+    identically -- on pageviews, thirty of them at 0.74 -- and the cap of forty falls
+    inside that block. Sorting the block by label let the alphabet choose which half
+    survived, and it chose badly: the tool's own API surface, the
+    `wikimedia.org/api/rest_v1/metrics/*` calls its charts are built from, sorted
+    below self-referential `pageviews.*` links copied out of the landing pages, and
+    was cut.
+
+    So the block is ordered by what is known about each finding beyond its score.
+    First how many separate files said it, then how many times in total: a finding
+    two files agree on is better attested than one a single generated table repeats.
+    What settles the rest is where the best sighting came from, by the same reading
+    rank that decided which files were worth opening at all. A finding read out of
+    the code the tool is made of outranks one read out of a page describing the tool,
+    and the ranking that chose the files now also chooses among what they said. The
+    label remains the last resort, so two runs over one tree agree.
+
+    The rank reads the finding rather than its payload because the payload rounds
+    confidence to two places and keeps only the first few pieces of evidence. Ranking
+    the rounded form invents ties that do not exist, and then breaks them without the
+    evidence that would have settled them.
+    """
+    paths = {str(evidence["path"]) for evidence in finding.evidence}
+    return (
+        -finding.confidence,
+        -len(paths),
+        -len(finding.evidence),
+        min(source_reading_rank(path) for path in paths),
+        finding.label,
+    )
+
+
 def _serialized(findings: dict[tuple[str, str], Finding], kind: str) -> list[dict[str, Any]]:
-    rows = [finding.payload() for (finding_kind, _), finding in findings.items() if finding_kind == kind]
-    return sorted(rows, key=lambda item: (-float(item["confidence"]), str(item["label"])))[:MAX_FINDINGS_PER_BUCKET]
+    ranked = sorted(
+        (finding for (finding_kind, _), finding in findings.items() if finding_kind == kind),
+        key=_finding_rank,
+    )
+    return [finding.payload() for finding in ranked[:MAX_FINDINGS_PER_BUCKET]]
 
 
 def _is_publishable_finding(item: dict[str, Any], min_confidence: float = EVOLVED_METADATA_MIN_CONFIDENCE) -> bool:
