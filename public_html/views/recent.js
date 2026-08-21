@@ -367,7 +367,7 @@ function ownerSensitiveRecentState(state) {
  */
 function recentListNoticeHTML(data) {
 	if (data.listActivityAvailable !== false) return "";
-	return `<div class="account-directory__notice" role="status">${t("parity.recentListActivityHidden", "List activity is hidden while the catalog replica finishes its first refresh. Tool activity is unaffected.")}</div>`;
+	return `<div class="account-directory__notice" role="status">${t("parity.recentListActivityHidden", "List activity is hidden while the catalog replica refreshes.")}</div>`;
 }
 
 // Recent changes — from the local catalog replica (deep-links tools via content_id slug).

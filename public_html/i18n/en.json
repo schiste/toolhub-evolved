@@ -1036,7 +1036,7 @@
 	"parity.recentChangesTable": "Recent changes table",
 	"parity.recentCrawlerRuns": "Recent crawler runs, newest first",
 	"parity.recentIntroHybrid": "Background-synchronized Toolhub activity, merged with Evolved-local write activity when a change is saved here.",
-	"parity.recentListActivityHidden": "List activity is hidden while the catalog replica finishes its first refresh. Tool activity is unaffected.",
+	"parity.recentListActivityHidden": "List activity is hidden while the catalog replica refreshes.",
 	"parity.reviewState": "Review state",
 	"parity.reviewUnknown": "Review unknown",
 	"parity.run": "Run",
