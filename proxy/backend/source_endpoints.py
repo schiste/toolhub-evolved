@@ -19,16 +19,19 @@ Four rules govern what is kept, all of them about not storing things:
 * No invented precision. A path segment that is a variable, an id, or a
   template hole becomes `{}`. `/user/12345/edits` and `/user/67890/edits` are
   one endpoint, and pretending otherwise would report a tool's user base as its
-  API surface.
+  API surface. The same rule refuses a host that cannot be one: a name has to
+  end in a real top-level domain, which is what tells a regex literal and a
+  private-range address apart from a service.
 * No unbounded growth. One minified line can carry hundreds of URLs, so the
   count per line and the length of a path are capped, and an over-long
   authority is refused outright rather than cut to a prefix naming nothing.
 * Nothing but endpoints. Source names far more addresses than it calls: wiki
   pages, repository browse URLs, the blog post behind a workaround, the manual
-  for a setting, the icons an interface is decorated with. Measured across nine
-  real repositories those were a quarter of every hit, and on two of them they
-  filled the cap and pushed the tool's actual API surface out of the report.
-  They are dropped rather than filed alongside it.
+  for a setting, the twenty package managers a README explains how to install
+  from, the icons an interface is decorated with. Measured across sixteen real
+  repositories those were most of every hit, and on two of them they filled the
+  cap and pushed the tool's actual API surface out of the report entirely. They
+  are dropped rather than filed alongside it.
 
 Nothing here performs I/O or scores anything. How much to trust a hit is the
 caller's decision, made from the file it came from.
@@ -154,7 +157,17 @@ NEVER_AN_ENDPOINT = frozenset(
 # literal out of the report: `r"http://.*?object=tx"` in pywikibot/fixes.py was
 # read as the host `.*`, which passed every check below because it contains a
 # dot. Underscores are refused along with everything else DNS does not allow.
-HOSTNAME_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)(?:\.(?!-)[a-z0-9-]{1,63}(?<!-))+$", re.IGNORECASE)
+#
+# The last label must be letters, at least two of them. No top-level domain is
+# one character long, so `foo.d.o.t` in psf/requests' test suite is not a name;
+# and this is also what refuses an address literal, because `192.168.1.1` ends
+# in digits. Six of that suite's findings were private-range addresses, which
+# are a fixture wherever they appear -- nothing is reachable at one, and the
+# report is a list of services, not of sockets.
+HOSTNAME_RE = re.compile(
+    r"^(?!-)[a-z0-9-]{1,63}(?<!-)(?:\.(?!-)[a-z0-9-]{1,63}(?<!-))*\.[a-z]{2,63}$",
+    re.IGNORECASE,
+)
 
 # Authorities that stand in for a real one. A tool that genuinely talks to
 # 127.0.0.1 is talking to itself, which is not an external service either.
@@ -162,7 +175,9 @@ HOSTNAME_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)(?:\.(?!-)[a-z0-9-]{1,63}(
 # that urlsplit hands back unbracketed -- are refused before this is consulted.
 PLACEHOLDER_RE = re.compile(
     r"^(?:127\.0\.0\.1|0\.0\.0\.0|(?:.+\.)?example\.(?:com|org|net))$"
-    r"|\.(?:invalid|test|local|localdomain|internal|localhost)$",
+    # `tld` and `example` are the spellings a manual reaches for when it needs a
+    # domain that cannot exist; the rest are reserved by RFC for the same job.
+    r"|\.(?:invalid|test|local|localdomain|internal|localhost|tld|example)$",
     re.IGNORECASE,
 )
 
@@ -174,6 +189,11 @@ FORGE_HOST_RE = re.compile(
     r"^(?:www\.|help\.|docs\.|gist\.)?(?:github\.com|gitlab\.com|bitbucket\.org"
     r"|sourceforge\.net|codeberg\.org)$"
     r"|^(?:gerrit|phabricator|gitlab|diffusion)\.wikimedia\.org$"
+    # The same thing under a distribution's own name. Every operating system
+    # that packages a tool links its recipe, and cli/cli alone cited four:
+    # cgit.freebsd.org, cvsweb.openbsd.org, gitlab.alpinelinux.org and
+    # gitlab.archlinux.org. They browse source exactly as the big forges do.
+    r"|^(?:git|gitlab|gitweb|cgit|cvsweb|hg|svn)\."
     # The forge's own static hosting. A project page there is the README with
     # a stylesheet on it, and the product serves nothing else.
     r"|\.(?:github|gitlab)\.io$",
@@ -205,7 +225,17 @@ REFERENCE_HOST_RE = re.compile(
     r"|pypi\.org|npmjs\.com|packagist\.org|crates\.io|rubygems\.org"
     # An app store listing, and the vendor pages that go with one.
     r"|play\.google\.com|apps\.apple\.com|f-droid\.org|policies\.google\.com"
-    r"|support\.google\.com)$",
+    r"|support\.google\.com"
+    # How to install the thing, which every README explains at length and no
+    # program does at runtime. cli/cli documents twenty package managers and
+    # each one is a host; together with the distribution forges above they were
+    # its entire report, forty findings against a bucket cap of forty.
+    r"|brew\.sh|nixos\.org|spack\.io|anaconda\.org|archlinux\.org"
+    r"|fedoraproject\.org|alpinelinux\.org|webinstall\.dev|webi\.sh|flox\.dev"
+    r"|snapcraft\.io|flathub\.org|chocolatey\.org|scoop\.sh|conda\.io"
+    r"|macports\.org|pkgs\.org|repology\.org"
+    # A language's own reference, which is documentation wearing a short name.
+    r"|go\.dev|golang\.org|doc\.rust-lang\.org|docs\.oracle\.com)$",
     re.IGNORECASE,
 )
 
@@ -232,11 +262,21 @@ STATIC_ASSET_RE = re.compile(
     re.IGNORECASE,
 )
 
-# A documentation tree, on a host whose name gives no hint of one. Vendors put
-# their manuals on the product domain -- symfony.com/doc, www.php.net/manual,
-# graphviz.org/docs -- and a comment citing the page that explains a setting is
-# the single most common URL in source after the license header.
-DOC_PATH_RE = re.compile(r"^/(?:docs?|manual|handbook|tutorials?)(?:/|$)", re.IGNORECASE)
+# Reading material, on a host whose name gives no hint of it. Vendors put their
+# manuals and their announcements on the product domain -- symfony.com/doc,
+# www.php.net/manual, graphviz.org/docs, github.blog/changelog -- and a comment
+# citing the page that explains a setting is the single most common URL in
+# source after the license header.
+#
+# `/posts` and `/releases` are deliberately absent even though both name blog
+# and announcement trees here: `/post` is what an HTTP test suite calls its echo
+# route, `/posts` is what half the REST tutorials in the world call a
+# collection, and a `/releases/` prefix is where a build fetches its own
+# tarball. Each would cost a real call to buy a link.
+READING_PATH_RE = re.compile(
+    r"^/(?:docs?|manual|handbook|tutorials?|blog|news|changelog)(?:/|$)",
+    re.IGNORECASE,
+)
 
 # MediaWiki's article path. `/wiki/Help:Contents` is a page a human reads, and a
 # tool that genuinely wants that content asks /w/api.php for it instead -- which
@@ -330,7 +370,7 @@ def _is_reference(host: str, path: str) -> bool:
     """
     if REFERENCE_HOST_RE.search(host) or SHORTENER_RE.match(host):
         return True
-    if WIKI_PAGE_RE.match(path) or DOC_PATH_RE.match(path) or STATIC_ASSET_RE.search(path):
+    if WIKI_PAGE_RE.match(path) or READING_PATH_RE.match(path) or STATIC_ASSET_RE.search(path):
         return True
     return bool(FORGE_HOST_RE.search(host)) and not FORGE_FETCH_RE.match(path)
 
