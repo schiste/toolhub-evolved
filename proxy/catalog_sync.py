@@ -35,6 +35,9 @@ MAX_RECENT_PAGES_PER_RUN = 20
 MAX_RECENT_DETAILS_PER_RUN = 20
 MAX_GRAPH_DETAILS_PER_RUN = 20
 MAX_COMPLETE_PAGES = 100
+# Upstream saying a tool is not there is a durable answer, unlike every other
+# way a detail fetch can fail.
+GONE_STATUS = 404
 DEFAULT_SNAPSHOT_CONSISTENCY_RETRIES = 3
 RECONCILE_INTERVAL = timedelta(hours=12)
 STATUS_IDLE = "idle"
@@ -407,7 +410,39 @@ def _initial_backfill(
     return {"pages": pages, "records": records, "next_page": 1 if completed else current_page, "completed": completed}
 
 
-def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[str, int]:
+def _is_gone(error: BaseException) -> bool:
+    """Say whether upstream answered that this tool no longer exists.
+
+    A 404 is an answer, not a failure to get one. Every other outcome here --
+    a timeout, a 500, a connection reset -- means the question is still open
+    and asking again later is the right move; 404 means asking again is
+    pointless, and the retry queue is the wrong place for it.
+    """
+    return isinstance(error, toolhub.ToolhubAPIError) and error.status_code == GONE_STATUS
+
+
+def _failure_reason(error: BaseException) -> str:
+    """Name one detail failure compactly enough to sit in a key=value line."""
+    if isinstance(error, toolhub.ToolhubAPIError):
+        return f"http-{error.status_code}"
+    return type(error).__name__.removesuffix("Error").lower() or "error"
+
+
+def _reason_summary(reasons: list[str]) -> str:
+    """Return why this run's detail fetches failed, as one space-free token.
+
+    The whole summary is printed as space-joined ``key=value`` pairs, so this
+    has to survive in a single field. Counting reasons rather than listing
+    names keeps it that way while still answering the question the previous
+    bare ``recent_errors=20`` could not: twenty failures of *what*.
+    """
+    if not reasons:
+        return "none"
+    counted = {reason: reasons.count(reason) for reason in sorted(set(reasons))}
+    return ",".join(f"{reason}:{count}" for reason, count in counted.items())
+
+
+def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[str, Any]:
     with db.session_scope() as s:
         state = _state(s)
         previous = state.recent_latest_marker
@@ -425,6 +460,8 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
         return {
             "recent_tools": 0,
             "recent_errors": 0,
+            "recent_gone": 0,
+            "recent_error_reasons": _reason_summary([]),
             "recent_scan_pages": scan.pages_fetched,
             "recent_scan_complete": 1,
         }
@@ -437,14 +474,17 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
         return {
             "recent_tools": 0,
             "recent_errors": 0,
+            "recent_gone": 0,
+            "recent_error_reasons": _reason_summary([]),
             "recent_scan_pages": scan.pages_fetched,
             "recent_scan_complete": 1,
         }
     digests.capture_recent_rows(scan.rows)
     names = _dedupe_names(pending + _tool_names(scan.rows))
-    successful = errors = 0
+    successful = errors = gone = 0
     refreshed_names: list[str] = []
     remaining: list[str] = []
+    reasons: list[str] = []
     for index, name in enumerate(names[:MAX_RECENT_DETAILS_PER_RUN]):
         if index:
             sleep_fn(interval)
@@ -454,8 +494,12 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
                 raise _invalid_detail_error(name)
             successful += canonical_tools.upsert_records([payload], source_url=detail_url(name), detail=True)
             refreshed_names.append(name)
-        except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError):
+        except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError) as error:
+            if _is_gone(error):
+                gone += 1
+                continue
             errors += 1
+            reasons.append(_failure_reason(error))
             remaining.append(name)
     remaining.extend(names[MAX_RECENT_DETAILS_PER_RUN:])
     abandoned_snapshot_generation = _store_recent_progress(scan, remaining)
@@ -465,6 +509,8 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
     return {
         "recent_tools": successful,
         "recent_errors": errors,
+        "recent_gone": gone,
+        "recent_error_reasons": _reason_summary(reasons),
         "recent_scan_pages": scan.pages_fetched,
         "recent_scan_complete": int(scan.complete),
     }
