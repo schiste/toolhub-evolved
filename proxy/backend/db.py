@@ -231,6 +231,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         "toolinfo_discovery": {
             "payload": f"{json_col} NULL",
         },
+        "user_script_census_state": {
+            "sweep_cursor": "INTEGER NOT NULL DEFAULT 0",
+        },
         "user_script_pages": {
             # Empty until a sweep reaches the Wiki Replicas. The directory's
             # tie-break reads it as a string and falls back when it is blank, so

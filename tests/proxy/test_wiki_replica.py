@@ -209,3 +209,45 @@ def test_the_connection_is_closed_even_when_the_query_fails():
     except RuntimeError:
         pass
     assert closed == [True]
+
+
+# --- enumeration -----------------------------------------------------------
+
+
+def test_every_script_page_comes_back_paired_with_its_content_model():
+    rows = ((b"javascript", b"Tom_Smith/monobook.js"), (b"css", b"Ada/vector.css"))
+    assert wiki_replica.read_page_titles(rows) == (
+        ("javascript", "Tom_Smith/monobook.js"),
+        ("css", "Ada/vector.css"),
+    )
+
+
+def test_enumeration_keeps_the_order_the_replica_returned():
+    rows = ((b"javascript", b"Zeta/z.js"), (b"javascript", b"Alpha/a.js"))
+    titles = [title for _model, title in wiki_replica.read_page_titles(rows)]
+    assert titles == ["Zeta/z.js", "Alpha/a.js"]
+
+
+def test_a_row_missing_either_half_is_not_a_page():
+    rows = ((b"javascript", b""), (b"", b"Ada/vector.css"), (None, None))
+    assert wiki_replica.read_page_titles(rows) == ()
+
+
+def test_enumeration_asks_for_user_space_by_content_model_in_creation_order():
+    seen, closed = [], []
+    wiki_replica.script_titles_for(
+        "frwiki",
+        user=wiki_replica.Credentials(user="s55555", password="sekrit"),
+        connect=connector(((b"javascript", b"Ada/a.js"),), seen, closed),
+    )
+    sql, params = seen[0]
+    assert params == (wiki_replica.USER_NAMESPACE, "javascript", "css")
+    assert "page_namespace = %s" in sql
+    assert "ORDER BY p.page_id" in sql
+    assert closed == [True]
+
+
+def test_enumeration_narrows_by_model_rather_than_by_suffix():
+    # The whole point of reading the replica: a page holding JavaScript under a
+    # name that does not end in `.js` is a script, and a suffix scan misses it.
+    assert "LIKE" not in wiki_replica.ENUMERATION_QUERY

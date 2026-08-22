@@ -323,3 +323,31 @@ def test_a_change_feed_with_no_list_reads_as_empty():
 
 def test_a_change_feed_that_is_not_an_object_reads_as_empty():
     assert census.read_changes("junk") == ()
+
+
+# --- namespaces ------------------------------------------------------------
+
+
+def test_a_wiki_is_asked_what_it_calls_its_namespaces():
+    params = census.siteinfo_params()
+    assert params["meta"] == "siteinfo"
+    assert params["siprop"] == "namespaces"
+
+
+def test_the_local_name_of_user_space_is_read_not_the_canonical_one():
+    payload = {"query": {"namespaces": {"2": {"name": "Utilisateur", "canonical": "User"}}}}
+    assert census.read_namespace_prefix(payload) == "Utilisateur"
+
+
+def test_an_answer_without_the_namespace_names_nothing():
+    assert census.read_namespace_prefix({"query": {}}) == ""
+    assert census.read_namespace_prefix({"query": {"namespaces": {"0": {"name": ""}}}}) == ""
+    assert census.read_namespace_prefix("not an answer") == ""
+
+
+def test_a_replica_title_is_rebuilt_in_the_spelling_the_api_answers_with():
+    assert census.full_title("Utilisateur", "Tom_Smith/monobook.js") == "Utilisateur:Tom Smith/monobook.js"
+
+
+def test_rebuilding_a_title_restores_spaces_everywhere_underscores_stood():
+    assert census.full_title("User", "A_B/c_d.js") == "User:A B/c d.js"
