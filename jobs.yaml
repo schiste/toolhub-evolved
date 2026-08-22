@@ -246,10 +246,20 @@
   # one 851s run, which left only 49s of the timeout; 500 is the steady-state
   # size now that only new labels arrive. It records identity only;
   # corroboration on a shared tool is what publishes anything.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile --stale-after 1800 -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
+  #
+  # The timeout is twice what the sweep costs today, not a little above it. At
+  # 900s it had stopped being a ceiling and become the usual outcome: runs were
+  # landing at 879-889s and on 2026-08-22 the 15:43 and 16:43 runs were killed
+  # at the deadline, which writes no summary and no run record, so the job
+  # looked merely late. The remote batch is bounded by the limit above, but the
+  # local scan that follows it grows with the catalog -- 24785 people and 27506
+  # evidence rows on the last completed run -- so the cost only rises. Read
+  # `phaseSeconds` in the job's own output before spending this headroom again:
+  # if the local half is what grew, more time is the wrong answer twice running.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile --stale-after 3600 -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
   image: python3.13
   schedule: "43 * * * *"
-  timeout: 900
+  timeout: 1800
   emails: onfailure
 
 - name: people-attribution-reconverge
