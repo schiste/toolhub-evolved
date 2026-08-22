@@ -1,12 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: a-stopped-job-lets-go -->
-<!-- Release title: A Stopped Job Lets Go -->
-<!-- Source range: f45faf1..e35903f (4 commits) -->
+<!-- Release id: a-missing-link-is-not-an-ending -->
+<!-- Release title: A Missing Link Is Not An Ending -->
+<!-- Source range: fb0d89b..bd2452b (1 commit) -->
 
 # What's New for Users
 
-- Evolved keeps itself up to date with background jobs that run on a schedule. One of them -- the pass that folds new tool and maintainer changes into the people pages -- was managing about one run in ten, and the other nine were skipped without saying so. Contributor and credit changes could take ten minutes longer than they should have to show up.
-- The cause was a lock. Each job takes one so that two copies can never run at the same time, and a job that the platform stopped was leaving its lock behind, which blocked every attempt for the next ten minutes. Jobs now hand the lock back when they are stopped, so the next scheduled run starts on time.
-- Nothing was lost while this was going on. Work waits in a queue and is picked up by the next run that gets through, so no page is wrong and nothing needs correcting -- it simply arrived later than it should have.
-- Every scheduled job on Evolved shares this machinery, so the same quiet ten-minute gap could have opened up in any of them, not just the one where it was spotted.
+- Evolved keeps its copy of the tool catalog current by reading a feed of recent changes from Toolhub, remembering where it stopped last time. When that feed answered incompletely -- which is what a timed-out connection looks like -- Evolved concluded the feed had ended and that it had lost its place entirely, and responded by re-reading all 4,645 tools from the beginning.
+- That full re-read queued every tool for people-page rebuilding, and that queue is worked through 25 tools a minute so it never slows anything else down. One dropped connection could therefore keep the queue full for about three hours, which is time contributor and credit changes spend waiting. It happened five times in a row over the past day.
+- Evolved now checks the feed's own count of how many changes exist before it believes it has reached the end. A page claiming to be the last one while reporting thousands of entries still behind it is treated as a failed read, not as bad news: the place-marker is kept, and the next run tries again fifteen minutes later.
+- No page was ever wrong because of this. Each of those five re-reads compared the whole catalog against what Evolved already had and found nothing to change, so it was wasted effort rather than incorrect results -- the only cost was the delay to updates queued behind it.
