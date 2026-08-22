@@ -1591,10 +1591,16 @@ class UserScriptCensusState(Base):
     between sweeps and is the only thing that has to be exactly resumable, since
     a missed window is a page the directory never learns changed.
 
-    `enumeration_complete` is false when the wiki holds more pages of a model
-    than one search can walk. It is recorded rather than acted on, because a
-    truncated enumeration that reads as complete is the failure mode worth
-    seeing in the state table.
+    `enumeration_complete` is false when the enumeration this wiki got was a
+    prefix of the truth rather than all of it -- a search index that refused the
+    offset, or a sweep that stopped at its budget before the end of the list. It
+    is recorded rather than acted on, because a truncated enumeration that reads
+    as complete is the failure mode worth seeing in the state table.
+
+    `sweep_cursor` is what makes a wiki too large for one run still converge. It
+    indexes an enumeration, so it is only meaningful while the enumeration is
+    reproducible -- which the replica's `page_id` order is and a capped search is
+    not -- and the sweep drops it rather than trusting it otherwise.
     """
 
     __tablename__ = "user_script_census_state"
@@ -1606,6 +1612,11 @@ class UserScriptCensusState(Base):
     enumeration_complete: Mapped[bool] = mapped_column(Boolean, default=True)
     enumeration_totals: Mapped[dict] = mapped_column(JSON, default=dict)
     sweeps_completed: Mapped[int] = mapped_column(Integer, default=0)
+    # How far into the enumeration the last bounded sweep got, and 0 when a
+    # sweep finished. A wiki whose corpus is larger than one run's budget is
+    # covered by successive runs rather than by the same first slice forever,
+    # and only the run that reaches the end counts as a completed sweep.
+    sweep_cursor: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32), default="idle")
     last_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

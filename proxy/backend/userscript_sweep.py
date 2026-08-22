@@ -1,10 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Reading one wiki's user scripts into the directory, and keeping them current.
 
-Two passes over the same machinery. A *sweep* walks the search index for every
-page of a script content model, and is how a wiki first enters the directory. A
+Two passes over the same machinery. A *sweep* walks every page of a script
+content model, in creation order, and is how a wiki first enters the directory
+-- `backend.userscript_enumeration` decides where that list comes from. A
 *watch* follows recent changes since the last run, and is how it stays current.
 Between them they are the difference between a census and a directory.
+
+A sweep need not fit in one run. enwiki holds around 155,000 script pages, and
+`limit` bounds what a single run reads; the wiki's `sweep_cursor` carries the
+position forward so successive runs cover the corpus instead of re-reading its
+first slice, and only the run that reaches the end declares the sweep done.
 
 Neither is transactional across the wiki, and neither pretends to be. A census
 that runs for minutes over a live wiki will see pages created, edited and
@@ -26,6 +32,7 @@ from sqlalchemy import func
 
 from backend import db, userscripts
 from backend import userscript_census as census
+from backend import userscript_enumeration as enumeration
 from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage, utcnow
 from backend.userscript_directory import basename_of, owner_of_user_page
 
@@ -50,37 +57,18 @@ SPLIT_BUDGET: int = 5
 EMPTY_COUNTS: dict[str, int] = {"asked": 0, "fetched": 0, "written": 0, "skipped": 0, "unreadable": 0}
 
 
-def _searcher(
-    request: Callable[[str, str, dict[str, Any]], Any],
-    wiki: str,
-) -> Callable[[str, int], tuple[int, tuple[str, ...]]]:
-    """Bind a wiki to the search callable `census.enumerate_titles` expects."""
-
-    def search(query: str, offset: int) -> tuple[int, tuple[str, ...]]:
-        return census.read_search(request(wiki, "GET", census.search_params(query, offset)))
-
-    return search
-
-
 def discover(
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
-) -> tuple[tuple[str, ...], dict[str, int], bool]:
+) -> enumeration.Enumeration:
     """Every script-model title on a wiki, in creation order, with per-model totals.
 
-    Order matters and is not incidental: enumeration sorts by creation, so the
-    position of a title in this sequence is the only creation ordering the
-    directory needs, obtained without a single extra request.
+    Order matters and is not incidental: both roads in
+    `backend.userscript_enumeration` return creation order, so the position of a
+    title in this sequence is the only creation ordering the directory needs,
+    obtained without a single extra request.
     """
-    titles: list[str] = []
-    totals: dict[str, int] = {}
-    complete = True
-    for model in (census.SCRIPT_MODEL, census.STYLE_MODEL):
-        found = census.enumerate_titles(_searcher(request, wiki), model)
-        titles.extend(found.titles)
-        totals[model] = found.total
-        complete = complete and found.complete
-    return (tuple(titles), totals, complete)
+    return enumeration.enumerate_wiki(request, wiki)
 
 
 def _read_batch(
@@ -236,16 +224,27 @@ def ingest(
     titles: Sequence[str],
     *,
     ranked: bool,
+    rank_offset: int = 0,
 ) -> dict[str, int]:
     """Read the named pages and write the ones that changed.
 
     `ranked` says whether the caller's ordering is creation order. A sweep's is;
     a watch's is not, and its pages keep whatever order they already had.
+
+    `rank_offset` is where these titles begin in that ordering. A sweep that
+    covers a wiki in several runs hands over a slice, and a slice numbered from
+    zero would tell the directory that the ten thousandth page ever created was
+    the first -- so the rank recorded is the position in the whole enumeration,
+    not the position in the batch.
     """
     summary = dict(EMPTY_COUNTS, asked=len(titles))
     with db.session_scope() as session:
         known = _known_revisions(session, wiki, [userscripts.canonical_title(title) for title in titles])
-    ranks = {userscripts.canonical_title(title): index for index, title in enumerate(titles)} if ranked else {}
+    ranks = (
+        {userscripts.canonical_title(title): rank_offset + index for index, title in enumerate(titles)}
+        if ranked
+        else {}
+    )
     pages, summary["unreadable"] = read_titles(request, wiki, titles)
     summary["fetched"] = len(pages)
     with db.session_scope() as session:
@@ -303,30 +302,70 @@ def _record_totals(session: Session, wiki: str) -> UserScriptCensusState:
     return state
 
 
+def _resume_from(cursor: int, found: enumeration.Enumeration) -> int:
+    """Where in this enumeration to pick up, given where the last run stopped.
+
+    A cursor is a position in a list, and it means nothing against a different
+    list. A capped search returns a prefix whose length depends on what the
+    index will serve, so a cursor into one is dropped; so is a cursor that now
+    points past the end, which is what a wiki that shrank between runs looks
+    like. Both restart the wiki from the beginning, which costs a pass and
+    cannot silently skip pages.
+    """
+    return cursor if found.complete and 0 < cursor < len(found.titles) else 0
+
+
 def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limit: int = 0) -> dict[str, Any]:
-    """Walk a wiki's whole script corpus into the directory."""
+    """Walk a wiki's script corpus into the directory, over as many runs as it takes.
+
+    `limit` bounds one run, not the census. enwiki holds ~155,000 script pages,
+    which is some 7,800 content requests -- more than one scheduled job should
+    hold a wiki's API budget for. So a bounded run reads its slice, records how
+    far it got, and the next run continues from there; only the run that reaches
+    the end of the enumeration counts as a completed sweep, tombstones what the
+    wiki no longer lists, and lets the wiki fall through to watching.
+    """
     with db.session_scope() as session:
         state = _state(session, wiki)
         state.status = "running"
         state.last_started_at = utcnow()
         state.last_error = ""
-    titles, totals, complete = discover(request, wiki)
-    truncated = bool(limit) and limit < len(titles)
-    if truncated:
-        titles = titles[:limit]
-    summary = ingest(request, wiki, titles, ranked=True)
+        cursor = state.sweep_cursor
+    found = discover(request, wiki)
+    start = _resume_from(cursor, found)
+    window = found.titles[start : start + limit] if limit else found.titles[start:]
+    finished = start + len(window) >= len(found.titles)
+    summary = ingest(request, wiki, window, ranked=True, rank_offset=start)
     with db.session_scope() as session:
         # A partial walk says nothing about the pages it never asked for, so it
-        # is never allowed to declare them gone.
-        whole_wiki = complete and not truncated
-        removed = _mark_missing(session, wiki, map(userscripts.canonical_title, titles)) if whole_wiki else 0
+        # is never allowed to declare them gone. Tombstoning compares against the
+        # whole enumeration rather than this run's slice: by the time a bounded
+        # sweep finishes, the full list is what it has covered.
+        whole_wiki = found.complete and finished
+        seen = map(userscripts.canonical_title, found.titles)
+        removed = _mark_missing(session, wiki, seen) if whole_wiki else 0
         state = _record_totals(session, wiki)
-        state.enumeration_totals = totals
+        state.enumeration_totals = found.totals
         state.enumeration_complete = whole_wiki
-        state.sweeps_completed += 1
+        state.sweep_cursor = 0 if finished else start + len(window)
+        state.sweeps_completed += 1 if finished else 0
         state.status = "idle"
         state.last_success_at = utcnow()
-    return {"wiki": wiki, "mode": "sweep", "complete": complete, "totals": totals, "removed": removed, **summary}
+        cursor = state.sweep_cursor
+    # Named `sweep_cursor` rather than `cursor` because a watch already reports
+    # one under that name and it is a different thing entirely -- a recent-changes
+    # timestamp, not a position in an enumeration.
+    return {
+        "wiki": wiki,
+        "mode": "sweep",
+        "complete": found.complete,
+        "source": found.source,
+        "totals": found.totals,
+        "enumerated": len(found.titles),
+        "sweep_cursor": cursor,
+        "removed": removed,
+        **summary,
+    }
 
 
 def latest_timestamp(payload: object, fallback: str) -> str:
@@ -377,10 +416,13 @@ def run(
     A watch is only meaningful once a sweep has established what "unchanged"
     means. A wiki that has never completed one is swept regardless of what the
     caller asked for, because a first watch would otherwise record a handful of
-    edits and call the wiki covered.
+    edits and call the wiki covered. A wiki part-way through a bounded sweep is
+    in the same position for the same reason, and keeps sweeping until the
+    cursor comes back to zero.
     """
     with db.session_scope() as session:
-        swept = _state(session, wiki).sweeps_completed
-    if full or not swept:
+        state = _state(session, wiki)
+        swept, pending = state.sweeps_completed, state.sweep_cursor
+    if full or not swept or pending:
         return sweep(request, wiki, limit=limit)
     return watch(request, wiki, limit=watch_limit)
