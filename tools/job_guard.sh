@@ -6,16 +6,17 @@ set -eu
 JOB_NAME=""
 MAX_FAILURES=3
 RESET=0
-# A lock is released by the EXIT trap, which never runs when the pod is killed
-# (SIGKILL on a job timeout or an eviction). The lock then blocks every later
-# invocation forever, and because a skip exits 0 the failure mail never fires:
-# one killed run silently retires the job. Reclaiming a lock older than any
-# legitimate run makes that self-healing. Keep this above the job's own
-# timeout so a slow run is never mistaken for an abandoned one: jobs.yaml sets
-# --stale-after to twice each job's timeout, since the platform kills at the
-# timeout and nothing alive can hold a lock past twice it. A value at or below
-# the timeout would be worse than none, reclaiming a lock from a run still
-# doing work. This default covers jobs that declare no timeout.
+# The backstop for a lock whose owner died without releasing it. A signalled
+# run hands its own lock back below, so this now covers only the ways a run
+# can stop without getting to run any code at all: SIGKILL after the grace
+# period, an eviction, a node going away. The lock would otherwise block every
+# later invocation forever, and because a skip exits 0 the failure mail never
+# fires: one killed run silently retires the job. Keep this above the job's
+# own timeout so a slow run is never mistaken for an abandoned one: jobs.yaml
+# sets --stale-after to twice each job's timeout, since the platform kills at
+# the timeout and nothing alive can hold a lock past twice it. A value at or
+# below the timeout would be worse than none, reclaiming a lock from a run
+# still doing work. This default covers jobs that declare no timeout.
 STALE_AFTER=3600
 # Tripping the breaker used to be permanent: a transient upstream blip that
 # failed three runs retired the job until someone ran --reset by hand, and the
@@ -120,10 +121,28 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
 		exit 0
 	fi
 fi
+child=""
 cleanup() {
 	rmdir "$LOCK_DIR" 2>/dev/null || true
 }
-trap cleanup 0 HUP INT TERM
+terminated() {
+	# The platform stops a job by signalling this shell and killing the pod a
+	# grace period later, so this is the only chance to hand the lock back.
+	# Stop the child first and wait for it: releasing the lock while the child
+	# is still writing would let the next tick start a second concurrent run,
+	# which is the one thing the lock exists to prevent.
+	if [ -n "$child" ]; then
+		kill "$child" 2>/dev/null || true
+		wait "$child" 2>/dev/null || true
+	fi
+	cleanup
+	trap - 0
+	exit $((128 + $1))
+}
+trap cleanup 0
+trap 'terminated 1' HUP
+trap 'terminated 2' INT
+trap 'terminated 15' TERM
 
 if [ "$RESET" -eq 1 ]; then
 	rm -f "$STATE_FILE"
@@ -158,8 +177,20 @@ fi
 [ "$#" -gt 0 ] || { echo "job-guard: missing child command" >&2; exit 2; }
 run_started="$(date +%s)"
 set +e
-"$@"
+# Started in the background and waited for, not run in the foreground. A shell
+# waiting on a foreground command defers a trapped signal until that command
+# finishes, so the handler above could never run before the pod was killed: a
+# job stopped at its timeout left its lock behind every single time, and the
+# next --stale-after seconds of ticks all skipped. Waiting on a background
+# child lets the signal be handled while the child is still running, which is
+# what turns the abandoned-lock reclaim back into the last resort it was
+# written to be. "wait" reports the child's own exit status, so nothing
+# downstream can tell the difference.
+"$@" &
+child=$!
+wait "$child"
 status=$?
+child=""
 set -e
 run_finished="$(date +%s)"
 
