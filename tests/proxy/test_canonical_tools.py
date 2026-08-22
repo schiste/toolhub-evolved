@@ -239,6 +239,109 @@ def test_upsert_records_can_stage_a_generation_without_queueing_reconciliation()
         assert session.get(CanonicalToolCache, "alpha").generation == 9
 
 
+TOOLS_URL = "https://toolhub.wikimedia.org/api/tools/"
+
+
+def _queued_names() -> list[str]:
+    from backend.models import PersonReconciliationQueue  # noqa: PLC0415
+
+    with db.session_scope() as session:
+        return sorted(row.tool_name for row in session.query(PersonReconciliationQueue).all())
+
+
+def _drain_queue() -> None:
+    from backend.models import PersonReconciliationQueue  # noqa: PLC0415
+
+    with db.session_scope() as session:
+        session.query(PersonReconciliationQueue).delete()
+
+
+def test_a_second_snapshot_of_unchanged_records_queues_nothing():
+    # The condition a recovery snapshot creates: the whole catalog re-read and
+    # found identical. Reconciliation reads `record` alone, so re-deriving from
+    # an unchanged one cannot reach a different answer.
+    records = [{"name": "alpha", "title": "Alpha"}, {"name": "beta", "title": "Beta"}]
+    canonical_tools.upsert_records(records, source_url=TOOLS_URL)
+    assert _queued_names() == ["alpha", "beta"]
+    _drain_queue()
+
+    assert canonical_tools.upsert_records(records, source_url=TOOLS_URL) == 2
+
+    assert _queued_names() == []
+
+
+def test_a_record_whose_content_moved_is_still_queued():
+    canonical_tools.upsert_records([{"name": "alpha", "title": "Alpha"}], source_url=TOOLS_URL)
+    _drain_queue()
+
+    canonical_tools.upsert_records([{"name": "alpha", "title": "Alpha renamed"}], source_url=TOOLS_URL)
+
+    assert _queued_names() == ["alpha"]
+
+
+def test_only_the_moved_members_of_a_batch_are_queued():
+    # The saving is per record, not per batch: one changed tool must not drag
+    # its unchanged neighbours into the queue behind it.
+    canonical_tools.upsert_records(
+        [{"name": "alpha", "title": "Alpha"}, {"name": "beta", "title": "Beta"}],
+        source_url=TOOLS_URL,
+    )
+    _drain_queue()
+
+    canonical_tools.upsert_records(
+        [{"name": "alpha", "title": "Alpha"}, {"name": "beta", "title": "Beta moved"}],
+        source_url=TOOLS_URL,
+    )
+
+    assert _queued_names() == ["beta"]
+
+
+def test_a_first_sighting_is_queued_even_with_nothing_to_compare():
+    # A new row has no previous record, and "no previous record" must read as
+    # changed rather than as equal-to-nothing.
+    canonical_tools.upsert_records([{"name": "alpha"}], source_url=TOOLS_URL)
+
+    assert _queued_names() == ["alpha"]
+
+
+def test_a_listing_refresh_that_adds_nothing_to_a_detail_record_queues_nothing():
+    # _merge_listing_record keeps richer detail fields, so a thin listing pass
+    # over an already-hydrated tool is a no-op on `record` -- and must be a
+    # no-op on the queue too, or every listing page requeues the catalog.
+    canonical_tools.upsert_records(
+        [{"name": "alpha", "title": "Alpha", "description": "Long detail text"}],
+        source_url="https://toolhub.wikimedia.org/api/tools/alpha/",
+        detail=True,
+    )
+    _drain_queue()
+
+    canonical_tools.upsert_records(
+        [{"name": "alpha", "title": "Alpha", "description": None}],
+        source_url=TOOLS_URL,
+    )
+
+    assert _queued_names() == []
+
+
+def test_skipping_the_queue_still_refreshes_the_freshness_columns():
+    # The skip must be confined to the queue. The row itself is still written,
+    # otherwise an unchanged record would never renew its cache lifetime.
+    from backend.models import CanonicalToolCache  # noqa: PLC0415
+
+    canonical_tools.upsert_records([{"name": "alpha", "title": "Alpha"}], source_url=TOOLS_URL)
+    with db.session_scope() as session:
+        first_fetched = session.get(CanonicalToolCache, "alpha").fetched_at
+    _drain_queue()
+
+    canonical_tools.upsert_records([{"name": "alpha", "title": "Alpha"}], source_url=TOOLS_URL, generation=12)
+
+    assert _queued_names() == []
+    with db.session_scope() as session:
+        row = session.get(CanonicalToolCache, "alpha")
+        assert row.generation == 12
+        assert row.fetched_at >= first_fetched
+
+
 def test_upsert_records_swallows_sqlalchemy_errors(monkeypatch):
     @contextlib.contextmanager
     def _raise_session_scope():

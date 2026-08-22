@@ -273,6 +273,39 @@ def _merge_listing_record(existing: dict[str, Any], incoming: dict[str, Any]) ->
     return merged
 
 
+def _queue_reconciliation(changed_names: list[str], *, enabled: bool) -> None:
+    """Queue reconciliation for the records whose content actually moved.
+
+    Called only after the canonical transaction succeeds. Processing is
+    asynchronous so anonymous API requests do not wait on derived indexes.
+
+    Reconciliation reads `record` and nothing else about the row, so an
+    unchanged record rebuilds byte-identical edges and the freshness columns
+    `upsert_records` also writes are invisible to it. Queueing every fetched
+    name instead made a recovery snapshot -- which re-reads the whole catalog
+    and finds it unchanged -- cost one queue entry per tool: generations 44
+    through 49 each staged 4,501 records and retired none of them, pinning a
+    lane that drains 25 a minute at its ceiling for hours.
+    """
+    if not enabled or not changed_names:
+        return
+    from backend.people_reconcile import enqueue_tool_names  # noqa: PLC0415 - avoid backend startup cycles.
+
+    enqueue_tool_names(changed_names, reason="canonical_fetch")
+
+
+def _next_record(row: CanonicalToolCache, record: dict[str, Any], *, detail: bool) -> tuple[dict[str, Any], bool]:
+    """Return the record to store and whether it differs from the stored one.
+
+    A row seen for the first time always reports a move: it has no stored
+    record, and the merged one is never empty because a record without a usable
+    name is dropped before it reaches here.
+    """
+    previous = row.record if isinstance(row.record, dict) else None
+    merged = record if detail else _merge_listing_record(row.record or {}, record)
+    return merged, previous != merged
+
+
 def upsert_records(
     records: list[dict[str, Any]],
     *,
@@ -296,6 +329,7 @@ def upsert_records(
         clean_records.append((name, record))
     if not clean_records:
         return 0
+    changed_names: list[str] = []
     try:
         with db.session_scope() as s:
             for name, record in clean_records:
@@ -304,9 +338,12 @@ def upsert_records(
                 if row is None:
                     row = CanonicalToolCache(tool_name=name)
                     s.add(row)
+                merged_record, moved = _next_record(row, record, detail=detail)
+                if moved:
+                    changed_names.append(name)
                 # search_text follows automatically: the model derives it from
                 # every `record` assignment (see CanonicalToolCache).
-                row.record = record if detail else _merge_listing_record(row.record or {}, record)
+                row.record = merged_record
                 if detail or not existing_is_detail:
                     row.source_url = source_url[:MAX_SOURCE_URL]
                     row.expires_at = expires_at
@@ -319,12 +356,7 @@ def upsert_records(
                     row.generation = generation
     except SQLAlchemyError:
         return 0
-    # Queue only after the canonical transaction succeeds. Processing is
-    # asynchronous so anonymous API requests do not wait on derived indexes.
-    if enqueue_reconciliation:
-        from backend.people_reconcile import enqueue_tool_names  # noqa: PLC0415 - avoid backend startup cycles.
-
-        enqueue_tool_names([name for name, _record in clean_records], reason="canonical_fetch")
+    _queue_reconciliation(changed_names, enabled=enqueue_reconciliation)
     return len(clean_records)
 
 
