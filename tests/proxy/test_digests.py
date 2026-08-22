@@ -276,6 +276,13 @@ def test_create_edition_freezes_facts_and_uses_deterministic_fallback(monkeypatc
             {"name": "Grace Hopper", "url": "https://toolhub-evolved.toolforge.org/people/grace-id"}
         ]
         assert tool.highlighted is True
+        # Every link a digest publishes is an Evolved link, tool pages included.
+        # Nothing else pins the origin of this one, so a revert to the official
+        # base would otherwise ship silently into email and onto Meta.
+        assert tool.facts["toolhub_url"] == "https://toolhub-evolved.toolforge.org/tools/example"
+    assert "https://toolhub.wikimedia.org" not in edition.rendered_html
+    assert "https://toolhub.wikimedia.org" not in edition.rendered_wikitext
+    assert "https://toolhub.wikimedia.org" not in edition.rendered_text
     assert "https://example.toolforge.org/" in edition.rendered_html
     assert "Ada Lovelace" in edition.rendered_wikitext
     assert "Grace Hopper" in edition.rendered_text
@@ -340,7 +347,7 @@ def test_model_prompt_requests_grounded_people_names_but_forbids_model_links():
             "name": "known",
             "author_names": ["Ada Lovelace"],
             "maintainer_names": ["Grace Hopper"],
-            "toolhub_url": "https://toolhub.wikimedia.org/tools/known",
+            "toolhub_url": "https://toolhub-evolved.toolforge.org/tools/known",
             "url": "https://known.toolforge.org/",
         }
     ]
@@ -366,7 +373,7 @@ def test_model_payload_bounds_busy_periods_but_daily_supplies_every_tool():
             "title": f"Tool {index}",
             "description": (f"Description for tool {index}. " * 80),
             "tasks": [f"task-{item}" * 30 for item in range(12)],
-            "toolhub_url": f"https://toolhub.wikimedia.org/tools/tool-{index}",
+            "toolhub_url": f"https://toolhub-evolved.toolforge.org/tools/tool-{index}",
             "url": f"https://tool-{index}.example/",
             "authors": [{"name": "Person", "url": "https://people.example/person"}],
         }
