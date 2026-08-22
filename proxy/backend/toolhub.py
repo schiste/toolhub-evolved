@@ -127,6 +127,18 @@ def current_user(access_token: str) -> dict[str, object]:
     return data
 
 
+def account_detail(toolhub_user_id: str | int, access_token: str) -> dict[str, object]:
+    """Fetch one official Toolhub account row.
+
+    /api/user/ answers "who holds this token", and its CurrentUser serializer
+    carries no social_auth at all -- only the per-account UserDetail row does.
+    The Wikimedia global account id therefore cannot be read from the sign-in
+    response, however authenticated it is, and has to be asked for separately.
+    """
+    data, _status = request_with_token("GET", f"/api/users/{toolhub_user_id}/", access_token=access_token)
+    return data if isinstance(data, dict) else {}
+
+
 def wikimedia_global_user_id(profile: dict[str, object]) -> str:
     """Return the stable Wikimedia global account id in a Toolhub user row."""
     social_auth = profile.get("social_auth")

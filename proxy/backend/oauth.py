@@ -199,6 +199,27 @@ def _persist_login(
     return db.run_with_lock_retry(persist)
 
 
+def _global_user_id_at_login(toolhub_user_id: str, access_token: str) -> str:
+    """Read the Wikimedia global account id from the account's own Toolhub row.
+
+    Sign-in identity comes from /api/user/, whose CurrentUser serializer has no
+    social_auth, so extracting the global id from it returned "" on every login
+    this codebase has ever performed and the column stayed NULL. It was filled
+    only out of band, when a reconciliation pass copied it from the account
+    projection -- so between a first sign-in and the next pass an account was
+    fully authenticated and yet had no Wikimedia identity, which is what refused
+    digest subscriptions with an instruction the person could not act on.
+
+    A failure here must not fail the sign-in. Authentication already succeeded,
+    and the reconciliation pass remains the backstop it always was.
+    """
+    try:
+        return toolhub.wikimedia_global_user_id(toolhub.account_detail(toolhub_user_id, access_token))
+    except (requests.RequestException, toolhub.ToolhubAPIError, toolhub.ToolhubAuthError, ValueError) as exc:
+        _log.warning("could not read the Wikimedia global account id for Toolhub user %s: %s", toolhub_user_id, exc)
+        return ""
+
+
 @oauth_bp.route("/oauth/callback")
 def oauth_callback() -> Response:
     """Exchange the code, fetch the Toolhub user, sign into Evolved."""
@@ -211,7 +232,9 @@ def oauth_callback() -> Response:
         token_payload = toolhub.exchange_code(code=request.args["code"], redirect_uri=redirect_uri)
         profile = toolhub.current_user(str(token_payload["access_token"]))
         toolhub_user_id, username = str(profile["id"]), str(profile["username"])
-        wikimedia_global_user_id = toolhub.wikimedia_global_user_id(profile)
+        wikimedia_global_user_id = toolhub.wikimedia_global_user_id(profile) or _global_user_id_at_login(
+            toolhub_user_id, str(token_payload["access_token"])
+        )
     except toolhub.ToolhubAPIError as exc:
         return _login_failed(f"Toolhub rejected the exchange (HTTP {exc.status_code})", exc.payload)
     except requests.HTTPError as exc:

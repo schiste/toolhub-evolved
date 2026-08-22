@@ -11,7 +11,7 @@ from xml.sax.saxutils import escape, quoteattr
 from flask import Blueprint, Response, jsonify, request
 from sqlalchemy import func, select
 
-from backend import db
+from backend import db, identity_graph
 from backend.digest_delivery import public_base_url, read_subscription_token
 from backend.digest_health import status_counts
 from backend.digests import CADENCES, DEFAULT_LANGUAGE, LIFTWING_AUTHOR, WEBSITE_VISIBLE_STATUSES
@@ -293,9 +293,15 @@ def subscriptions_post() -> Response:  # noqa: PLR0911 - each upstream/identity 
     uid = current_user_id()
     with db.session_scope() as session:
         user = session.get(User, uid)
-        global_id = user.wikimedia_global_user_id if user is not None else None
+        # A sign-in resolves this now, but an account that signed in before it
+        # did carries a session that never revisits identity, so fall back to
+        # the official account projection rather than refusing a signed-in user.
+        global_id = identity_graph.hydrate_user_identity(session, user) if user is not None else ""
     if not global_id:
-        return jsonify({"error": "connect a Wikimedia account before subscribing"}), HTTP_BAD_REQUEST
+        _log.warning("digest subscription refused: no Wikimedia global account id for user %s", uid)
+        return jsonify(
+            {"error": "your Wikimedia identity is not available yet; sign out and sign in again to refresh it"}
+        ), HTTP_BAD_REQUEST
     identity = WikimediaIdentityProvider().lookup(global_id)
     if identity is None:
         _log.warning("digest subscription refused: identity lookup returned nothing for global id %s", global_id)

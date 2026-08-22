@@ -7542,22 +7542,45 @@ def test_oauth_callback_identity_api_failure(client, monkeypatch):
     assert client.get(f"/oauth/callback?code=c&state={state}").headers["Location"] == "/?login=error"
 
 
+def _toolhub_identity_endpoints(*, detail=None):
+    """Answer the two identity endpoints the way official Toolhub actually does.
+
+    /api/user/ is served by the CurrentUser serializer, which carries no
+    social_auth whatsoever; only the per-account /api/users/<id>/ row does. A
+    fake that returns social_auth from /api/user/ agrees with any code that
+    reads it there, and so cannot detect that no login has ever resolved a
+    global account id -- which is exactly the bug that shipped.
+    """
+    account = {"id": 7, "username": "Ada", "social_auth": [{"provider": "wikimedia", "uid": "160"}]}
+
+    def request(method, url, *_args, **_kwargs):
+        del method
+        if url.endswith("/api/user/"):
+            return FakeResp({"id": 7, "username": "Ada", "is_authenticated": True})
+        if url.endswith("/api/users/7/"):
+            return FakeResp(account, 200) if detail is None else FakeResp(detail, 404)
+        raise AssertionError(f"unexpected Toolhub request: {url}")
+
+    return request
+
+
+def test_oauth_callback_signs_in_when_the_account_row_is_unavailable(client, monkeypatch):
+    """Identity is not authentication: a failed global-id lookup must not fail sign-in."""
+    configure_oauth(monkeypatch)
+    monkeypatch.setattr(toolhub.requests, "post", lambda *a, **k: FakeResp({"access_token": "at", "expires_in": 3600}))
+    monkeypatch.setattr(toolhub.requests, "request", _toolhub_identity_endpoints(detail={"detail": "Not found."}))
+    state = start_login(client)
+    assert client.get(f"/oauth/callback?code=c&state={state}").headers["Location"] == "/"
+    assert client.get("/v1/user/").get_json()["authenticated"] is True
+    with db.session_scope() as s:
+        assert s.query(User).one().wikimedia_global_user_id is None
+
+
 def test_oauth_callback_success_and_relogin(client, monkeypatch):
     configure_oauth(monkeypatch)
     token_payload = {"access_token": "at", "refresh_token": "rt", "expires_in": 3600}
     monkeypatch.setattr(toolhub.requests, "post", lambda *a, **k: FakeResp(token_payload))
-    monkeypatch.setattr(
-        toolhub.requests,
-        "request",
-        lambda *a, **k: FakeResp(
-            {
-                "id": 7,
-                "username": "Ada",
-                "is_authenticated": True,
-                "social_auth": [{"provider": "wikimedia", "uid": "160"}],
-            }
-        ),
-    )
+    monkeypatch.setattr(toolhub.requests, "request", _toolhub_identity_endpoints())
     state = start_login(client)
     assert client.get(f"/oauth/callback?code=c&state={state}").headers["Location"] == "/"
     me = client.get("/v1/user/").get_json()
