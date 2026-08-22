@@ -20,7 +20,7 @@ def facts(count=2):
             "name": f"tool-{index}",
             "title": f"Tool {index}",
             "description": f"Tool {index} supports a documented workflow.",
-            "toolhub_url": f"https://toolhub.wikimedia.org/tools/tool-{index}",
+            "toolhub_url": f"https://toolhub-evolved.toolforge.org/tools/tool-{index}",
             "authors": [],
             "maintainers": [],
         }

@@ -62,7 +62,7 @@ DEFAULT_BACKFILL_DAYS = 90
 # unreachable inside the job timeout and validated editions accumulate forever.
 DEFAULT_MAX_EDITIONS_PER_RUN = 40
 LIFTWING_AUTHOR = "LiftWing Qwen"
-PROMPT_VERSION = "toolhub-digest-v5-bounded-editorial"
+PROMPT_VERSION = "toolhub-digest-v6-bounded-editorial"
 MAX_HIGHLIGHTS = 5
 MAX_MODEL_CANDIDATES = 24
 MAX_MODEL_FACTS_BYTES = 32_000
@@ -82,7 +82,6 @@ LIFTWING_CHAT_PATH_RE = re.compile(
     r"^/service/lw/inference/v1/models/(?P<model>llm-[a-z0-9][a-z0-9-]{0,127})/openai/v1/chat/completions$"
 )
 DECEMBER = 12
-TOOLHUB_PUBLIC_BASE = "https://toolhub.wikimedia.org/tools"
 EVOLVED_PUBLIC_BASE_DEFAULT = "https://toolhub-evolved.toolforge.org"
 ARCHIVE_STATE_KEY = "meta_archive"
 ARCHIVE_MARKER = "<!-- toolhub-evolved-digest-archive:en -->"
@@ -465,7 +464,13 @@ def _tool_facts(
         "keywords": _fact_list(source.get("keywords")),
         "repository": _fact_text(source.get("repository")),
         "url": _safe_http_url(source.get("url")),
-        "toolhub_url": f"{TOOLHUB_PUBLIC_BASE}/{quote(name, safe='')}",
+        # Named for the field, not the host: this dict is frozen into
+        # DigestEditionTool.facts and served verbatim by /v1/digests, and
+        # published editions are immutable, so renaming the key would fork
+        # the archive schema between old and new editions with no way to
+        # backfill. The origin is what had to change, and it now comes from
+        # the same configured base as every other link in the digest.
+        "toolhub_url": f"{evolved_base}/tools/{quote(name, safe='')}",
         "authors": authors,
         "maintainers": maintainers,
         "author_names": [item["name"] for item in authors],
@@ -602,7 +607,7 @@ def _model_payload(
         "praise such as innovative, powerful, exciting, or useful. evidence_field must name one "
         "supplied metadata field and evidence must exactly copy one supporting string from that field. Never invent "
         "claims, names, links, popularity, or endorsement. Never emit URLs: the trusted renderer adds the supplied "
-        "Toolhub page, direct-tool, author, and maintainer links. Do not include analysis or think tags."
+        "Toolhub Evolved page, direct-tool, author, and maintainer links. Do not include analysis or think tags."
     )
     user = json.dumps(
         {
@@ -849,7 +854,7 @@ def _people(fact: dict[str, Any], role: str) -> list[dict[str, str]]:
 
 def _html_tool_context(fact: dict[str, Any]) -> str:
     """Render deterministic tool and people links for the local HTML edition."""
-    links = [f'<a href="{html.escape(fact["toolhub_url"])}">Toolhub page</a>']
+    links = [f'<a href="{html.escape(fact["toolhub_url"])}">Toolhub Evolved page</a>']
     if fact.get("url"):
         links.append(f'<a href="{html.escape(fact["url"])}" rel="noopener nofollow">Open tool</a>')
     rows = [f'<p class="digest-tool__links">{" · ".join(links)}</p>']
@@ -866,7 +871,7 @@ def _html_tool_context(fact: dict[str, Any]) -> str:
 def _wiki_tool_context(fact: dict[str, Any], *, nested: bool = False) -> str:
     """Render safe external-link lines for Meta and talk-page wikitext."""
     marker = "**" if nested else "*"
-    lines = [f"{marker} [{fact['toolhub_url']} Toolhub page]"]
+    lines = [f"{marker} [{fact['toolhub_url']} Toolhub Evolved page]"]
     if fact.get("url"):
         lines.append(f"{marker} [{fact['url']} Open tool]")
     for role, label in (("authors", "Authors"), ("maintainers", "Maintainers")):
@@ -879,7 +884,7 @@ def _wiki_tool_context(fact: dict[str, Any], *, nested: bool = False) -> str:
 
 def _text_tool_context(fact: dict[str, Any]) -> str:
     """Render deterministic URLs and attribution for email/plain text."""
-    lines = [f"Toolhub page: {fact['toolhub_url']}"]
+    lines = [f"Toolhub Evolved page: {fact['toolhub_url']}"]
     if fact.get("url"):
         lines.append(f"Tool: {fact['url']}")
     for role, label in (("authors", "Authors"), ("maintainers", "Maintainers")):
