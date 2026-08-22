@@ -755,6 +755,30 @@ def _current_head(state: RepositoryAnalysisState, url: str) -> str:
     return (state.commit_sha or "") if reusable else ""
 
 
+def _decide(tool_name: str, url: str, head: str, *, force: bool) -> tuple[str, str]:
+    """Decide whether a scan still needs to happen, before paying for one.
+
+    Returns (outcome, decided_head). A non-empty outcome is scan_tool's answer
+    and nothing is fetched; an empty one means go ahead, with decided_head as
+    the commit already on file.
+    """
+    with db.session_scope() as s:
+        state = _state(s, tool_name)
+        decided_head = _current_head(state, url)
+        if not force and head and head == decided_head:
+            state.checked_at = utcnow()
+            return "skipped", decided_head
+        if state.next_attempt_at is not None and state.next_attempt_at > utcnow() and not force:
+            return "backoff", decided_head
+        # Stamp the attempt before the fetch rather than after it. A pod
+        # killed mid-clone leaves no other trace, and _scan_order puts a row
+        # with no checked_at first, so every restart reselected the same
+        # repository and died on it again. A scheduled job needed an
+        # operator to break that; a continuous one would spin on it.
+        state.checked_at = utcnow()
+    return "", decided_head
+
+
 def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) -> str:
     """Scan one canonical tool, returning what became of it.
 
@@ -773,20 +797,9 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
         # own -- so there is nothing to ask for that costs less than the fetch
         # itself, and the currency check moves to after acquisition instead.
         head = "" if page is not None else repository_head(url)
-        with db.session_scope() as s:
-            state = _state(s, tool_name)
-            analyzed_head = _current_head(state, url)
-            if not force and head and head == analyzed_head:
-                state.checked_at = utcnow()
-                return "skipped"
-            if state.next_attempt_at is not None and state.next_attempt_at > utcnow() and not force:
-                return "backoff"
-            # Stamp the attempt before the fetch rather than after it. A pod
-            # killed mid-clone leaves no other trace, and _scan_order puts a row
-            # with no checked_at first, so every restart reselected the same
-            # repository and died on it again. A scheduled job needed an
-            # operator to break that; a continuous one would spin on it.
-            state.checked_at = utcnow()
+        outcome, analyzed_head = _decide(tool_name, url, head, force=force)
+        if outcome:
+            return outcome
         acquired = _acquire_wiki(page) if page is not None else _acquire_clone(url)
         # Second check, and the only one a wiki tool gets. It also catches the
         # repository whose advertised HEAD and cloned HEAD disagree: analysis
