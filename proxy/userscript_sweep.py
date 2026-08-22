@@ -17,6 +17,23 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _sweep_progress(summary: dict) -> str:
+    """Render the part of a sweep's result a watch has no equivalent of.
+
+    Written into the same line rather than a second one because these are the
+    three numbers that say whether a wiki is converging: which road named its
+    pages, how many there are, and how far this run got. A census that quietly
+    stopped being exact -- a replica that went away, leaving a capped search
+    behind -- shows up here rather than only as a total that stopped growing.
+    """
+    if summary.get("mode") != "sweep":
+        return ""
+    return (
+        f" source={summary['source']} enumerated={summary['enumerated']} "
+        f"sweep_cursor={summary['sweep_cursor']} complete={int(bool(summary['complete']))}"
+    )
+
+
 def _wikis() -> list[str]:
     """List the wikis this run should cover, in order, from the environment."""
     raw = os.environ.get("USERSCRIPT_WIKIS", DEFAULT_WIKIS)
@@ -63,7 +80,8 @@ def main() -> int:
                 f"wiki={summary['wiki']} mode={summary['mode']} "
                 f"asked={summary['asked']} fetched={summary['fetched']} "
                 f"written={summary['written']} skipped={summary['skipped']} "
-                f"unreadable={summary['unreadable']}\n",
+                f"unreadable={summary['unreadable']}"
+                f"{_sweep_progress(summary)}\n",
             )
             stamped = userscript_creation_dates.backfill([wiki])
             sys.stdout.write(

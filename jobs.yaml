@@ -371,15 +371,23 @@
 
 - name: userscript-census
   # User-space script directory: enumerate every javascript/css content-model
-  # page in User: space through CirrusSearch, store body and analysis, and
-  # record which pages load which. The hourly run follows recent changes; a
-  # full sweep is thousands of requests and is asked for with USERSCRIPT_SWEEP=1
-  # (a wiki that has never been swept gets one on its first run regardless).
+  # page in User: space, store body and analysis, and record which pages load
+  # which. On Toolforge the enumeration is one indexed read of the Wiki
+  # Replicas, which is exact and uncapped; the CirrusSearch road is the fallback
+  # for hosts with no replica.
+  #
+  # The hourly run follows recent changes. A full sweep is thousands of requests
+  # and is asked for with USERSCRIPT_SWEEP=1 -- except that a wiki which has
+  # never completed one, or which is part-way through one, sweeps regardless.
+  # USERSCRIPT_LIMIT bounds how many pages a single run reads, and the wiki's
+  # sweep cursor carries the rest to the next run, so a corpus far larger than
+  # one hour's budget converges over a day or two instead of timing out. 2000
+  # titles is 100 content requests at CONTENT_BATCH=20.
+  #
   # Meta is here for the cross-wiki edges: global.js lives there and loads
   # scripts hosted on other wikis, which is the strongest signal a script has
-  # for becoming a global gadget. Its javascript corpus is larger than one
-  # search pass can walk, so its enumeration lands incomplete and says so.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
+  # for becoming a global gadget.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org USERSCRIPT_LIMIT=2000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
   image: python3.13
   schedule: "23 * * * *"
   emails: onfailure

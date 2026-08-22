@@ -62,22 +62,50 @@ script.
 
 ## Discovery and reading
 
-`backend.userscript_census` asks the search index for pages in namespace 2 whose
-content model is `javascript` or `css`. The alternative — walking
-`list=allpages` and filtering on the suffix — reads several hundred thousand
-titles to find nine thousand pages, and gets the suffix question wrong at the end
-of it.
+Discovery asks for pages in namespace 2 whose content model is `javascript` or
+`css`. The alternative — walking `list=allpages` and filtering on the suffix —
+reads several hundred thousand titles to find nine thousand pages, and gets the
+suffix question wrong at the end of it.
 
-Two API limits shape the code:
+`backend.userscript_enumeration` picks between two roads to that list:
+
+- **The Wiki Replicas** (`wiki_replica.ENUMERATION_QUERY`), preferred. One
+  indexed read of `page` filtered on `page_content_model`, ordered by `page_id`,
+  with no cap and no paging. Namespace-2 pages always record an explicit content
+  model, so the predicate is exact: it finds the twenty to sixty pages per wiki
+  holding JavaScript under a name that does not end in `.js`, and skips the
+  wikitext pages that do. `page_id` order is creation order, which is the
+  ordering `discovery_rank` records, obtained for free.
+- **The search index** (`backend.userscript_census`), the fallback. Replicas are
+  reachable only from inside Toolforge, so a laptop, CI, or any host without
+  `replica.my.cnf` still has to be able to run a census. What this road gives up
+  is completeness on a large wiki, and it says so rather than pretending.
+
+The replica road costs one Action API request — `meta=siteinfo`, to learn what
+the wiki calls namespace 2. The replica stores `page_title` without a namespace
+and with underscores; the API answers with the local name and spaces, and the
+census keys ranks, revisions and tombstones on the title, so the two spellings
+have to be made one before anything is fetched.
+
+Three limits shape the code:
 
 - **Search refuses an offset of 10,000 or more** (`SEARCH_OFFSET_CAP`). A model
   with more hits than that cannot be walked in one query, so the count is
   reported and `enumeration_complete` goes false rather than the walk quietly
   stopping. An enumeration that silently truncates at 10,000 looks exactly like
-  a complete one.
+  a complete one. **`prefix:` cannot be used to work around this**: measured
+  against Meta, one `-prefix:` clause partitions exactly, two are silently
+  dropped, and two positive ones return nothing. The search API cannot be made
+  to prove it named everything, which is why the replica is preferred.
 - **A response is capped at 2 MB**, which a batch of large scripts can exceed. A
   batch that comes back too large is split rather than dropped. Pages are read
   `CONTENT_BATCH` (20) at a time.
+- **A run's own budget.** Naming 155,000 pages is cheap; fetching them is ~7,800
+  requests. `sweep(limit=)` bounds one run and `sweep_cursor` carries the
+  position forward, so successive runs cover the corpus instead of re-reading
+  its first slice. Only the run that reaches the end counts as a completed
+  sweep, tombstones what the wiki no longer lists, and lets the wiki fall
+  through to watching.
 
 Nothing here fetches on its own. Every Action API call goes through the existing
 `WikimediaClient`, which validates the host before each request.
@@ -85,8 +113,8 @@ Nothing here fetches on its own. Every Action API call goes through the existing
 ## Sweep and watch
 
 `backend.userscript_sweep` runs the same machinery two ways. A **sweep** walks
-the search index for every page of a script content model, and is how a wiki
-first enters the directory. A **watch** follows `recentchanges` since the stored
+every page of a script content model, in creation order, and is how a wiki
+first enters the directory — over as many runs as its `limit` requires. A **watch** follows `recentchanges` since the stored
 cursor, and is how it stays current. Between them they are the difference between
 a census and a directory.
 
@@ -233,13 +261,13 @@ Moving either must not move the other.
 All five tables are rebuildable from a fresh sweep. None holds anything that is
 not already publicly readable on the wiki.
 
-| Table                           | Contents                                                                                                                                      |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, revision id, `discovery_rank`, body, `deleted_at`               |
-| `user_script_imports`           | One row per load edge, keyed on source, verb and target; `is_stylesheet` separates CSS loads from script loads                                |
-| `user_script_census_state`      | Per-wiki cursor and counters: `changes_cursor`, `sweeps_completed`, `enumeration_complete`, `enumeration_totals`, status, timings, last error |
-| `user_script_directory`         | The projected directory: one row per original, with `tier`, `demand`, `instances` and `position`                                              |
-| `user_script_directory_members` | Every page folded under an original, with its `relation`                                                                                      |
+| Table                           | Contents                                                                                                                                                       |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, revision id, `discovery_rank`, body, `deleted_at`                                |
+| `user_script_imports`           | One row per load edge, keyed on source, verb and target; `is_stylesheet` separates CSS loads from script loads                                                 |
+| `user_script_census_state`      | Per-wiki cursors and counters: `changes_cursor`, `sweep_cursor`, `sweeps_completed`, `enumeration_complete`, `enumeration_totals`, status, timings, last error |
+| `user_script_directory`         | The projected directory: one row per original, with `tier`, `demand`, `instances` and `position`                                                               |
+| `user_script_directory_members` | Every page folded under an original, with its `relation`                                                                                                       |
 
 `backend.userscript_projection.project()` rebuilds the last two from the first
 two. It is whole-corpus and idempotent: running it twice over unchanged pages
@@ -291,6 +319,7 @@ on a folded page — arrives in a 404 body.
 ```
 schedule: "23 * * * *"     # hourly watch
 USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org
+USERSCRIPT_LIMIT=2000
 ```
 
 - `USERSCRIPT_WIKIS` — comma-separated hosts, in order. Defaults to
@@ -298,9 +327,18 @@ USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org
   Toolforge envvar.
 - `USERSCRIPT_SWEEP=1` — ask for a full sweep. A full sweep is thousands of
   requests and is not something to run hourly, so the schedule runs a watch and
-  the sweep is asked for explicitly. **A wiki with no completed sweep gets one
-  whether or not this run asked for it** — a watch with no cursor would otherwise
-  learn only what changed since it started.
+  the sweep is asked for explicitly. **A wiki with no completed sweep, or one
+  part-way through a bounded sweep, gets one whether or not this run asked for
+  it** — a watch with no cursor would otherwise learn only what changed since it
+  started, and a sweep abandoned half-way would never reach the other half.
+- `USERSCRIPT_LIMIT` — how many pages one run may read. 0 (the default) means
+  the whole wiki in one run. With a limit, the run reads a slice, records where
+  it stopped in `sweep_cursor`, and the next run continues from there; only the
+  run that reaches the end counts as a completed sweep, tombstones what is gone,
+  and lets the wiki fall through to watching. 2000 titles is 100 content
+  requests at `CONTENT_BATCH` 20.
+- `USERSCRIPT_WATCH_LIMIT` — recent-changes entries per watch. Independent of
+  `USERSCRIPT_LIMIT`, so bounding sweeps does not shrink the hourly watch.
 
 The projection follows every run. See [RUNBOOK.md](RUNBOOK.md) for lock
 reclamation, log locations, and the shared job contract.
@@ -320,28 +358,33 @@ still works, it just scores every load made through a local verb at zero. Meta
 needs no entry — its `Common.js` overrides `importScript` rather than defining a
 new verb, and `importScript` is already a global loader verb.
 
-### Meta is larger than one enumeration
+### Meta was larger than one search, and is not larger than one replica read
 
-Measured 2026-08-20, Meta holds **23,587** javascript-model and **8,925**
-css-model pages in user space. `SEARCH_OFFSET_CAP` is 10,000, so
-`enumerate_titles` short-circuits on the javascript half: it returns the first
-`SEARCH_PAGE_SIZE` (500) titles and sets `complete = False`. `discover()` ANDs
-completeness across both models, `sweep()` writes `enumeration_complete = False`
-and — correctly — skips `_mark_missing`, since a page absent from a truncated
-enumeration has not been shown to be gone.
+Measured on the replicas on 2026-08-22, Meta holds **25,354** javascript-model
+and **9,436** css-model pages in user space — 34,814 in total, against the
+search index's 23,596. `SEARCH_OFFSET_CAP` is 10,000, so `enumerate_titles`
+used to short-circuit on the javascript half: it returned the first
+`SEARCH_PAGE_SIZE` (500) titles and set `complete = False`, and `sweep()` —
+correctly — skipped `_mark_missing`, since a page absent from a truncated
+enumeration has not been shown to be gone. Meta's javascript census therefore
+covered roughly 500 of 25,354 pages.
 
-The consequence is that Meta's javascript census covers roughly 500 of 23,587
-pages. That is recorded honestly rather than papered over: the state row says
-so, `coverage()` returns `enumerated: false`, and `/userscripts` prints a notice
-that only part of the wiki's user space has been read. The css half is under the
-cap and is complete.
+The remedy `Discovery`'s docstring used to prescribe — narrowing by title prefix
+— does not work. Probed live against Meta: `prefix:User:A` returns 1,856 and
+`-prefix:User:A` returns 21,740, which sum exactly to the 23,596 total, but a
+second `-prefix:` clause is silently dropped and two positive prefixes return
+zero. Prefix clauses do not compose, so the index cannot be partitioned into
+walkable buckets and cannot be made to prove it named everything.
 
-The remedy `Discovery`'s own docstring prescribes — narrowing the query by title
-prefix — is not implemented. `search_query()` and `enumerate_titles()` both
-accept a `prefix=`, but `discover()` never passes one, so nothing splits an
-over-cap wiki into walkable buckets. Until that exists, Meta contributes a
-sample of its cross-wiki edges rather than all of them, and any wiki with more
-than 10,000 pages of one model will land the same way.
+The replica answers the same question exactly and without a cap, so Meta is now
+enumerated in full and `enumeration_complete` is true for it. The `prefix=`
+arguments on `search_query()` and `enumerate_titles()` remain, unused, on the
+fallback road; nothing passes one, and nothing should.
+
+Any wiki with more than 10,000 pages of one model still lands the old way on a
+host with no replica — which is every host outside Toolforge, and is why the
+state row and `coverage()` keep reporting enumeration completeness rather than
+assuming it.
 
 ### Owners, and the namespaces titles arrive in
 

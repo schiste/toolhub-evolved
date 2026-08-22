@@ -1,12 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Finding a wiki's user scripts, and reading them, through the public API.
 
-Discovery asks the search index for pages whose *content model* is javascript or
-css, which is the same boundary `backend.userscripts` draws and for the same
-reason: `User:Penquista/monobook.css` holds JavaScript, and any enumeration that
-trusts the file suffix both misses it and miscategorises it. MediaWiki records
-the model per page, CirrusSearch indexes it, and asking for it directly is the
-only route that agrees with what the parser actually does.
+Discovery asks for pages whose *content model* is javascript or css, which is
+the same boundary `backend.userscripts` draws and for the same reason:
+`User:Penquista/monobook.css` holds JavaScript, and any enumeration that trusts
+the file suffix both misses it and miscategorises it. MediaWiki records the
+model per page, and asking for it directly is the only route that agrees with
+what the parser actually does.
+
+The search this module builds is one of the two roads to that list, and the
+fallback one -- `backend.userscript_enumeration` prefers the Wiki Replicas,
+which answer the same question exactly and without a cap. This road is what a
+host outside Toolforge has, and it is kept honest rather than made complete.
 
 The alternative -- walking `list=allpages` over the user namespace and filtering
 on the suffix -- is exhaustive but reads several hundred thousand titles to find
@@ -65,9 +70,14 @@ class Discovery:
     """Every page of one content model that the search index will name.
 
     `complete` is the honest part. False means the wiki holds more pages of this
-    model than one search can walk, so `titles` is a prefix of the truth and the
-    caller must narrow the query -- by title prefix -- rather than treat the
-    result as the wiki's full set.
+    model than one search can walk, so `titles` is a prefix of the truth rather
+    than the wiki's full set.
+
+    There is no way to fix that from here. Narrowing by title prefix does not
+    work: measured against Meta, one negated `prefix:` clause partitions the
+    index exactly, but a second is silently dropped and two positive ones return
+    nothing, so the index cannot be cut into walkable pieces. A wiki this large
+    is enumerated from the replica or not exactly at all.
     """
 
     model: str
@@ -214,6 +224,37 @@ def read_search(payload: object) -> tuple[int, tuple[str, ...]]:
     if not isinstance(results, list):
         return (total, ())
     return (total, tuple(str(item.get("title") or "") for item in results if isinstance(item, dict)))
+
+
+def siteinfo_params() -> dict[str, Any]:
+    """Parameters asking a wiki what it calls each of its namespaces."""
+    return {"action": "query", "meta": "siteinfo", "siprop": "namespaces"}
+
+
+def read_namespace_prefix(payload: object, namespace: int = USER_NAMESPACE) -> str:
+    """Read one namespace's local name, or "" when the answer does not carry it.
+
+    The local name, not the canonical one. `Utilisateur` and `User` name the
+    same namespace, but only one of them is how frwiki spells the titles it
+    hands back, and the census stores what it is handed.
+    """
+    query = payload.get("query") if isinstance(payload, dict) else None
+    namespaces = query.get("namespaces") if isinstance(query, dict) else None
+    entry = namespaces.get(str(namespace)) if isinstance(namespaces, dict) else None
+    return str(entry.get("name") or "") if isinstance(entry, dict) else ""
+
+
+def full_title(prefix: str, page_title: str) -> str:
+    """Rebuild a stored-form title from a replica `page_title` and a namespace name.
+
+    The replica stores a title without its namespace and with underscores for
+    spaces; the API answers with the namespace and with spaces. Both are put
+    back here, so a title built from a replica row and the same title read from
+    the API are one string -- which is what lets a sweep match its ranks against
+    what came back, and what keeps it from tombstoning every page it just read
+    under a spelling it did not recognise.
+    """
+    return f"{prefix}:{page_title}".replace("_", " ")
 
 
 def changes_params(since: str, limit: int) -> dict[str, Any]:

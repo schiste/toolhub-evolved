@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import db, userscript_census as census, userscript_sweep as sweeper  # noqa: E402
+from backend import db, userscript_census as census, userscript_sweep as sweeper, wiki_replica  # noqa: E402
 from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage  # noqa: E402
 
 FRWIKI = "fr.wikipedia.org"
@@ -22,6 +22,20 @@ def _database():
     backend.register(application, db_url="sqlite://", secret_key="test-secret")
     with application.app_context():
         yield
+
+
+@pytest.fixture(autouse=True)
+def _no_replica(monkeypatch, tmp_path):
+    """Pin every sweep here to the search road.
+
+    `userscript_enumeration` prefers the Wiki Replicas, and a developer machine
+    that happens to carry a `replica.my.cnf` would send these sweeps down a road
+    `FakeWiki` cannot answer -- so the same test would pass in CI and reach for a
+    database on a laptop. Pointing the credentials at a path that does not exist
+    is what CI and Toolforge-less hosts already look like, stated rather than
+    assumed. The replica road has its own tests, with its own injected reader.
+    """
+    monkeypatch.setenv(wiki_replica.CONFIG_PATH_ENV, str(tmp_path / "absent.cnf"))
 
 
 class Boom(RuntimeError):
@@ -142,6 +156,7 @@ def state():
             "complete": row.enumeration_complete,
             "totals": row.enumeration_totals,
             "cursor": row.changes_cursor,
+            "sweep_cursor": row.sweep_cursor,
             "status": row.status,
         }
 
@@ -156,17 +171,16 @@ def test_discovery_covers_both_content_models_in_one_pass():
             "User:B/skin.css": page(".a{}", model="css"),
         },
     )
-    titles, totals, complete = sweeper.discover(wiki.request, FRWIKI)
-    assert set(titles) == {"User:A/one.js", "User:B/skin.css"}
-    assert totals == {"javascript": 1, "css": 1}
-    assert complete is True
+    found = sweeper.discover(wiki.request, FRWIKI)
+    assert set(found.titles) == {"User:A/one.js", "User:B/skin.css"}
+    assert found.totals == {"javascript": 1, "css": 1}
+    assert found.complete is True
 
 
 def test_a_model_past_the_offset_cap_makes_the_whole_discovery_incomplete():
     wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
     wiki.totals["contentmodel:javascript"] = census.SEARCH_OFFSET_CAP
-    _titles, _totals, complete = sweeper.discover(wiki.request, FRWIKI)
-    assert complete is False
+    assert sweeper.discover(wiki.request, FRWIKI).complete is False
 
 
 def test_discovery_order_is_the_order_the_search_index_gave():
@@ -178,8 +192,8 @@ def test_discovery_order_is_the_order_the_search_index_gave():
         },
         page_size=2,
     )
-    titles, _totals, _complete = sweeper.discover(wiki.request, FRWIKI)
-    assert titles == ("User:A/one.js", "User:B/two.js", "User:C/three.js")
+    found = sweeper.discover(wiki.request, FRWIKI)
+    assert found.titles == ("User:A/one.js", "User:B/two.js", "User:C/three.js")
 
 
 # -- reading ------------------------------------------------------------
@@ -395,6 +409,95 @@ def test_an_incomplete_enumeration_never_declares_anything_gone():
     assert summary["complete"] is False
 
 
+# -- covering a wiki over several runs -----------------------------------
+
+# Three pages, one per run at limit=1, so the cursor has to carry twice.
+THREE = {
+    "User:A/one.js": page("var a = 1;"),
+    "User:B/two.js": page("var b = 2;"),
+    "User:C/three.js": page("var c = 3;"),
+}
+
+
+def test_a_bounded_sweep_reads_its_slice_and_records_where_it_stopped():
+    summary = sweeper.sweep(FakeWiki(THREE).request, FRWIKI, limit=1)
+    assert summary["asked"] == 1
+    assert summary["enumerated"] == 3
+    assert summary["sweep_cursor"] == 1
+
+
+def test_the_next_bounded_sweep_continues_instead_of_re_reading_the_first_slice():
+    wiki = FakeWiki(THREE)
+    sweeper.sweep(wiki.request, FRWIKI, limit=1)
+    sweeper.sweep(wiki.request, FRWIKI, limit=1)
+    assert stored("User:B/two.js") is not None
+    assert state()["sweep_cursor"] == 2
+
+
+def test_successive_bounded_sweeps_cover_a_wiki_a_single_run_could_not():
+    wiki = FakeWiki(THREE)
+    for _run in range(3):
+        sweeper.sweep(wiki.request, FRWIKI, limit=1)
+    assert all(stored(title) is not None for title in THREE)
+
+
+def test_a_page_read_in_a_later_slice_keeps_its_place_in_creation_order():
+    # The rank is a position in the whole enumeration, not in the batch. A slice
+    # numbered from zero would tell the directory the third page ever created
+    # was the first, and the collapse breaks its ties on exactly that.
+    wiki = FakeWiki(THREE)
+    for _run in range(3):
+        sweeper.sweep(wiki.request, FRWIKI, limit=1)
+    assert [stored(title)["rank"] for title in THREE] == [0, 1, 2]
+
+
+def test_a_sweep_still_running_is_not_a_completed_sweep():
+    sweeper.sweep(FakeWiki(THREE).request, FRWIKI, limit=1)
+    assert state()["sweeps"] == 0
+
+
+def test_the_run_that_reaches_the_end_completes_the_sweep_and_clears_the_cursor():
+    wiki = FakeWiki(THREE)
+    for _run in range(3):
+        sweeper.sweep(wiki.request, FRWIKI, limit=1)
+    assert (state()["sweeps"], state()["sweep_cursor"], state()["complete"]) == (1, 0, True)
+
+
+def test_only_the_run_that_reaches_the_end_may_declare_a_page_gone():
+    wiki = FakeWiki(THREE)
+    for _run in range(3):
+        sweeper.sweep(wiki.request, FRWIKI, limit=1)
+    del wiki.pages["User:A/one.js"]
+    removed = [sweeper.sweep(wiki.request, FRWIKI, limit=1)["removed"] for _run in range(2)]
+    assert removed == [0, 1]
+    assert stored("User:A/one.js")["deleted"] is True
+
+
+def test_a_cursor_into_an_enumeration_that_cannot_be_trusted_is_dropped():
+    # A capped search returns a prefix whose length depends on what the index
+    # will serve, so position 1 in this run's list need not be position 1 in the
+    # next one. Restarting costs a pass; carrying on could skip pages silently.
+    wiki = FakeWiki(THREE)
+    sweeper.sweep(wiki.request, FRWIKI, limit=1)
+    wiki.totals["contentmodel:javascript"] = census.SEARCH_OFFSET_CAP
+    assert sweeper.sweep(wiki.request, FRWIKI, limit=1)["asked"] == 1
+    assert stored("User:A/one.js")["rank"] == 0
+
+
+def test_a_cursor_past_the_end_of_a_shrunken_wiki_restarts_it():
+    wiki = FakeWiki(THREE)
+    sweeper.sweep(wiki.request, FRWIKI, limit=2)
+    wiki.pages = {"User:A/one.js": page("var a = 1;")}
+    assert sweeper.sweep(wiki.request, FRWIKI)["sweep_cursor"] == 0
+    assert state()["sweeps"] == 1
+
+
+def test_an_unbounded_sweep_finishes_in_one_run_as_it_always_did():
+    summary = sweeper.sweep(FakeWiki(THREE).request, FRWIKI)
+    assert (summary["asked"], summary["sweep_cursor"]) == (3, 0)
+    assert state()["sweeps"] == 1
+
+
 # -- state --------------------------------------------------------------
 
 
@@ -415,6 +518,7 @@ def test_a_sweep_records_what_it_learned_about_the_wiki():
         "complete": True,
         "totals": {"javascript": 2, "css": 1},
         "cursor": "",
+        "sweep_cursor": 0,
         "status": "idle",
     }
 
@@ -502,6 +606,22 @@ def test_a_swept_wiki_is_watched_by_default():
     assert sweeper.run(wiki.request, FRWIKI)["mode"] == "watch"
 
 
+def test_a_wiki_part_way_through_a_sweep_keeps_sweeping_rather_than_watching():
+    # A watch reports the handful of pages that changed this hour. Falling
+    # through to one with two thirds of the wiki still unread would leave the
+    # rest unread forever, and the state row would say the wiki was covered.
+    wiki = FakeWiki(THREE)
+    sweeper.run(wiki.request, FRWIKI, limit=1)
+    assert sweeper.run(wiki.request, FRWIKI, limit=1)["mode"] == "sweep"
+
+
+def test_a_wiki_watches_again_once_its_sweep_has_reached_the_end():
+    wiki = FakeWiki(THREE)
+    for _run in range(3):
+        sweeper.run(wiki.request, FRWIKI, limit=1)
+    assert sweeper.run(wiki.request, FRWIKI, limit=1)["mode"] == "watch"
+
+
 def test_a_full_run_sweeps_a_wiki_that_was_already_swept():
     wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
     sweeper.run(wiki.request, FRWIKI)
@@ -511,6 +631,22 @@ def test_a_full_run_sweeps_a_wiki_that_was_already_swept():
 # -- the job entrypoint -------------------------------------------------
 
 import userscript_sweep as job  # noqa: E402
+
+#: What `userscript_sweep.run` hands back for a sweep. Spelled out here because
+#: the job's log line reads every one of these keys, so a stub that answered
+#: with fewer would pass while the job itself raised in production.
+SWEPT = {
+    "mode": "sweep",
+    "asked": 0,
+    "fetched": 0,
+    "written": 0,
+    "skipped": 0,
+    "unreadable": 0,
+    "source": "replica",
+    "enumerated": 0,
+    "sweep_cursor": 0,
+    "complete": True,
+}
 
 
 @pytest.fixture
@@ -526,7 +662,7 @@ def test_the_job_sweeps_the_configured_wikis(monkeypatch, capsys, _job_env):
         job.userscript_sweep,
         "run",
         lambda _request, wiki, **kwargs: seen.append((wiki, kwargs))
-        or {"wiki": wiki, "mode": "sweep", "asked": 1, "fetched": 1, "written": 1, "skipped": 0, "unreadable": 0},
+        or dict(SWEPT, wiki=wiki, asked=1, fetched=1, written=1),
     )
     assert job.main() == 0
     assert [wiki for wiki, _kwargs in seen] == ["fr.wikipedia.org", "en.wikipedia.org"]
@@ -556,7 +692,7 @@ def test_a_full_run_is_asked_for_through_the_environment(monkeypatch, _job_env):
         job.userscript_sweep,
         "run",
         lambda _request, wiki, **kwargs: asked.append(kwargs)
-        or {"wiki": wiki, "mode": "sweep", "asked": 0, "fetched": 0, "written": 0, "skipped": 0, "unreadable": 0},
+        or dict(SWEPT, wiki=wiki),
     )
     assert job.main() == 0
     assert asked == [{"full": True, "limit": 40, "watch_limit": 80}]

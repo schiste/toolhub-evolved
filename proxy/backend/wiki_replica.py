@@ -14,6 +14,13 @@ fr.wikipedia: 14,431 user-space script pages with their creation dates in about
 a second, complete back to 2004. Toolforge tools are given replica credentials
 precisely so they do not have to spend the API's budget on this.
 
+Enumeration is the second such question, and the sharper one. "Which pages on
+this wiki are scripts" is `contentmodel:javascript` to the search index, which
+refuses an offset past 10,000 and whose prefix clauses do not compose -- so on
+Meta it can name ten thousand of 25,354 pages and cannot be partitioned into
+walkable pieces. The replica answers it exactly, in one indexed read, with no
+cap and in creation order.
+
 Read-only and best-effort, deliberately. The replicas are reachable only from
 inside Toolforge, so every caller must work without them -- `available()` says
 whether to try, and a failed read is a missing answer rather than a failed job.
@@ -138,10 +145,37 @@ CREATION_QUERY = (
     "WHERE p.page_namespace = %s AND (p.page_title LIKE %s OR p.page_title LIKE %s) "
     "GROUP BY p.page_id"
 )
-#: Suffixes the census recognizes. Content model decides what is a script, but
-#: the replica has no content model, so the query narrows by title and lets the
-#: census's own classification do the rest.
+#: Suffixes the creation query narrows by. Content model is what decides whether
+#: a page is a script -- `ENUMERATION_QUERY` below asks for it directly -- but
+#: dates are stamped onto whatever is already stored, and the watch that stores
+#: pages between sweeps recognises them by suffix because recent changes cannot
+#: be filtered by model. Narrowing here by the wider of the two rules costs one
+#: predicate and means a page the watch found is never left without a date.
 TITLE_PATTERNS = ("%.js", "%.css")
+
+#: Content models the census treats as scripts. Namespace-2 pages always record
+#: an explicit model -- measured on 2026-08-22 across metawiki, frwiki and
+#: enwiki, not one row leaves `page_content_model` NULL -- so matching on it is
+#: exact rather than a filter over a suffix guess. It finds the twenty to sixty
+#: pages per wiki that hold JavaScript under a name not ending in `.js`, and
+#: skips the wikitext pages that do end in one.
+SCRIPT_MODELS = ("javascript", "css")
+
+# Ordered by page id, which is creation order for free: ids are handed out in
+# creation sequence and never reused. The census records a title's position in
+# this sequence as its discovery rank, and the directory reads that as creation
+# order wherever no real timestamp has been stamped on yet.
+#
+# No LIMIT and no paging. This is the query the search index cannot express --
+# CirrusSearch refuses an offset past 10,000 and its prefix clauses do not
+# compose, so on a wiki the size of Meta it can name a prefix of the truth and
+# cannot be made to prove it named the rest.
+ENUMERATION_QUERY = (
+    "SELECT p.page_content_model, p.page_title "
+    "FROM page p "
+    "WHERE p.page_namespace = %s AND p.page_content_model IN (%s, %s) "
+    "ORDER BY p.page_id"
+)
 
 
 def url_for(wiki: str) -> str:
@@ -176,6 +210,22 @@ def read_dbnames(rows: Iterable[Sequence[Any]]) -> dict[str, str]:
         if dbname and host:
             found[host] = dbname
     return found
+
+
+def read_page_titles(rows: Iterable[Sequence[Any]]) -> tuple[tuple[str, str], ...]:
+    """Pair each page's content model with its title, keeping the order read.
+
+    The order is the answer, not an incidental property of it, so this returns a
+    sequence rather than the mapping `read_creation_dates` returns: a dict keyed
+    by title would lose the creation ordering the query went to the trouble of
+    producing.
+    """
+    found: list[tuple[str, str]] = []
+    for row in rows:
+        model, title = _decoded(row[0]), _decoded(row[1])
+        if model and title:
+            found.append((model, title))
+    return tuple(found)
 
 
 def read_creation_dates(rows: Iterable[Sequence[Any]]) -> dict[str, str]:
@@ -273,3 +323,27 @@ def creation_dates_for(
         [USER_NAMESPACE, *TITLE_PATTERNS],
     )
     return read_creation_dates(rows)
+
+
+def script_titles_for(
+    dbname: str,
+    *,
+    user: Credentials,
+    connect: Connect = open_connection,
+) -> tuple[tuple[str, str], ...]:
+    """Every user-space script page on one wiki, in creation order, with its model.
+
+    Titles come back in the replica's own spelling -- no namespace, underscores
+    for spaces -- because that is what the column holds. Putting a title back
+    into the form the API answers with needs the wiki's own name for namespace
+    2, which is not in this database, so it is done by the caller that has an
+    API to ask.
+    """
+    rows = _rows(
+        connect,
+        user,
+        target_for(dbname),
+        ENUMERATION_QUERY,
+        [USER_NAMESPACE, *SCRIPT_MODELS],
+    )
+    return read_page_titles(rows)
