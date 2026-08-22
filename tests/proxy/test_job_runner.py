@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The shared job scaffold keeps every entrypoint's conventions identical."""
 
+import contextlib
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -114,6 +116,53 @@ def test_only_reconvergence_waits_for_the_shared_people_lock(monkeypatch):
     entrypoint.main(["--apply"])
 
     assert seen == [entrypoint.RECONVERGE_LOCK_WAIT_SECONDS, 0, 0]
+
+
+def test_a_sweep_reports_how_long_its_remote_and_local_phases_took(monkeypatch):
+    """One duration for two phases cannot say which one needs the budget.
+
+    The remote half is a bounded batch and the local half is a full scan that
+    grows with the catalog, so the same total means opposite things depending
+    on the split. A run killed at its timeout reports nothing at all, which
+    leaves the finished runs as the only place this can be read.
+    """
+    import people_reconcile as entrypoint
+
+    captured = {}
+    monkeypatch.setattr(
+        job_runner,
+        "run_job",
+        lambda _name, body, **_kwargs: captured.update(body()) or job_contract.EXIT_OK,
+    )
+    monkeypatch.setattr(
+        entrypoint.people_reconcile,
+        "resolve_remote_batches",
+        lambda **_kwargs: time.sleep(0.05) or (None, None),
+    )
+    monkeypatch.setattr(entrypoint.people_reconcile, "run", lambda *_args, **_kwargs: {"mode": "apply"})
+    monkeypatch.setattr(entrypoint.db, "session_scope", contextlib.nullcontext)
+
+    entrypoint.main(["--identities-only"])
+
+    phases = captured["phaseSeconds"]
+    # The rebuild phase belongs to --apply, so --identities-only must not claim
+    # to have spent time in a phase it never entered.
+    assert set(phases) == {"remote", "local"}
+    # Not one total attributed twice: only the stub that slept is charged for it.
+    assert phases["remote"] >= 0.05
+    assert phases["local"] < phases["remote"]
+
+
+def test_a_sweep_that_raises_still_reports_the_phase_it_died_in(monkeypatch):
+    """Timings recorded only on success would be missing from every bad run."""
+    import people_reconcile as entrypoint
+
+    phases: dict[str, float] = {}
+    with pytest.raises(RuntimeError):
+        with entrypoint._timed(phases, "local"):
+            raise RuntimeError("upstream went away")
+
+    assert "local" in phases
 
 
 def test_the_reconvergence_wait_stays_inside_its_own_job_timeout():
