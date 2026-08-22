@@ -740,13 +740,23 @@ prints `{"locked": true}` and exits zero, because losing a race with the run
 already doing the work is a successful no-op. Three jobs whose flow genuinely
 differs call `job_runner.configure()` and keep their own summary and exit code.
 
-**Lock reclamation is derived, not guessed.** A pod killed at its timeout cannot
-run the trap that releases its guard lock, so every guarded job sets
-`--stale-after` to twice its own timeout: past that, no live run can still hold
-the lock. A value at or below the timeout is worse than none, since it would
-reclaim a lock from a run still working. Jobs declaring no timeout keep the
-one-hour default. A test asserts the doubling for every job in `jobs.yaml`, so
-a job added later cannot quietly inherit a wrong threshold.
+**A stopped run gives its lock back; reclamation is only the backstop.** The
+platform signals a job before it kills the pod, so `job_guard.sh` runs its
+child in the background and waits on it: a shell waiting on a _foreground_
+command defers a trapped signal until that command finishes, which is why a job
+stopped at its timeout used to leave its lock behind every time. The handler
+stops the child, waits for it, then releases the lock -- in that order, because
+a released lock lets the next tick straight in. A run stopped this way is not
+counted as a failure against the breaker.
+
+**Reclamation is derived, not guessed.** For the ways a run can stop without
+running any code -- SIGKILL after the grace period, an eviction, a node going
+away -- every guarded job sets `--stale-after` to twice its own timeout: past
+that, no live run can still hold the lock. A value at or below the timeout is
+worse than none, since it would reclaim a lock from a run still working. Jobs
+declaring no timeout keep the one-hour default. A test asserts the doubling for
+every job in `jobs.yaml`, so a job added later cannot quietly inherit a wrong
+threshold.
 
 **A dropped connection retries the run, it does not lose it.** `pool_pre_ping`
 proves a connection is alive when the pool hands it out, which says nothing
