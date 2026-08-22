@@ -51,6 +51,75 @@ def test_listing_page_rejects_an_unusable_snapshot_count(monkeypatch, count):
         catalog_sync.listing_page(1, 100)
 
 
+# The payload shape below is the one https://toolhub.wikimedia.org/api/recent/
+# actually returns: a DRF page carrying `count` for the whole feed alongside
+# `next`. The count is what makes an absent `next` checkable.
+def test_recent_page_rejects_a_last_page_its_own_count_contradicts(monkeypatch):
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: {"count": 60825, "results": [{"id": "1"}], "next": None},
+    )
+
+    with pytest.raises(catalog_sync.RecentFeedTruncatedError):
+        catalog_sync.recent_page(3)
+
+
+def test_a_truncated_recent_feed_never_reads_as_a_lost_cursor():
+    """A degraded page must not reach the handler that re-walks every tool.
+
+    run() catches RecentCursorLostError to launch a full recovery snapshot,
+    which queues the entire catalog for people reconciliation. Inheriting from
+    it here would restore exactly the behavior this separation removes, and
+    nothing else in the type would show it.
+    """
+    assert not issubclass(catalog_sync.RecentFeedTruncatedError, catalog_sync.RecentCursorLostError)
+    assert issubclass(catalog_sync.RecentFeedTruncatedError, catalog_sync.CatalogSyncError)
+
+
+def test_recent_page_accepts_the_genuine_final_page(monkeypatch):
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: {"count": 120, "results": [{"id": "1"}], "next": None},
+    )
+
+    # 120 events over pages of 50 really do end on page 3.
+    assert catalog_sync.recent_page(3) == ([{"id": "1"}], False)
+
+
+def test_recent_page_trusts_a_next_link_without_consulting_the_count(monkeypatch):
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: {"count": 60825, "results": [{"id": "1"}], "next": "https://toolhub.example/n"},
+    )
+
+    assert catalog_sync.recent_page(1) == ([{"id": "1"}], True)
+
+
+@pytest.mark.parametrize("count", [None, "invalid", -1])
+def test_recent_page_rejects_an_unusable_feed_count(monkeypatch, count):
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: {"count": count, "results": [], "next": None},
+    )
+
+    with pytest.raises(catalog_sync.CatalogSyncError, match="valid count"):
+        catalog_sync.recent_page(1)
+
+
+def test_recent_page_allows_a_feed_that_has_no_events_yet(monkeypatch):
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: {"count": 0, "results": [], "next": None},
+    )
+
+    assert catalog_sync.recent_page(1) == ([], False)
+
+
 def test_run_upserts_pages_tracks_cursor_and_paces_requests(monkeypatch):
     calls = []
 

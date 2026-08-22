@@ -71,6 +71,16 @@ class RecentCursorLostError(CatalogSyncError):
         self.latest_marker = latest_marker
 
 
+class RecentFeedTruncatedError(CatalogSyncError):
+    """One recent page denied a next page its own event count still requires.
+
+    Deliberately not a RecentCursorLostError: run() catches that one to launch
+    a full recovery snapshot, and this condition is the opposite claim, that
+    the response cannot be trusted enough to conclude anything about the
+    cursor at all.
+    """
+
+
 @dataclass(frozen=True)
 class RecentScan:
     """One safe, resumable slice between two immutable recent-event markers."""
@@ -105,6 +115,12 @@ def _invalid_detail_error(name: str) -> CatalogSyncError:
 
 def _invalid_count_error() -> CatalogSyncError:
     return _catalog_error("Toolhub catalog response did not contain a valid count")
+
+
+def _truncated_recent_feed_error(page: int, total_count: int) -> CatalogSyncError:
+    return RecentFeedTruncatedError(
+        f"Toolhub recent page {page} reported no next page while counting {total_count} events"
+    )
 
 
 def _changed_count_error(before: int, after: int) -> CatalogSyncError:
@@ -162,7 +178,27 @@ def recent_page(page: int = 1) -> tuple[list[dict[str, Any]], bool]:
     )
     if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
         raise _missing_results_error()
-    return [row for row in payload["results"] if isinstance(row, dict)], bool(payload.get("next"))
+    try:
+        total_count = int(payload.get("count"))
+    except (TypeError, ValueError):
+        raise _invalid_count_error() from None
+    # Zero is allowed where the catalog rejects it: a feed with no events yet
+    # is a state Toolhub can really be in, an empty tool catalog is not.
+    if total_count < 0:
+        raise _invalid_count_error()
+    rows = [row for row in payload["results"] if isinstance(row, dict)]
+    has_next = bool(payload.get("next"))
+    # An absent `next` is the scan's only evidence that it reached the end of
+    # the feed, and reaching the end without meeting the cursor is what sends
+    # every tool through a recovery snapshot. Believe it only when the count
+    # in the same payload agrees. This feed only grows, so a page with events
+    # still behind it cannot be the last one, and a response saying otherwise
+    # is degraded rather than informative. Failing here costs one run and
+    # keeps the cursor; trusting it costs a full re-walk of the catalog and
+    # queues every tool for reconciliation behind it.
+    if not has_next and total_count > page * RECENT_PAGE_SIZE:
+        raise _truncated_recent_feed_error(page, total_count)
+    return rows, has_next
 
 
 def listing_url(page: int, page_size: int) -> str:
