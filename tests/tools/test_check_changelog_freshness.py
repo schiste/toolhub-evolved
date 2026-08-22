@@ -47,6 +47,22 @@ def repo(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_AUTHOR_EMAIL", "t@example.org")
     monkeypatch.setenv("GIT_COMMITTER_NAME", "T")
     monkeypatch.setenv("GIT_COMMITTER_EMAIL", "t@example.org")
+    # This module runs inside `git commit` whenever the pre-commit gate fires,
+    # and git exports GIT_DIR and GIT_INDEX_FILE to its hooks. Inherited, they
+    # point every call below at the real repository rather than the scratch
+    # one, and the module errors out in setup -- which made any change under
+    # tools/ impossible to commit with the hook enabled. The identity variables
+    # above are still wanted; only the ones naming a repository are not.
+    for locating in (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_PREFIX",
+    ):
+        monkeypatch.delenv(locating, raising=False)
     git(tmp_path, "init", "-q", "-b", "main")
     commit(tmp_path, "app.py", "print('one')\n", "feat: first")
     # The checker resolves paths from its own location, so give it a tree there.
