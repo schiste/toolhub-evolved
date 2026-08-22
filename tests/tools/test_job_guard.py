@@ -2,6 +2,7 @@
 """Tests for the scheduler circuit breaker wrapper."""
 
 import os
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -198,3 +199,66 @@ def test_retrying_can_be_disabled_with_a_zero_cooldown(tmp_path):
 
     assert "is disabled after" in result.stdout
     assert not marker.exists()
+
+
+def _running_guard(state_dir: Path, *command: str) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        ["sh", str(GUARD), "--job-name", "example", "--", *command],
+        cwd=ROOT,
+        env={"HOME": str(state_dir), "TOOLHUB_JOB_GUARD_DIR": str(state_dir / "guard")},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def _eventually(predicate, timeout: float = 5.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_a_terminated_run_hands_its_lock_back_instead_of_orphaning_it(tmp_path):
+    """The platform stops a job with a signal, which is when the lock must go.
+
+    Left behind, it silences the job for the whole --stale-after window while
+    every tick skips with a zero exit, so nothing is mailed and nothing runs.
+    """
+    lock = tmp_path / "guard" / ".example.lock"
+    guard = _running_guard(tmp_path, "sh", "-c", "sleep 30")
+    assert _eventually(lock.exists), "the guard never took its lock"
+
+    guard.send_signal(signal.SIGTERM)
+    guard.wait(timeout=10)
+
+    assert not lock.exists()
+    assert guard.returncode == 128 + signal.SIGTERM
+
+
+def test_a_terminated_run_stops_its_child_before_releasing_the_lock(tmp_path):
+    """Order matters: a released lock lets the next tick in immediately."""
+    lock = tmp_path / "guard" / ".example.lock"
+    marker = tmp_path / "child"
+    child = f'trap "echo stopped >> {marker}; exit 0" TERM; echo started >> {marker}; sleep 30 & wait'
+    guard = _running_guard(tmp_path, "sh", "-c", child)
+    assert _eventually(lambda: marker.exists() and lock.exists()), "the child never started under the lock"
+
+    guard.send_signal(signal.SIGTERM)
+    guard.wait(timeout=10)
+
+    assert marker.read_text().splitlines() == ["started", "stopped"]
+
+
+def test_a_terminated_run_does_not_count_against_the_failure_breaker(tmp_path):
+    """Being stopped is not the job failing, and three of them must not disable it."""
+    lock = tmp_path / "guard" / ".example.lock"
+    guard = _running_guard(tmp_path, "sh", "-c", "sleep 30")
+    assert _eventually(lock.exists), "the guard never took its lock"
+
+    guard.send_signal(signal.SIGTERM)
+    guard.wait(timeout=10)
+
+    assert not (tmp_path / "guard" / "example.state").exists()

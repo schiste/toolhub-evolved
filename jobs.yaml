@@ -268,10 +268,10 @@
 - name: people-reconcile-incremental
   # Process canonical and newly ingested tool changes shortly after their
   # write transaction. The weekly full pass remains the global backstop.
-  # A kill at the timeout cannot release the guard lock, so every guarded job
-  # sets --stale-after to twice its own timeout: past that, no live run can
-  # still hold it. This drain died on 2026-08-03 that way and no run happened
-  # for the next ten days.
+  # A run stopped at its timeout releases its own guard lock, and every
+  # guarded job sets --stale-after to twice its own timeout as the backstop
+  # for a run that is killed outright. This drain died on 2026-08-03 holding a
+  # lock nobody released and no run happened for the next ten days.
   # The batch is sized to finish inside the timeout even from a cold backlog,
   # and small enough that its row locks do not sit across other identity
   # jobs: at 50 it held them for ~212s per run and deadlocked the source
