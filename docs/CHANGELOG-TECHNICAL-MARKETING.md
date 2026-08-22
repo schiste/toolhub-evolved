@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: signing-in-is-connecting -->
 <!-- Release title: Signing In Is Connecting -->
-<!-- Source range: c7b49fb..10ddb1c (5 commits) -->
+<!-- Source range: c7b49fb..03a6c32 (7 commits) -->
 
 # Technical Release Notes
 
@@ -12,3 +12,4 @@
 - The existing test could not have caught this: its fake returned `social_auth` from `/api/user/`, so it agreed with the code under test rather than with Toolhub. The fake now answers per URL as the real API does, which makes it fail without the login change. Verified against the live API and the deployed database before the fix was written.
 - A repository that clones cleanly but contains no file the analyzer recognizes was stored as `status="error"` with `files must be a non-empty list of {path, content}` and put on a growing backoff. Nothing had gone wrong: the scan succeeded and the answer was that there is no source there. Three rows in production are in that state -- one holding a `MOVED` tombstone, one empty, one whose only file has no extension. The cost is the label rather than the retries, because the error bucket is how a scan that genuinely broke gets found.
 - It is now a settled verdict, `no_source`, alongside the two unsupported ones, and it is keyed to the commit rather than to the URL. That is the whole difference: a malformed URL only stops being malformed when somebody edits the tool record, so watching the URL is what reopens it, while an empty repository fills up on its own and the moving HEAD is the only notice we get. A settled row is skipped on the cheap `ls-remote` without cloning, and waits in the refresh lane where "has HEAD moved" is the only question left. Reverting each of the four behaviors in turn fails exactly one test, a different one each time.
+- Digest tool links were built from a hardcoded `TOOLHUB_PUBLIC_BASE` rather than from `public_base_url()`, so they were the one class of digest link that left the product while people, unsubscribe and feed links all resolved to Evolved. The constant is gone and the link comes from the same `evolved_base` the author links already use, so one configured origin now governs every link in an edition. The fact key stays named `toolhub_url`: it is frozen into `DigestEditionTool.facts` and served verbatim by `/v1/digests`, and published editions are immutable, so renaming it would fork the archive schema with no way to backfill. `PROMPT_VERSION` moves to v6 because the prompt clause naming the link changed; the end-to-end freeze test now asserts no `toolhub.wikimedia.org` URL survives in any rendered form, which nothing previously pinned.
