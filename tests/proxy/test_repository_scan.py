@@ -131,6 +131,103 @@ def test_scan_tool_stores_approved_repository_report_and_commit_state(monkeypatc
         assert state.report_id == report.id
 
 
+def _empty_checkout(monkeypatch, commit):
+    """Wire up a clone that succeeds and yields nothing the analyzer can read."""
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: commit)
+
+    def fake_checkout(_url, destination):
+        destination.mkdir(parents=True)
+        return commit
+
+    monkeypatch.setattr(repository_scan, "clone_repository", fake_checkout)
+    monkeypatch.setattr(repository_scan, "_read_repository_tree", lambda _repo: [])
+    monkeypatch.setattr(repository_scan, "_local_git_context", lambda _paths: {})
+    monkeypatch.setattr(
+        repository_scan, "analyze_source_files", lambda *_a, **_k: pytest.fail("nothing to analyze")
+    )
+
+
+def test_an_empty_checkout_is_settled_rather_than_reported_as_a_failure(monkeypatch):
+    """A repository holding no readable source is an answer, not an error.
+
+    Some Toolforge projects are a tombstone pointing at a new home, or were
+    created and never pushed to. The clone works; there is simply nothing in it.
+    Counting that as an error put it on a retry timer and buried it among the
+    clones that genuinely broke.
+    """
+    commit = "abc1234567890123456789012345678901234567"
+    _empty_checkout(monkeypatch, commit)
+
+    result = repository_scan.scan_tool("empty-tool", {"repository": "https://github.com/example/tool"})
+
+    assert result == repository_scan.NO_SOURCE
+    with db.session_scope() as s:
+        state = s.get(RepositoryAnalysisState, "empty-tool")
+        assert state.status == repository_scan.NO_SOURCE
+        assert state.commit_sha == commit
+        assert state.last_error == repository_scan.NO_SOURCE_REASON
+        assert state.attempts == 0
+        assert state.next_attempt_at is None
+
+
+def test_a_settled_empty_repository_is_not_cloned_again_at_the_same_commit(monkeypatch):
+    commit = "abc1234567890123456789012345678901234567"
+    with db.session_scope() as s:
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="empty-tool",
+                repository_url="https://github.com/example/tool",
+                commit_sha=commit,
+                status=repository_scan.NO_SOURCE,
+            )
+        )
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: commit)
+    monkeypatch.setattr(repository_scan, "clone_repository", lambda *_args: pytest.fail("clone should be skipped"))
+
+    assert repository_scan.scan_tool("empty-tool", {"repository": "https://github.com/example/tool"}) == "skipped"
+
+
+def test_a_settled_empty_repository_is_scanned_again_once_someone_pushes(monkeypatch):
+    """This is why the verdict is stored against a commit and not against a URL.
+
+    An unsupported host only stops being unsupported if somebody edits the tool
+    record. An empty repository fills up on its own, and the moving HEAD is the
+    only notice we get.
+    """
+    with db.session_scope() as s:
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="empty-tool",
+                repository_url="https://github.com/example/tool",
+                commit_sha="1111111111111111111111111111111111111111",
+                status=repository_scan.NO_SOURCE,
+            )
+        )
+    pushed = "2222222222222222222222222222222222222222"
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: pushed)
+
+    def fake_checkout(_url, destination):
+        destination.mkdir(parents=True)
+        return pushed
+
+    monkeypatch.setattr(repository_scan, "clone_repository", fake_checkout)
+    monkeypatch.setattr(
+        repository_scan, "_read_repository_tree", lambda _repo: [{"path": "app.py", "content": "x = 1"}]
+    )
+    monkeypatch.setattr(repository_scan, "_local_git_context", lambda _paths: {})
+    monkeypatch.setattr(
+        repository_scan, "analyze_source_files", lambda files, **_k: {"filesAnalyzed": len(files)}
+    )
+    monkeypatch.setattr(repository_scan.tool_summaries, "refresh", lambda *_args: 1)
+
+    assert repository_scan.scan_tool("empty-tool", {"repository": "https://github.com/example/tool"}) == "analyzed"
+    with db.session_scope() as s:
+        state = s.get(RepositoryAnalysisState, "empty-tool")
+        assert state.status == "analyzed"
+        assert state.commit_sha == pushed
+        assert state.last_error is None
+
+
 def test_what_the_checkout_measured_survives_into_the_stored_report(monkeypatch):
     # _report_context used to look for a "repositoryContext" key on the context
     # it was handed, which a context does not have, so every measured fact was
@@ -197,6 +294,7 @@ def test_run_records_unexpected_tool_failure_and_continues(monkeypatch):
         "skipped": 1,
         "backoff": 0,
         "unsupported": 0,
+        "no_source": 0,
         "error": 1,
         "caches_stale": 0,
     }
@@ -234,7 +332,9 @@ def test_scan_tool_produces_analyzer_facets_end_to_end(monkeypatch):
 
     monkeypatch.setattr(repository_scan, "repository_head", lambda url: "abc123")
     monkeypatch.setattr(repository_scan, "clone_repository", lambda url, dest: "abc123")
-    monkeypatch.setattr(repository_scan, "_read_repository_tree", lambda repo: [])
+    monkeypatch.setattr(
+        repository_scan, "_read_repository_tree", lambda repo: [{"path": "bot.py", "content": "import pywikibot"}]
+    )
     monkeypatch.setattr(repository_scan, "_local_git_context", lambda paths: {})
     monkeypatch.setattr(
         repository_scan,
@@ -531,6 +631,30 @@ def test_a_settled_unsupported_verdict_is_reconsidered_when_the_url_moves():
     backlog, _refresh = repository_scan.partition_candidates()
 
     assert [name for name, _record in backlog] == ["moved"]
+
+
+def test_a_settled_empty_repository_waits_in_the_refresh_lane():
+    """It needs a HEAD comparison, which is exactly what the refresh lane is.
+
+    Leaving it in the backlog would put a row that can only be answered by a
+    push ahead of repositories that have never been read at all.
+    """
+    with db.session_scope() as s:
+        _cached_tool(s, "empty-settled")
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="empty-settled",
+                status=repository_scan.NO_SOURCE,
+                repository_url="https://github.com/example/empty-settled",
+                commit_sha="abc1234567890123456789012345678901234567",
+                checked_at=datetime.now(tz=UTC).replace(tzinfo=None),
+            )
+        )
+
+    backlog, refresh = repository_scan.partition_candidates()
+
+    assert [name for name, _record in backlog] == []
+    assert [name for name, _record in refresh] == ["empty-settled"]
 
 
 class _Clock:

@@ -697,6 +697,11 @@ def _save_failure(tool_name: str, url: str, provider: str, error: str) -> None:
 UNSUPPORTED_HOST = "repository URL is not an allowed public HTTPS provider"
 UNSUPPORTED_PATH = "repository URL names a known host but no project on it"
 
+#: A scan that reached the repository and found nothing to read. Both a status
+#: and a result key, deliberately: the row and the counter mean the same thing.
+NO_SOURCE = "no_source"
+NO_SOURCE_REASON = "repository has no files the analyzer can read"
+
 
 def _save_unsupported(
     tool_name: str, raw_url: str, *, provider: str = "unsupported", reason: str = UNSUPPORTED_HOST
@@ -716,6 +721,37 @@ def _save_unsupported(
         row.checked_at = utcnow()
         row.next_attempt_at = None
         row.last_error = reason
+        row.source = SOURCE_REPOSITORY_SCAN
+        row.sync_status = SYNC_ERROR
+
+
+def _save_no_source(tool_name: str, url: str, provider: str, head: str) -> None:
+    """Record that this commit holds nothing the analyzer can read.
+
+    Not a failure. The clone succeeded and the answer is simply that there is
+    no source here: a repository left holding a tombstone after its code moved,
+    a project created and never pushed to, a tree whose only file has no
+    extension anything recognizes. Reporting that as an error put it on a retry
+    timer and, worse, hid it in the same bucket as a clone that genuinely broke.
+
+    Keyed to the commit rather than to the URL, which is what separates it from
+    _save_unsupported. A malformed record only changes when somebody edits the
+    record; an empty repository becomes a full one the moment anyone pushes. So
+    the verdict is stored against the commit it was reached at, _current_head
+    stops matching as soon as HEAD moves, and the next refresh scans it for
+    real. report_id is left alone: a report from an earlier commit stays on
+    file, and _has_report ignores it while the status is not "analyzed".
+    """
+    with db.session_scope() as s:
+        row = _state(s, tool_name)
+        row.repository_url = url
+        row.provider = provider
+        row.commit_sha = head
+        row.status = NO_SOURCE
+        row.attempts = 0
+        row.checked_at = utcnow()
+        row.next_attempt_at = None
+        row.last_error = NO_SOURCE_REASON
         row.source = SOURCE_REPOSITORY_SCAN
         row.sync_status = SYNC_ERROR
 
@@ -744,15 +780,20 @@ def _settle_without_request(tool_name: str, raw_url: str, url: str, *, page: wik
 
 
 def _current_head(state: RepositoryAnalysisState, url: str) -> str:
-    """Return the commit whose report is already stored for this tool, or "".
+    """Return the commit this tool was already decided at, or "".
 
-    Empty means there is nothing to reuse: never analyzed, analyzed from a
-    different URL, or the report itself has since been removed. Collapsing all
-    three into one string is what lets both currency checks below be a plain
-    comparison rather than the same four-clause condition written twice.
+    Empty means there is nothing to reuse: never scanned, decided from a
+    different URL, or the report itself has since been removed. Collapsing that
+    into one string is what lets both currency checks below be a plain
+    comparison rather than the same condition written twice.
+
+    A settled no-source row answers here too. It has no report and never will
+    until someone pushes, but it does have a commit whose contents are already
+    known, and skipping on that is the whole reason the verdict is stored
+    against a commit at all.
     """
-    reusable = state.status == "analyzed" and state.repository_url == url and state.report_id is not None
-    return (state.commit_sha or "") if reusable else ""
+    decided = (state.status == "analyzed" and state.report_id is not None) or state.status == NO_SOURCE
+    return (state.commit_sha or "") if decided and state.repository_url == url else ""
 
 
 def _decide(tool_name: str, url: str, head: str, *, force: bool) -> tuple[str, str]:
@@ -782,8 +823,9 @@ def _decide(tool_name: str, url: str, head: str, *, force: bool) -> tuple[str, s
 def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) -> str:
     """Scan one canonical tool, returning what became of it.
 
-    "analyzed", "skipped", "backoff", "unsupported" or "error" -- plus
-    CACHES_STALE, which is an analysis whose derived caches did not refresh.
+    "analyzed", "skipped", "backoff", "unsupported", NO_SOURCE or "error" --
+    plus CACHES_STALE, which is an analysis whose derived caches did not
+    refresh.
     """
     raw_url = _raw_tool_repository(record)
     url = repository_url(raw_url)
@@ -807,6 +849,12 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
         if not force and analyzed_head and acquired.head == analyzed_head:
             return "skipped"
         head = acquired.head
+        if not acquired.files:
+            # analyze_source_files rejects an empty list, which is right for a
+            # caller that lost its files and wrong as a description of a
+            # repository that never had any. Answer it here instead.
+            _save_no_source(tool_name, url, provider, head)
+            return NO_SOURCE
         report = analyze_source_files(
             acquired.files,
             tool_name=tool_name,
@@ -917,7 +965,9 @@ def candidate_tools(limit: int, tool_name: str | None = None) -> list[tuple[str,
 
 
 def _new_results() -> dict[str, int]:
-    return dict.fromkeys(("candidates", "analyzed", "skipped", "backoff", "unsupported", "error", CACHES_STALE), 0)
+    return dict.fromkeys(
+        ("candidates", "analyzed", "skipped", "backoff", "unsupported", NO_SOURCE, "error", CACHES_STALE), 0
+    )
 
 
 def _scan_one(name: str, record: dict[str, Any], results: dict[str, int], *, force: bool) -> str:
@@ -965,14 +1015,25 @@ def _settled_unsupported(state: RepositoryAnalysisState | None, raw_url: str) ->
     return state is not None and state.status == "unsupported" and state.repository_url == raw_url
 
 
+def _settled_no_source(state: RepositoryAnalysisState | None) -> bool:
+    """Report whether this row already answered "nothing to read" at some commit.
+
+    No URL comparison, unlike _settled_unsupported: this only chooses a lane,
+    and _current_head still refuses to reuse a verdict reached from a different
+    URL, so a record edited to point somewhere else is scanned again for real.
+    It just gets there through the refresh stream rather than the backlog.
+    """
+    return state is not None and state.status == NO_SOURCE and bool(state.commit_sha)
+
+
 def partition_candidates(depth: int = QUEUE_DEPTH) -> tuple[list[tuple[str, dict[str, Any]]], ...]:
     """Split the catalog into backlog work and re-check work, oldest first.
 
-    Backlog is everything without a usable report: never scanned, previously
+    Backlog is everything without a usable verdict: never scanned, previously
     failed and out of backoff, or analyzed but missing its report row. Refresh
-    is everything already analyzed, which only needs its HEAD compared. Every
-    state attribute is read inside the session, because the rows detach when it
-    closes.
+    is everything already decided -- analyzed, or settled as holding no source
+    -- which only needs its HEAD compared. Every state attribute is read inside
+    the session, because the rows detach when it closes.
     """
     now = utcnow()
     backlog: list[tuple[tuple[bool, datetime], str, dict[str, Any]]] = []
@@ -993,7 +1054,7 @@ def partition_candidates(depth: int = QUEUE_DEPTH) -> tuple[list[tuple[str, dict
             if not raw_url:
                 continue
             state = states.get(row.tool_name)
-            if _has_report(state):
+            if _has_report(state) or _settled_no_source(state):
                 refresh.append((_scan_order(state), row.tool_name, record))
                 continue
             if _settled_unsupported(state, raw_url):
