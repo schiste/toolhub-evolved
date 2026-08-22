@@ -35,6 +35,7 @@ from backend.models import (  # noqa: E402
     DigestSubscription,
     Person,
     PersonProfile,
+    ToolhubAccountProjection,
     ToolActivityEvent,
     ToolPersonRelationship,
     User,
@@ -2030,6 +2031,44 @@ def test_digest_subscription_request_validation(payload, message):
     assert message in response.get_json()["error"]
 
 
+def test_digest_subscription_adopts_the_official_global_id_for_an_older_session(monkeypatch):
+    """A session predating the sign-in fix must not be told to connect an account it already has.
+
+    Sign-in resolves the global id now, but an account that signed in before it
+    did carries a session that never revisits identity, and nothing else fills
+    the column until a reconciliation pass runs -- hours, on the scheduled
+    cadence. The official account projection already knows the answer, so the
+    endpoint reads it rather than refusing a signed-in user.
+    """
+    client, user_id = _authenticated_digest_client(global_id=None)
+    with db.session_scope() as session:
+        session.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="digest-api-None",
+                username="DigestUser",
+                wikimedia_global_user_id="9001",
+            )
+        )
+    monkeypatch.setattr(
+        v1_digests_api,
+        "WikimediaIdentityProvider",
+        lambda: SimpleNamespace(lookup=lambda gid: SimpleNamespace(username="DigestUser") if gid == "9001" else None),
+    )
+    monkeypatch.setattr(
+        v1_digests_api,
+        "WikimediaClient",
+        lambda: SimpleNamespace(user_identity_matches=lambda *_args: True),
+    )
+    response = client.post(
+        "/v1/digests/subscriptions/",
+        json={"channel": "email", "cadence": "daily"},
+        headers={"X-CSRF-Token": "token"},
+    )
+    assert response.status_code == 201
+    with db.session_scope() as session:
+        assert session.get(User, user_id).wikimedia_global_user_id == "9001"
+
+
 def test_digest_subscription_requires_resolvable_connected_identity(monkeypatch):
     client, _user_id = _authenticated_digest_client(global_id=None)
     response = client.post(
@@ -2038,7 +2077,7 @@ def test_digest_subscription_requires_resolvable_connected_identity(monkeypatch)
         headers={"X-CSRF-Token": "token"},
     )
     assert response.status_code == 400
-    assert "connect" in response.get_json()["error"]
+    assert "sign out and sign in again" in response.get_json()["error"]
 
     client, _user_id = _authenticated_digest_client()
     monkeypatch.setattr(v1_digests_api, "WikimediaIdentityProvider", lambda: SimpleNamespace(lookup=lambda _gid: None))

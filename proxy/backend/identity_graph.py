@@ -684,6 +684,27 @@ def _sync_toolforge_bindings(
     return stats
 
 
+def hydrate_user_identity(session: Session, user: User) -> str:
+    """Adopt the official global account id for one signed-in user, if known.
+
+    _hydrate_local_users below does this for the whole table, but only when a
+    reconciliation pass runs. Endpoints keyed on the global id cannot wait hours
+    for a scheduled job to notice an account that signed in five minutes ago, so
+    they resolve their own user here first and refuse only if the projection has
+    nothing either. It writes only when the value actually changes.
+    """
+    if user.wikimedia_global_user_id:
+        return user.wikimedia_global_user_id
+    account = session.execute(
+        select(ToolhubAccountProjection).where(ToolhubAccountProjection.toolhub_user_id == user.wm_sub)
+    ).scalar_one_or_none()
+    if account is None or not account.wikimedia_global_user_id:
+        return ""
+    user.wikimedia_global_user_id = account.wikimedia_global_user_id
+    people_index.link_user(session, user)
+    return user.wikimedia_global_user_id
+
+
 def _hydrate_local_users(session: Session) -> int:
     touched = 0
     users = list(session.execute(select(User)).scalars())
