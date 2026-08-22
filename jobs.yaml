@@ -386,8 +386,12 @@
   #
   # Meta is here for the cross-wiki edges: global.js lives there and loads
   # scripts hosted on other wikis, which is the strongest signal a script has
-  # for becoming a global gadget.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org USERSCRIPT_LIMIT=2000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
+  # for becoming a global gadget. English Wikipedia is here because it is where
+  # the largest population of user scripts is written, and where a script that
+  # matters is most likely to already exist under a different name. Its 155,561
+  # pages are why USERSCRIPT_LIMIT exists: its first sweep runs for about 78
+  # hourly runs, then the wiki falls through to watching like the other two.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org USERSCRIPT_LIMIT=2000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
   image: python3.13
   schedule: "23 * * * *"
   emails: onfailure

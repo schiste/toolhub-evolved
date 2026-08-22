@@ -318,7 +318,7 @@ on a folded page — arrives in a 404 body.
 
 ```
 schedule: "23 * * * *"     # hourly watch
-USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org
+USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org
 USERSCRIPT_LIMIT=2000
 ```
 
@@ -336,7 +336,8 @@ USERSCRIPT_LIMIT=2000
   it stopped in `sweep_cursor`, and the next run continues from there; only the
   run that reaches the end counts as a completed sweep, tombstones what is gone,
   and lets the wiki fall through to watching. 2000 titles is 100 content
-  requests at `CONTENT_BATCH` 20.
+  requests at `CONTENT_BATCH` 20, so enwiki's 155,561 pages take about 78 runs
+  — a little over three days — for a first pass.
 - `USERSCRIPT_WATCH_LIMIT` — recent-changes entries per watch. Independent of
   `USERSCRIPT_LIMIT`, so bounding sweeps does not shrink the hourly watch.
 
@@ -351,12 +352,21 @@ demand query already selects load edges by _target_ across source wikis. Those
 cross-wiki edges are the strongest argument any script has for becoming a global
 gadget, and until Meta was swept that channel was empty.
 
+English Wikipedia is there for the opposite reason: it is where the largest
+population of user scripts is written, so it is where a script proposed anywhere
+is most likely to already exist under another name. It is also the corpus that
+makes the bounded sweep necessary — 155,561 pages against frwiki's 14,431.
+
 Adding a wiki is not just an entry in `USERSCRIPT_WIKIS`. Its local loader verbs
 have to be read out of its own `MediaWiki:Common.js` and written into
 `LOCAL_LOADERS`, because they cannot be inferred; a wiki added without that step
-still works, it just scores every load made through a local verb at zero. Meta
-needs no entry — its `Common.js` overrides `importScript` rather than defining a
-new verb, and `importScript` is already a global loader verb.
+still works, it just scores every load made through a local verb at zero.
+`LOCAL_LOADERS` is the only table keyed by wiki, and two of the three wikis need
+no entry in it, for different reasons: Meta's `Common.js` overrides
+`importScript` rather than defining a new verb, and `importScript` is already a
+global loader verb; enwiki's defines no load verb at all — read 2026-08-22, it
+aliases `addPortletLink` and honours `?withJS=`/`?withCSS=`, and neither of
+those is something a user script can call.
 
 ### Meta was larger than one search, and is not larger than one replica read
 
