@@ -5,8 +5,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 from backend import db, job_runner, people_reconcile
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # --reconverge runs hourly, but the lock it shares is held for the whole of the
 # weekly full pass -- longer than the gap between two reconverge runs. So the
@@ -17,6 +23,23 @@ from backend import db, job_runner, people_reconcile
 # the per-minute drain has another attempt sixty seconds later and should keep
 # skipping, and the full pass is the run everyone else is waiting on.
 RECONVERGE_LOCK_WAIT_SECONDS = 120
+
+
+@contextmanager
+def _timed(into: dict[str, float], name: str) -> Iterator[None]:
+    """Record how long one phase of a sweep took, in the summary it reports.
+
+    A sweep that is killed at its timeout writes nothing at all, so the only
+    evidence left is the duration of the runs that did finish -- one number for
+    work that is really a bounded remote batch followed by an unbounded local
+    scan. Which half is consuming the budget decides whether the answer is a
+    smaller batch or more time, and without this it can only be guessed at.
+    """
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        into[name] = round(time.monotonic() - started, 1)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -82,8 +105,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         mode = people_reconcile.MODE_APPLY if args.apply or args.identities_only else people_reconcile.MODE_DRY_RUN
         discover = args.apply or args.identities_only
+        phase_seconds: dict[str, float] = {}
         if discover and not args.identities_only:
-            with db.session_scope() as session:
+            with _timed(phase_seconds, "rebuild"), db.session_scope() as session:
                 local_summary = people_reconcile.run(
                     session,
                     mode=mode,
@@ -97,15 +121,16 @@ def main(argv: list[str] | None = None) -> int:
                 )
         else:
             local_summary = None
-        resolved_identities, resolved_registry = (
-            people_reconcile.resolve_remote_batches(
-                candidate_label_limit=args.candidate_label_limit,
-                registry_label_limit=args.registry_label_limit,
+        with _timed(phase_seconds, "remote"):
+            resolved_identities, resolved_registry = (
+                people_reconcile.resolve_remote_batches(
+                    candidate_label_limit=args.candidate_label_limit,
+                    registry_label_limit=args.registry_label_limit,
+                )
+                if discover
+                else (None, None)
             )
-            if discover
-            else (None, None)
-        )
-        with db.session_scope() as session:
+        with _timed(phase_seconds, "local"), db.session_scope() as session:
             summary = people_reconcile.run(
                 session,
                 mode=mode,
@@ -121,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         if local_summary is not None:
             summary["toolsRebuilt"] = local_summary["toolsRebuilt"]
             summary["localPhase"] = local_summary
+        summary["phaseSeconds"] = phase_seconds
         return summary
 
     # Per backend.job_contract: tools this pass could not reconcile stay queued
