@@ -85,7 +85,16 @@ STALE_MAINTAINER_DAYS = 730
 HIGH_PROVENANCE_WEIGHT = 0.7
 MULTIPLE_CONTRIBUTOR_MIN = 2
 SMALL_COMMIT_HISTORY_THRESHOLD = 5
-FRONTEND_SOURCE_EXTENSIONS = {".css", ".html", ".js", ".ts", ".tsx", ".vue"}
+#: Every suffix the JavaScript family is written under. One set, because the
+#: three questions asked of it -- may this file be read, are its imports npm
+#: imports, is `mw.Api(` in it a call rather than a quotation -- are all the
+#: same question of whether the file is JavaScript, and keeping three lists
+#: is what let them disagree: `.jsx` was in none of them, so a React tool
+#: written in `.jsx` had no source the analyzer could see, and `.mjs` and
+#: `.cjs` were named as browser scripts but never read, which made those
+#: entries dead.
+JS_SOURCE_SUFFIXES = frozenset({".cjs", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".vue"})
+FRONTEND_SOURCE_EXTENSIONS = {".css", ".html"} | JS_SOURCE_SUFFIXES
 CONFIG_SOURCE_EXTENSIONS = {".ini", ".json", ".toml", ".yaml", ".yml", ".xml"}
 RUNTIME_SOURCE_EXTENSIONS = {".go", ".java", ".lua", ".php", ".py", ".rb", ".rs", ".sh"}
 IGNORED_SOURCE_DIRS = {
@@ -130,7 +139,6 @@ SOURCE_EXTENSIONS = {
     ".html",
     ".ini",
     ".java",
-    ".js",
     ".json",
     ".lua",
     ".md",
@@ -139,15 +147,12 @@ SOURCE_EXTENSIONS = {
     ".rb",
     ".rs",
     ".sh",
-    ".ts",
-    ".tsx",
     ".txt",
     ".toml",
-    ".vue",
     ".xml",
     ".yaml",
     ".yml",
-}
+} | JS_SOURCE_SUFFIXES
 
 MANIFEST_FILE_KINDS = {
     "cargo.toml": "cargo",
@@ -331,10 +336,13 @@ HEALTH_DIMENSIONS = (
 MAINTAINER_DIMENSION_WEIGHT = 1.2
 
 TECH_BY_EXTENSION = {
+    ".cjs": "JavaScript",
     ".go": "Go",
     ".java": "Java",
     ".js": "JavaScript",
+    ".jsx": "JavaScript",
     ".lua": "Lua",
+    ".mjs": "JavaScript",
     ".php": "PHP",
     ".py": "Python",
     ".rb": "Ruby",
@@ -373,13 +381,12 @@ TECH_RULES = (
     ("MediaWiki JavaScript", re.compile(r"\bmw\.loader\.using\s*\(|\bmw\.Api\s*\("), 0.9),
 )
 
-# Browser JavaScript is the only place the MediaWiki JS API can be called, so
-# evidence of it found anywhere else is a quotation. A Python docstring naming
-# `mw.Api` is the case that prompted this.
-BROWSER_SCRIPT_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".vue"})
+# JavaScript is the only place the MediaWiki JS API can be called or a React
+# component written, so evidence of either found anywhere else is a quotation.
+# A Python docstring naming `mw.Api` is the case that prompted this.
 TECH_RULE_SUFFIXES = {
-    "MediaWiki JavaScript": BROWSER_SCRIPT_SUFFIXES,
-    "React": BROWSER_SCRIPT_SUFFIXES,
+    "MediaWiki JavaScript": JS_SOURCE_SUFFIXES,
+    "React": JS_SOURCE_SUFFIXES,
 }
 
 # A file the wiki would serve as a user script. Read off the name rather than
@@ -1780,7 +1787,7 @@ def _scan_import_dependencies(
     local_python_roots: set[str],
 ) -> None:
     suffix = _suffix(path)
-    if suffix in {".js", ".ts", ".tsx", ".vue"}:
+    if suffix in JS_SOURCE_SUFFIXES:
         _scan_js_import_dependencies(findings, path, line_number, line)
     elif suffix == ".py":
         _scan_python_import_dependencies(findings, path, line_number, line, local_python_roots)

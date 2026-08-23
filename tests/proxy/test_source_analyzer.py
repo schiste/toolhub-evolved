@@ -1396,3 +1396,43 @@ def test_only_evidence_somebody_wrote_down_can_promote_a_technology():
     # The lockfile row came first and is skipped: the evidence shown has to be
     # the one the promotion actually rests on.
     assert source_analyzer._declared_evidence(declared)["path"] == "package.json"
+
+
+def test_a_component_written_in_jsx_is_source_the_analyzer_can_see():
+    """The bug: `.jsx` was in no extension list, so the readers never offered one.
+
+    A React tool whose components are all `.jsx` had nothing the analyzer would
+    accept -- it answered "no supported source files were provided" -- so the
+    framework it is built with, the language it is written in and every package
+    it imports were all invisible.
+    """
+    report = analyze_source_files(
+        [
+            {
+                "path": "src/App.jsx",
+                "content": "import React from 'react';\nimport axios from 'axios';\nexport default () => <App />;\n",
+            }
+        ]
+    )
+    assert "React" in values(report, "technology")
+    assert "JavaScript" in values(report, "technology")
+    assert "npm:axios" in values(report, "dependencies")
+
+
+def test_an_es_module_and_a_commonjs_script_have_their_imports_read():
+    """`.mjs` and `.cjs` were named as browser scripts but never read, so those entries were dead."""
+    report = analyze_source_files(
+        [
+            {"path": "tools/build.mjs", "content": "import minimist from 'minimist';\n"},
+            {"path": "tools/legacy.cjs", "content": "const lodash = require('lodash');\n"},
+        ]
+    )
+    assert values(report, "dependencies") >= {"npm:minimist", "npm:lodash"}
+    assert "JavaScript" in values(report, "technology")
+
+
+def test_a_jsx_component_is_worth_reading_as_much_as_the_js_file_beside_it():
+    """Same code, same weight: the module syntax in the suffix is not evidence about the file."""
+    baseline = source_reading_rank("src/app.js")[0]
+    for suffix in (".cjs", ".jsx", ".mjs"):
+        assert source_reading_rank(f"src/app{suffix}")[0] == baseline, suffix
