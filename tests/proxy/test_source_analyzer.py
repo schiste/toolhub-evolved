@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for deterministic source-code metadata analysis."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -1164,3 +1165,149 @@ def test_a_short_bucket_cap_keeps_the_endpoint_the_tools_own_module_calls(monkey
         ]
     )
     assert values(report, "endpoints") == {"api.zzz-data.org/v1/things"}
+
+
+def rows_by_value(report, bucket):
+    return {item["value"]: item for item in report[bucket]}
+
+
+def test_a_pinned_requirement_reports_the_release_and_a_range_reports_only_the_spec():
+    report = analyze_source_files(
+        [{"path": "requirements.txt", "content": "mwclient==0.10.1\nFlask>=3.0,<4\npywikibot\n"}]
+    )
+    rows = rows_by_value(report, "dependencies")
+    assert rows["pypi:mwclient"]["version"] == "0.10.1"
+    assert rows["pypi:mwclient"]["versionSpecs"] == ["==0.10.1"]
+    # A range names no release, so there is a spec to show and no version.
+    assert "version" not in rows["pypi:flask"]
+    assert rows["pypi:flask"]["versionSpecs"] == [">=3.0,<4"]
+    # An unconstrained requirement declared nothing at all.
+    assert "version" not in rows["pypi:pywikibot"]
+    assert "versionSpecs" not in rows["pypi:pywikibot"]
+
+
+def test_a_locator_where_a_version_belongs_is_not_reported_as_a_version():
+    report = analyze_source_files(
+        [
+            {
+                "path": "package.json",
+                "content": json.dumps(
+                    {
+                        "dependencies": {
+                            "from-git": "git+https://example.org/a/b.git",
+                            "from-workspace": "workspace:*",
+                            "unpinned": "*",
+                            "pinned": "1.3.0",
+                        }
+                    }
+                ),
+            }
+        ]
+    )
+    rows = rows_by_value(report, "dependencies")
+    for name in ("npm:from-git", "npm:from-workspace", "npm:unpinned"):
+        assert "version" not in rows[name], name
+        assert "versionSpecs" not in rows[name], name
+    assert rows["npm:pinned"]["version"] == "1.3.0"
+
+
+def test_two_manifests_pinning_different_releases_report_no_single_version():
+    report = analyze_source_files(
+        [
+            {"path": "requirements.txt", "content": "flask==3.0.2\n"},
+            {"path": "requirements-dev.txt", "content": "flask==2.3.3\n"},
+        ]
+    )
+    row = rows_by_value(report, "dependencies")["pypi:flask"]
+    assert "version" not in row
+    assert row["versionSpecs"] == ["==2.3.3", "==3.0.2"]
+
+
+def test_every_lockfile_reports_the_release_it_resolved():
+    report = analyze_source_files(
+        [
+            {
+                "path": "yarn.lock",
+                "content": 'react@^18.2.0:\n  version "18.2.0"\n  resolved "https://x"\n',
+            },
+            {"path": "Gemfile.lock", "content": "GEM\n  specs:\n    rails (7.0.4)\n"},
+            {"path": "poetry.lock", "content": '[[package]]\nname = "requests"\nversion = "2.31.0"\n'},
+            {"path": "Cargo.lock", "content": '[[package]]\nname = "serde"\nversion = "1.0.197"\n'},
+            {
+                "path": "composer.lock",
+                "content": json.dumps({"packages": [{"name": "monolog/monolog", "version": "3.5.0"}]}),
+            },
+            {"path": "go.mod", "content": "module x\n\nrequire github.com/foo/bar v1.4.2 // indirect\n"},
+        ]
+    )
+    rows = rows_by_value(report, "dependencies")
+    assert rows["npm:react"]["version"] == "18.2.0"
+    assert rows["rubygems:rails"]["version"] == "7.0.4"
+    assert rows["pypi:requests"]["version"] == "2.31.0"
+    assert rows["cargo:serde"]["version"] == "1.0.197"
+    assert rows["composer:monolog/monolog"]["version"] == "3.5.0"
+    assert rows["go:github.com/foo/bar"]["version"] == "1.4.2"
+
+
+def test_a_yarn_entry_without_a_version_line_does_not_borrow_the_next_entrys():
+    report = analyze_source_files(
+        [{"path": "yarn.lock", "content": 'silent@^1:\nlodash@^4:\n  version "4.17.21"\n'}]
+    )
+    rows = rows_by_value(report, "dependencies")
+    assert "version" not in rows["npm:silent"]
+    assert rows["npm:lodash"]["version"] == "4.17.21"
+
+
+def test_a_gemfile_option_that_is_not_a_version_is_not_read_as_one():
+    report = analyze_source_files(
+        [{"path": "Gemfile", "content": 'gem "rails", "~> 7.0"\ngem "puma", group: "dev"\n'}]
+    )
+    rows = rows_by_value(report, "dependencies")
+    assert rows["rubygems:rails"]["versionSpecs"] == ["~> 7.0"]
+    assert "versionSpecs" not in rows["rubygems:puma"]
+
+
+def test_a_technology_carries_the_version_the_manifest_pins_for_its_package():
+    report = analyze_source_files(
+        [
+            {"path": "app.py", "content": "from flask import Flask\napp = Flask(__name__)\n"},
+            {"path": "requirements.txt", "content": "Flask==3.0.2\n"},
+        ]
+    )
+    assert rows_by_value(report, "technology")["Flask"]["version"] == "3.0.2"
+    # The catalog patch stays the plain name: the version lives beside it.
+    assert report["suggestions"]["toolinfoPatch"]["technology_used"] == ["Flask", "Python"]
+
+
+def test_a_package_named_only_by_a_lockfile_does_not_invent_its_technology():
+    report = analyze_source_files(
+        [
+            {
+                "path": "package-lock.json",
+                "content": json.dumps({"packages": {"node_modules/vue": {"version": "3.4.21"}}}),
+            }
+        ]
+    )
+    # Nothing in this checkout is written in Vue, so the resolved version has no
+    # technology to attach to and none is conjured for it.
+    assert "Vue" not in values(report, "technology")
+    assert rows_by_value(report, "dependencies")["npm:vue"]["version"] == "3.4.21"
+
+
+def test_a_declared_runtime_names_the_technology_and_the_version_it_requires():
+    report = analyze_source_files(
+        [
+            {"path": "package.json", "content": json.dumps({"engines": {"node": ">=18"}})},
+            {"path": "pyproject.toml", "content": '[project]\nname = "x"\nrequires-python = ">=3.11"\n'},
+            {"path": "composer.json", "content": json.dumps({"require": {"php": ">=8.1"}})},
+            {"path": "go.mod", "content": "module x\n\ngo 1.21\n"},
+        ]
+    )
+    rows = rows_by_value(report, "technology")
+    assert rows["Node.js"]["versionSpecs"] == [">=18"]
+    assert rows["Python"]["versionSpecs"] == [">=3.11"]
+    assert rows["PHP"]["versionSpecs"] == [">=8.1"]
+    # A go directive pins one release, unlike the three ranges above.
+    assert rows["Go"]["version"] == "1.21"
+    # The language version is not a module the tool depends on.
+    assert "go:go" not in values(report, "dependencies")

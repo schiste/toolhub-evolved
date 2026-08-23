@@ -44,6 +44,8 @@ MAX_EXCERPT_CHARS = 180
 MAX_EVIDENCE_PER_FINDING = 5
 MAX_FINDINGS_PER_BUCKET = 40
 MAX_DEPENDENCY_NAME_CHARS = 120
+MAX_VERSION_CHARS = 40
+MAX_VERSION_SPECS_PER_FINDING = 5
 MAX_CONTEXT_LIST_ITEMS = 40
 MAX_CONTEXT_STRING_CHARS = 240
 MAX_ASSESSMENT_SIGNALS = 8
@@ -369,6 +371,32 @@ TECH_RULE_SUFFIXES = {"MediaWiki JavaScript": BROWSER_SCRIPT_SUFFIXES}
 # A file the wiki would serve as a user script. Read off the name rather than
 # the contents: the suffix is what makes a wiki page a script, and it says so
 # whatever the file goes on to contain.
+#: The technology each declared runtime constraint names, and the manifest key
+#: it is written under. A manifest that pins a runtime is naming the technology
+#: as surely as a source file written in it, so these create the finding rather
+#: than only annotating one -- `engines.node` is why a Node.js tool with no
+#: `.js` file at the root is still a Node.js tool.
+RUNTIME_TECHNOLOGY = {
+    "node": "Node.js",
+    "python": "Python",
+    "php": "PHP",
+    "go": "Go",
+}
+
+#: The package that carries the version for a technology the rules detect from
+#: source. `from flask import ...` says the tool uses Flask; only the manifest
+#: says which Flask, and it says it under a name the technology finding does
+#: not share, so the two are joined here rather than by string match.
+TECHNOLOGY_PACKAGES = {
+    "Flask": "pypi:flask",
+    "Django": "pypi:django",
+    "Pywikibot": "pypi:pywikibot",
+    "mwclient": "pypi:mwclient",
+    "React": "npm:react",
+    "Vue": "npm:vue",
+    "TypeScript": "npm:typescript",
+}
+
 USER_SCRIPT_SUFFIX = ".user.js"
 
 # The toolinfo vocabulary term for each kind of wiki-hosted source page.
@@ -610,6 +638,32 @@ GO_REQUIRE_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+)\s+v?[0-9]")
 GEM_LOCK_RE = re.compile(r"^\s{4}([A-Za-z0-9_.-]+)\s+\(")
 YARN_LOCK_RE = re.compile(r"^[\"']?([^\"':,\s]+(?:/[^\"':,\s]+)?)(?:@npm:|@patch:|@workspace:|@[^:]*:)")
 
+#: A version constraint that pins one release, in any of the spellings the
+#: manifests use: `1.2.3`, `==1.2.3`, `=1.2.3`, `v1.2.3`. Everything else --
+#: `^1.2`, `>=3.0`, `~> 2.0` -- is a range, and a range is not a version.
+EXACT_VERSION_RE = re.compile(r"^(?:==|=|v)?\s*(\d+(?:\.\d+){0,3}(?:[-+][0-9A-Za-z.-]+)?)$")
+#: Constraints that name no version at all. Recording them would turn "no
+#: version declared" into "version declared as *", which reads as a fact.
+UNVERSIONED_SPECS = frozenset({"*", "x", "latest", "any", "@latest"})
+#: A dependency resolved from somewhere other than the registry. The string
+#: after the marker is a URL or a path, never a version.
+NON_VERSION_SPEC_PREFIXES = ("git+", "git:", "http://", "https://", "file:", "link:", "workspace:", "portal:", "npm:")
+#: Where a version sits in a `gem "name", "~> 1.2"` line and in a
+#: `name (1.2.3)` Gemfile.lock line.
+#: The constraint in a `gem "name", "~> 1.2"` line. It has to be the second
+#: positional argument: an option such as `gem "puma", group: "dev"` puts a
+#: bare word after the comma, and reading that as a version would report the
+#: group name as one.
+GEM_VERSION_RE = re.compile(r"^\s*gem\s+[\"'][^\"']+[\"']\s*,\s*[\"']([^\"']+)[\"']")
+GEM_LOCK_VERSION_RE = re.compile(r"^\s{4}[A-Za-z0-9_.-]+\s+\(([^)]+)\)")
+#: `module/path v1.2.3` in a go.mod require block.
+GO_VERSION_RE = re.compile(r"^\s*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+\s+(v?\d[^\s/]*)")
+#: The `go 1.21` line in a go.mod, which names the language version rather
+#: than a module.
+GO_DIRECTIVE_RE = re.compile(r"^go\s+(\d[0-9.]*)$")
+#: The resolved version yarn and pnpm write on the line below a locator.
+YARN_VERSION_RE = re.compile(r"^\s+[\"']?version[\"']?:?\s+[\"']?([^\"'\s,]+)[\"']?\s*$")
+
 
 class SourceAnalysisError(ValueError):
     """Raised when submitted source-analysis input is unsafe or malformed."""
@@ -636,6 +690,10 @@ class Finding:
     evidence: list[dict[str, Any]] = field(default_factory=list)
     source_classes: set[str] = field(default_factory=set)
     max_source_weight: float = 0.0
+    #: Every constraint seen for this finding, as the manifest wrote it.
+    version_specs: set[str] = field(default_factory=set)
+    #: The subset of those that pin one release, normalized to the bare number.
+    versions: set[str] = field(default_factory=set)
 
     def add(self, confidence: float, reason: str, evidence: dict[str, Any]) -> None:
         """Merge repeated evidence into one finding."""
@@ -651,9 +709,18 @@ class Finding:
         self.source_classes.add(source_class)
         self.max_source_weight = max(self.max_source_weight, source_weight)
 
+    def note_version(self, spec: str | None) -> None:
+        """Record a declared version, keeping exact pins apart from ranges."""
+        if not spec:
+            return
+        self.version_specs.add(spec)
+        exact = _exact_version(spec)
+        if exact:
+            self.versions.add(exact)
+
     def payload(self) -> dict[str, Any]:
         """Serialize the finding for JSON responses."""
-        return {
+        payload = {
             "value": self.value,
             "label": self.label,
             "kind": self.kind,
@@ -664,6 +731,14 @@ class Finding:
             "sourceClasses": sorted(self.source_classes),
             "evidence": self.evidence[:MAX_EVIDENCE_PER_FINDING],
         }
+        # One exact version is a fact. Two are two manifests disagreeing, and
+        # picking either would be a guess dressed as a measurement, so the
+        # specs carry it instead and the caller sees there is no single answer.
+        if len(self.versions) == 1:
+            payload["version"] = next(iter(self.versions))
+        if self.version_specs:
+            payload["versionSpecs"] = sorted(self.version_specs)[:MAX_VERSION_SPECS_PER_FINDING]
+        return payload
 
 
 def _suffix(path: str) -> str:
@@ -875,6 +950,7 @@ def _put(  # noqa: PLR0913 - explicit finding fields avoid opaque tuple packing 
     confidence: float,
     reason: str,
     evidence: dict[str, Any],
+    version: str | None = None,
 ) -> None:
     key = (kind, value)
     current = findings.get(key)
@@ -882,6 +958,55 @@ def _put(  # noqa: PLR0913 - explicit finding fields avoid opaque tuple packing 
         current = Finding(value=value, label=label, kind=kind, category=category, confidence=0.0)
         findings[key] = current
     current.add(confidence, reason, evidence)
+    current.note_version(version)
+
+
+def _clean_version_spec(value: object) -> str | None:
+    """Return the version a manifest declared, or None when it declared none.
+
+    A dependency resolved from a git URL, a path, or a workspace carries a
+    locator where the version would be, and `*` carries a deliberate absence.
+    Both are dropped: a locator rendered as a version would be wrong, and `*`
+    rendered as one would turn "unspecified" into a specification.
+    """
+    spec = str(value or "").strip()
+    if not spec or len(spec) > MAX_VERSION_CHARS:
+        return None
+    if spec.lower() in UNVERSIONED_SPECS:
+        return None
+    if spec.lower().startswith(NON_VERSION_SPEC_PREFIXES):
+        return None
+    return spec
+
+
+def _exact_version(spec: str) -> str | None:
+    """Return the single release a constraint pins, or None when it pins a range."""
+    match = EXACT_VERSION_RE.match(spec)
+    return match.group(1) if match else None
+
+
+def _mapping_version_spec(value: object) -> str | None:
+    """Read the constraint beside a name in a dependency mapping.
+
+    Poetry and Pipfile write a table where npm writes a string --
+    `flask = {version = "^3.0", extras = [...]}` -- so the table's own
+    `version` key is read before falling back to the scalar form.
+    """
+    if isinstance(value, dict):
+        return _clean_version_spec(value.get("version"))
+    if isinstance(value, str):
+        return _clean_version_spec(value)
+    return None
+
+
+def _requirement_version(line: str) -> str | None:
+    """Return the constraint in a PEP 508 requirement, such as `flask>=3.0,<4`."""
+    clean = line.split("#", 1)[0].strip()
+    if not clean or clean.startswith(("-", "--")) or " @ " in clean:
+        return None
+    body = clean.split("[", 1)[-1].split("]", 1)[-1] if "[" in clean else clean
+    match = re.search(r"(?:[=!<>~^]=?|===)\s*[^\s;]+(?:\s*,\s*(?:[=!<>~^]=?|===)\s*[^\s;]+)*", body)
+    return _clean_version_spec(match.group(0).replace(" ", "")) if match else None
 
 
 def _clean_dependency_name(value: object) -> str | None:
@@ -906,6 +1031,7 @@ def _put_dependency(  # noqa: PLR0913 - explicit dependency fields keep call sit
     confidence: float,
     reason: str,
     evidence: dict[str, Any],
+    version: str | None = None,
 ) -> None:
     clean_name = _clean_dependency_name(name)
     if clean_name is None:
@@ -924,6 +1050,7 @@ def _put_dependency(  # noqa: PLR0913 - explicit dependency fields keep call sit
         confidence=confidence,
         reason=reason,
         evidence=evidence,
+        version=version,
     )
     _scan_dependency_api_signals(findings, ecosystem, clean_name, evidence)
 
@@ -982,7 +1109,7 @@ def _scan_mapping_dependencies(  # noqa: PLR0913 - manifest source, ecosystem, a
 ) -> None:
     if not isinstance(mapping, dict):
         return
-    for name in mapping:
+    for name, spec in mapping.items():
         clean_name = _clean_dependency_name(name)
         if clean_name is None:
             continue
@@ -995,7 +1122,37 @@ def _scan_mapping_dependencies(  # noqa: PLR0913 - manifest source, ecosystem, a
             confidence=confidence,
             reason=reason,
             evidence=_evidence(path, line_number, line, clean_name),
+            version=_mapping_version_spec(spec),
         )
+
+
+def _put_runtime(  # noqa: PLR0913 - the manifest, the key, and the anchor are independent.
+    findings: dict[tuple[str, str], Finding],
+    *,
+    runtime: str,
+    spec: object,
+    path: str,
+    content: str,
+    anchor: str,
+    reason: str,
+) -> None:
+    """Record the runtime a manifest declares, with the version it pins to it."""
+    value = RUNTIME_TECHNOLOGY.get(runtime)
+    version = _clean_version_spec(spec)
+    if value is None or version is None:
+        return
+    line_number, line = _line_for_text(content, anchor)
+    _put(
+        findings,
+        kind="technology",
+        value=value,
+        label=value,
+        category="language",
+        confidence=0.88,
+        reason=reason,
+        evidence=_evidence(path, line_number, line, anchor),
+        version=version,
+    )
 
 
 def _scan_package_json(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
@@ -1019,6 +1176,17 @@ def _scan_package_json(findings: dict[tuple[str, str], Finding], source_file: So
             category=category,
             reason=reason,
             confidence=confidence,
+        )
+    engines = data.get("engines") if isinstance(data, dict) else None
+    if isinstance(engines, dict):
+        _put_runtime(
+            findings,
+            runtime="node",
+            spec=engines.get("node"),
+            path=source_file.path,
+            content=source_file.content,
+            anchor="engines",
+            reason="Declared Node.js engine requirement.",
         )
 
 
@@ -1045,6 +1213,7 @@ def _scan_requirements_txt(findings: dict[tuple[str, str], Finding], source_file
             confidence=0.94,
             reason="Declared Python requirement.",
             evidence=_evidence(source_file.path, line_number, raw_line, name),
+            version=_requirement_version(raw_line),
         )
 
 
@@ -1067,6 +1236,7 @@ def _scan_pyproject_toml(findings: dict[tuple[str, str], Finding], source_file: 
                     confidence=0.92,
                     reason="Declared Python project dependency.",
                     evidence=_evidence(source_file.path, line_number, line, name),
+                    version=_requirement_version(str(requirement)),
                 )
         optional = project.get("optional-dependencies")
         if isinstance(optional, dict):
@@ -1083,7 +1253,17 @@ def _scan_pyproject_toml(findings: dict[tuple[str, str], Finding], source_file: 
                             confidence=0.82,
                             reason="Declared Python optional dependency.",
                             evidence=_evidence(source_file.path, line_number, line, name),
+                            version=_requirement_version(str(requirement)),
                         )
+        _put_runtime(
+            findings,
+            runtime="python",
+            spec=project.get("requires-python"),
+            path=source_file.path,
+            content=source_file.content,
+            anchor="requires-python",
+            reason="Declared Python version requirement.",
+        )
     poetry = data.get("tool", {}).get("poetry", {}) if isinstance(data.get("tool"), dict) else {}
     if isinstance(poetry, dict):
         _scan_mapping_dependencies(
@@ -1182,17 +1362,41 @@ def _scan_composer_json(findings: dict[tuple[str, str], Finding], source_file: S
         reason="Declared Composer development dependency.",
         confidence=0.78,
     )
+    require = data.get("require") if isinstance(data, dict) else None
+    if isinstance(require, dict):
+        _put_runtime(
+            findings,
+            runtime="php",
+            spec=require.get("php"),
+            path=source_file.path,
+            content=source_file.content,
+            anchor="php",
+            reason="Declared PHP version requirement.",
+        )
 
 
 def _scan_go_mod(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
     for line_number, raw_line in enumerate(source_file.content.splitlines() or [""], start=1):
         clean = raw_line.split("//", 1)[0].strip()
+        go_directive = GO_DIRECTIVE_RE.match(clean)
+        if go_directive:
+            _put_runtime(
+                findings,
+                runtime="go",
+                spec=go_directive.group(1),
+                path=source_file.path,
+                content=source_file.content,
+                anchor=clean,
+                reason="Declared Go language version.",
+            )
+            continue
         if clean.startswith("require "):
             clean = clean.removeprefix("require ").strip()
         match = GO_REQUIRE_RE.match(clean)
         if not match:
             continue
         name = match.group(1)
+        version_match = GO_VERSION_RE.match(clean)
         _put_dependency(
             findings,
             ecosystem="go",
@@ -1201,6 +1405,7 @@ def _scan_go_mod(findings: dict[tuple[str, str], Finding], source_file: SourceFi
             confidence=0.93,
             reason="Declared Go module dependency.",
             evidence=_evidence(source_file.path, line_number, raw_line, name),
+            version=_clean_version_spec(version_match.group(1)) if version_match else None,
         )
 
 
@@ -1210,6 +1415,7 @@ def _scan_gemfile(findings: dict[tuple[str, str], Finding], source_file: SourceF
         if not match:
             continue
         name = match.group(1)
+        version_match = GEM_VERSION_RE.match(raw_line)
         _put_dependency(
             findings,
             ecosystem="rubygems",
@@ -1218,6 +1424,7 @@ def _scan_gemfile(findings: dict[tuple[str, str], Finding], source_file: SourceF
             confidence=0.92,
             reason="Declared Ruby gem dependency.",
             evidence=_evidence(source_file.path, line_number, raw_line, name),
+            version=_clean_version_spec(version_match.group(1)) if version_match else None,
         )
 
 
@@ -1234,6 +1441,7 @@ def _scan_package_lock(findings: dict[tuple[str, str], Finding], source_file: So
             if not str(package_path).startswith("node_modules/"):
                 continue
             name = str(package_path).removeprefix("node_modules/")
+            entry = packages.get(package_path)
             line_number, line = _line_for_text(source_file.content, str(package_path))
             _put_dependency(
                 findings,
@@ -1243,6 +1451,7 @@ def _scan_package_lock(findings: dict[tuple[str, str], Finding], source_file: So
                 confidence=0.84,
                 reason="Locked npm dependency.",
                 evidence=_evidence(source_file.path, line_number, line, name),
+                version=_mapping_version_spec(entry),
             )
     dependencies = data.get("dependencies")
     _scan_mapping_dependencies(
@@ -1307,6 +1516,7 @@ def _scan_poetry_lock(findings: dict[tuple[str, str], Finding], source_file: Sou
             confidence=0.84,
             reason="Locked Poetry dependency.",
             evidence=_evidence(source_file.path, line_number, line, name),
+            version=_mapping_version_spec(package),
         )
 
 
@@ -1334,6 +1544,7 @@ def _scan_composer_lock(findings: dict[tuple[str, str], Finding], source_file: S
                 confidence=confidence,
                 reason="Locked Composer dependency.",
                 evidence=_evidence(source_file.path, line_number, line, name),
+                version=_mapping_version_spec(package),
             )
 
 
@@ -1358,6 +1569,7 @@ def _scan_cargo_lock(findings: dict[tuple[str, str], Finding], source_file: Sour
             confidence=0.84,
             reason="Locked Cargo dependency.",
             evidence=_evidence(source_file.path, line_number, line, name),
+            version=_mapping_version_spec(package),
         )
 
 
@@ -1367,6 +1579,7 @@ def _scan_gemfile_lock(findings: dict[tuple[str, str], Finding], source_file: So
         if not match:
             continue
         name = match.group(1)
+        version_match = GEM_LOCK_VERSION_RE.match(raw_line)
         _put_dependency(
             findings,
             ecosystem="rubygems",
@@ -1375,6 +1588,7 @@ def _scan_gemfile_lock(findings: dict[tuple[str, str], Finding], source_file: So
             confidence=0.82,
             reason="Locked Ruby gem dependency.",
             evidence=_evidence(source_file.path, line_number, raw_line, name),
+            version=_clean_version_spec(version_match.group(1)) if version_match else None,
         )
 
 
@@ -1389,13 +1603,19 @@ def _lock_package_from_locator(locator: str) -> str | None:
 
 
 def _scan_yarn_lock(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
-    for line_number, raw_line in enumerate(source_file.content.splitlines() or [""], start=1):
-        match = YARN_LOCK_RE.match(raw_line)
-        if not match:
-            continue
-        name = _lock_package_from_locator(match.group(1))
-        if name is None:
-            continue
+    """Read locked npm packages out of a yarn.lock or pnpm-lock.yaml.
+
+    Unlike every other lockfile, these write the resolved version on its own
+    line *below* the locator, so a locator is held back until that line
+    arrives. A locator followed by another locator declared no version we can
+    read, and is emitted without one rather than borrowing the next entry's.
+    """
+    pending: tuple[str, int, str] | None = None
+
+    def emit(entry: tuple[str, int, str] | None, version: str | None) -> None:
+        if entry is None:
+            return
+        name, line_number, raw_line = entry
         _put_dependency(
             findings,
             ecosystem="npm",
@@ -1404,7 +1624,21 @@ def _scan_yarn_lock(findings: dict[tuple[str, str], Finding], source_file: Sourc
             confidence=0.78,
             reason="Locked Yarn dependency.",
             evidence=_evidence(source_file.path, line_number, raw_line, name),
+            version=version,
         )
+
+    for line_number, raw_line in enumerate(source_file.content.splitlines() or [""], start=1):
+        match = YARN_LOCK_RE.match(raw_line)
+        if match:
+            emit(pending, None)
+            name = _lock_package_from_locator(match.group(1))
+            pending = None if name is None else (name, line_number, raw_line)
+            continue
+        version_match = YARN_VERSION_RE.match(raw_line)
+        if version_match and pending is not None:
+            emit(pending, _clean_version_spec(version_match.group(1)))
+            pending = None
+    emit(pending, None)
 
 
 def _scan_lockfile_dependencies(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
@@ -1546,6 +1780,23 @@ def _scan_manifest_dependencies(findings: dict[tuple[str, str], Finding], source
         _scan_gemfile(findings, source_file)
     elif name in LOCKFILE_KINDS:
         _scan_lockfile_dependencies(findings, source_file)
+
+
+def _apply_technology_versions(findings: dict[tuple[str, str], Finding]) -> None:
+    """Copy each package's declared version onto the technology it stands for.
+
+    Only onto technologies already found. A resolved package is evidence of a
+    release, never of a usage, so it annotates a technology the source proved
+    and conjures none. Runs after every file, because the manifest naming the
+    version and the source proving the usage are rarely the same file.
+    """
+    for technology, package in TECHNOLOGY_PACKAGES.items():
+        finding = findings.get(("technology", technology))
+        dependency = findings.get(("dependencies", package))
+        if finding is None or dependency is None:
+            continue
+        for spec in dependency.version_specs:
+            finding.note_version(spec)
 
 
 def _local_python_import_roots(files: list[SourceFile]) -> set[str]:
@@ -3169,6 +3420,7 @@ def analyze_source_files(
             _scan_actions(findings, source_file.path, line_number, line)
             _scan_oauth_scopes(findings, source_file.path, line_number, line)
             _scan_warnings(findings, source_file.path, line_number, line)
+    _apply_technology_versions(findings)
     report: dict[str, Any] = {
         "toolName": tool_name or "",
         "sourceLabel": source_label or "",
