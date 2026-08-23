@@ -241,9 +241,19 @@ Each surviving original keeps its folded pages as members, related as
 `common.js` and `vector.js` is one user of it. Demand is also selected by
 _target_ rather than by source wiki, so an import stored against another wiki
 that points here still counts — those cross-wiki edges are the strongest argument
-any script has for becoming a global gadget. A page loading itself is not demand
-for it; a script that installs its own helper subpage would otherwise vote for
-itself.
+any script has for becoming a global gadget.
+
+**Loading your own page is not demand for it.** `User:X/common.js` loading
+`User:X/helper.js` is one person wiring up their own setup, and an author is not
+evidence for their own script. Owners are compared rather than titles, so this
+holds on a wiki whose namespace 2 is called something else, and it holds across
+wikis: usernames are global, so `User:X` on enwiki loading `User:X/tool.js` on
+frwiki is still the author. This is not a small correction — 575 of frwiki's
+4,544 resolved load edges and 1,293 of Meta's 11,638 are somebody voting for
+themselves, which is 366 of 923 frwiki pages and 725 of 1,980 Meta pages losing
+_all_ their demand, and half the pages that had exactly one user having none. A
+source with no census row has no resolved owner to compare, so it stands for
+itself and still counts.
 
 **Demand is counted by identity, not by spelling.** A load is counted once it has
 been resolved to the page it names; the map is then keyed on that page's
@@ -507,12 +517,12 @@ rather than a canonical one.
   that produces them rewrites every hash already written and makes each page
   look like a fork of itself until the whole corpus is swept again. It belongs with
   the fork work below, which touches hashing anyway.
-- **Demand does not skip same-owner loads.** `demand()` skips only a page
-  loading _itself_, though its docstring describes the broader case — "a script
-  that installs its own helper subpage would otherwise vote for itself". With
-  owners resolved, `User:X/common.js` loading `User:X/helper.js` adds X to
-  helper.js's demand. Whether that is one person's setup or genuine use is a
-  judgment the collapse rules have not made.
+- **The thresholds have not been re-read since same-owner demand stopped
+  counting.** Closed, in that `demand()` now skips a load from anywhere in the
+  target's own owner's space rather than only a page loading itself. What is
+  left is a calibration question, not a bug: `INDEPENDENT_DEMAND` and the tier
+  split were measured when self-demand was still in the numbers, and roughly
+  40% of pages with demand had nothing but their author's. See the next gap.
 - **Thresholds are calibrated against one wiki.** `CROWDED_OWNERS`,
   `INDEPENDENT_DEMAND` and the tier split were all measured on frwiki. Meta is
   swept but only partially enumerated, so it is not yet a second data point to
