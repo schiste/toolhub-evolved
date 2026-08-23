@@ -29,6 +29,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 from backend.sync import (
     AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
     AUTHOR_CLAIM_UNVERIFIED,
+    LIFECYCLE_UNKNOWN,
+    LIFECYCLE_VALUES,
     REVIEW_APPROVED,
     REVIEW_OPEN,
     REVIEW_PENDING,
@@ -76,6 +78,11 @@ CATALOG_CARD_FIELDS = (
     "translate_url",
     "deprecated",
     "experimental",
+    # Not toolinfo. Evolved's own observation about whether anybody uses a tool,
+    # carried in the record under an underscore the way the schema's own
+    # non-content keys are, so that one card, one search hit and one tool page
+    # all learn it from the field they already read.
+    "_lifecycle",
     "modified_date",
     "modified",
     "origin",
@@ -344,6 +351,19 @@ class CanonicalToolCache(Base):
     source_url: Mapped[str] = mapped_column(String(2000), default="")
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+    # Whether anybody other than the author is known to use this tool -- see
+    # `backend.sync`. Denormalized out of `record["_lifecycle"]` by the validator
+    # below, exactly as search_text and card_record are, so that SQL can filter
+    # and facet on it without shipping every record to Python. The record stays
+    # the single account of it; a column written independently would be a second
+    # one, and the two would eventually disagree.
+    #
+    # Deliberately left without an index. `_upgrade_schema` adds columns but
+    # never indexes, so declaring one here would build it in the test database
+    # and nowhere else -- a difference that hides a slow query until production.
+    # Nothing filters on this alone yet; when something does, the index is its
+    # own deliberate DDL step.
+    lifecycle: Mapped[str] = mapped_column(String(16), default="")
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     stale_until: Mapped[datetime] = mapped_column(DateTime, index=True)
@@ -366,6 +386,8 @@ class CanonicalToolCache(Base):
         self.search_text = "\n".join(str(part or "") for part in parts).casefold()[:SEARCH_TEXT_MAX_CHARS]
         self.card_record = catalog_card_record(source)
         self.modified_at_sort = catalog_modified_at(source)
+        lifecycle = source.get("_lifecycle")
+        self.lifecycle = lifecycle if lifecycle in LIFECYCLE_VALUES else LIFECYCLE_UNKNOWN
         return record
 
 

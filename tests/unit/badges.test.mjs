@@ -50,6 +50,17 @@ test("statusBadge() returns empty when neither deprecated nor experimental", () 
 	);
 });
 
+test("statusBadge() renders grey markup for an archived tool", () => {
+	assert.equal(
+		statusBadge({ lifecycle: "archived", status: { level: "grey", label: "Archived" } }),
+		'<span class="status status--grey"><span class="dot dot--grey"></span>Archived</span>'
+	);
+});
+
+test("statusBadge() stays silent for a tool something is known to load", () => {
+	assert.equal(statusBadge({ lifecycle: "active", status: { level: "green", label: "Healthy" } }), "");
+});
+
 test("statusBadge() defaults to green/Healthy when status object is absent", () => {
 	assert.equal(
 		statusBadge({ deprecated: true, status: null }),

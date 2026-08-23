@@ -7,7 +7,8 @@ import { icon } from "./icon.js";
 const STATUS_CLASSES = new Map([
 	["green", { dot: "dot--green", status: "status--green" }],
 	["red", { dot: "dot--red", status: "status--red" }],
-	["yellow", { dot: "dot--yellow", status: "status--yellow" }]
+	["yellow", { dot: "dot--yellow", status: "status--yellow" }],
+	["grey", { dot: "dot--grey", status: "status--grey" }]
 ]);
 
 /** @param {string} level */
@@ -34,7 +35,9 @@ export function statusBadge(t) {
 		level: "green",
 		label: "Healthy"
 	};
-	return t.deprecated || t.experimental ? statusMarkup(st) : "";
+	// "Healthy" is the absence of news and gets no badge. Everything else is
+	// something the reader would want to know before installing.
+	return t.deprecated || t.experimental || t.lifecycle === "archived" ? statusMarkup(st) : "";
 }
 /**
  * @param {number | null | undefined} count

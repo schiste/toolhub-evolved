@@ -54,6 +54,12 @@
 	background: var(--color-destructive);
 }
 
+/* Archived. Neutral on purpose: nobody but the author loading a tool is a fact
+   about its audience, not a warning about its quality. */
+.dot--grey {
+	background: var(--color-text-muted);
+}
+
 .avatar {
 	width: var(--avatar-md);
 	height: var(--avatar-md);
@@ -313,6 +319,11 @@ textarea.le__input {
 .status--red {
 	background: var(--color-destructive-subtle);
 	color: var(--color-destructive);
+}
+
+.status--grey {
+	background: var(--color-surface-muted);
+	color: var(--color-text-muted);
 }
 
 .signal {

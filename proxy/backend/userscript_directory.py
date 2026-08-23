@@ -2,12 +2,12 @@
 """Which of a wiki's user scripts are originals, and which are somebody's copy.
 
 A directory of user scripts has to answer a question the wiki itself cannot:
-of the 2,051 frwiki user-space pages that hold a real script, how many are
-*distinct scripts*? The answer is 1,264, and getting there is not deduplication.
-Two thirds of the difference is not byte-identical copies at all -- it is
-per-user configuration. 472 people have a page called `LiveRCparam.js`, each
-holding their own settings for one shared tool. Hashing finds none of them,
-because no two are the same.
+of the 6,551 frwiki user-space pages that hold a real script, how many are
+*distinct scripts*? The answer is 1,395, and getting there is not deduplication.
+Most of the difference is not byte-identical copies at all -- it is per-user
+configuration. 472 people have a page called `LiveRCparam.js`, each holding
+their own settings for one shared tool. Hashing finds none of them, because no
+two are the same.
 
 What does find them is the filename. When many owners have a page under the
 same name, the later ones are overwhelmingly instances of whatever the first
@@ -17,9 +17,9 @@ it never fires alone:
 
 **A page that other people demonstrably load keeps its identity, whatever it is
 called.** The guard, not the threshold, is what protects real scripts. It also
-pays for itself: protecting reused pages directly let the crowd threshold drop
-from 25 owners to 5, folding 787 pages instead of 670 while losing nothing that
-anyone actually imports.
+pays for itself: protecting reused pages directly is what lets the crowd
+threshold sit at 5 owners rather than 25, folding 1,066 more enwiki pages, 267
+more on frwiki and 241 more on meta while losing nothing that anyone imports.
 
 The rule then validates itself in a way worth stating, because it is the reason
 to trust it on a wiki nobody has hand-checked. "Earliest wins" recovers tool
@@ -29,9 +29,10 @@ authors without being told what a tool author is: 471 of the 472
 472nd is somebody else's settings file that another editor loads, so the guard
 keeps it -- which is exactly the case INDEPENDENT_DEMAND exists for.
 
-Nothing is dropped for being unloaded. 661 of the 1,264 originals have no
-importer anybody can see, and they stay in the directory under `TIER_ARCHIVE`
-rather than being filtered out of it -- see `tier_of`.
+Nothing is dropped for being unloaded. Roughly three quarters of the originals
+on every censused wiki have no importer anybody can see, and they stay in the
+directory under `TIER_ARCHIVE` rather than being filtered out of it -- see
+`tier_of`.
 
 Demand is supplied by the caller rather than computed here, because it arrives
 through several channels -- personal skin slots, script-to-script imports, and
