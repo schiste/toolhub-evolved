@@ -91,6 +91,9 @@ def main() -> int:
             f"asked={summary['asked']} fetched={summary['fetched']} "
             f"written={summary['written']} skipped={summary['skipped']} "
             f"unreadable={summary['unreadable']}"
+            # Only when it happened. A field that is almost always 0 trains the
+            # reader to skip the line it appears on.
+            f"{' lagged=1' if summary['lagged'] else ''}"
             f"{_progress(summary)}\n",
         )
         stamped = userscript_creation_dates.backfill([wiki])
