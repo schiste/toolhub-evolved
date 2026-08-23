@@ -45,6 +45,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from backend.userscripts import similarity, sketch_hashes
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
@@ -75,6 +77,23 @@ CROWDED_OWNERS = 5
 # error is silent and unrecoverable.
 INDEPENDENT_DEMAND = 1
 
+# How much of two bodies must be shared before the later one is read as a fork
+# of the earlier. Measured on frwiki's 6,551 script pages: 0.7 folds 1,610 pages
+# into 444 groups, 0.8 folds 1,386, and 0.9 folds 1,104 into 367. The count
+# barely moves across that range because the pairs are not spread evenly through
+# it -- a fork of a real script is usually 95% of it and a coincidence is usually
+# under 0.5, so almost nothing sits at the boundary wherever the boundary is put.
+#
+# 0.9 is chosen because what does change across the range is the mistakes:
+# groups spanning more than three distinct filenames -- which is what an
+# over-broad fold looks like, since a fork normally keeps the name it was copied
+# under -- fall from 14 to 11 to 6. Given a sketch that places a similarity
+# within about 0.1, 0.9 means "at least four fifths the same script, probably
+# more", and the same reasoning as INDEPENDENT_DEMAND applies: folding a real
+# fork one entry too late is a duplicate somebody can see, and folding two
+# unrelated scripts together is silent.
+NEAR_COPY_SIMILARITY = 0.9
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -86,7 +105,10 @@ class Candidate:
     sorts behind every real date -- see `backend.userscript_projection`, which
     is the only thing that should be minting these. `fingerprint` is the
     normalized content hash from `backend.userscripts`; an empty one never
-    matches anything, which is what keeps blank pages from clustering.
+    matches anything, which is what keeps blank pages from clustering. `sketch`
+    is the sample of the same body that `similarity` reads, and is empty on a
+    page stored before sketches existed -- which resembles nothing, so such a
+    page folds exactly as it did before rather than folding wrongly.
     """
 
     title: str
@@ -94,6 +116,7 @@ class Candidate:
     basename: str
     created: str
     fingerprint: str
+    sketch: str = ""
 
     @property
     def rank(self) -> tuple[str, str]:
@@ -112,17 +135,18 @@ class Origin:
 
     original: Candidate
     copies: list[Candidate] = field(default_factory=list)
+    forks: list[Candidate] = field(default_factory=list)
     variants: list[Candidate] = field(default_factory=list)
 
     @property
     def pages(self) -> list[Candidate]:
         """The original and everything folded onto it."""
-        return [self.original, *self.copies, *self.variants]
+        return [self.original, *self.copies, *self.forks, *self.variants]
 
     @property
     def instances(self) -> int:
         """How many pages other than the original belong to this script."""
-        return len(self.copies) + len(self.variants)
+        return len(self.copies) + len(self.forks) + len(self.variants)
 
 
 def owner_of_user_page(title: str) -> str:
@@ -189,6 +213,54 @@ def _fold_exact_copies(candidates: Iterable[Candidate]) -> list[Origin]:
     return origins
 
 
+def _fold_near_copies(origins: list[Origin]) -> list[Origin]:
+    """Fold a page that is nearly an earlier one onto it, as a fork rather than a copy.
+
+    Answers the question a hash cannot. On frwiki 678 pairs of pages are more
+    than 99% the same text and share no fingerprint, and the shape of the
+    difference says what they are: `lrcParams["RCLimit"] = 35` against `= 30`,
+    one `@import` line present in one page and not the other. Somebody took a
+    script and changed their settings.
+
+    Each page is compared against the *originals already accepted*, never
+    against another fork, and always in creation order. Comparing everything
+    against everything and joining what matches would let similarity chain --
+    A resembles B and B resembles C, so A and C are the same script even where
+    they share nothing -- and a chain has no bound on how far it can travel.
+    Here every page in a group is `NEAR_COPY_SIMILARITY` of the one page the
+    group is named after, which is a claim that stays true however large the
+    group gets.
+
+    Pages are found through an index of their sketch hashes rather than by
+    comparing every pair. Two bodies that share none of the 64 sampled hashes
+    cannot be 90% the same, so the pairs the index skips are pairs the
+    comparison would have rejected.
+    """
+    accepted: list[Origin] = []
+    seen: dict[bytes, list[int]] = defaultdict(list)
+    for origin in sorted(origins, key=lambda origin: origin.original.rank):
+        hashes, _truncated = sketch_hashes(origin.original.sketch)
+        nearby: set[int] = set()
+        for value in hashes:
+            nearby.update(seen[value])
+        host = max(
+            (accepted[at] for at in nearby),
+            key=lambda candidate: similarity(candidate.original.sketch, origin.original.sketch),
+            default=None,
+        )
+        if host is not None and similarity(host.original.sketch, origin.original.sketch) >= NEAR_COPY_SIMILARITY:
+            host.forks.extend(origin.pages)
+            continue
+        at = len(accepted)
+        accepted.append(origin)
+        # Only the original's hashes are indexed. A fork is reachable through
+        # the page it folded onto, and indexing it too would let a group grow
+        # by resembling its own members rather than its original.
+        for value in hashes:
+            seen[value].append(at)
+    return accepted
+
+
 def _fold_crowded_names(origins: list[Origin], demand: Mapping[str, set[str]]) -> list[Origin]:
     """Fold later pages under a crowded filename onto the earliest, unless loaded.
 
@@ -231,7 +303,7 @@ def collapse(candidates: Iterable[Candidate], demand: Mapping[str, set[str]]) ->
     does not mention are simply unloaded; the caller does not have to enumerate
     the corpus twice.
     """
-    origins = _fold_crowded_names(_fold_exact_copies(candidates), demand)
+    origins = _fold_crowded_names(_fold_near_copies(_fold_exact_copies(candidates)), demand)
     origins.sort(key=lambda origin: origin.original.rank)
     return origins
 

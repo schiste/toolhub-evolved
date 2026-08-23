@@ -337,6 +337,7 @@ def store_page(
     row.content_model = page.model
     row.role = analysis.role
     row.fingerprint = analysis.fingerprint
+    row.sketch = analysis.sketch
     row.body = page.body[:MAX_STORED_BODY]
     row.size_bytes = len(page.body.encode("utf-8", "replace"))
     row.revision = page.revision

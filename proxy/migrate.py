@@ -40,6 +40,7 @@ from backend import (
     people_index,
     source_attestations,
     userscript_sweep,
+    userscripts,
 )
 from backend.author_claims import claim_relationship_for_method
 from backend.models import (
@@ -58,6 +59,7 @@ from backend.models import (
     UnresolvedAttributionEvidence,
     User,
     UserScriptImport,
+    UserScriptPage,
     utcnow,
 )
 from backend.sync import (
@@ -151,6 +153,7 @@ def migrations() -> Iterator[MigrationResult]:
     yield MigrationResult("retired legacy people projections", _retire_legacy_people_tables())
     yield MigrationResult("user-script load key widened for modules", _widen_userscript_import_key())
     yield MigrationResult("user-script loads resolved to pages", _backfill_userscript_import_targets())
+    yield MigrationResult("user-script body sketches", _backfill_userscript_sketches())
 
 
 def _ensure_catalog_read_indexes() -> int:
@@ -268,6 +271,50 @@ def _backfill_userscript_import_targets() -> int:
                 if page_id is not None:
                     row.target_page_id = page_id
                     resolved += 1
+
+
+def _backfill_userscript_sketches() -> int:
+    """Sample the bodies stored before sketches existed, so forks fold on the first run.
+
+    Every one of these bodies is already in the database, so the alternative is
+    not "wait a moment" -- it is re-reading a whole corpus from the wikis to
+    learn something the rows already contain. Sketching only the pages the
+    directory can use keeps it to the script-role rows rather than all 155,000.
+
+    A page whose body was truncated at `MAX_STORED_BODY` on the way in gets a
+    sketch of the part that was kept, which is what the next sweep will replace
+    with the full one. The two differ only for pages over half a megabyte, and a
+    sample of the first half megabyte of a script still resembles a fork of it.
+
+    Chunked by id and restartable: rows already sketched are skipped by the
+    filter, so a deploy interrupted halfway resumes rather than starting over.
+    """
+    engine = db.engine()
+    if UserScriptPage.__tablename__ not in set(inspect(engine).get_table_names()):
+        return 0
+    written = 0
+    after = 0
+    while True:
+        with db.session_scope() as session:
+            rows = (
+                session.query(UserScriptPage)
+                .filter(
+                    UserScriptPage.sketch == "",
+                    UserScriptPage.role == userscripts.ROLE_SCRIPT,
+                    UserScriptPage.id > after,
+                )
+                .order_by(UserScriptPage.id)
+                .limit(BACKFILL_CHUNK)
+                .all()
+            )
+            if not rows:
+                return written
+            after = rows[-1].id
+            for row in rows:
+                sketch = userscripts.sketch(row.body or "")
+                if sketch:
+                    row.sketch = sketch
+                    written += 1
 
 
 def _widen_digest_render_columns() -> int:

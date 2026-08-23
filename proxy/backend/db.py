@@ -267,6 +267,11 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # tie-break reads it as a string and falls back when it is blank, so
             # a deployment that never gets a replica connection stays correct.
             "created_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
+            # Empty until the page is next read. An empty sketch resembles
+            # nothing, so the near-copy fold simply does not fire on a row that
+            # predates it -- see `proxy/migrate.py`, which fills them in from
+            # the bodies already stored rather than waiting for another sweep.
+            "sketch": "VARCHAR(1024) NOT NULL DEFAULT ''",
         },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",

@@ -178,6 +178,7 @@ def stored(title, wiki=FRWIKI):
             "basename": row.basename,
             "model": row.content_model,
             "size": row.size_bytes,
+            "sketch": row.sketch,
             "deleted": row.deleted_at is not None,
         }
 
@@ -429,6 +430,10 @@ def test_a_swept_page_is_stored_with_its_analysis_and_its_loads():
     assert row["basename"] == "one.js"
     assert row["model"] == "javascript"
     assert row["size"] > 0
+    # Stored alongside the fingerprint rather than derived on read: the fold runs
+    # in a process that never sees a body, and re-sampling 155,000 of them per
+    # directory run would cost more than the column.
+    assert row["sketch"] == userscripts.sketch(row["body"])
     assert imports_of("User:A/one.js") == [
         ("importScript", FRWIKI, "User:B/two.js", ""),
         ("mw.loader.load", FRWIKI, "X", "//fr.wikipedia.org/w/index.php?title=X&action=raw"),
@@ -1189,6 +1194,7 @@ def test_two_loads_the_database_calls_one_do_not_fail_the_page():
         title="User:A/global.js",
         role="loader",
         fingerprint="f",
+        sketch="",
         imports=(twice, twice),
     )
     with db.session_scope() as session:
@@ -1209,7 +1215,9 @@ def test_a_page_loading_several_modules_stores_one_row_each():
         userscripts.ScriptImport(verb="mw.loader.load", argument=name, wiki=FRWIKI, module=name)
         for name in ("ext.gadget.A", "ext.gadget.B", "ext.gadget.C")
     )
-    analysis = userscripts.ScriptPage(title="User:A/common.js", role="loader", fingerprint="f", imports=imports)
+    analysis = userscripts.ScriptPage(
+        title="User:A/common.js", role="loader", fingerprint="f", sketch="", imports=imports
+    )
     with db.session_scope() as session:
         sweeper._replace_imports(session, FRWIKI, analysis)
     with db.session_scope() as session:

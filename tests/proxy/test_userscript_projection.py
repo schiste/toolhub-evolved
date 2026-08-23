@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 import backend  # noqa: E402
 from backend import (  # noqa: E402
     db,
+    userscripts,
     userscript_directory as directory,
     userscript_projection as projection,
     userscript_sweep as sweep,
@@ -36,7 +37,7 @@ def _database():
         yield
 
 
-def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=False, created=""):
+def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=False, created="", body=""):
     """Store one census page, filling in what the projection reads."""
     with db.session_scope() as session:
         session.add(
@@ -47,6 +48,7 @@ def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=F
                 basename=directory.basename_of(title),
                 role=role,
                 fingerprint=fingerprint,
+                sketch=userscripts.sketch(body),
                 discovery_rank=rank,
                 created_at_wiki=created,
                 deleted_at=utcnow() if deleted else None,
@@ -252,6 +254,33 @@ def test_an_identical_copy_is_filed_under_the_original_it_copies():
     # The copy's demand belongs to the original, and the copy is still listed.
     assert entries() == [("User:Aaa/tool.js", directory.TIER_ACTIVE, 1, 1, 1)]
     assert members()["User:Bbb/tool.js"] == ("User:Aaa/tool.js", projection.RELATION_COPY)
+
+
+def script(count, name="a"):
+    """A body long enough that one changed line leaves a near copy of it."""
+    return "\n".join(f"var {name}{at} = {at} * 3 + '{name}';" for at in range(count))
+
+
+def test_a_near_copy_is_filed_as_a_fork_rather_than_a_copy():
+    # Three strengths, and the entry has to say which one filed a page: identical
+    # is a fact, most-of-the-same-body is an observation, a shared name is an
+    # inference. Only the middle one survives somebody editing their own settings.
+    body = script(200)
+    theirs = body.replace("var a7 = 7 * 3 + 'a';", "var a7 = 42 * 3 + 'a';")
+    page("User:Aaa/tool.js", rank=0, fingerprint="a", body=body)
+    page("User:Bbb/other.js", rank=1, fingerprint="b", body=theirs)
+    summary = projection.project(FRWIKI)
+    assert summary["candidates"] == 2
+    assert summary["originals"] == 1
+    assert entries() == [("User:Aaa/tool.js", directory.TIER_ARCHIVE, 0, 1, 1)]
+    assert members()["User:Bbb/other.js"] == ("User:Aaa/tool.js", projection.RELATION_FORK)
+
+
+def test_a_page_with_no_stored_sketch_is_still_its_own_script():
+    # What a directory run sees while the backfill is still walking the table.
+    page("User:Aaa/tool.js", rank=0, fingerprint="a")
+    page("User:Bbb/other.js", rank=1, fingerprint="b")
+    assert projection.project(FRWIKI)["originals"] == 2
 
 
 def test_a_crowded_filename_folds_as_a_variant_not_as_a_copy():

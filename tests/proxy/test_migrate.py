@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import migrate  # noqa: E402
-from backend import api_cache, canonical_tools, db, digests, maintainer_index  # noqa: E402
+from backend import api_cache, canonical_tools, db, digests, maintainer_index, userscripts  # noqa: E402
 from backend.models import (  # noqa: E402
     ApiCache,
     DigestEdition,
@@ -596,6 +596,31 @@ def test_migrate_resolves_user_script_loads_stored_before_the_column_existed(con
         page_id = session.query(UserScriptPage.id).scalar()
         rows = dict(session.query(UserScriptImport.target_title, UserScriptImport.target_page_id))
     assert rows == {"User:B/two.js": page_id, "User:B/gone.js": None}
+
+
+def test_migrate_sketches_the_bodies_stored_before_sketches_existed(configured_db):
+    # The bodies are already here. Waiting for the next sweep would mean re-reading
+    # a whole corpus from the wikis to learn something the rows already contain,
+    # and until it finished the fork fold would see nothing to fold.
+    body = "\n".join(f"var a{at} = {at} * 3;" for at in range(200))
+    with db.session_scope() as session:
+        session.add_all(
+            [
+                UserScriptPage(wiki="fr.wikipedia.org", title="User:A/one.js", role="script", body=body),
+                # A shim is not a directory candidate, so sampling it would be
+                # work nothing reads.
+                UserScriptPage(wiki="fr.wikipedia.org", title="User:B/vector.js", role="shim", body=body),
+            ],
+        )
+
+    assert migrate._backfill_userscript_sketches() == 1
+    # And again: a sketched row is skipped by the filter, so a deploy interrupted
+    # halfway resumes rather than starting over.
+    assert migrate._backfill_userscript_sketches() == 0
+
+    with db.session_scope() as session:
+        stored = dict(session.query(UserScriptPage.title, UserScriptPage.sketch))
+    assert stored == {"User:A/one.js": userscripts.sketch(body), "User:B/vector.js": ""}
 
 
 def test_the_import_key_is_widened_once_and_then_left_alone(configured_db):

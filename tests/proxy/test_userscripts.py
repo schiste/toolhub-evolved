@@ -11,6 +11,8 @@ user namespace than the database stored.
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
@@ -564,3 +566,103 @@ def test_a_relative_url_given_to_mw_loader_load_is_still_a_url():
     body = "mw.loader.load('/w/index.php?title=User:Foo/bar.js&action=raw');"
     (found,) = userscripts.script_imports(body, wiki=FRWIKI)
     assert (found.title, found.module) == ("User:Foo/bar.js", "")
+
+
+# --- sketches -------------------------------------------------------------
+
+
+def lines(count, name="a", first=0):
+    """A body of `count` distinct lines, for asking how much of it survives an edit."""
+    return "\n".join(f"var {name}{at} = {at} * 3 + '{name}';" for at in range(first, first + count))
+
+
+def test_an_empty_body_has_no_sketch():
+    assert userscripts.sketch("") == ""
+    assert userscripts.sketch("// nothing but a credit\n/* and a licence */") == ""
+
+
+def test_a_body_shorter_than_one_window_still_has_a_sketch():
+    # Its whole self is the one shingle. A three-line script is still something
+    # somebody can have copied, and returning nothing would exempt it from the fold.
+    assert userscripts.sketch(lines(3)) != ""
+
+
+def test_comments_and_spacing_do_not_change_a_sketch():
+    # The same normalization the fingerprint gets, for the same reason: the
+    # credit comment copies carry is the difference the sketch must not see.
+    plain = lines(40)
+    dressed = "// adapted from someone\n" + "\n".join(f"   {line}  // kept" for line in plain.splitlines())
+    assert userscripts.sketch(dressed) == userscripts.sketch(plain)
+
+
+def test_a_sketch_is_the_same_size_however_long_the_body_is():
+    stored = userscripts.sketch(lines(2000))
+    hashes, truncated = userscripts.sketch_hashes(stored)
+    assert (len(hashes), truncated) == (userscripts.SKETCH_SIZE, True)
+
+
+def test_a_short_body_is_sampled_whole_and_says_so():
+    hashes, truncated = userscripts.sketch_hashes(userscripts.sketch(lines(30)))
+    assert (len(hashes), truncated) == (26, False)
+
+
+# --- resemblance ----------------------------------------------------------
+
+
+def test_a_body_resembles_itself_completely():
+    assert userscripts.similarity(userscripts.sketch(lines(200)), userscripts.sketch(lines(200))) == 1.0
+
+
+def test_two_unrelated_bodies_resemble_each_other_not_at_all():
+    assert userscripts.similarity(userscripts.sketch(lines(200)), userscripts.sketch(lines(200, name="z"))) == 0.0
+
+
+def test_one_changed_line_still_leaves_a_near_copy():
+    # This is what no fingerprint can do: the two hashes are unrelated, and the
+    # two pages are the same script.
+    body = lines(200)
+    edited = body.replace("var a100 = 100 * 3 + 'a';", "var a100 = 999 * 3 + 'a';")
+    assert userscripts.similarity(userscripts.sketch(body), userscripts.sketch(edited)) > 0.9
+
+
+def test_a_configuration_change_is_a_near_copy():
+    # The dominant fork shape in the corpus: one person's copy of a script with
+    # their own setting at the top and nothing else touched.
+    body = "\n".join(['lrcParams["RCLimit"] = 30;', *(f"function f{at}() {{ return {at}; }}" for at in range(80))])
+    theirs = body.replace('lrcParams["RCLimit"] = 30;', 'lrcParams["RCLimit"] = 35;')
+    assert userscripts.similarity(userscripts.sketch(body), userscripts.sketch(theirs)) > 0.9
+
+
+def test_half_a_body_rewritten_is_not_a_near_copy():
+    rewritten = lines(100) + "\n" + lines(100, name="q")
+    assert userscripts.similarity(userscripts.sketch(lines(200)), userscripts.sketch(rewritten)) < 0.5
+
+
+def test_a_body_is_not_unlike_a_shorter_one_purely_for_being_longer():
+    # The truncation rule earns its keep here. The short body's sketch is
+    # complete and the long one's is not, and the two share exactly half their
+    # shingles -- which is the number that has to come back.
+    short = lines(30)
+    longer = short + "\n" + lines(30, name="q")
+    assert userscripts.similarity(userscripts.sketch(short), userscripts.sketch(longer)) == pytest.approx(26 / 56)
+
+
+def test_an_empty_sketch_resembles_nothing_including_another_empty_one():
+    # Two pages with no code are not two copies of one script. Every comments-only
+    # page in the corpus would otherwise fold onto one entry.
+    assert userscripts.similarity("", "") == 0.0
+    assert userscripts.similarity("", userscripts.sketch(lines(200))) == 0.0
+
+
+@pytest.mark.parametrize("stored", ["not base64 at all", "MTIzNDU=", "AAAA"])
+def test_a_stored_value_that_is_not_a_sketch_resembles_nothing(stored):
+    # The column is written by whatever version of this code last ran, and a
+    # partial hash read as a whole one would compare against nothing correctly.
+    assert userscripts.sketch_hashes(stored) == (frozenset(), False)
+    assert userscripts.similarity(stored, userscripts.sketch(lines(200))) == 0.0
+
+
+def test_analyze_carries_the_sketch_alongside_the_fingerprint():
+    page = userscripts.analyze("User:Orlodrim/portail-eval.js", lines(200), wiki=FRWIKI)
+    assert page.sketch == userscripts.sketch(lines(200))
+    assert page.fingerprint != ""

@@ -1534,6 +1534,10 @@ class UserScriptPage(Base):
     content_model: Mapped[str] = mapped_column(String(32), default="")
     role: Mapped[str] = mapped_column(String(16), default="")
     fingerprint: Mapped[str] = mapped_column(String(64), default="", index=True)
+    # A sample of the body's shape rather than a hash of it, so two pages that
+    # are nearly the same script can be recognized as such. Deliberately not
+    # indexed: nothing looks a sketch up, and no two are expected to be equal.
+    sketch: Mapped[str] = mapped_column(String(1024), default="")
     body: Mapped[str] = mapped_column(MEDIUMTEXT().with_variant(Text, "sqlite"), default="")
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     revision: Mapped[str] = mapped_column(String(32), default="")
