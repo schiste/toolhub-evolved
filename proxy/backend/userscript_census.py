@@ -59,10 +59,14 @@ SEARCH_PAGE_SIZE: Final = 500
 # came first, and that need not be stable between two runs over one wiki.
 SEARCH_SORT: Final = "create_timestamp_asc"
 
-# Titles per content request. Small because the API caps a response at 2 MB and
-# a single user script can run to six figures of bytes; a batch that still comes
-# back too large is halved rather than abandoned.
-CONTENT_BATCH: Final = 20
+# Titles per content request. 50 is the API's own ceiling on `titles` for an
+# account without raised API limits, so this asks for as much per request as
+# the wiki will answer. The response cap is 2 MB and a single user script can
+# run to six figures of bytes, so a batch this size does sometimes come back too
+# large -- `userscript_sweep.read_titles` halves it and asks again, which costs
+# a handful of extra requests for the rare fat batch instead of the 50 that
+# re-reading it one title at a time would cost.
+CONTENT_BATCH: Final = 50
 
 
 @dataclass(frozen=True)

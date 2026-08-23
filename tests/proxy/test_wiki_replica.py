@@ -215,22 +215,41 @@ def test_the_connection_is_closed_even_when_the_query_fails():
 
 
 def test_every_script_page_comes_back_paired_with_its_content_model():
-    rows = ((b"javascript", b"Tom_Smith/monobook.js"), (b"css", b"Ada/vector.css"))
+    rows = ((b"javascript", b"Tom_Smith/monobook.js", b"41"), (b"css", b"Ada/vector.css", b"7"))
     assert wiki_replica.read_page_titles(rows) == (
-        ("javascript", "Tom_Smith/monobook.js"),
-        ("css", "Ada/vector.css"),
+        ("javascript", "Tom_Smith/monobook.js", "41"),
+        ("css", "Ada/vector.css", "7"),
     )
 
 
 def test_enumeration_keeps_the_order_the_replica_returned():
-    rows = ((b"javascript", b"Zeta/z.js"), (b"javascript", b"Alpha/a.js"))
-    titles = [title for _model, title in wiki_replica.read_page_titles(rows)]
+    rows = ((b"javascript", b"Zeta/z.js", b"1"), (b"javascript", b"Alpha/a.js", b"2"))
+    titles = [title for _model, title, _revision in wiki_replica.read_page_titles(rows)]
     assert titles == ["Zeta/z.js", "Alpha/a.js"]
 
 
 def test_a_row_missing_either_half_is_not_a_page():
-    rows = ((b"javascript", b""), (b"", b"Ada/vector.css"), (None, None))
+    rows = ((b"javascript", b"", b"1"), (b"", b"Ada/vector.css", b"2"), (None, None, None))
     assert wiki_replica.read_page_titles(rows) == ()
+
+
+def test_a_page_with_no_revision_id_is_still_a_page():
+    # The revision id is a shortcut -- it lets a sweep skip fetching a page it
+    # already holds. A row that cannot offer one has lost the shortcut, not its
+    # place in the enumeration, so it comes back with an empty revision and a
+    # sweep simply fetches it.
+    rows = ((b"javascript", b"Ada/a.js", None), (b"javascript", b"Bo/b.js"))
+    assert wiki_replica.read_page_titles(rows) == (
+        ("javascript", "Ada/a.js", ""),
+        ("javascript", "Bo/b.js", ""),
+    )
+
+
+def test_the_enumeration_reads_the_revision_id_off_the_row_it_already_had():
+    # `page_latest` is a column on `page`, so carrying it costs no extra query
+    # and no extra join -- and it is what makes a second sweep cheap.
+    assert "p.page_latest" in wiki_replica.ENUMERATION_QUERY
+    assert wiki_replica.ENUMERATION_QUERY.count("FROM") == 1
 
 
 def test_enumeration_asks_for_user_space_by_content_model_in_creation_order():

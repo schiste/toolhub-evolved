@@ -106,15 +106,19 @@ def read_titles(
 ) -> tuple[list[census.PageContent], int]:
     """Fetch and parse pages in API-sized batches, counting the titles left unread.
 
-    A batch can fail for the batch's own sake: twenty user scripts can exceed the
+    A batch can fail for the batch's own sake: fifty user scripts can exceed the
     client's two-megabyte response cap while every one of them fits comfortably
     alone, and regrouping the same titles next run would fail identically
-    forever. So a failed batch is re-read one title at a time, which turns a
-    permanent twenty-page hole into one honestly oversized page.
+    forever. So a failed batch is halved and each half asked for again, down to
+    the single title that is genuinely too big to read. Halving rather than
+    going straight to singles is what makes a large `CONTENT_BATCH` worth
+    having: one fat page in a batch of fifty costs about six extra requests
+    instead of fifty, so the batch size can be set by what the wiki will answer
+    rather than by what a bad batch would cost to recover from.
 
     That retry is budgeted. When batches keep failing the cause is the wiki or
     the network, not their size, and splitting would multiply a wiki-wide outage
-    into twenty times the requests. Past `SPLIT_BUDGET` failures the run stops
+    into many times the requests. Past `SPLIT_BUDGET` failures the run stops
     splitting and simply records what it could not read; the next run asks again.
     """
     read: list[census.PageContent] = []
@@ -129,15 +133,45 @@ def read_titles(
             unreadable += len(batch)
             continue
         budget -= 1
-        for title in batch:
-            single, alone = _read_batch(request, wiki, (title,))
-            read.extend(single)
-            unreadable += 0 if alone else 1
+        found, lost = _read_halves(request, wiki, batch)
+        read.extend(found)
+        unreadable += lost
     return (read, unreadable)
 
 
-def _known_revisions(session: Session, wiki: str, titles: Sequence[str]) -> dict[str, str]:
-    """Revision ids already stored for these titles, so unchanged pages are skipped.
+def _read_halves(
+    request: Callable[[str, str, dict[str, Any]], Any],
+    wiki: str,
+    batch: Sequence[str],
+) -> tuple[list[census.PageContent], int]:
+    """Re-read a failed batch by halving it, returning what came back and what did not.
+
+    A single title that fails has nothing left to divide, and is the honestly
+    oversized -- or deleted, or otherwise unreadable -- page the split was
+    looking for. It is counted, not raised: per this module, a page that cannot
+    be read is an observation.
+    """
+    if len(batch) <= 1:
+        return ([], len(batch))
+    read: list[census.PageContent] = []
+    unreadable = 0
+    middle = len(batch) // 2
+    for half in (batch[:middle], batch[middle:]):
+        pages, ok = _read_batch(request, wiki, half)
+        if ok:
+            read.extend(pages)
+            continue
+        found, lost = _read_halves(request, wiki, half)
+        read.extend(found)
+        unreadable += lost
+    return (read, unreadable)
+
+
+def _stored_state(session: Session, wiki: str, titles: Sequence[str]) -> dict[str, tuple[str, int]]:
+    """Revision id and discovery rank already stored for each of these titles.
+
+    Both together, in one statement, because both decide whether a page needs
+    writing and asking per page cost one SELECT per page of every sweep.
 
     Tombstoned pages are deliberately left out. A page that was deleted and then
     restored comes back at the revision it left at, so matching on revision alone
@@ -146,7 +180,7 @@ def _known_revisions(session: Session, wiki: str, titles: Sequence[str]) -> dict
     if not titles:
         return {}
     rows = (
-        session.query(UserScriptPage.title, UserScriptPage.revision)
+        session.query(UserScriptPage.title, UserScriptPage.revision, UserScriptPage.discovery_rank)
         .filter(
             UserScriptPage.wiki == wiki,
             UserScriptPage.title.in_(list(titles)),
@@ -154,7 +188,7 @@ def _known_revisions(session: Session, wiki: str, titles: Sequence[str]) -> dict
         )
         .all()
     )
-    return dict(rows)
+    return {title: (revision, rank) for title, revision, rank in rows}
 
 
 def _next_rank(session: Session, wiki: str) -> int:
@@ -260,15 +294,22 @@ def store_page(session: Session, wiki: str, page: census.PageContent, rank: int 
     _replace_imports(session, wiki, analysis)
 
 
-def ingest(
+def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map are all one caller's context
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
     titles: Sequence[str],
     *,
     ranked: bool,
     rank_offset: int = 0,
+    revisions: dict[str, str] | None = None,
 ) -> dict[str, int]:
     """Read the named pages and write the ones that changed.
+
+    `revisions` is what the caller already knows about the wiki's current
+    revision ids, before a single page has been asked for. The replica road
+    hands over the whole enumeration's worth, and every page it settles is a
+    content request never made -- which is the entire cost of a sweep. Omitted,
+    or empty from a road that cannot say, every page is fetched as before.
 
     `ranked` says whether the caller's ordering is creation order. A sweep's is;
     a watch's is not, and its pages keep whatever order they already had.
@@ -282,20 +323,22 @@ def ingest(
     summary = dict(EMPTY_COUNTS, asked=len(titles))
     written: list[str] = []
     with db.session_scope() as session:
-        known = _known_revisions(session, wiki, [userscripts.canonical_title(title) for title in titles])
+        stored = _stored_state(session, wiki, [userscripts.canonical_title(title) for title in titles])
     ranks = (
         {userscripts.canonical_title(title): rank_offset + index for index, title in enumerate(titles)}
         if ranked
         else {}
     )
-    pages, summary["unreadable"] = read_titles(request, wiki, titles)
+    ahead = revisions or {}
+    wanted = [title for title in titles if not _settled(userscripts.canonical_title(title), stored, ranks, ahead)]
+    summary["skipped"] = len(titles) - len(wanted)
+    pages, summary["unreadable"] = read_titles(request, wiki, wanted)
     summary["fetched"] = len(pages)
     with db.session_scope() as session:
         for page in pages:
             title = userscripts.canonical_title(page.title)
             rank = ranks.get(title)
-            unchanged = known.get(title) == page.revision
-            if unchanged and (rank is None or rank == _stored_rank(session, wiki, title)):
+            if _settled(title, stored, ranks, {title: page.revision}):
                 summary["skipped"] += 1
                 continue
             store_page(session, wiki, page, rank)
@@ -303,6 +346,36 @@ def ingest(
             summary["written"] += 1
         summary["resolved"] = resolve_targets(session, wiki, written)
     return summary
+
+
+def _settled(
+    title: str,
+    stored: dict[str, tuple[str, int]],
+    ranks: dict[str, int],
+    revisions: dict[str, str],
+) -> bool:
+    """Whether this page is already stored exactly as this run would store it.
+
+    Two things have to agree. The revision says the body has not moved; the rank
+    says the page still sits where this enumeration puts it, which a page can
+    fail while its body is untouched -- delete a page created before it and
+    everything after shifts up.
+
+    `revisions` is whatever the caller can say about the current revision at the
+    moment it asks. From the replica it is the whole enumeration, known before
+    any page is fetched, and a page that settles here is a request never made.
+    From a fetched page it is that one page, and settling only saves the write.
+    A title absent from it is never settled: not knowing the current revision is
+    not evidence that it matches.
+    """
+    current = revisions.get(title)
+    if not current:
+        return False
+    known = stored.get(title)
+    if known is None or known[0] != current:
+        return False
+    rank = ranks.get(title)
+    return rank is None or rank == known[1]
 
 
 def page_ids(session: Session, targets: Iterable[tuple[str, str]]) -> dict[tuple[str, str], int]:
@@ -412,15 +485,6 @@ def resolve_pending(session: Session, wiki: str) -> int:
     return len(rows)
 
 
-def _stored_rank(session: Session, wiki: str, title: str) -> int | None:
-    """Read the rank already recorded for one page, or None when it has no row."""
-    return (
-        session.query(UserScriptPage.discovery_rank)
-        .filter(UserScriptPage.wiki == wiki, UserScriptPage.title == title)
-        .scalar()
-    )
-
-
 def _state(session: Session, wiki: str) -> UserScriptCensusState:
     """Fetch the census state row for one wiki, creating it on first sight."""
     row = session.get(UserScriptCensusState, wiki)
@@ -487,7 +551,7 @@ def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limi
     start = _resume_from(cursor, found)
     window = found.titles[start : start + limit] if limit else found.titles[start:]
     finished = start + len(window) >= len(found.titles)
-    summary = ingest(request, wiki, window, ranked=True, rank_offset=start)
+    summary = ingest(request, wiki, window, ranked=True, rank_offset=start, revisions=found.revisions)
     with db.session_scope() as session:
         # A partial walk says nothing about the pages it never asked for, so it
         # is never allowed to declare them gone. Tombstoning compares against the

@@ -44,11 +44,11 @@ replica has not supplied a real timestamp.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from backend import userscript_census as census
-from backend import wiki_replica
+from backend import userscripts, wiki_replica
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -72,6 +72,12 @@ class Enumeration:
     totals: dict[str, int]
     complete: bool
     source: str
+    #: Current revision id per title, for the roads that can say. A sweep uses
+    #: it to skip a page whose stored revision already matches, without spending
+    #: the request that would have proved it. Empty from the search road, which
+    #: cannot answer this -- and empty is not a claim that anything changed, it
+    #: is the absence of a shortcut, so a sweep with no map simply fetches.
+    revisions: dict[str, str] = field(default_factory=dict)
 
 
 def _by_search(
@@ -141,10 +147,20 @@ def _by_replica(
         return None
     totals: dict[str, int] = {census.SCRIPT_MODEL: 0, census.STYLE_MODEL: 0}
     titles: list[str] = []
-    for model, page_title in rows:
+    revisions: dict[str, str] = {}
+    for model, page_title, revision in rows:
         totals[model] = totals.get(model, 0) + 1
-        titles.append(census.full_title(prefix, page_title))
-    return Enumeration(titles=tuple(titles), totals=totals, complete=True, source=SOURCE_REPLICA)
+        title = census.full_title(prefix, page_title)
+        titles.append(title)
+        if revision:
+            revisions[userscripts.canonical_title(title)] = revision
+    return Enumeration(
+        titles=tuple(titles),
+        totals=totals,
+        complete=True,
+        source=SOURCE_REPLICA,
+        revisions=revisions,
+    )
 
 
 def enumerate_wiki(

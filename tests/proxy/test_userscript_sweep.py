@@ -236,6 +236,22 @@ def test_a_failed_batch_is_retried_one_title_at_a_time():
     assert unreadable == 1
 
 
+def test_a_fat_batch_is_halved_rather_than_taken_apart_title_by_title():
+    # This is what lets `CONTENT_BATCH` be set by what the API will answer
+    # rather than by what a bad batch costs to recover from: one page too big
+    # for the response cap costs a handful of extra requests, not one per title.
+    titles = [f"User:U{index}/x.js" for index in range(8)]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles}, unreadable={"User:U5/x.js"})
+    read, unreadable = sweeper.read_titles(wiki.request, FRWIKI, titles)
+    assert [found.title for found in read] == [title for title in titles if title != "User:U5/x.js"]
+    assert unreadable == 1
+    asked = [params["titles"].split("|") for _d, _m, params in wiki.requests]
+    # The halves are visible in the sizes asked for, and only the pair either
+    # side of the unreadable page was ever read alone: seven requests where
+    # falling straight to single titles would have cost nine.
+    assert sorted(len(batch) for batch in asked) == [1, 1, 2, 2, 4, 4, 8]
+
+
 def test_splitting_stops_once_the_failures_look_systemic():
     titles = [f"User:U{index}/x.js" for index in range(census.CONTENT_BATCH * (sweeper.SPLIT_BUDGET + 2))]
     wiki = FakeWiki({title: page("var a = 1;") for title in titles}, unreadable=set(titles))
@@ -409,6 +425,67 @@ def test_a_watch_resolves_the_page_it_read_just_as_a_sweep_does():
 
 
 # -- skipping -----------------------------------------------------------
+
+
+def test_a_page_the_enumeration_says_has_not_moved_is_never_asked_for():
+    # The point of carrying `page_latest` out of the replica. Fetching is the
+    # entire cost of a sweep, so a page settled before the request is a request
+    # that never happens -- which is what makes a wiki's second sweep cheap.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;", revid="7")})
+    sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)
+    before = len(wiki.requests)
+    summary = sweeper.ingest(
+        wiki.request,
+        FRWIKI,
+        ["User:A/one.js"],
+        ranked=True,
+        revisions={"User:A/one.js": "7"},
+    )
+    assert (summary["skipped"], summary["fetched"], summary["written"]) == (1, 0, 0)
+    assert len(wiki.requests) == before
+
+
+def test_a_page_the_enumeration_says_moved_is_fetched_and_rewritten():
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;", revid="7")})
+    sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)
+    wiki.pages["User:A/one.js"] = page("var a = 2;", revid="8")
+    summary = sweeper.ingest(
+        wiki.request,
+        FRWIKI,
+        ["User:A/one.js"],
+        ranked=True,
+        revisions={"User:A/one.js": "8"},
+    )
+    assert (summary["skipped"], summary["fetched"], summary["written"]) == (0, 1, 1)
+    assert stored("User:A/one.js")["body"] == "var a = 2;"
+
+
+def test_a_page_the_enumeration_cannot_date_is_fetched_rather_than_assumed_unchanged():
+    # A missing revision is the absence of a shortcut, not evidence of anything.
+    # Treating it as unchanged would let one gap in the replica's answer freeze
+    # a page in the directory at whatever it last happened to say.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;", revid="7")})
+    sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)
+    summary = sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True, revisions={})
+    assert summary["fetched"] == 1
+
+
+def test_an_unmoved_page_that_shifted_in_creation_order_is_still_fetched():
+    # Rank is stored on the page row, so a page whose body never changed but
+    # whose position did has to be written -- and the pre-fetch skip must not
+    # settle it on the revision alone.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;", revid="7")})
+    sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)
+    summary = sweeper.ingest(
+        wiki.request,
+        FRWIKI,
+        ["User:A/one.js"],
+        ranked=True,
+        rank_offset=5,
+        revisions={"User:A/one.js": "7"},
+    )
+    assert (summary["fetched"], summary["written"]) == (1, 1)
+    assert stored("User:A/one.js")["rank"] == 5
 
 
 def test_a_page_whose_revision_has_not_moved_is_not_rewritten():
