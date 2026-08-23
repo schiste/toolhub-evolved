@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, tuple_
+from sqlalchemy import and_, func, or_, tuple_
 
 from backend import db, userscripts
 from backend import userscript_census as census
@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
     from sqlalchemy.orm import Session
+    from sqlalchemy.sql.elements import ColumnElement
 
 # Bodies are stored so re-analysis stays free, but no single page may dominate
 # the table. MEDIUMTEXT holds far more than this; the cap is about what is worth
@@ -293,6 +294,19 @@ def _chunked(items: Sequence[Any], size: int = RESOLVE_CHUNK) -> Iterable[Sequen
         yield items[start : start + size]
 
 
+def _target_wiki(row: UserScriptImport) -> str:
+    """Which wiki a load points at, given that naming none means naming its own."""
+    return row.target_wiki or row.wiki
+
+
+def _targets_wiki(wiki: str) -> ColumnElement[bool]:
+    """Match loads that land on `wiki`, however the row happened to say so."""
+    return or_(
+        UserScriptImport.target_wiki == wiki,
+        and_(UserScriptImport.target_wiki == "", UserScriptImport.wiki == wiki),
+    )
+
+
 def resolve_targets(session: Session, wiki: str, written: Sequence[str]) -> int:
     """Point this run's loads at the pages they name, both directions.
 
@@ -318,20 +332,56 @@ def resolve_targets(session: Session, wiki: str, written: Sequence[str]) -> int:
             UserScriptImport.source_title.in_(chunk),
             UserScriptImport.target_title != "",
         )
-        # Loads made *of* the pages this run wrote, from anywhere.
+        # Loads made *of* the pages this run wrote, from anywhere -- including
+        # the ones that named no wiki at all, which mean the one they sit on.
         inbound = session.query(UserScriptImport).filter(
-            UserScriptImport.target_wiki == wiki,
+            _targets_wiki(wiki),
             UserScriptImport.target_title.in_(chunk),
             UserScriptImport.target_page_id.is_(None),
         )
         rows = list(outbound) + list(inbound)
-        ids = page_ids(session, ((row.target_wiki, row.target_title) for row in rows))
+        ids = page_ids(session, ((_target_wiki(row), row.target_title) for row in rows))
         for row in rows:
-            page_id = ids.get((row.target_wiki, row.target_title))
+            page_id = ids.get((_target_wiki(row), row.target_title))
             if page_id is not None and row.target_page_id != page_id:
                 row.target_page_id = page_id
                 resolved += 1
     return resolved
+
+
+def resolve_pending(session: Session, wiki: str) -> int:
+    """Resolve every load into this wiki that names a page we already hold.
+
+    `resolve_targets` is scoped to one run's titles, which is right for a sweep
+    and wrong for a reader. Anything that counts demand by identity needs the
+    edges it can see to already be resolved, and it has no way of knowing which
+    run should have done it -- rows written before the column existed, or while
+    a sweep was interrupted, would simply be missing, and missing demand reads
+    as a quiet directory rather than as an error.
+
+    So this repairs its own input before use. It is not the null scan
+    `resolve_targets` deliberately avoids: the join *is* the bound, and a load
+    pointing outside the census matches no page and is never updated. Only rows
+    that can resolve are touched, so on a healthy corpus it writes nothing.
+    """
+    rows = (
+        session.query(UserScriptImport, UserScriptPage.id)
+        .join(
+            # The filter below already pins the effective target wiki to `wiki`,
+            # so the page only has to match on title.
+            UserScriptPage,
+            and_(UserScriptPage.wiki == wiki, UserScriptPage.title == UserScriptImport.target_title),
+        )
+        .filter(
+            _targets_wiki(wiki),
+            UserScriptImport.target_title != "",
+            UserScriptImport.target_page_id.is_(None),
+        )
+        .all()
+    )
+    for row, page_id in rows:
+        row.target_page_id = page_id
+    return len(rows)
 
 
 def _stored_rank(session: Session, wiki: str, title: str) -> int | None:

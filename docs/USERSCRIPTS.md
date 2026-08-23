@@ -236,6 +236,21 @@ any script has for becoming a global gadget. A page loading itself is not demand
 for it; a script that installs its own helper subpage would otherwise vote for
 itself.
 
+**Demand is counted by identity, not by spelling.** A load is counted once it has
+been resolved to the page it names; the map is then keyed on that page's
+canonical title rather than on the string the script happened to write. Keying on
+the raw string files demand under names no candidate answers to — measured on
+frwiki before the change, 644 of 1,389 entries named no page at all, and not one
+of them was a candidate, so the switch moved no score. It is what lets a better
+resolver move them: the key now follows the page.
+
+Because of that, projection repairs its own input before reading it, resolving any
+load into the wiki that names a page already held. That is a join and not a scan
+for nulls, so a load pointing outside the census is never rewritten and never
+re-examined. The alternative was to trust that a sweep had run first, and a
+directory that goes quiet because two jobs ran in an unlucky order reports
+success while saying nothing. `project()` returns the repair count as `repaired`.
+
 ## Tiers
 
 `tier_of` files every original into one of two tiers, and the boundary is one
@@ -489,11 +504,15 @@ rather than a canonical one.
 - **Gadget usage is not joined in.** Demand is counted from pages this census can
   read. A script installed as a wiki gadget is loaded by people who never create
   a page at all, and the `gadgetusage` API knows those numbers; nothing reads it.
-- **Demand is still counted by title.** `demand()` joins imports to pages on the
-  title string, not on `target_page_id`, and the resolved column is written but
-  not yet read. Switching it is a behaviour change — a resolved edge and a
-  matching title are not the same set — and wants measuring against a wiki whose
-  sweep has finished before it is made.
+- **Loads are matched by exact title, so a good half of them miss.** Of frwiki's
+  8,216 stored load edges, 4,029 resolve to a page. The rest are mostly not
+  foreign pages but spellings the census does not file under: 333 name namespace
+  2 as `User:` where frwiki stores `Utilisateur:`, 47 are raw
+  `/w/index.php?title=…` URLs, a few keep their `[[…]]` brackets, and a handful
+  carry an interwiki prefix (`:En:`, `:Id:`) that belongs in `target_wiki`
+  instead. Every one of those is a real, working load of a real script, counted
+  as nothing. A further 173 name `MediaWiki:` gadget definitions, which are
+  correctly unresolved — the census enumerates user space only.
 - **Nothing analyses the code yet.** The directory is the prerequisite — security
   review, API-usage extraction, and "which of these should be one global gadget"
   all run on top of it and none of them exist.
