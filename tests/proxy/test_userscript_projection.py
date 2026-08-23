@@ -306,3 +306,51 @@ def test_an_unswept_wiki_projects_an_empty_directory():
         "archive": 0,
     }
     assert entries() == []
+
+
+def test_every_directory_row_carries_the_census_identity_of_the_page_it_is_about():
+    page("User:Zed/tool.js", rank=0, fingerprint="same")
+    page("User:Aaa/tool.js", rank=1, fingerprint="same")
+    projection.project(FRWIKI)
+    with db.session_scope() as session:
+        ids = dict(session.query(UserScriptPage.title, UserScriptPage.id))
+        entry = session.query(UserScriptDirectoryEntry).one()
+        rows = {
+            row.title: (row.script_id, row.origin_id) for row in session.query(UserScriptDirectoryMember).all()
+        }
+    assert entry.script_id == ids["User:Zed/tool.js"]
+    # The member carries both ends of the edge: which page it is, and which
+    # script it folded onto. Either alone leaves the relation half-stated.
+    assert rows == {
+        "User:Zed/tool.js": (ids["User:Zed/tool.js"], ids["User:Zed/tool.js"]),
+        "User:Aaa/tool.js": (ids["User:Aaa/tool.js"], ids["User:Zed/tool.js"]),
+    }
+
+
+def test_a_rebuild_renumbers_the_rows_but_not_the_scripts():
+    # The whole reason the identity is carried rather than read off the row: the
+    # projection deletes and re-inserts, so a row id means only what it meant
+    # during the run that wrote it. Here the first script is tombstoned, the
+    # second one does not change at all, and its row id moves anyway.
+    page("User:Aaa/first.js", rank=0)
+    page("User:Bbb/second.js", rank=1)
+    projection.project(FRWIKI)
+    with db.session_scope() as session:
+        before = {row.title: (row.id, row.script_id) for row in session.query(UserScriptDirectoryEntry).all()}
+    with db.session_scope() as session:
+        session.query(UserScriptPage).filter(UserScriptPage.title == "User:Aaa/first.js").one().deleted_at = utcnow()
+    projection.project(FRWIKI)
+    with db.session_scope() as session:
+        after = session.query(UserScriptDirectoryEntry).one()
+    row_id, script_id = before["User:Bbb/second.js"]
+    assert after.id != row_id
+    assert after.script_id == script_id
+
+
+def test_a_deleted_page_leaves_no_identity_behind_to_point_at():
+    # `page_ids` reads live pages only. A tombstoned page cannot be an original
+    # and must not lend its id to anything the next projection writes.
+    page("User:Aaa/tool.js", rank=0, deleted=True)
+    projection.project(FRWIKI)
+    with db.session_scope() as session:
+        assert session.query(UserScriptDirectoryEntry).count() == 0

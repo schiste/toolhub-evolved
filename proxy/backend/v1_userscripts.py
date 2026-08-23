@@ -95,8 +95,16 @@ def coverage(s: Session, wiki: str) -> dict[str, Any]:
 
 
 def _entry(row: UserScriptDirectoryEntry) -> dict[str, Any]:
-    """One directory entry, in the shape every endpoint here returns it."""
+    """One directory entry, in the shape every endpoint here returns it.
+
+    `id` is the census page's identity, not the directory row's. The directory
+    is rebuilt whole on every projection, so its row ids are renumbered on a
+    schedule nobody outside this service can see; the page id is stable for as
+    long as the page exists. A caller that stores one of these should store this
+    one, which is why it is the only one disclosed.
+    """
     return {
+        "id": int(row.script_id) if row.script_id else 0,
         "wiki": row.wiki,
         "title": row.title,
         "owner": row.owner,
@@ -163,9 +171,39 @@ def v1_userscripts_directory() -> Response | tuple[Response, int]:
     )
 
 
+def _script_id(raw: str) -> int:
+    """Read a caller's script id; anything unparseable or non-positive is absent."""
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
+def _asked_for(s: Session, script_id: int, wiki: str, title: str) -> tuple[Any, Any]:
+    """Find the entry a caller named, or the member row explaining why there is none.
+
+    Two ways in, and the identity is the better one. A title is what a reader
+    has to hand, but it moves: a page renamed on the wiki is a different title
+    for the same script, and a title reused after a deletion is the same title
+    for a different one. The id is neither.
+    """
+    if script_id:
+        where_entry = (UserScriptDirectoryEntry.script_id == script_id,)
+        where_member = (UserScriptDirectoryMember.script_id == script_id,)
+    else:
+        where_entry = (UserScriptDirectoryEntry.wiki == wiki, UserScriptDirectoryEntry.title == title)
+        where_member = (UserScriptDirectoryMember.wiki == wiki, UserScriptDirectoryMember.title == title)
+    row = s.execute(select(UserScriptDirectoryEntry).where(*where_entry)).scalars().first()
+    if row is not None:
+        return (row, None)
+    # A page can be real and still have no entry: it folded onto another script.
+    # Saying which one is more useful than a bare 404.
+    return (None, s.execute(select(UserScriptDirectoryMember).where(*where_member)).scalars().first())
+
+
 @v1_userscripts_bp.route("/v1/userscripts/script/")
 def v1_userscripts_script() -> Response | tuple[Response, int]:
-    """One script, with every page the collapse filed under it.
+    """One script, by identity or by title, with every page the collapse filed under it.
 
     The members are the point. An entry's instance count says a script was
     copied twelve times; the reviewer's next question is always *which twelve*,
@@ -174,31 +212,26 @@ def v1_userscripts_script() -> Response | tuple[Response, int]:
     """
     if security.read_rate_limited(request.remote_addr):
         return jsonify({"error": "rate limited, retry later"}), 429
+    script_id = _script_id(str(request.args.get("id") or "").strip())
     wiki = str(request.args.get("wiki") or "").strip()
     title = str(request.args.get("title") or "").strip()
-    if not wiki or not title:
-        return jsonify({"error": "wiki and title are required"}), 400
+    if not script_id and not (wiki and title):
+        return jsonify({"error": "id, or wiki and title, are required"}), 400
     with db.session_scope() as s:
-        row = s.execute(
-            select(UserScriptDirectoryEntry).where(
-                UserScriptDirectoryEntry.wiki == wiki,
-                UserScriptDirectoryEntry.title == title,
-            )
-        ).scalar_one_or_none()
+        row, member = _asked_for(s, script_id, wiki, title)
         if row is None:
-            # A page can be real and still have no entry: it folded onto another
-            # script. Saying which one is more useful than a bare 404.
-            member = s.execute(
-                select(UserScriptDirectoryMember).where(
-                    UserScriptDirectoryMember.wiki == wiki,
-                    UserScriptDirectoryMember.title == title,
-                )
-            ).scalar_one_or_none()
             if member is None:
-                return jsonify({"error": "no such script in this wiki's directory"}), 404
-            return jsonify({"error": "not an original", "filedUnder": member.origin_title}), 404
+                return jsonify({"error": "no such script in the directory"}), 404
+            return jsonify(
+                {
+                    "error": "not an original",
+                    "filedUnder": member.origin_title,
+                    "filedUnderId": int(member.origin_id) if member.origin_id else 0,
+                }
+            ), 404
+        wiki, title = row.wiki, row.title
         members = [
-            {"title": member.title, "relation": member.relation}
+            {"id": int(member.script_id) if member.script_id else 0, "title": member.title, "relation": member.relation}
             for member in s.execute(
                 select(UserScriptDirectoryMember)
                 .where(

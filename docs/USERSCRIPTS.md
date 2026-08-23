@@ -261,13 +261,47 @@ Moving either must not move the other.
 All five tables are rebuildable from a fresh sweep. None holds anything that is
 not already publicly readable on the wiki.
 
-| Table                           | Contents                                                                                                                                                       |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, revision id, `discovery_rank`, body, `deleted_at`                                |
-| `user_script_imports`           | One row per load edge, keyed on source, verb and target; `is_stylesheet` separates CSS loads from script loads                                                 |
-| `user_script_census_state`      | Per-wiki cursors and counters: `changes_cursor`, `sweep_cursor`, `sweeps_completed`, `enumeration_complete`, `enumeration_totals`, status, timings, last error |
-| `user_script_directory`         | The projected directory: one row per original, with `tier`, `demand`, `instances` and `position`                                                               |
-| `user_script_directory_members` | Every page folded under an original, with its `relation`                                                                                                       |
+| Table                           | Contents                                                                                                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, revision id, `discovery_rank`, body, `deleted_at`                                    |
+| `user_script_imports`           | One row per load edge, keyed on source, verb and target; `target_page_id` is that target resolved to a page; `is_stylesheet` separates CSS loads from script loads |
+| `user_script_census_state`      | Per-wiki cursors and counters: `changes_cursor`, `sweep_cursor`, `sweeps_completed`, `enumeration_complete`, `enumeration_totals`, status, timings, last error     |
+| `user_script_directory`         | The projected directory: one row per original, with `script_id`, `tier`, `demand`, `instances` and `position`                                                      |
+| `user_script_directory_members` | Every page folded under an original, with its `relation`, `script_id` and `origin_id`                                                                              |
+
+### Identity
+
+A script's identity is `user_script_pages.id`. It is assigned when the page is
+first observed, kept across every re-read — `store_page()` finds and updates,
+never deletes and re-inserts — and retired by setting `deleted_at` rather than
+by removing the row. It is the only number here that is safe to write down
+anywhere else.
+
+The directory tables have ids of their own and those are not it. Both are
+deleted and rebuilt whole on every projection, so their `id` columns are
+renumbered on a schedule no caller can see. That is why each carries the census
+identity alongside the title:
+
+- `user_script_directory.script_id` — the page the collapse named as the
+  original of this entry.
+- `user_script_directory_members.script_id` / `.origin_id` — the two ends of the
+  "this page folded onto that script" edge, said in identities.
+- `user_script_imports.target_page_id` — the load edge said in identities.
+
+`target_page_id` is nullable and stays null for most rows, which is the honest
+answer rather than a gap: a load can name a page that was deleted, renamed,
+never existed, or lives on a wiki outside the census, and there is no row to
+point at. The sweep resolves both directions of what each run writes — the loads
+made _by_ the pages it stored, and the loads made _of_ them from anywhere — so a
+cross-wiki edge closes on whichever run reads the second end. It never scans for
+unresolved rows, because a load pointing outside the census never becomes
+resolvable and would be re-read forever; the one-off backfill in `migrate.py`
+covers the rows written before the column existed.
+
+None of these columns is a foreign key. They are added to live tables by
+additive DDL, which cannot carry a constraint, so declaring one would create it
+in a fresh test database and nowhere else — and a constraint the tests enforce
+but production does not is worse than no constraint at all.
 
 `backend.userscript_projection.project()` rebuilds the last two from the first
 two. It is whole-corpus and idempotent: running it twice over unchanged pages
@@ -287,17 +321,19 @@ routes are public, read-rate-limited, and touch only the local database.
   entries, each with its coverage.
 - `GET /v1/userscripts/directory/?wiki=&tier=&owner=&limit=&offset=` — one tier
   of one wiki's directory. `limit` defaults to 25 and clamps to 200.
-- `GET /v1/userscripts/script/?wiki=&title=` — one original plus the pages folded
-  under it.
+- `GET /v1/userscripts/script/?id=` or `?wiki=&title=` — one original plus the
+  pages folded under it. Both the entry and each member carry `id`, the census
+  identity described above; prefer it over the title, which moves when a page is
+  renamed and is reused when one is deleted.
 
 **Every response carries coverage metadata**, so an empty result never reads as
 "nothing exists": `pages`, `sweepsCompleted`, `sweptAt`, `computedAt`, and the
 per-tier counts. A wiki whose first sweep has not finished says so.
 
 Asking for a page that was folded away answers `404` with
-`{"error": "not an original", "filedUnder": "<origin title>"}` rather than a bare
-miss — where the page went is the most useful thing the directory can say about
-it.
+`{"error": "not an original", "filedUnder": "<origin title>", "filedUnderId": <id>}`
+rather than a bare miss — where the page went is the most useful thing the
+directory can say about it.
 
 ## The directory page
 
@@ -453,6 +489,11 @@ rather than a canonical one.
 - **Gadget usage is not joined in.** Demand is counted from pages this census can
   read. A script installed as a wiki gadget is loaded by people who never create
   a page at all, and the `gadgetusage` API knows those numbers; nothing reads it.
+- **Demand is still counted by title.** `demand()` joins imports to pages on the
+  title string, not on `target_page_id`, and the resolved column is written but
+  not yet read. Switching it is a behaviour change — a resolved edge and a
+  matching title are not the same set — and wants measuring against a wiki whose
+  sweep has finished before it is made.
 - **Nothing analyses the code yet.** The directory is the prerequisite — security
   review, API-usage extraction, and "which of these should be one global gadget"
   all run on top of it and none of them exist.

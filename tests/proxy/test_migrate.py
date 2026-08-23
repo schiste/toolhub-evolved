@@ -30,6 +30,8 @@ from backend.models import (  # noqa: E402
     ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
     User,
+    UserScriptImport,
+    UserScriptPage,
     utcnow,
 )
 from backend import sync  # noqa: E402
@@ -557,3 +559,39 @@ def test_migrate_runs_against_a_configured_database(monkeypatch, tmp_path, capsy
     out = capsys.readouterr().out
     assert "configured_db_url=yes" in out
     assert "api_cache index columns" in out
+
+
+def test_migrate_resolves_user_script_loads_stored_before_the_column_existed(configured_db):
+    # The sweep only ever resolves what a run writes. A wiki whose sweep finished
+    # before `target_page_id` existed rewrites almost nothing, so without this
+    # one-off pass its whole dependency graph would stay unresolved indefinitely.
+    with db.session_scope() as session:
+        session.add(
+            UserScriptPage(
+                wiki="fr.wikipedia.org",
+                title="User:B/two.js",
+                role="script",
+                content_model="javascript",
+            ),
+        )
+        session.add_all(
+            UserScriptImport(
+                wiki="fr.wikipedia.org",
+                source_title="User:A/one.js",
+                verb="importScript",
+                target_wiki="fr.wikipedia.org",
+                target_title=title,
+                target_url="",
+            )
+            for title in ("User:B/two.js", "User:B/gone.js")
+        )
+
+    assert migrate._backfill_userscript_import_targets() == 1
+    # And again: a resolved row is not re-counted, and an unresolvable one is
+    # left null rather than pointed at something convenient.
+    assert migrate._backfill_userscript_import_targets() == 0
+
+    with db.session_scope() as session:
+        page_id = session.query(UserScriptPage.id).scalar()
+        rows = dict(session.query(UserScriptImport.target_title, UserScriptImport.target_page_id))
+    assert rows == {"User:B/two.js": page_id, "User:B/gone.js": None}
