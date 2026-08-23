@@ -81,24 +81,85 @@ def test_a_namespace_name_is_matched_as_text_and_not_as_a_pattern():
 def test_a_cross_wiki_load_is_folded_by_the_target_s_names_not_the_loader_s():
     # `Benutzer:` means namespace 2 on dewiki and means nothing at all on
     # frwiki, so the spellings that decide this fold are the host's.
-    def spellings(wiki):
-        return ("Benutzer",) if wiki == "de.wikipedia.org" else ()
+    def prefixes(wiki):
+        return userscripts.WikiPrefixes(namespaces=("Benutzer",) if wiki == "de.wikipedia.org" else ())
 
     body = "mw.loader.load('//de.wikipedia.org/w/index.php?title=Benutzer:PerfektesChaos/js.js&action=raw&ctype=text/javascript');"
-    (found,) = userscripts.script_imports(body, wiki=FRWIKI, spellings=spellings)
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI, prefixes=prefixes)
     assert (found.wiki, found.title) == ("de.wikipedia.org", "User:PerfektesChaos/js.js")
+
+
+def _interwiki(**hosts):
+    """A prefixes lookup where every wiki knows the same map and dewiki's names."""
+
+    def prefixes(wiki):
+        return userscripts.WikiPrefixes(
+            namespaces=("Benutzer",) if wiki == "de.wikipedia.org" else (),
+            interwiki=hosts,
+        )
+
+    return prefixes
+
+
+def test_a_load_naming_an_interwiki_prefix_lands_on_the_wiki_it_names():
+    # `importScript('en:User:Lupin/popups.js')` used to be stored as a page
+    # titled `en:User:Lupin/popups.js` on the loading wiki. No such page exists
+    # anywhere, so the edge resolved to nothing on both ends.
+    body = "importScript('en:User:Lupin/popups.js');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI, prefixes=_interwiki(en="en.wikipedia.org"))
+    assert (found.wiki, found.title) == ("en.wikipedia.org", "User:Lupin/popups.js")
+
+
+def test_the_title_left_after_the_peel_is_folded_by_the_target_s_names():
+    # Two decisions, and the second has to happen after the first: `Benutzer:`
+    # only means namespace 2 once the prefix has said which wiki we are on.
+    body = "importScript('de:Benutzer:PerfektesChaos/js.js');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI, prefixes=_interwiki(de="de.wikipedia.org"))
+    assert (found.wiki, found.title) == ("de.wikipedia.org", "User:PerfektesChaos/js.js")
+
+
+def test_a_nested_prefix_is_followed_to_the_wiki_at_the_end_of_it():
+    # `:w:en:` appears in the corpus: a leading colon, then a prefix that lands
+    # back on the same family, then the language.
+    body = "importScript(':W:en:User:Lupin/popups.js');"
+    prefixes = _interwiki(w="www.wikipedia.org", en="en.wikipedia.org")
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI, prefixes=prefixes)
+    assert (found.wiki, found.title) == ("en.wikipedia.org", "User:Lupin/popups.js")
+
+
+def test_a_prefix_the_wiki_does_not_know_stays_part_of_the_title():
+    # `Wikipedia:` is a namespace, not an interwiki, and the interwiki map it
+    # is filtered out of is what makes this true. Peeling it would move
+    # thousands of project-namespace pages to a wiki they were never on.
+    body = "importScript('Wikipedia:Foo/bar.js');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI, prefixes=_interwiki(en="en.wikipedia.org"))
+    assert (found.wiki, found.title) == (FRWIKI, "Wikipedia:Foo/bar.js")
+
+
+def test_a_prefix_with_nothing_after_it_names_no_page():
+    body = "importScript('en:');"
+    assert userscripts.script_imports(body, wiki=FRWIKI, prefixes=_interwiki(en="en.wikipedia.org")) == ()
+
+
+def test_a_prefix_chain_that_never_ends_is_bounded():
+    # A wiki whose map points a prefix back at itself is a loop the corpus can
+    # hand us for free; the bound is what makes the peel terminate on data.
+    body = "importScript('" + "x:" * 40 + "User:Foo/bar.js');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI, prefixes=_interwiki(x=FRWIKI))
+    assert found.wiki == FRWIKI
+    assert found.title.startswith("x:")
 
 
 def test_a_fingerprint_does_not_move_when_a_wiki_s_names_are_learned():
     # Fingerprints are stored and compared against each other. Widening the
     # rule that produces them would rewrite every hash already written and make
     # each page look like a fork of itself until the whole corpus was reswept.
-    def spellings(_wiki):
-        return ("Benutzer",)
+    def prefixes(_wiki):
+        return userscripts.WikiPrefixes(namespaces=("Benutzer",))
 
     body = "// [[Benutzer:PerfektesChaos]]\nimportScript('Benutzer:X/y.js');"
     plain = userscripts.analyze("Benutzer:X/y.js", body, wiki="de.wikipedia.org")
-    aware = userscripts.analyze("Benutzer:X/y.js", body, wiki="de.wikipedia.org", spellings=spellings)
+    aware = userscripts.analyze("Benutzer:X/y.js", body, wiki="de.wikipedia.org", prefixes=prefixes)
     assert aware.title == "User:X/y.js"
     assert aware.fingerprint == plain.fingerprint
 

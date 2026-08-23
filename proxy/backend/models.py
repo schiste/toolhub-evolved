@@ -1793,39 +1793,48 @@ class WikiGadget(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
-class WikiNamespaceSpelling(Base):
-    """What one wiki calls its user namespace, in every spelling it answers to.
+class WikiTitlePrefixes(Base):
+    """What a title's leading `X:` means on one wiki: a namespace, or another wiki.
 
-    MediaWiki serves the user namespace under a localized name and accepts an
-    unbounded number of aliases for it, so `Benutzer:X/common.js` and
-    `User:X/common.js` are one page on dewiki and two strings everywhere else.
-    The census keys pages and load edges on a canonical title, which means a
-    spelling it does not know how to fold is a page it files twice and an edge
-    that resolves to nothing.
+    Both are the same problem wearing two hats. MediaWiki serves the user
+    namespace under a localized name and accepts an unbounded number of aliases
+    for it, so `Benutzer:X/common.js` and `User:X/common.js` are one page on
+    dewiki and two strings everywhere else. It also accepts a prefix naming a
+    different wiki entirely, so `en:User:Lupin/popups.js` on frwiki is a page on
+    enwiki. The census keys pages and load edges on a wiki and a canonical
+    title, so either prefix it cannot read is an edge resolving to nothing.
 
-    Stored rather than fetched per use because the census that needs it runs in
-    one process and the projection that reads its output runs in another, and
+    They are held together because they are read together -- one `meta=siteinfo`
+    request answers both -- and because they interact: MediaWiki resolves a
+    namespace before an interwiki, and `wikipedia:` on enwiki is both.
+
+    Stored rather than fetched per use because the census that needs them runs
+    in one process and the projection that reads its output runs in another, and
     because these names change about as often as a wiki is renamed. A row that
-    could not be read keeps its previous spellings rather than losing them,
-    since a wiki being briefly unreachable is not evidence that it renamed
-    anything.
+    could not be read keeps what it already had rather than losing it, since a
+    wiki being briefly unreachable is not evidence that it renamed anything.
     """
 
-    __tablename__ = "wiki_namespace_spellings"
+    __tablename__ = "wiki_title_prefixes"
     wiki: Mapped[str] = mapped_column(String(255), primary_key=True)
     # Every name this wiki answers to for namespace 2, canonical name included.
     # A list rather than a joined string because the spellings are matched
     # whole and one of them can contain anything a title can.
-    spellings: Mapped[list] = mapped_column(JSON, default=list)
-    # When the spellings above were last read successfully -- what dates them.
+    namespaces: Mapped[list] = mapped_column(JSON, default=list)
+    # Interwiki prefix -> the host it names, with prefixes that collide with a
+    # namespace already removed. Stored as the resolved host rather than as the
+    # URL template MediaWiki serves, because the census addresses a page by wiki
+    # and title and never by following the link.
+    interwiki: Mapped[dict] = mapped_column(JSON, default=dict)
+    # When the prefixes above were last read successfully -- what dates them.
     read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # When a read was last attempted, whether or not it worked. Separate from
     # `read_at` so that a wiki nobody can reach is not asked again by every
     # pass: on one clock an unreadable wiki is permanently stale, and every
     # resolver built spends a request rediscovering that.
     checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Why the last attempt ended, so an empty spelling list can tell "this wiki
-    # has no aliases" apart from "this wiki has never been read".
+    # Why the last attempt ended, so an empty prefix set can tell "this wiki has
+    # no aliases and no interwiki map" apart from "this wiki has never been read".
     status: Mapped[str] = mapped_column(String(32), default="")
 
 

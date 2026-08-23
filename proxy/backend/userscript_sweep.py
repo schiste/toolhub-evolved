@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import and_, func, or_, tuple_
 from sqlalchemy.exc import IntegrityError
 
-from backend import db, userscripts, wiki_namespaces
+from backend import db, userscripts, wiki_prefixes
 from backend import userscript_census as census
 from backend import userscript_enumeration as enumeration
 from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage, utcnow
@@ -308,16 +308,17 @@ def store_page(
     wiki: str,
     page: census.PageContent,
     rank: int | None,
-    spellings: userscripts.Spellings = userscripts.no_spellings,
+    prefixes: userscripts.Prefixes = userscripts.no_prefixes,
 ) -> None:
     """Write one observed page, its analysis, and the loads it makes.
 
-    `spellings` resolves any wiki's user-namespace names, not just this one's.
-    A load edge names its target wiki, and folding that target's title needs the
-    target's namespace names -- `Benutzer:` is namespace 2 on dewiki and an
-    ordinary page title everywhere else.
+    `prefixes` resolves any wiki's title prefixes, not just this one's. A load
+    edge names its target wiki, and reading that target's title needs the
+    target's own names -- `Benutzer:` is namespace 2 on dewiki and an ordinary
+    page title everywhere else, and `en:` names enwiki from here but something
+    else from somewhere else.
     """
-    analysis = userscripts.analyze(page.title, page.body, wiki=wiki, spellings=spellings)
+    analysis = userscripts.analyze(page.title, page.body, wiki=wiki, prefixes=prefixes)
     row = (
         session.query(UserScriptPage)
         .filter(UserScriptPage.wiki == wiki, UserScriptPage.title == analysis.title)
@@ -377,7 +378,7 @@ def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map ar
     with db.session_scope() as session:
         # This wiki's own names, read once. Every title in `titles` came from
         # this wiki's enumeration, so they all fold under the same set.
-        local = wiki_namespaces.resolver(session, request)(wiki)
+        local = wiki_prefixes.resolver(session, request)(wiki).namespaces
         stored = _stored_state(session, wiki, [userscripts.canonical_title(title, spellings=local) for title in titles])
     ranks = (
         {userscripts.canonical_title(title, spellings=local): rank_offset + index for index, title in enumerate(titles)}
@@ -398,14 +399,14 @@ def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map ar
         # A fresh resolver: the one above belongs to a session that has closed.
         # Its memo is what keeps a sweep to one siteinfo request per wiki it
         # meets, however many thousands of edges name that wiki.
-        spellings = wiki_namespaces.resolver(session, request)
+        prefixes = wiki_prefixes.resolver(session, request)
         for page in pages:
             title = userscripts.canonical_title(page.title, spellings=local)
             rank = ranks.get(title)
             if _settled(title, stored, ranks, {title: page.revision}):
                 summary["skipped"] += 1
                 continue
-            store_page(session, wiki, page, rank, spellings)
+            store_page(session, wiki, page, rank, prefixes)
             written.append(title)
             summary["written"] += 1
         summary["resolved"] = resolve_targets(session, wiki, written)
@@ -630,9 +631,9 @@ def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limi
         # sweep finishes, the full list is what it has covered.
         whole_wiki = found.complete and finished
         # Read, not refreshed: `ingest` has already been through this wiki and
-        # brought its spellings up to date, so a second request here would only
+        # brought its prefixes up to date, so a second request here would only
         # confirm what the row above it says.
-        local = wiki_namespaces.resolver(session)(wiki)
+        local = wiki_prefixes.resolver(session)(wiki).namespaces
         seen = (userscripts.canonical_title(title, spellings=local) for title in found.titles)
         removed = _mark_missing(session, wiki, seen) if whole_wiki else 0
         state = _record_totals(session, wiki)

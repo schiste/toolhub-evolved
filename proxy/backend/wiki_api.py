@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from backend import wiki_sources
 
@@ -80,17 +80,29 @@ def definition_url(domain: str) -> str:
     )
 
 
-# What a wiki calls namespace 2, and everything else it answers to for it.
+# Everything a title's leading `X:` can mean on one wiki, in one request.
 # `namespaces` carries the localized name and the canonical one; `namespacealiases`
 # carries the rest, including spellings kept for backwards compatibility after a
-# rename. Both are needed: neither is a superset of the other.
-SITEINFO_PARAMS = {"meta": "siteinfo", "siprop": "namespaces|namespacealiases"}
+# rename. Both are needed: neither is a superset of the other. `interwikimap`
+# carries the prefixes that name a *different* wiki, which is the other thing a
+# title can start with and the reason all three are read together.
+SITEINFO_PARAMS = {"meta": "siteinfo", "siprop": "namespaces|namespacealiases|interwikimap"}
 
 USER_NAMESPACE_ID = 2
 
+# An interwiki URL is a template with the title substituted in. Only the host is
+# kept, so the placeholder is never expanded -- the census addresses a page by
+# wiki and title, not by following somebody's link.
+INTERWIKI_PLACEHOLDER = "$1"
+
+# A bound on one wiki's interwiki map, which is large by nature -- enwiki lists
+# 781 prefixes. High enough that no real map is truncated, low enough that a
+# malformed answer cannot fill the column.
+MAX_INTERWIKI_PREFIXES = 4000
+
 
 def siteinfo_url(domain: str) -> str:
-    """Return the query for a wiki's namespace names and aliases."""
+    """Return the query for a wiki's namespace names, aliases, and interwiki map."""
     return _api_url(domain, SITEINFO_PARAMS)
 
 
@@ -218,3 +230,51 @@ def user_namespace_spellings(payload: object) -> tuple[str, ...]:
         if text and text.casefold() not in {seen.casefold() for seen in found}:
             found.append(text)
     return tuple(found)
+
+
+def _namespace_names(query: dict[str, Any]) -> set[str]:
+    """Every name and alias this wiki uses for any namespace, casefolded."""
+    found: set[str] = set()
+    namespaces = _object(query.get("namespaces"))
+    for entry in namespaces.values():
+        listed = _object(entry)
+        for key in ("canonical", "name"):
+            if str(listed.get(key) or "").strip():
+                found.add(str(listed[key]).strip().casefold())
+    aliases = query.get("namespacealiases")
+    if isinstance(aliases, list):
+        for alias in aliases:
+            spelling = str(_object(alias).get("alias") or "").strip()
+            if spelling:
+                found.add(spelling.casefold())
+    return found
+
+
+def interwiki_hosts(payload: object) -> dict[str, str]:
+    """Return the wiki each interwiki prefix names, keyed by the casefolded prefix.
+
+    Prefixes that are also namespace names on this wiki are dropped, because
+    MediaWiki resolves a namespace before an interwiki and so must this. The
+    collision is not hypothetical: `wikipedia:` on enwiki is both the Wikipedia
+    namespace and an interwiki prefix pointing back at enwiki, and 3,736 census
+    edges start with it. Reading those as interwiki would move every one of them
+    to a title with the namespace stripped off -- and would look like progress,
+    because their target wiki would stop being blank.
+
+    Filtering here rather than at parse time is deliberate: this is the one
+    place that holds the namespace list and the interwiki map at the same time,
+    so what gets stored is already safe to use without them.
+    """
+    query = _object(_object(payload).get("query"))
+    entries = query.get("interwikimap")
+    if not isinstance(entries, list):
+        return {}
+    reserved = _namespace_names(query)
+    hosts: dict[str, str] = {}
+    for entry in entries[:MAX_INTERWIKI_PREFIXES]:
+        listed = _object(entry)
+        prefix = str(listed.get("prefix") or "").strip().casefold()
+        host = urlparse(str(listed.get("url") or "").replace(INTERWIKI_PLACEHOLDER, "")).netloc.lower()
+        if prefix and host and prefix not in reserved:
+            hosts[prefix] = host
+    return hosts

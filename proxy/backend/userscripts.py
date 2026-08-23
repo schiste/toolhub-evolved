@@ -41,18 +41,33 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
+from types import MappingProxyType
 from typing import Final, NamedTuple
 from urllib.parse import ParseResult, parse_qs, unquote, urlparse
 
 from backend.wikimedia_urls import without_format_marks
 
-# Names one wiki answers to for its user namespace, looked up by wiki. A
-# callable rather than a mapping because the set of wikis a corpus refers to is
-# discovered while reading it -- a load can name any wiki that exists.
-Spellings = Callable[[str], tuple[str, ...]]
+
+class WikiPrefixes(NamedTuple):
+    """What a title's leading `X:` can mean on one wiki.
+
+    `namespaces` are the names this wiki answers to for its user namespace.
+    `interwiki` maps a prefix to the host it names, with prefixes that are also
+    namespace names already removed -- MediaWiki resolves a namespace before an
+    interwiki, and on enwiki `wikipedia:` is both.
+    """
+
+    namespaces: tuple[str, ...] = ()
+    interwiki: Mapping[str, str] = MappingProxyType({})
+
+
+# The prefixes one wiki's titles can carry, looked up by wiki. A callable rather
+# than a mapping because the set of wikis a corpus refers to is discovered while
+# reading it -- a load can name any wiki that exists.
+Prefixes = Callable[[str], WikiPrefixes]
 
 # What a page is. A directory holds ROLE_SCRIPT pages and nothing else, but the
 # other three are not noise to be dropped -- a shim is the cleanest statement of
@@ -98,6 +113,13 @@ STYLESHEET_VERBS: Final = frozenset({"importStylesheet"})
 # takes a page title or a URL, so a module can only ever arrive through this
 # one, and an argument to any other verb is never read as a module.
 MODULE_LOADER_VERB: Final = "mw.loader.load"
+
+# How many interwiki prefixes are followed before a title is taken at its word.
+# Two is what the corpus actually uses (`:W:en:User:...`); the rest of the
+# allowance is there so that a third real hop resolves rather than being read as
+# a loop, and the bound exists at all because an interwiki map may point back at
+# the wiki that published it.
+MAX_INTERWIKI_HOPS: Final = 4
 
 
 @dataclass(frozen=True)
@@ -202,14 +224,14 @@ def _alias_prefix(spellings: tuple[str, ...]) -> re.Pattern[str]:
     return re.compile(rf"^(?:{alternatives})\s*:\s*", re.IGNORECASE)
 
 
-def no_spellings(_wiki: str) -> tuple[str, ...]:
-    """Name no extra namespace spelling for any wiki.
+def no_prefixes(_wiki: str) -> WikiPrefixes:
+    """Name no extra namespace spelling and no interwiki prefix, for any wiki.
 
     The default everywhere a resolver is optional, which keeps every caller
     that has no database -- tests, and the pure analysis of a single body --
     working on the built-ins alone.
     """
-    return ()
+    return WikiPrefixes()
 
 
 _URL_ARGUMENT: Final = re.compile(r"^(?:https?:)?//", re.IGNORECASE)
@@ -237,7 +259,7 @@ def page_named_by(parsed: ParseResult, spellings: tuple[str, ...] = ()) -> str |
     return None
 
 
-def wiki_target(url: str, spellings: Spellings = no_spellings) -> tuple[str, str]:
+def wiki_target(url: str, prefixes: Prefixes = no_prefixes) -> tuple[str, str]:
     """Split a URL into the wiki and page it names, or ("", "") if it names neither.
 
     Both MediaWiki spellings appear in the corpus: the raw-action query form
@@ -261,7 +283,7 @@ def wiki_target(url: str, spellings: Spellings = no_spellings) -> tuple[str, str
         return ("", "")
     # The host's own spellings, not the loading wiki's: this title belongs to
     # whatever wiki the URL names.
-    title = page_named_by(parsed, spellings(host))
+    title = page_named_by(parsed, prefixes(host).namespaces)
     return (host, title) if title is not None else ("", "")
 
 
@@ -419,7 +441,7 @@ class Resolved(NamedTuple):
     module: str = ""
 
 
-def _resolve(verb: str, argument: str, wiki: str, spellings: Spellings) -> Resolved:
+def _resolve(verb: str, argument: str, wiki: str, prefixes: Prefixes) -> Resolved:
     """Turn one quoted loader argument into the page, URL, or module it names."""
     # Cleaned before anything reads it, so the URL this returns and the title
     # derived from it are both already in storage's spelling.
@@ -428,20 +450,51 @@ def _resolve(verb: str, argument: str, wiki: str, spellings: Spellings) -> Resol
         return Resolved()
     template = _local_template(verb, wiki)
     if template:
-        return Resolved(wiki=wiki, title=canonical_title(template.format(name=raw), spellings=spellings(wiki)))
+        local = template.format(name=raw)
+        return Resolved(wiki=wiki, title=canonical_title(local, spellings=prefixes(wiki).namespaces))
     if _URL_ARGUMENT.match(raw):
-        host, title = wiki_target(raw, spellings)
+        host, title = wiki_target(raw, prefixes)
         return Resolved(wiki=host, title=title, url=raw)
     # A MediaWiki URL with no host names a page on the wiki that wrote it --
     # and one that names no page names nothing at all. A truncated
     # `/w/index.php?title=` is not a title just because it is a leftover.
     if raw.startswith("/"):
-        title = page_named_by(urlparse(raw), spellings(wiki))
+        title = page_named_by(urlparse(raw), prefixes(wiki).namespaces)
         return Resolved(wiki=wiki, title=title) if title else Resolved()
-    return _named_without_a_url(verb, raw, wiki, spellings)
+    return _named_without_a_url(verb, raw, wiki, prefixes)
 
 
-def _named_without_a_url(verb: str, raw: str, wiki: str, spellings: Spellings) -> Resolved:
+def _followed_interwiki(title: str, wiki: str, prefixes: Prefixes) -> tuple[str, str]:
+    """Follow the interwiki prefixes at the front of `title` to the wiki it names.
+
+    Returns the wiki the title belongs on and what is left of it. A title with
+    no interwiki prefix comes back on the wiki it was written on, unchanged --
+    which is every title but roughly 300 in the corpus, so this has to be cheap
+    and has to be exact.
+
+    Prefixes nest, and in the corpus they do: `:W:en:User:...` is two
+    hops, and both spellings of the decorative leading colon appear. They are
+    followed one at a time rather than matched as a pattern because each hop is
+    read against the interwiki map of the wiki the previous hop landed on --
+    `w:` means enwiki when written on enwiki and something else elsewhere.
+
+    Bounded, because an interwiki map may legally point back at the wiki that
+    published it: `en:en:en:User:X` is a real title and would otherwise loop.
+    """
+    host = wiki
+    rest = title.lstrip(":").strip()
+    for _ in range(MAX_INTERWIKI_HOPS):
+        prefix, colon, remainder = rest.partition(":")
+        if not colon:
+            break
+        target = prefixes(host).interwiki.get(prefix.strip().casefold())
+        if not target:
+            break
+        host, rest = target, remainder.lstrip(":").strip()
+    return host, rest
+
+
+def _named_without_a_url(verb: str, raw: str, wiki: str, prefixes: Prefixes) -> Resolved:
     r"""Resolve an argument the URL branches did not claim: a title, a module, or nothing.
 
     Both of those branches together are exactly `mw.loader.load`'s own test for
@@ -461,10 +514,13 @@ def _named_without_a_url(verb: str, raw: str, wiki: str, spellings: Spellings) -
         return Resolved()
     if verb == MODULE_LOADER_VERB:
         return Resolved(wiki=wiki, module=decoded)
-    return Resolved(wiki=wiki, title=canonical_title(decoded, spellings=spellings(wiki)))
+    host, rest = _followed_interwiki(decoded, wiki, prefixes)
+    if not rest:
+        return Resolved()
+    return Resolved(wiki=host, title=canonical_title(rest, spellings=prefixes(host).namespaces))
 
 
-def script_imports(body: str, *, wiki: str = "", spellings: Spellings = no_spellings) -> tuple[ScriptImport, ...]:
+def script_imports(body: str, *, wiki: str = "", prefixes: Prefixes = no_prefixes) -> tuple[ScriptImport, ...]:
     """Return every resolvable load in `body`, in source order, without repeats.
 
     Repeats are dropped because this is used to count *demand*, and a page that
@@ -477,7 +533,7 @@ def script_imports(body: str, *, wiki: str = "", spellings: Spellings = no_spell
     for match in _edge_pattern(wiki).finditer(strip_comments(body)):
         verb = match.group("verb")
         argument = match.group("argument")
-        names = _resolve(verb, argument, wiki, spellings)
+        names = _resolve(verb, argument, wiki, prefixes)
         if not names.title and not names.url and not names.module:
             continue
         key = (verb, names)
@@ -497,7 +553,7 @@ def script_imports(body: str, *, wiki: str = "", spellings: Spellings = no_spell
     return tuple(found)
 
 
-def analyze(title: str, body: str, *, wiki: str = "", spellings: Spellings = no_spellings) -> ScriptPage:
+def analyze(title: str, body: str, *, wiki: str = "", prefixes: Prefixes = no_prefixes) -> ScriptPage:
     """Analyze one page in a single pass over its body.
 
     `fingerprint` is deliberately not given the wiki's spellings. Fingerprints
@@ -508,8 +564,8 @@ def analyze(title: str, body: str, *, wiki: str = "", spellings: Spellings = no_
     reworked anyway, and not as a side effect of learning a namespace name.
     """
     return ScriptPage(
-        title=canonical_title(title, spellings=spellings(wiki)),
+        title=canonical_title(title, spellings=prefixes(wiki).namespaces),
         role=classify(body, wiki=wiki),
         fingerprint=fingerprint(body),
-        imports=script_imports(body, wiki=wiki, spellings=spellings),
+        imports=script_imports(body, wiki=wiki, prefixes=prefixes),
     )
