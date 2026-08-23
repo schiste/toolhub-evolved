@@ -17,11 +17,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import userscript_directory as directory  # noqa: E402
+from backend import userscripts  # noqa: E402
 
 Candidate = directory.Candidate
 
 
-def page(owner, name, *, created="20100101000000", fingerprint=""):
+def page(owner, name, *, created="20100101000000", fingerprint="", body=""):
     """Build a candidate the way the fetch layer will: title first, parts derived."""
     title = f"User:{owner}/{name}" if name else f"User:{owner}"
     return Candidate(
@@ -30,7 +31,13 @@ def page(owner, name, *, created="20100101000000", fingerprint=""):
         basename=directory.basename_of(title),
         created=created,
         fingerprint=fingerprint or title,
+        sketch=userscripts.sketch(body),
     )
+
+
+def script(count, name="a", first=0):
+    """A body of `count` distinct lines, so two of them can be nearly the same."""
+    return "\n".join(f"var {name}{at} = {at} * 3 + '{name}';" for at in range(first, first + count))
 
 
 def crowd(name, owners, *, start=2010):
@@ -171,6 +178,122 @@ def test_different_content_stays_separate():
         page("Lgd", "refErrors.js", fingerprint="b"),
     ]
     assert len(directory.collapse(pages, {})) == 2
+
+
+# --- folding near copies ---------------------------------------------------
+
+
+def edited(body, positions, tag):
+    """The same body with a few lines rewritten -- somebody's copy with their changes."""
+    out = body.splitlines()
+    for at in positions:
+        out[at] = f"var {tag}{at} = {at} * 7 + '{tag}';"
+    return "\n".join(out)
+
+
+def test_a_page_that_is_nearly_an_earlier_one_folds_onto_it_as_a_fork():
+    # 678 frwiki pairs are more than 99% the same text and share no fingerprint.
+    # The exact-copy rule cannot see any of them.
+    body = script(200)
+    pages = [
+        page("Zebulon84", "helper.js", created="20180101000000", fingerprint="b", body=edited(body, [7], "z")),
+        page("EDUCA33E", "helper.js", created="20070101000000", fingerprint="a", body=body),
+    ]
+    (origin,) = directory.collapse(pages, {})
+    assert origin.original.title == "User:EDUCA33E/helper.js"
+    assert [fork.title for fork in origin.forks] == ["User:Zebulon84/helper.js"]
+    assert origin.copies == []
+
+
+def test_a_near_copy_folds_even_under_a_different_filename():
+    # Forks cross filenames -- one corpus pair is `godmode.js` against
+    # `monobook.js` at 0.79 -- so the filename rule can never reach them, and
+    # two owners is nowhere near a crowd anyway.
+    body = script(200)
+    pages = [
+        page("Litlok", "godmode.js", created="20070101000000", fingerprint="a", body=body),
+        page("Lgd", "monobook.js", created="20180101000000", fingerprint="b", body=edited(body, [7], "z")),
+    ]
+    (origin,) = directory.collapse(pages, {})
+    assert [fork.title for fork in origin.forks] == ["User:Lgd/monobook.js"]
+
+
+def test_a_rewritten_body_is_not_a_near_copy():
+    pages = [
+        page("Orlodrim", "portail-eval.js", fingerprint="a", body=script(200)),
+        page("Lgd", "refErrors.js", fingerprint="b", body=script(200, name="z")),
+    ]
+    assert len(directory.collapse(pages, {})) == 2
+
+
+def test_pages_stored_before_sketches_existed_fold_exactly_as_they_did():
+    # The column is empty until a page is next read, and an empty sketch
+    # resembles nothing. A backfill that has not finished must not be a fold
+    # that half-fires.
+    pages = [
+        page("Orlodrim", "portail-eval.js", created="20070101000000", fingerprint="a"),
+        page("Lgd", "refErrors.js", created="20180101000000", fingerprint="b"),
+    ]
+    origins = directory.collapse(pages, {})
+    assert len(origins) == 2
+    assert all(origin.forks == [] for origin in origins)
+
+
+def test_resemblance_does_not_chain():
+    # B is a near copy of A and C is a near copy of B, but A and C are not near
+    # copies of each other. Joining what matches would put all three together
+    # and there is no bound on how far such a chain travels; the star rule
+    # keeps C its own script.
+    first = script(200)
+    second = edited(first, [0, 1, 2], "b")
+    third = edited(second, [100, 101, 102], "c")
+    pages = [
+        page("EDUCA33E", "a.js", created="20070101000000", fingerprint="a", body=first),
+        page("Litlok", "b.js", created="20150101000000", fingerprint="b", body=second),
+        page("Zebulon84", "c.js", created="20180101000000", fingerprint="c", body=third),
+    ]
+    origins = directory.collapse(pages, {})
+    assert titles(origins) == ["User:EDUCA33E/a.js", "User:Zebulon84/c.js"]
+    assert [fork.title for fork in origins[0].forks] == ["User:Litlok/b.js"]
+
+
+def test_a_fork_is_measured_against_the_original_not_against_another_fork():
+    # Two people edited different lines of one script. Neither is folded through
+    # the other -- both are within reach of the page they both copied.
+    body = script(200)
+    pages = [
+        page("EDUCA33E", "a.js", created="20070101000000", fingerprint="a", body=body),
+        page("Litlok", "b.js", created="20150101000000", fingerprint="b", body=edited(body, [7], "b")),
+        page("Zebulon84", "c.js", created="20180101000000", fingerprint="c", body=edited(body, [150], "c")),
+    ]
+    (origin,) = directory.collapse(pages, {})
+    assert [fork.title for fork in origin.forks] == ["User:Litlok/b.js", "User:Zebulon84/c.js"]
+
+
+def test_the_copies_of_a_folded_page_come_along_with_it():
+    # They are exact copies of the fork, not of the original, so the group
+    # records them under the weaker claim that is true of both.
+    body = script(200)
+    theirs = edited(body, [7], "z")
+    pages = [
+        page("EDUCA33E", "a.js", created="20070101000000", fingerprint="a", body=body),
+        page("Litlok", "b.js", created="20150101000000", fingerprint="b", body=theirs),
+        page("Zebulon84", "c.js", created="20180101000000", fingerprint="b", body=theirs),
+    ]
+    (origin,) = directory.collapse(pages, {})
+    assert origin.instances == 2
+    assert sorted(fork.owner for fork in origin.forks) == ["Litlok", "Zebulon84"]
+
+
+def test_a_near_copy_folds_onto_the_earliest_page_whatever_order_they_arrive_in():
+    body = script(200)
+    pages = [
+        page("Zebulon84", "c.js", created="20180101000000", fingerprint="c", body=edited(body, [150], "c")),
+        page("Litlok", "b.js", created="20150101000000", fingerprint="b", body=edited(body, [7], "b")),
+        page("EDUCA33E", "a.js", created="20070101000000", fingerprint="a", body=body),
+    ]
+    (origin,) = directory.collapse(pages, {})
+    assert origin.original.owner == "EDUCA33E"
 
 
 # --- folding crowded filenames ---------------------------------------------

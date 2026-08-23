@@ -56,6 +56,12 @@ if TYPE_CHECKING:
 
 RELATION_ORIGINAL = "original"
 RELATION_COPY = "copy"
+# Three relations rather than two, and the difference is how strong a claim each
+# one is. A copy is byte-identical after comments, which is a fact; a fork is
+# most of the same body with somebody's edits in it, which is an observation; a
+# variant only shares a filename, which is an inference. A reviewer reading the
+# directory has to be able to tell which one filed a page.
+RELATION_FORK = "fork"
 RELATION_VARIANT = "variant"
 
 # A Candidate's sort key is compared as a plain string, and within one wiki some
@@ -105,6 +111,7 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
             basename=row.basename,
             created=row.created_at_wiki or _sort_key(row.discovery_rank),
             fingerprint=row.fingerprint,
+            sketch=row.sketch,
         )
         for row in rows
     ]
@@ -183,6 +190,7 @@ def _members(origin: directory.Origin) -> list[tuple[str, str]]:
     return [
         (origin.original.title, RELATION_ORIGINAL),
         *[(page.title, RELATION_COPY) for page in origin.copies],
+        *[(page.title, RELATION_FORK) for page in origin.forks],
         *[(page.title, RELATION_VARIANT) for page in origin.variants],
     ]
 

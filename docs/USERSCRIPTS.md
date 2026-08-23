@@ -43,8 +43,12 @@ byte-identical pages was 1,045 empty ones, and the most-copied non-empty page wa
 measures the wrong thing.
 
 CSS-model pages are enumerated — they have to be, because a `.css` page can hold
-JavaScript — but a page whose body is really CSS never earns a directory entry.
-There is no stylesheet tier and no plan for one.
+JavaScript. What this document previously claimed, that a page whose body is
+really CSS never earns a directory entry, is not true and was never measured:
+`classify()` reads a role off the number of code lines, and a long stylesheet is
+a `script` to that test. 12,470 of enwiki's 32,154 directory candidates are
+`content_model = css`. See the gap at the end; there is still no stylesheet tier
+and no plan for one.
 
 **Analysis runs on the body with comments removed.** `fingerprint()` hashes the
 comment-stripped, whitespace-normalized text for exactly one reason: Popups
@@ -190,10 +194,13 @@ byte-identical copies at all — it is per-user configuration. In the pilot, 472
 people had a page called `LiveRCparam.js`, each holding their own settings for
 one shared tool. Hashing finds none of them, because no two are the same.
 
-What finds them is the filename, in two passes:
+What finds them is content and the filename, in three passes:
 
 1. **Exact copies fold on fingerprint.** Same comment-stripped body, same script.
-2. **Crowded names fold on the filename.** When `CROWDED_OWNERS` (5) or more
+2. **Near copies fold on resemblance.** A page more than `NEAR_COPY_SIMILARITY`
+   (0.9) of the way to an earlier one is a fork of it — somebody's copy with
+   their own settings, or their own edits, in it.
+3. **Crowded names fold on the filename.** When `CROWDED_OWNERS` (5) or more
    distinct owners have a page under the same basename, the later ones are
    presumed to be instances of whatever the first one was, in the order the
    collapse ranks by: creation date first, `discovery_rank` where none is
@@ -234,8 +241,69 @@ onto Maloq, who wrote AdvancedContribs. The 472nd is somebody else's settings
 file that another editor loads, so the guard keeps it — which is exactly the case
 `INDEPENDENT_DEMAND` exists for.
 
+### Resemblance, and why it is not a hash
+
+The second pass answers a question no hash can. A fork with one line changed has
+a fingerprint unrelated to the page it was copied from; on frwiki 678 pairs of
+pages are more than 99% the same text and share no fingerprint at all. The shape
+of the difference is what says what they are: `lrcParams["RCLimit"] = 35`
+against `= 30`, one `@import` line present in one copy and not the other.
+
+Every page carries a **sketch** alongside its fingerprint — the smallest 64
+hashes of every five-line window of its comment-stripped body, base64 of their
+raw bytes. Because the hash is uniform the smallest 64 are a uniform sample, so
+two sketches overlap in proportion to the bodies, and `similarity` reads a
+Jaccard estimate off the pair without either body being loaded. Measured against
+exact Jaccard over 10,366 frwiki pairs, 8,506 estimates were exactly right and
+none was off by more than 0.2.
+
+0.9 is the threshold because the failure it guards against is silent. Folding two
+unrelated scripts together loses one permanently; folding one entry too late
+leaves a duplicate that demand ranking pushes down. Measured on frwiki, dropping
+to 0.7 folds 1,610 pages instead of 1,104 and raises the count of groups spanning
+more than three distinct filenames — the signature of an over-broad fold — from 6
+to 14.
+
+Two rules keep the pass from over-reaching:
+
+- **Every page is compared only against originals already accepted**, in
+  creation order, never against another fork. Joining whatever matches would let
+  resemblance chain — A resembles B, B resembles C, therefore A and C are one
+  script even where they share nothing — and a chain has no bound. Here every
+  member of a group is within 0.9 of the one page the group is named after,
+  which stays true however large the group gets.
+- **Sketches are found through an index of their hashes**, not by comparing
+  every pair. Two bodies sharing none of the 64 sampled hashes cannot be 90% the
+  same, so the pairs the index skips are pairs the comparison would have
+  rejected.
+
+Measured over the three censused wikis:
+
+| Wiki   | Script pages | After exact | After near | Pages folded | Groups | `.js` pages folded | Directory originals |
+| ------ | ------------ | ----------- | ---------- | ------------ | ------ | ------------------ | ------------------- |
+| enwiki | 32,154       | 23,485      | 22,310     | 2,421        | 700    | 1,012              | 5,157 → 4,939       |
+| meta   | 10,299       | 8,869       | 8,619      | 379          | 164    | 216                | 2,705 → 2,642       |
+| frwiki | 6,551        | 5,779       | 5,546      | 274          | 139    | 200                | 1,498 → 1,458       |
+
+The `.js` groups are the ones the filename rule could never have reached, because
+the names differ: `sysopdectector.js` onto `sysopdetector.js`, `ancien
+monobook.js` onto `monobook.js`, `deluxehistory test.js` onto
+`deluxehistory.js`, `popup.js` and `popupLocal.js` onto `popups.js`.
+
+This is also what closes the wiki-aware hashing question the prefix work left
+open. Widening `fingerprint()` to each wiki's own namespace spellings would rewrite
+every hash already stored and make each page look like a fork of itself until
+the corpus was swept again. It is unnecessary: two bodies that differ only in
+how they spell a namespace are a near copy by any measure, and the sketch finds
+them without anyone deciding in advance which spellings to fold — which is the
+general case, since a hash can only ever be widened to differences somebody
+anticipated.
+
 Each surviving original keeps its folded pages as members, related as
-`original`, `copy` (same fingerprint) or `variant` (same name, different body).
+`original` (a fact), `copy` (same fingerprint — a fact), `fork` (most of the
+same body, with edits — an observation) or `variant` (same name, different body
+— an inference). A reviewer reading the directory has to be able to tell which
+rule filed a page.
 
 **Demand is counted in people, not pages.** Somebody who loads a script from both
 `common.js` and `vector.js` is one user of it. Demand is also selected by
@@ -297,7 +365,7 @@ not already publicly readable on the wiki.
 
 | Table                           | Contents                                                                                                                                                                             |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, revision id, `discovery_rank`, body, `deleted_at`                                                      |
+| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, `sketch`, revision id, `discovery_rank`, body, `deleted_at`                                            |
 | `user_script_imports`           | One row per load edge, keyed on source, verb and target; `target_page_id` is that target resolved to a page; `is_stylesheet` separates CSS loads from script loads                   |
 | `user_script_census_state`      | Per-wiki cursors and counters: `changes_cursor`, `sweep_cursor`, `sweeps_completed`, `enumeration_complete`, `enumeration_totals`, `enumeration_source`, status, timings, last error |
 | `user_script_directory`         | The projected directory: one row per original, with `script_id`, `tier`, `demand`, `instances` and `position`                                                                        |
@@ -508,15 +576,14 @@ rather than a canonical one.
 
 ## Known gaps
 
-- **`fingerprint()` still folds English and French only.** Closed for titles:
-  `backend/wiki_prefixes` reads each wiki's namespace names, aliases and
-  interwiki map from `meta=siteinfo`, stores them, and hands them to the fold,
-  so `Benutzer:X/y.js` and `en:User:Lupin/popups.js` now resolve to the page
-  and wiki they name. `fingerprint()` deliberately did not move with it:
-  fingerprints are stored and compared against each other, so widening the rule
-  that produces them rewrites every hash already written and makes each page
-  look like a fork of itself until the whole corpus is swept again. It belongs with
-  the fork work below, which touches hashing anyway.
+- **`fingerprint()` still folds English and French only.** Closed, in two
+  halves. For titles, `backend/wiki_prefixes` reads each wiki's namespace names,
+  aliases and interwiki map from `meta=siteinfo`, stores them, and hands them to
+  the fold, so `Benutzer:X/y.js` and `en:User:Lupin/popups.js` now resolve to
+  the page and wiki they name. For bodies, `fingerprint()` deliberately did not
+  move — widening it rewrites every hash already stored — and does not need to:
+  the near-copy fold recognizes two bodies that differ only in a namespace
+  spelling without being told the spellings.
 - **The thresholds have not been re-read since same-owner demand stopped
   counting.** Closed, in that `demand()` now skips a load from anywhere in the
   target's own owner's space rather than only a page loading itself. What is
@@ -527,10 +594,19 @@ rather than a canonical one.
   `INDEPENDENT_DEMAND` and the tier split were all measured on frwiki. Meta is
   swept but only partially enumerated, so it is not yet a second data point to
   check them against.
-- **Fork detection is a hash.** `fingerprint()` finds copies that differ only in
-  comments and whitespace. It does not find a script somebody edited — a fork with
-  one line changed reads as a distinct original. Recognizing those needs
-  normalization beyond hashing, and it is not written.
+- **Fork detection is a hash.** Closed. Every page carries a sketch of its body
+  alongside its fingerprint, and a page more than 0.9 of the way to an earlier
+  one is filed as a `fork` of it — 3,074 pages across the three wikis, 1,428 of
+  them `.js`, in groups the filename rule could not reach. See "Resemblance, and
+  why it is not a hash" above.
+- **39% of the directory's candidates are stylesheets.** A page's role is read
+  from its body, and a long `.css` page is as much a "script" as a long `.js`
+  one to that test. Of the pages the directory collapses, 12,470 of enwiki's
+  32,154 are `content_model = css`, 4,450 of meta's 10,299 and 2,246 of frwiki's
+  6,551. They fold correctly — most of the largest near-copy groups on every
+  wiki are people copying each other's `monobook.css` — but a user stylesheet is
+  not a tool, and promoting one into the catalog would be wrong. Nothing filters
+  on `content_model` yet.
 - **Gadget usage is not joined in.** Demand is counted from pages this census can
   read. A script installed as a wiki gadget is loaded by people who never create
   a page at all, and the `gadgetusage` API knows those numbers; nothing reads it.
