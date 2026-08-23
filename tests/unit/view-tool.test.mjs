@@ -1525,3 +1525,58 @@ test("viewTool still renders when the health summary read fails", async () => {
 	assert.equal(r.title, "Minimal Tool — Toolhub");
 	assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto">Minimal Tool</h1>'));
 });
+
+// Provenance rows are one value each, not one source's whole answer. The two
+// tests below are the two populations that distinction separates, and both
+// fixtures are copied from what /v1/catalog/tools/<name>/projection/ actually
+// returned on 2026-08-23 rather than invented here.
+const UNION_PROJECTION = {
+	provenance: {
+		technology_used: [
+			{ value: "python", source: "official_toolhub", effective: true },
+			{ value: "flask", source: "official_toolhub", effective: true },
+			{ value: "Python", source: "repository_analysis", effective: true },
+			{ value: "JavaScript", source: "repository_analysis", effective: true },
+			{ value: "Flask", source: "repository_analysis", effective: true }
+		],
+		for_wikis: [
+			{ value: "commons.wikimedia.org", source: "official_toolhub", effective: true },
+			{ value: "commonswiki", source: "repository_analysis", effective: true },
+			{ value: "wikidatawiki", source: "repository_analysis", effective: true }
+		]
+	}
+};
+
+const OVERRULED_PROJECTION = {
+	provenance: {
+		tool_type: [
+			{ value: "other", source: "official_toolhub", effective: true },
+			{ value: "web app", source: "repository_analysis", effective: false, valid: true }
+		]
+	}
+};
+
+test("viewTool does not call a unioned field a contradiction", async () => {
+	h.getTool.mockResolvedValue(toolFixture("isa", { title: "ISA", catalogProjection: UNION_PROJECTION }));
+
+	const r = await tool.viewTool("isa");
+
+	// Eight technologies and eleven wikis is what one agreeing tool looks like:
+	// every row is effective, so nothing was overruled and nothing disagreed.
+	assert.ok(r.html.includes("Technologies"));
+	assert.ok(r.html.includes("Wikis"));
+	assert.ok(!r.html.includes("sources disagree"));
+});
+
+test("viewTool still reports a source whose valid evidence was left out", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("codemirror", { title: "CodeMirror", catalogProjection: OVERRULED_PROJECTION })
+	);
+
+	const r = await tool.viewTool("codemirror");
+
+	// mwext-codemirror: repository analysis says `web app`, the effective type
+	// is `other`, and that evidence was kept and judged valid. Losing this
+	// warning is the cost of the fix above, so it is asserted separately.
+	assert.ok(r.html.includes("sources disagree"));
+});

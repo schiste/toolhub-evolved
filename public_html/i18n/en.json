@@ -1995,7 +1995,7 @@
 	"tool.provenanceInvalidEvidence": "invalid evidence retained",
 	"tool.provenanceRepositoryField": "Repository",
 	"tool.provenanceSupporting": "supporting",
-	"tool.provenanceTechnologyField": "Technology",
+	"tool.provenanceTechnologyField": "Technologies",
 	"tool.provenanceTitle": "Metadata evidence",
 	"tool.provenanceTitleField": "Title",
 	"tool.provenanceTypeField": "Tool type",

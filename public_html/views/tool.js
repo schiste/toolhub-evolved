@@ -392,6 +392,44 @@ function evidenceValue(value) {
 	return String(value ?? "");
 }
 
+/** @param {unknown} value */
+function comparableEvidence(value) {
+	const text = Array.isArray(value)
+		? value
+				.map((item) => String(item ?? "").trim())
+				.sort()
+				.join(", ")
+		: evidenceValue(value);
+	return text.trim().toLocaleLowerCase();
+}
+
+/**
+ * Did any source's claim actually lose?
+ *
+ * A provenance row is one value, not one source's whole answer, so a set-valued
+ * field carries a row per member: `isa` alone reports eight technologies and
+ * eleven wikis, every one of them its own row and every one of them effective.
+ * Counting distinct values therefore marked every multi-valued field as
+ * contradicted, which is why Wikis and Technologies warned on tools whose
+ * sources agree completely.
+ *
+ * The projection unions what it accepts, so a source is contradicted only when
+ * it offered evidence that was kept, judged valid, and still left out of the
+ * answer -- `mwext-codemirror`, where repository analysis says `web app` and the
+ * effective type is `other`. Invalid evidence is excluded because the branch
+ * above already names it.
+ *
+ * @param {Array<Record<string, any>>} rows
+ */
+function isContradicted(rows) {
+	const accepted = new Set(rows.filter((row) => row.effective).map((row) => comparableEvidence(row.value)));
+	return rows.some((row) => {
+		if (row.effective || row.valid === false) return false;
+		const value = comparableEvidence(row.value);
+		return Boolean(value) && !accepted.has(value);
+	});
+}
+
 /** @param {Record<string, any> | null | undefined} projection */
 function catalogProvenancePanel(projection) {
 	const provenance = projection?.provenance;
@@ -404,22 +442,19 @@ function catalogProvenancePanel(projection) {
 		icon: t("tool.provenanceIconField", "Icon"),
 		tool_type: t("tool.provenanceTypeField", "Tool type"),
 		for_wikis: t("tool.provenanceWikisField", "Wikis"),
-		technology_used: t("tool.provenanceTechnologyField", "Technology")
+		technology_used: t("tool.provenanceTechnologyField", "Technologies")
 	};
 	const sections = Object.entries(labels)
 		.map(([field, label]) => {
 			const rows = Array.isArray(provenance[field]) ? provenance[field] : [];
 			if (rows.length === 0) return "";
 			const fieldValidation = projection?.validation?.[field] || {};
-			const distinct = new Set(
-				rows.map((row) => evidenceValue(row.value).trim().toLocaleLowerCase()).filter(Boolean)
-			);
 			const warning =
 				fieldValidation.reachable === false
 					? `<span class="catalog-evidence__warning">${t("tool.provenanceUnreachable", "URL currently unreachable")}</span>`
 					: rows.some((row) => row.valid === false)
 						? `<span class="catalog-evidence__warning">${t("tool.provenanceInvalidEvidence", "invalid evidence retained")}</span>`
-						: distinct.size > 1
+						: isContradicted(rows)
 							? `<span class="catalog-evidence__warning">${t("tool.provenanceContradiction", "sources disagree")}</span>`
 							: "";
 			const items = rows
