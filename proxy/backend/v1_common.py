@@ -597,10 +597,19 @@ MAX_PUBLIC_TECHNOLOGIES = 20
 def source_technology_summary(report: dict[str, Any]) -> list[dict[str, Any]]:
     """Collect the declared version behind each detected technology.
 
-    A technology with no version is left out rather than carried with an empty
-    one: the catalog already lists the technology, and this exists only to say
-    which release. Two manifests disagreeing produce a row with `spec` and no
-    `version` -- there is a declaration to show, but no single answer.
+    A technology the manifests say nothing about is left out rather than
+    carried with an empty version: the catalog already lists the technology,
+    and this exists only to say which release.
+
+    Three outcomes, and the middle one reads like the third if you skim. One
+    declaration naming a release emits `version`. One naming a range instead --
+    PHP's `>=8.4` -- emits `spec`: there is a declaration to show, but it picks
+    no release. Manifests that disagree emit no row at all, so the technology
+    keeps its place in the catalog list with nothing beside it. One
+    catalogued tool declares Vue as `3.2.31`, `3.5.30`, `^2.3.4`, `^2.5.16`
+    and `^2.6.11` across its manifests; showing any one of those, or showing
+    the first as a `spec`, would present as the source's answer a choice the
+    source never made.
     """
     rows = report.get("technology") if isinstance(report.get("technology"), list) else []
     summary: list[dict[str, Any]] = []
