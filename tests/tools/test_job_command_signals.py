@@ -13,6 +13,13 @@ code -- which is exactly the case its traps were written for.
 `exec` in front of the command is what closes that gap: the guard replaces the
 wrapper rather than forking under it, so the guard is PID 1 and is signalled
 directly.
+
+jobs.yaml is not the only place a job command is written. tools/deploy.sh
+builds two of them itself and hands them to `toolforge jobs run`, which wraps
+them identically -- a checked pod showed that wrapper at PID 1 with the real
+process below it, hours after every command in jobs.yaml had been fixed. Both
+sources are read here, because reading only the obvious one is how those two
+were missed in the first place.
 """
 
 import re
@@ -24,27 +31,52 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 GUARD = ROOT / "tools" / "job_guard.sh"
 JOBS = ROOT / "jobs.yaml"
+SCRIPTS = sorted((ROOT / "tools").glob("*.sh"))
 COMMAND = re.compile(r"^  command: (.*)$", re.M)
+# `toolforge jobs run --command "..."` as a shell script writes it. The value is
+# a double-quoted shell word, so it can hold $VAR but never a bare quote.
+RUN_COMMAND = re.compile(r'--command "([^"]*)"')
 # How the jobs framework composes a container command, read off a live CronJob:
 #   /bin/sh -c -- 'exec 1>>NAME.out; exec 2>>NAME.err; <command from jobs.yaml>'
 WRAPPER = "exec 1>>{out}; exec 2>>{err}; {command}"
 
 
 def declared_commands() -> list[str]:
-    return COMMAND.findall(JOBS.read_text())
+    """Every job command this repository defines, wherever it defines it."""
+    commands = COMMAND.findall(JOBS.read_text())
+    for script in SCRIPTS:
+        commands.extend(RUN_COMMAND.findall(script.read_text()))
+    return commands
+
+
+def test_both_places_a_job_command_can_be_written_are_actually_read():
+    """A parser that silently matched nothing would pass every test below it.
+
+    The counts are lower bounds rather than exact numbers, so adding a job does
+    not fail this, but reducing either source to no matches does.
+    """
+    from_jobs = COMMAND.findall(JOBS.read_text())
+    from_scripts = [c for script in SCRIPTS for c in RUN_COMMAND.findall(script.read_text())]
+
+    assert len(from_jobs) >= 20, f"jobs.yaml parser found only {len(from_jobs)} commands"
+    assert len(from_scripts) >= 2, f"tools/*.sh parser found only {len(from_scripts)} commands"
 
 
 def test_every_declared_command_execs_so_the_signal_is_not_swallowed():
-    """Against the real jobs.yaml: one missing `exec` is one deaf job."""
+    """Against the real files: one missing `exec` is one deaf job."""
     commands = declared_commands()
 
-    assert commands, "no commands found; the jobs.yaml parser above is broken"
+    assert commands, "no commands found; the parsers above are broken"
     missing = [c for c in commands if not c.startswith("exec ")]
     assert missing == [], f"these commands would run under a wrapper that drops the signal: {missing}"
 
 
 def test_no_declared_command_uses_shell_syntax_that_exec_would_break():
-    """`exec` takes one command, so a chain or redirect after it is a silent trap."""
+    """`exec` takes one command, so a chain or redirect after it is a silent trap.
+
+    A $VAR is fine -- it expands to a path before exec sees it -- but a `&&`, a
+    pipe or a redirect needs the very shell that `exec` has just replaced.
+    """
     unsafe = [c for c in declared_commands() if re.search(r"&&|\|\||[;|<>`]|\$\(", c)]
 
     assert unsafe == [], f"these need a shell and so cannot be exec'd as written: {unsafe}"
