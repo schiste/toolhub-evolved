@@ -63,9 +63,15 @@ run_with_tool_env() {
 	_err="$HOME/${_step}-deploy.err"
 	_started="$(date +%s.%N)"
 	rm -f "$_out" "$_err"
+	# `exec` for the same reason every command in jobs.yaml carries it: the jobs
+	# framework wraps this string in a shell that owns PID 1, and Kubernetes
+	# signals only PID 1. Without it a step that runs past --wait is killed
+	# outright instead of being asked to stop, and a migration is the worst
+	# possible thing to cut off mid-statement. Callers pass a script path and
+	# flags only, so there is nothing here that still needs a shell.
 	if toolforge jobs run --wait 900 --image python3.13 --filelog \
 		-o "$_out" -e "$_err" \
-		--command "$VENV_PY $_command" \
+		--command "exec $VENV_PY $_command" \
 		"${_step}-deploy"; then
 		cat "$_out" 2>/dev/null || true
 		cat "$_err" 2>/dev/null >&2 || true
@@ -249,9 +255,11 @@ if [ -x "$VENV_PY" ]; then
 	echo "Queuing last-good projection refresh ..."
 	projection_out="$deployment_log_dir/projection-refresh-$deploy_run_id.out"
 	projection_err="$deployment_log_dir/projection-refresh-$deploy_run_id.err"
+	# `exec` so the refresh itself is PID 1 and receives the stop signal; see
+	# run_with_tool_env above for why the wrapper shell would otherwise eat it.
 	if toolforge jobs run --image python3.13 --filelog \
 		-o "$projection_out" -e "$projection_err" \
-		--command "$VENV_PY $REPO_DIR/proxy/projection_refresh.py" \
+		--command "exec $VENV_PY $REPO_DIR/proxy/projection_refresh.py" \
 		projection-refresh-deploy; then
 		ln -sfn "$projection_out" "$HOME/projection-refresh-deploy.out"
 		ln -sfn "$projection_err" "$HOME/projection-refresh-deploy.err"
