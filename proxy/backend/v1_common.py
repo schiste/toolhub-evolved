@@ -577,6 +577,14 @@ def source_repository_summary(report: dict[str, Any]) -> dict[str, Any] | None:
         value = clean_int(repository.get(key))
         if value is not None:
             summary[key] = value
+    # False is kept and absent is dropped, the same rule the scanner's
+    # _host_facts applies upstream: a host that says "not archived" has told us
+    # something, a host with no such field has not. Dropping False here would
+    # have made the two indistinguishable in the one place a reader sees them.
+    for key in ("archived", "dirty"):
+        value = repository.get(key)
+        if isinstance(value, bool):
+            summary[key] = value
     return summary or None
 
 

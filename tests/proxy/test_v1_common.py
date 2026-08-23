@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 import backend.v1_common as v1c  # noqa: E402
-from backend import authz, db, security, toolhub  # noqa: E402
+from backend import authz, db, security, source_analyzer, toolhub  # noqa: E402
 from backend.models import (  # noqa: E402
     ActivityRow,
     CrawlerUrl,
@@ -530,6 +530,49 @@ def test_source_repository_summary_variants():
     assert summary["commitCount"] == 12
     assert "contributorCount" not in summary
     assert "lastCommitAgeDays" not in summary
+
+
+def test_source_repository_summary_keeps_false_flags():
+    """A host saying "not archived" is a fact; a host with no such field is not."""
+    report = {
+        "repositoryContext": {
+            "repository": {
+                "url": "https://example.org/repo",
+                "archived": False,
+                "dirty": True,
+            }
+        }
+    }
+    summary = v1c.source_repository_summary(report)
+    assert summary["archived"] is False
+    assert summary["dirty"] is True
+
+    unknown = v1c.source_repository_summary(
+        {"repositoryContext": {"repository": {"url": "https://example.org/repo", "archived": "yes"}}}
+    )
+    assert "archived" not in unknown
+    assert "dirty" not in unknown
+
+
+def test_source_repository_summary_covers_every_stored_key():
+    """The panel promises the repository record, so no stored key may go unread."""
+    repository = {
+        "url": "https://example.org/repo",
+        "branch": "main",
+        "defaultBranch": "main",
+        "commitSha": "abc123",
+        "lastCommitAt": "2026-08-01T00:00:00Z",
+        "analyzedAt": "2026-08-02T00:00:00Z",
+        "provider": "github",
+        "tag": "v1.2.3",
+        "commitCount": 12,
+        "contributorCount": 3,
+        "lastCommitAgeDays": 21,
+        "archived": False,
+        "dirty": False,
+    }
+    assert set(repository) == source_analyzer.REPOSITORY_CONTEXT_REPOSITORY_KEYS
+    assert set(v1c.source_repository_summary({"repositoryContext": {"repository": repository}})) == set(repository)
 
 
 def test_latest_public_health_core_variants(app):
