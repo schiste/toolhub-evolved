@@ -430,10 +430,91 @@ function isContradicted(rows) {
 	});
 }
 
-/** @param {Record<string, any> | null | undefined} projection */
-function catalogProvenancePanel(projection) {
-	const provenance = projection?.provenance;
-	if (!provenance || typeof provenance !== "object") return "";
+/** @param {unknown} value */
+function repositoryFlag(value) {
+	return value ? t("tool.repositoryDataYes", "yes") : t("tool.repositoryDataNo", "no");
+}
+
+/** @param {unknown} value */
+function repositoryText(value) {
+	return esc(String(value));
+}
+
+/** @param {unknown} value */
+function repositoryTime(value) {
+	return timeTag(String(value)) || esc(String(value));
+}
+
+/**
+ * Every key the repository summary can carry, in reading order.
+ *
+ * A key the backend omits is a key the host never reported -- gerrit publishes
+ * no contributor or commit counts at all -- so an absent field renders nothing
+ * rather than a zero or an "unknown", which would read as a measurement.
+ * `dirty` is the one exception: the scanner clones fresh so it is false on
+ * every scanned tool, and it only says something when it is true.
+ *
+ * @type {Array<[string, () => string, (value: any) => string]>}
+ */
+const REPOSITORY_DATA_FIELDS = [
+	["provider", () => t("tool.repositoryDataProvider", "Provider"), repositoryText],
+	[
+		"url",
+		() => t("tool.repositoryDataUrl", "Repository URL"),
+		(value) => {
+			const href = safeUrl(value);
+			return href
+				? `<a href="${href}" target="_blank" rel="noopener nofollow">${esc(String(value))}</a>`
+				: esc(String(value));
+		}
+	],
+	["branch", () => t("tool.repositoryDataBranch", "Analyzed branch"), repositoryText],
+	["defaultBranch", () => t("tool.repositoryDataDefaultBranch", "Default branch"), repositoryText],
+	["tag", () => t("tool.repositoryDataTag", "Tag"), repositoryText],
+	[
+		"commitSha",
+		() => t("tool.repositoryDataCommit", "Analyzed commit"),
+		(value) => `<code>${esc(String(value))}</code>`
+	],
+	["lastCommitAt", () => t("tool.repositoryDataLastCommit", "Last commit"), repositoryTime],
+	["lastCommitAgeDays", () => t("tool.repositoryDataLastCommitAge", "Days since last commit"), repositoryText],
+	["commitCount", () => t("tool.repositoryDataCommits", "Commits"), repositoryText],
+	["contributorCount", () => t("tool.repositoryDataContributors", "Contributors"), repositoryText],
+	["archived", () => t("tool.repositoryDataArchived", "Archived by the host"), repositoryFlag],
+	["dirty", () => t("tool.repositoryDataDirty", "Uncommitted changes when analyzed"), repositoryFlag],
+	["analyzedAt", () => t("tool.repositoryDataAnalyzedAt", "Analyzed"), repositoryTime]
+];
+
+/**
+ * The repository record the source analysis was measured against.
+ *
+ * It sits beside the per-field evidence because it is the evidence's own
+ * provenance: which checkout, which commit, and how alive the project was when
+ * the analyzer read it.
+ *
+ * @param {Record<string, any> | null | undefined} repository
+ */
+function repositoryDataSection(repository) {
+	if (!repository || typeof repository !== "object") return "";
+	const items = REPOSITORY_DATA_FIELDS.filter(([key]) => {
+		const value = repository[key];
+		if (key === "dirty") return value === true;
+		return value !== undefined && value !== null && value !== "";
+	})
+		.map(([key, label, render]) => `<li><strong>${esc(label())}</strong> · ${render(repository[key])}</li>`)
+		.join("");
+	if (!items) return "";
+	return `<details class="catalog-evidence__field"><summary>${esc(t("tool.repositoryDataField", "Repository data"))}</summary><ul>${items}</ul></details>`;
+}
+
+/**
+ * @param {Record<string, any> | null | undefined} projection
+ * @param {Record<string, any> | null | undefined} [repository]
+ */
+function catalogProvenancePanel(projection, repository) {
+	// A tool with no source analysis has no provenance and still has a repository
+	// record, so the panel is empty only when both are, not when the first one is.
+	const provenance = projection?.provenance && typeof projection.provenance === "object" ? projection.provenance : {};
 	const labels = {
 		title: t("tool.provenanceTitleField", "Title"),
 		description: t("tool.provenanceDescriptionField", "Description"),
@@ -474,8 +555,9 @@ function catalogProvenancePanel(projection) {
 		})
 		.filter(Boolean)
 		.join("");
-	if (!sections) return "";
-	return `<section class="catalog-evidence" aria-labelledby="catalog-evidence-title"><h2 class="toolpage__h2" id="catalog-evidence-title">${t("tool.provenanceTitle", "Metadata evidence")}</h2><p>${t("tool.provenanceIntro", "Toolhub Evolved keeps the official record intact and shows which local evidence supports each displayed field.")}</p>${sections}</section>`;
+	const panel = sections + repositoryDataSection(repository);
+	if (!panel) return "";
+	return `<section class="catalog-evidence" aria-labelledby="catalog-evidence-title"><h2 class="toolpage__h2" id="catalog-evidence-title">${t("tool.provenanceTitle", "Metadata evidence")}</h2><p>${t("tool.provenanceIntro", "Toolhub Evolved keeps the official record intact and shows which local evidence supports each displayed field.")}</p>${panel}</section>`;
 }
 
 /** @param {Record<string, any> | null} signals */
@@ -890,7 +972,7 @@ export async function viewTool(name) {
 					${metaItem(t("tool.metaTechnology", "Technology"), (tool.technologyUsed || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 					${metaItem(t("tool.metaAudiences", "Audiences"), (tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 				</div>
-				${catalogProvenancePanel(tool.catalogProjection)}
+				${catalogProvenancePanel(tool.catalogProjection, evolvedSummary?.health?.sourceHealth?.repository)}
 
 				<div data-related-tools-slot></div>
 				<div data-neighborhood-slot></div>

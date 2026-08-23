@@ -1580,3 +1580,79 @@ test("viewTool still reports a source whose valid evidence was left out", async 
 	// warning is the cost of the fix above, so it is asserted separately.
 	assert.ok(r.html.includes("sources disagree"));
 });
+
+test("viewTool shows the whole repository record beside the field evidence", async () => {
+	h.getTool.mockResolvedValue(toolFixture("repodata", { title: "Repo Data" }));
+	h.attachEvolvedSummaries.mockImplementation(async (tools) => {
+		tools[0].evolvedSummary = {
+			health: {
+				sourceHealth: {
+					repository: {
+						provider: "github",
+						url: "https://github.com/example/repo",
+						branch: "main",
+						defaultBranch: "main",
+						commitSha: "0123456789abcdef",
+						lastCommitAt: "2026-07-29T12:00:00Z",
+						lastCommitAgeDays: 21,
+						commitCount: 412,
+						contributorCount: 7,
+						archived: false,
+						dirty: false,
+						analyzedAt: "2026-08-22T06:04:17Z"
+					}
+				}
+			}
+		};
+		return tools;
+	});
+	const r = await tool.viewTool("repodata");
+	assert.ok(r.html.includes("Repository data"));
+	for (const label of [
+		"Provider",
+		"Repository URL",
+		"Analyzed branch",
+		"Default branch",
+		"Analyzed commit",
+		"Last commit",
+		"Days since last commit",
+		"Commits",
+		"Contributors",
+		"Archived by the host",
+		"Analyzed"
+	]) {
+		assert.ok(r.html.includes(label), `missing repository field: ${label}`);
+	}
+	assert.ok(r.html.includes("412"), "commit count is rendered");
+	// `archived: false` is a fact the host reported; `dirty: false` is the
+	// scanner describing its own fresh clone, so only the first is worth a line.
+	assert.ok(r.html.includes("Archived by the host</strong> · no"));
+	assert.ok(!r.html.includes("Uncommitted changes"));
+});
+
+test("viewTool omits repository fields the host never reported", async () => {
+	h.getTool.mockResolvedValue(toolFixture("gerrit-tool", { title: "Gerrit Tool" }));
+	h.attachEvolvedSummaries.mockImplementation(async (tools) => {
+		tools[0].evolvedSummary = {
+			health: { sourceHealth: { repository: { provider: "gerrit-wikimedia", branch: "master" } } }
+		};
+		return tools;
+	});
+	const r = await tool.viewTool("gerrit-tool");
+	assert.ok(r.html.includes("Repository data"));
+	// Gerrit publishes no counts at all, and a rendered zero would read as a
+	// measurement rather than as a silence.
+	assert.ok(!r.html.includes("Contributors"));
+	assert.ok(!r.html.includes("Commits"));
+});
+
+test("viewTool renders repository data for a tool with no catalog provenance", async () => {
+	h.getTool.mockResolvedValue(toolFixture("noprov", { title: "No Prov", catalogProjection: null }));
+	h.attachEvolvedSummaries.mockImplementation(async (tools) => {
+		tools[0].evolvedSummary = { health: { sourceHealth: { repository: { provider: "gitlab" } } } };
+		return tools;
+	});
+	const r = await tool.viewTool("noprov");
+	assert.ok(r.html.includes("Metadata evidence"));
+	assert.ok(r.html.includes("Repository data"));
+});
