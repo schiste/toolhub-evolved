@@ -400,8 +400,12 @@
   # because the sweep records the road it took and is then left alone.
   # USERSCRIPT_LIMIT bounds how many pages a single run reads, and the wiki's
   # sweep cursor carries the rest to the next run, so a corpus far larger than
-  # one hour's budget converges over a day or two instead of timing out. 2000
-  # titles is 100 content requests at CONTENT_BATCH=20.
+  # one hour's budget converges over a day or two instead of timing out. 6000
+  # titles is 120 content requests at CONTENT_BATCH=50 -- three times the pages
+  # of the old 2000, for barely more requests than the 100 that cost, because
+  # the batch size and not politeness was the throttle. At 0.03 requests a
+  # second this is nowhere near any published limit; what bounds a run is its
+  # wall clock against the hourly tick.
   #
   # Meta is here for the cross-wiki edges: global.js lives there and loads
   # scripts hosted on other wikis, which is the strongest signal a script has
@@ -410,7 +414,7 @@
   # matters is most likely to already exist under a different name. Its 155,561
   # pages are why USERSCRIPT_LIMIT exists: its first sweep runs for about 78
   # hourly runs, then the wiki falls through to watching like the other two.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org USERSCRIPT_LIMIT=2000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org USERSCRIPT_LIMIT=6000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
   image: python3.13
   schedule: "23 * * * *"
   emails: onfailure

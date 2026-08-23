@@ -20,9 +20,9 @@ USER = wiki_replica.Credentials(user="s55555", password="sekrit")
 
 #: What frwiki's replica holds, in page-id order, and what it calls user space.
 REPLICA_ROWS = (
-    ("javascript", "Tom_Smith/monobook.js"),
-    ("css", "Ada/vector.css"),
-    ("javascript", "Zoe/tools.js"),
+    ("javascript", "Tom_Smith/monobook.js", "101"),
+    ("css", "Ada/vector.css", "102"),
+    ("javascript", "Zoe/tools.js", "103"),
 )
 
 
@@ -107,8 +107,36 @@ def test_titles_are_spelled_the_way_the_wiki_itself_spells_them(monkeypatch):
 
 
 def test_underscores_from_the_replica_become_the_spaces_the_api_answers_with(monkeypatch):
-    with_replica(monkeypatch, (("javascript", "Tom_Smith/monobook.js"),))
+    with_replica(monkeypatch, (("javascript", "Tom_Smith/monobook.js", "101"),))
     assert enumerate_with(FakeWiki()).titles == ("Utilisateur:Tom Smith/monobook.js",)
+
+
+def test_the_replica_hands_back_the_current_revision_of_every_page_it_names(monkeypatch):
+    # This map is what makes a wiki's second sweep cheap: a page whose stored
+    # revision already matches never has to be fetched to find that out. It is
+    # keyed the way the census stores titles -- canonically, so frwiki's
+    # `Utilisateur:` and the canonical `User:` are the same page and not two.
+    with_replica(monkeypatch)
+    assert enumerate_with(FakeWiki()).revisions == {
+        "User:Tom Smith/monobook.js": "101",
+        "User:Ada/vector.css": "102",
+        "User:Zoe/tools.js": "103",
+    }
+
+
+def test_a_page_the_replica_cannot_date_is_named_without_a_revision(monkeypatch):
+    # Absent is not a claim that the page is unchanged -- it is the absence of
+    # a shortcut, so the page stays in the enumeration and the sweep fetches it.
+    with_replica(monkeypatch, (("javascript", "Ada/a.js", ""),))
+    found = enumerate_with(FakeWiki())
+    assert found.titles == ("Utilisateur:Ada/a.js",)
+    assert found.revisions == {}
+
+
+def test_the_search_road_offers_no_revisions_rather_than_wrong_ones(monkeypatch):
+    with_replica(monkeypatch, dbname="")
+    wiki = FakeWiki(titles=[("javascript", "User:A/one.js")])
+    assert enumerate_with(wiki).revisions == {}
 
 
 # --- falling back to the search road ---------------------------------------
