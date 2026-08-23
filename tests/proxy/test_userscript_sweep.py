@@ -1200,3 +1200,19 @@ def test_two_loads_the_database_calls_one_do_not_fail_the_page():
     assert [(row.source_title, row.target_title) for row in stored] == [
         ("User:A/global.js", "MediaWiki:Gadget-x.js"),
     ]
+
+
+def test_a_page_loading_several_modules_stores_one_row_each():
+    # Every module edge has a blank wiki, title and URL, so the module name is
+    # the only thing keeping them apart under the table's unique key.
+    imports = tuple(
+        userscripts.ScriptImport(verb="mw.loader.load", argument=name, wiki=FRWIKI, module=name)
+        for name in ("ext.gadget.A", "ext.gadget.B", "ext.gadget.C")
+    )
+    analysis = userscripts.ScriptPage(title="User:A/common.js", role="loader", fingerprint="f", imports=imports)
+    with db.session_scope() as session:
+        sweeper._replace_imports(session, FRWIKI, analysis)
+    with db.session_scope() as session:
+        stored = session.query(UserScriptImport).filter(UserScriptImport.wiki == FRWIKI).all()
+    assert sorted(row.target_module for row in stored) == ["ext.gadget.A", "ext.gadget.B", "ext.gadget.C"]
+    assert {row.target_title for row in stored} == {""}

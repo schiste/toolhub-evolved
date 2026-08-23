@@ -244,6 +244,13 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # normal state for a load pointing outside the census. The resolver
             # fills it in as the pages arrive; nothing reads it as a count.
             "target_page_id": "INTEGER NULL",
+            # A ResourceLoader module name, set only for the loads that name one
+            # instead of a page. Blank on every row written before this existed,
+            # which is the same value those rows would get if rewritten: they
+            # were stored as titles, and the next sweep of each page corrects
+            # them. Widening the table's unique key to include it is a migration
+            # (`_widen_userscript_import_key`), not additive DDL.
+            "target_module": "VARCHAR(255) NOT NULL DEFAULT ''",
         },
         # Both directory tables are deleted and rebuilt whole on every
         # projection run, so these need no backfill -- the next run writes them.

@@ -1576,7 +1576,20 @@ class UserScriptImport(Base):
 
     __tablename__ = "user_script_imports"
     __table_args__ = (
-        UniqueConstraint("wiki", "source_title", "verb", "target_wiki", "target_title", "target_url"),
+        # Named, because widening it in production means dropping the old one
+        # by name. `target_module` is part of the key: a page that loads three
+        # modules has three edges whose title, wiki, and URL are all blank, and
+        # without the module they are one row.
+        UniqueConstraint(
+            "wiki",
+            "source_title",
+            "verb",
+            "target_wiki",
+            "target_title",
+            "target_url",
+            "target_module",
+            name="ux_user_script_imports_edge",
+        ),
         # Demand is always read target-first: "who loads this page?"
         Index("ix_user_script_imports_target", "target_wiki", "target_title"),
         # And once resolved, target-first by identity: "who loads *this script*?"
@@ -1589,6 +1602,11 @@ class UserScriptImport(Base):
     target_wiki: Mapped[str] = mapped_column(String(255), default="")
     target_title: Mapped[str] = mapped_column(String(512), default="")
     target_url: Mapped[str] = mapped_column(String(2000), default="")
+    # A ResourceLoader module name -- `ext.gadget.HotCat` -- for the loads that
+    # name one. Separate from `target_title` because a module has no page behind
+    # it: stored as a title it is demand for something nobody can ever write,
+    # and the resolver would look for it in `user_script_pages` forever.
+    target_module: Mapped[str] = mapped_column(String(255), default="")
     # Deliberately a plain integer and not a ForeignKey. The column is added to
     # a live table by additive DDL, which cannot add a constraint alongside it,
     # so declaring one here would exist in a fresh test database and nowhere

@@ -48,6 +48,10 @@ if TYPE_CHECKING:
 # keeping, not about what fits.
 MAX_STORED_BODY: int = 512 * 1024
 MAX_STORED_URL: int = 2000
+# A ResourceLoader module name is a dotted identifier, never long. The cap is
+# the column width, so that a malformed argument truncates instead of failing
+# the page it was found on.
+MAX_STORED_MODULE: int = 255
 # One recent-changes window. Large enough that an hourly watch on a busy wiki
 # never truncates, small enough to stay one request.
 WATCH_LIMIT: int = 500
@@ -256,6 +260,7 @@ def _replace_imports(session: Session, wiki: str, analysis: userscripts.ScriptPa
             "target_wiki": found.wiki,
             "target_title": found.title,
             "target_url": found.url[:MAX_STORED_URL],
+            "target_module": found.module[:MAX_STORED_MODULE],
             "is_stylesheet": found.is_stylesheet,
         }
         for found in analysis.imports

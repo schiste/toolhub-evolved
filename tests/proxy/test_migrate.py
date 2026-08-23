@@ -10,7 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Text, select
+from sqlalchemy import Text, inspect, select
 from sqlalchemy.dialects import mysql
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, mariadb
 
@@ -596,6 +596,31 @@ def test_migrate_resolves_user_script_loads_stored_before_the_column_existed(con
         page_id = session.query(UserScriptPage.id).scalar()
         rows = dict(session.query(UserScriptImport.target_title, UserScriptImport.target_page_id))
     assert rows == {"User:B/two.js": page_id, "User:B/gone.js": None}
+
+
+def test_the_import_key_is_widened_once_and_then_left_alone(configured_db):
+    # A fresh database declares the widened key with the table, so there is no
+    # separate unique index and nothing for this to do. What production has is
+    # the older spelling: a constraint declared unnamed, which MariaDB created
+    # as a standalone index named after its first column.
+    assert migrate._widen_userscript_import_key() == 0
+
+    engine = db.engine()
+    table = UserScriptImport.__tablename__
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            f"CREATE UNIQUE INDEX wiki ON {table} "
+            "(wiki, source_title, verb, target_wiki, target_title, target_url)",
+        )
+
+    assert migrate._widen_userscript_import_key() == 1
+    # And again: the key it just created is the one it looks for, so a second
+    # deploy is a no-op rather than a drop-and-rebuild of a live index.
+    assert migrate._widen_userscript_import_key() == 0
+
+    unique = {item["name"]: item["column_names"] for item in inspect(engine).get_indexes(table) if item["unique"]}
+    assert list(unique) == [migrate.WIDENED_IMPORT_KEY]
+    assert tuple(unique[migrate.WIDENED_IMPORT_KEY]) == migrate.WIDENED_IMPORT_KEY_COLUMNS
 
 
 def held_by_another_writer(errno=1205):

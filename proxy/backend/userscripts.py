@@ -44,7 +44,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
-from typing import Final
+from typing import Final, NamedTuple
 from urllib.parse import ParseResult, parse_qs, unquote, urlparse
 
 from backend.wikimedia_urls import without_format_marks
@@ -94,6 +94,11 @@ GLOBAL_LOADER_VERBS: Final = (
 # only an attachment to a script that demonstrably loads it.
 STYLESHEET_VERBS: Final = frozenset({"importStylesheet"})
 
+# The one verb that accepts a ResourceLoader module name. Every other verb here
+# takes a page title or a URL, so a module can only ever arrive through this
+# one, and an argument to any other verb is never read as a module.
+MODULE_LOADER_VERB: Final = "mw.loader.load"
+
 
 @dataclass(frozen=True)
 class LocalLoader:
@@ -120,9 +125,14 @@ LOCAL_LOADERS: Final[dict[str, tuple[LocalLoader, ...]]] = {
 class ScriptImport:
     """One load this page asks the wiki to perform.
 
-    Exactly one of `title` and `url` carries the destination, or neither when
-    the argument resolved to nothing usable. `verb` is preserved so a caller can
-    tell a stylesheet load from a script load without re-parsing.
+    Exactly one of `title`, `url`, and `module` carries the destination, or none
+    of them when the argument resolved to nothing usable. `verb` is preserved so
+    a caller can tell a stylesheet load from a script load without re-parsing.
+
+    `module` is a ResourceLoader module name rather than anything with a page
+    behind it. It is still demand -- `ext.gadget.Foo` is a user script asking
+    for a gadget -- but it is demand a title cannot express, so it gets its own
+    field instead of being filed under one.
     """
 
     verb: str
@@ -130,6 +140,7 @@ class ScriptImport:
     wiki: str = ""
     title: str = ""
     url: str = ""
+    module: str = ""
 
     @property
     def is_stylesheet(self) -> bool:
@@ -399,32 +410,58 @@ def _decoded(raw: str) -> str:
     return unquote(raw) if _PERCENT_ESCAPE.search(raw) else raw
 
 
-def _resolve(verb: str, argument: str, wiki: str, spellings: Spellings) -> tuple[str, str, str]:
-    """Turn one quoted loader argument into (wiki, title, url); "" where unusable."""
+class Resolved(NamedTuple):
+    """What one loader argument turned out to name. Empty strings for what it did not."""
+
+    wiki: str = ""
+    title: str = ""
+    url: str = ""
+    module: str = ""
+
+
+def _resolve(verb: str, argument: str, wiki: str, spellings: Spellings) -> Resolved:
+    """Turn one quoted loader argument into the page, URL, or module it names."""
     # Cleaned before anything reads it, so the URL this returns and the title
     # derived from it are both already in storage's spelling.
     raw = _unwrapped(without_format_marks(argument))
     if not raw:
-        return ("", "", "")
+        return Resolved()
     template = _local_template(verb, wiki)
     if template:
-        return (wiki, canonical_title(template.format(name=raw), spellings=spellings(wiki)), "")
+        return Resolved(wiki=wiki, title=canonical_title(template.format(name=raw), spellings=spellings(wiki)))
     if _URL_ARGUMENT.match(raw):
         host, title = wiki_target(raw, spellings)
-        return (host, title, raw)
+        return Resolved(wiki=host, title=title, url=raw)
     # A MediaWiki URL with no host names a page on the wiki that wrote it --
     # and one that names no page names nothing at all. A truncated
     # `/w/index.php?title=` is not a title just because it is a leftover.
     if raw.startswith("/"):
         title = page_named_by(urlparse(raw), spellings(wiki))
-        return (wiki, title, "") if title else ("", "", "")
-    # Everything else is a bare page title, unless it still carries a scheme.
-    # That means a URL this census cannot read -- a non-HTTP scheme, a
-    # fragment torn out of a longer string -- and no page title contains
-    # "://". Storing one files the edge under a target that can never exist,
-    # which reads in the census as unmet demand rather than as unread input.
-    title = canonical_title(_decoded(raw), spellings=spellings(wiki))
-    return ("", "", "") if "://" in title else (wiki, title, "")
+        return Resolved(wiki=wiki, title=title) if title else Resolved()
+    return _named_without_a_url(verb, raw, wiki, spellings)
+
+
+def _named_without_a_url(verb: str, raw: str, wiki: str, spellings: Spellings) -> Resolved:
+    r"""Resolve an argument the URL branches did not claim: a title, a module, or nothing.
+
+    Both of those branches together are exactly `mw.loader.load`'s own test for
+    whether it was handed a URL -- `/^(https?:)?\/?\//`, read from the running
+    startup module, where a single leading slash is enough. So for that one verb
+    everything reaching here is a ResourceLoader module name rather than a page:
+    `mw.loader.load('ext.gadget.Foo')` is a user script asking for a gadget, and
+    450 of these name `ext.gadget.*`. Every other verb takes a page title.
+    """
+    decoded = _decoded(raw)
+    # Anything still carrying a scheme is a URL this census cannot read -- a
+    # non-HTTP scheme, a fragment torn out of a longer string. It is not a page
+    # title and it is not a module name either; neither can contain "://".
+    # Filing it as one makes it read as unmet demand, which is a claim about the
+    # wiki, when it is unread input, which is a claim about us.
+    if "://" in decoded:
+        return Resolved()
+    if verb == MODULE_LOADER_VERB:
+        return Resolved(wiki=wiki, module=decoded)
+    return Resolved(wiki=wiki, title=canonical_title(decoded, spellings=spellings(wiki)))
 
 
 def script_imports(body: str, *, wiki: str = "", spellings: Spellings = no_spellings) -> tuple[ScriptImport, ...]:
@@ -436,18 +473,27 @@ def script_imports(body: str, *, wiki: str = "", spellings: Spellings = no_spell
     edges -- that difference is real and occasionally load-bearing.
     """
     found: list[ScriptImport] = []
-    seen: set[tuple[str, str, str, str]] = set()
+    seen: set[tuple[str, Resolved]] = set()
     for match in _edge_pattern(wiki).finditer(strip_comments(body)):
         verb = match.group("verb")
         argument = match.group("argument")
-        target, title, url = _resolve(verb, argument, wiki, spellings)
-        if not title and not url:
+        names = _resolve(verb, argument, wiki, spellings)
+        if not names.title and not names.url and not names.module:
             continue
-        key = (verb, target, title, url)
+        key = (verb, names)
         if key in seen:
             continue
         seen.add(key)
-        found.append(ScriptImport(verb=verb, argument=argument, wiki=target, title=title, url=url))
+        found.append(
+            ScriptImport(
+                verb=verb,
+                argument=argument,
+                wiki=names.wiki,
+                title=names.title,
+                url=names.url,
+                module=names.module,
+            )
+        )
     return tuple(found)
 
 

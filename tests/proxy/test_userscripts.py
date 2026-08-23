@@ -460,3 +460,46 @@ def test_an_argument_with_a_scheme_this_census_cannot_read_is_not_a_title():
     # to fetch or point at either.
     body = "importScript('ftp://localhost/copyvio version-finale.js?');"
     assert userscripts.script_imports(body, wiki=FRWIKI) == ()
+
+
+def test_mw_loader_load_of_a_gadget_names_a_module_not_a_page():
+    # 450 of the census's 676 module loads say `ext.gadget.*`: a user script
+    # asking for a gadget by name. Stored as a title it was demand for
+    # `Ext.gadget.HotCat`, a page nobody will ever create.
+    (found,) = userscripts.script_imports("mw.loader.load('ext.gadget.HotCat');", wiki=FRWIKI)
+    assert (found.module, found.title, found.url) == ("ext.gadget.HotCat", "", "")
+    assert found.wiki == FRWIKI
+
+
+def test_a_module_load_is_not_capitalized_the_way_a_title_would_be():
+    (found,) = userscripts.script_imports("mw.loader.load('mediawiki.util');", wiki=FRWIKI)
+    assert found.module == "mediawiki.util"
+
+
+def test_a_page_loading_two_modules_keeps_both():
+    body = "mw.loader.load('ext.gadget.A');\nmw.loader.load('ext.gadget.B');"
+    assert [found.module for found in userscripts.script_imports(body, wiki=FRWIKI)] == [
+        "ext.gadget.A",
+        "ext.gadget.B",
+    ]
+
+
+def test_a_module_load_written_twice_still_counts_once():
+    body = "mw.loader.load('ext.gadget.A');\nmw.loader.load('ext.gadget.A');"
+    assert len(userscripts.script_imports(body, wiki=FRWIKI)) == 1
+
+
+def test_only_mw_loader_load_takes_a_module():
+    # Every other verb is handed a page title or a URL, so a dotted name given
+    # to one of them is still a title -- an odd one, but not a module.
+    (found,) = userscripts.script_imports("importScript('ext.gadget.HotCat');", wiki=FRWIKI)
+    assert found.module == ""
+    assert found.title == "Ext.gadget.HotCat"
+
+
+def test_a_relative_url_given_to_mw_loader_load_is_still_a_url():
+    # MediaWiki's own test accepts a single leading slash, so this is not the
+    # module branch: it is the page the URL names.
+    body = "mw.loader.load('/w/index.php?title=User:Foo/bar.js&action=raw');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI)
+    assert (found.title, found.module) == ("User:Foo/bar.js", "")
