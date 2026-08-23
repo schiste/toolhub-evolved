@@ -504,15 +504,28 @@ rather than a canonical one.
 - **Gadget usage is not joined in.** Demand is counted from pages this census can
   read. A script installed as a wiki gadget is loaded by people who never create
   a page at all, and the `gadgetusage` API knows those numbers; nothing reads it.
-- **Loads are matched by exact title, so a good half of them miss.** Of frwiki's
-  8,216 stored load edges, 4,029 resolve to a page. The rest are mostly not
-  foreign pages but spellings the census does not file under: 333 name namespace
-  2 as `User:` where frwiki stores `Utilisateur:`, 47 are raw
-  `/w/index.php?title=…` URLs, a few keep their `[[…]]` brackets, and a handful
-  carry an interwiki prefix (`:En:`, `:Id:`) that belongs in `target_wiki`
-  instead. Every one of those is a real, working load of a real script, counted
-  as nothing. A further 173 name `MediaWiki:` gadget definitions, which are
-  correctly unresolved — the census enumerates user space only.
+- **Half of frwiki's load edges resolve to nothing, and most of them never
+  will.** Of 8,216 stored edges, 4,029 name a page the census holds. Checking
+  the other 638 distinct titles against the live API is what tells them apart,
+  and the answer is mostly not a bug: 279 name a `User:` page that does not
+  exist on frwiki at all — loads of scripts long since deleted or never
+  created, which nothing can resolve because there is nothing to resolve to.
+  Another 173 name `MediaWiki:` gadget definitions, correctly unresolved because
+  the census enumerates user space only. What is left is small and mixed: 53
+  name a `User:` page that _does_ exist on frwiki and is missing from the census
+  anyway (see below), ~16 use a namespace alias from another language
+  (`Benutzer:`, `Gebruiker:`) that `canonical_title` does not fold, ~6 carry an
+  interwiki prefix (`:En:`, `:Id:`) that belongs in `target_wiki`, and 38 name
+  no namespace. Raw `/w/index.php?title=…` URLs and `[[…]]` brackets used to be
+  in this list and are now normalized at parse time.
+- **53 frwiki pages are loaded, exist, and are absent from a complete census.**
+  They are in user space, they are actively imported by other scripts, and
+  `enumeration_complete` is set with a sweep an hour old. Three explanations are
+  ruled out: not sweep depth (the census holds 252 depth-2 and 12 depth-3 pages,
+  and 26 of the 53 are depth-1), not sweep staleness, not recent drift (sampled
+  creation dates run 2015–2025, none since the last sweep). 22 of the 53 are
+  under one owner's `Twinkle/` tree. Whatever the enumeration is missing, it is
+  not something the coverage block currently discloses.
 - **Nothing analyses the code yet.** The directory is the prerequisite — security
   review, API-usage extraction, and "which of these should be one global gadget"
   all run on top of it and none of them exist.

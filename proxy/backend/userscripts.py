@@ -44,7 +44,7 @@ import re
 from dataclasses import dataclass
 from functools import cache
 from typing import Final
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import ParseResult, parse_qs, unquote, urlparse
 
 from backend.wikimedia_urls import without_format_marks
 
@@ -170,8 +170,27 @@ _ALIAS_ANYWHERE: Final = re.compile(rf"\b(?:{'|'.join(_NAMESPACE_ALIASES)})\s*:"
 
 _URL_ARGUMENT: Final = re.compile(r"^(?:https?:)?//", re.IGNORECASE)
 
+_PERCENT_ESCAPE: Final = re.compile(r"%[0-9A-Fa-f]{2}")
+
 
 _WIKI_PATH: Final = re.compile(r"^/wiki/(?P<title>.+)$")
+
+
+def page_named_by(parsed: ParseResult) -> str | None:
+    """Return the title a parsed MediaWiki URL names, or None when it names none.
+
+    Split out from `wiki_target` because the same two spellings turn up without
+    a host at all: a script on frwiki asking for `/w/index.php?title=...` means
+    a page on frwiki, and reading that as an opaque string files 47 of frwiki's
+    load edges under a title no page will ever have.
+    """
+    query = parse_qs(parsed.query).get("title")
+    if query:
+        return canonical_title(query[0])  # parse_qs has already decoded it
+    path = _WIKI_PATH.match(parsed.path)
+    if path:
+        return canonical_title(unquote(path.group("title")))
+    return None
 
 
 def wiki_target(url: str) -> tuple[str, str]:
@@ -196,13 +215,8 @@ def wiki_target(url: str) -> tuple[str, str]:
     host = parsed.netloc.lower()
     if not host:
         return ("", "")
-    query = parse_qs(parsed.query).get("title")
-    if query:
-        return (host, canonical_title(query[0]))  # parse_qs has already decoded it
-    path = _WIKI_PATH.match(parsed.path)
-    if path:
-        return (host, canonical_title(unquote(path.group("title"))))
-    return ("", "")
+    title = page_named_by(parsed)
+    return (host, title) if title is not None else ("", "")
 
 
 @cache
@@ -325,11 +339,30 @@ def _local_template(verb: str, wiki: str) -> str:
     return ""
 
 
+def _unwrapped(raw: str) -> str:
+    """Drop the `[[...]]` a few authors write their load targets inside."""
+    stripped = raw.strip()
+    if stripped.startswith("[[") and stripped.endswith("]]"):
+        return stripped[2:-2].strip()
+    return stripped
+
+
+def _decoded(raw: str) -> str:
+    """Percent-decode a title, leaving anything that is not an escape alone.
+
+    Scripts copy their targets out of URLs, so a handful arrive still encoded --
+    `User:%C3%9Ejarkur/...` names a page that exists, spelled a way the census
+    never stores. `unquote` passes a bare `%` through untouched, so a page whose
+    real title contains one is not damaged.
+    """
+    return unquote(raw) if _PERCENT_ESCAPE.search(raw) else raw
+
+
 def _resolve(verb: str, argument: str, wiki: str) -> tuple[str, str, str]:
     """Turn one quoted loader argument into (wiki, title, url); "" where unusable."""
     # Cleaned before anything reads it, so the URL this returns and the title
     # derived from it are both already in storage's spelling.
-    raw = without_format_marks(argument).strip()
+    raw = _unwrapped(without_format_marks(argument))
     if not raw:
         return ("", "", "")
     template = _local_template(verb, wiki)
@@ -338,7 +371,12 @@ def _resolve(verb: str, argument: str, wiki: str) -> tuple[str, str, str]:
     if _URL_ARGUMENT.match(raw):
         host, title = wiki_target(raw)
         return (host, title, raw)
-    return (wiki, canonical_title(raw), "")
+    # A MediaWiki URL with no host names a page on the wiki that wrote it.
+    if raw.startswith("/"):
+        title = page_named_by(urlparse(raw))
+        if title:
+            return (wiki, title, "")
+    return (wiki, canonical_title(_decoded(raw)), "")
 
 
 def script_imports(body: str, *, wiki: str = "") -> tuple[ScriptImport, ...]:
