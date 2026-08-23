@@ -10,7 +10,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import db, userscript_directory as directory, userscript_projection as projection  # noqa: E402
+from backend import (  # noqa: E402
+    db,
+    userscript_directory as directory,
+    userscript_projection as projection,
+    userscript_sweep as sweep,
+)
 from backend.models import (  # noqa: E402
     UserScriptDirectoryEntry,
     UserScriptDirectoryMember,
@@ -85,6 +90,7 @@ def test_a_lone_script_becomes_its_own_entry():
     assert projection.project(FRWIKI) == {
         "wiki": FRWIKI,
         "candidates": 1,
+        "repaired": 0,
         "originals": 1,
         "active": 0,
         "archive": 1,
@@ -192,7 +198,9 @@ def test_an_identical_copy_is_filed_under_the_original_it_copies():
     page("User:Bbb/tool.js", rank=1, fingerprint="same")
     loads("User:Ccc/common.js", "User:Bbb/tool.js")
     summary = projection.project(FRWIKI)
-    assert summary == {"wiki": FRWIKI, "candidates": 2, "originals": 1, "active": 1, "archive": 0}
+    # `repaired` counts the loads that had no identity until this run gave them
+    # one -- the reader fixing its own input rather than trusting a sweep ran.
+    assert summary == {"wiki": FRWIKI, "candidates": 2, "repaired": 1, "originals": 1, "active": 1, "archive": 0}
     # The copy's demand belongs to the original, and the copy is still listed.
     assert entries() == [("User:Aaa/tool.js", directory.TIER_ACTIVE, 1, 1, 1)]
     assert members()["User:Bbb/tool.js"] == ("User:Aaa/tool.js", projection.RELATION_COPY)
@@ -301,6 +309,7 @@ def test_an_unswept_wiki_projects_an_empty_directory():
     assert projection.project(FRWIKI) == {
         "wiki": FRWIKI,
         "candidates": 0,
+        "repaired": 0,
         "originals": 0,
         "active": 0,
         "archive": 0,
@@ -354,3 +363,59 @@ def test_a_deleted_page_leaves_no_identity_behind_to_point_at():
     projection.project(FRWIKI)
     with db.session_scope() as session:
         assert session.query(UserScriptDirectoryEntry).count() == 0
+
+
+def demand_for(wiki=FRWIKI):
+    """The demand map as the projection reads it, after the same repair pass."""
+    with db.session_scope() as session:
+        sweep.resolve_pending(session, wiki)
+        return projection.demand(session, wiki)
+
+
+def test_a_load_naming_a_page_nobody_holds_is_not_counted_at_all():
+    # Under title matching this filed a key nobody could ever look up: the
+    # collapse only ever asks about candidates, so demand for a title with no
+    # census row sat in the map forever, unread. Counting by identity means the
+    # key cannot be created in the first place.
+    page("User:Aaa/tool.js")
+    loads("User:Bbb/common.js", "User:Nobody/never-swept.js")
+    assert demand_for() == {}
+
+
+def test_a_load_that_names_no_wiki_means_the_one_it_was_written_on():
+    # The stored shorthand for a same-wiki load. It resolves to a page like any
+    # other, and forgetting that would silently drop every local edge.
+    page("User:Aaa/tool.js")
+    page("User:Bbb/common.js")
+    loads("User:Bbb/common.js", "User:Aaa/tool.js", target_wiki="")
+    assert demand_for() == {"User:Aaa/tool.js": {"Bbb"}}
+
+
+def test_a_retired_page_stops_collecting_demand():
+    page("User:Aaa/tool.js", deleted=True)
+    loads("User:Bbb/common.js", "User:Aaa/tool.js")
+    assert demand_for() == {}
+
+
+def test_a_page_loading_itself_is_not_demand_for_itself():
+    page("User:Aaa/tool.js")
+    loads("User:Aaa/tool.js", "User:Aaa/tool.js")
+    assert demand_for() == {}
+
+
+def test_the_repair_pass_writes_nothing_once_the_edges_carry_an_identity():
+    # The docstring's claim, pinned: repair is what makes the reader safe to run
+    # in any order, and it has to be free on a corpus that is already healthy.
+    page("User:Aaa/tool.js")
+    loads("User:Bbb/common.js", "User:Aaa/tool.js")
+    assert projection.project(FRWIKI)["repaired"] == 1
+    assert projection.project(FRWIKI)["repaired"] == 0
+
+
+def test_a_load_pointing_outside_the_census_never_becomes_repair_work():
+    # The reason this is a join and not a scan for nulls: an unresolvable row
+    # must not be rewritten, or counted, or looked at again next run.
+    page("User:Aaa/tool.js")
+    loads("User:Bbb/common.js", "User:Ccc/elsewhere.js")
+    assert projection.project(FRWIKI)["repaired"] == 0
+    assert projection.project(FRWIKI)["repaired"] == 0
