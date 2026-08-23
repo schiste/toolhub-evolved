@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import db, userscript_census as census, userscript_sweep as sweeper, wiki_replica  # noqa: E402
+from backend import db, userscript_census as census, userscript_sweep as sweeper  # noqa: E402
+from backend import userscripts, wiki_replica  # noqa: E402
 from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage  # noqa: E402
 
 FRWIKI = "fr.wikipedia.org"
@@ -918,3 +919,59 @@ def test_a_watch_that_has_never_run_says_so_rather_than_printing_a_blank(monkeyp
     monkeypatch.setattr(job.userscript_sweep, "run", lambda _request, wiki, **_kwargs: dict(WATCHED, wiki=wiki, cursor=""))
     assert job.main() == 0
     assert "cursor=none" in capsys.readouterr().out
+
+
+def test_one_wikis_failure_does_not_cost_the_next_wiki_its_turn(monkeypatch, capsys, _job_env):
+    # The 2026-08-23 outage: a Meta page raised out of ingest, enwiki was third
+    # in the list, and enwiki's first sweep stopped advancing for three runs
+    # until the guard disabled the job. Ordering decided which corpus starved.
+    covered = []
+
+    def run(_request, wiki, **_kwargs):
+        if wiki == "meta.wikimedia.org":
+            raise RuntimeError("Duplicate entry for key 'wiki'")
+        covered.append(wiki)
+        return dict(SWEPT, wiki=wiki)
+
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org")
+    monkeypatch.setattr(job.userscript_sweep, "run", run)
+    # Still a failure -- a wiki that could not be covered is one the guard
+    # should count, and `job_runner` signals that by letting it out -- but not
+    # before every other wiki has had its run.
+    with pytest.raises(job.CensusIncompleteError, match="census failed for meta.wikimedia.org"):
+        job.main()
+    assert covered == ["fr.wikipedia.org", "en.wikipedia.org"]
+    out = capsys.readouterr().out
+    assert "wiki=meta.wikimedia.org failed error=RuntimeError" in out
+
+
+def test_two_loads_the_database_calls_one_do_not_fail_the_page():
+    # The 2026-08-23 crash. MySQL folds case and invisible marks where Python
+    # does not, so a page can offer two loads that are one row to the database
+    # -- Meta's User:.../global.js loads both `MediaWiki:Gadget-x.js` and
+    # `Mediawiki:gadget-x.js`. SQLite compares bytes and cannot be made to fold
+    # anything, so the collision is stated at the level the fix works at: two
+    # entries that the unique key cannot tell apart. Whatever a real collation
+    # merges arrives here looking exactly like this.
+    twice = userscripts.ScriptImport(
+        verb="mw.loader.load",
+        argument="//ar.wikipedia.org/x",
+        wiki="ar.wikipedia.org",
+        title="MediaWiki:Gadget-x.js",
+        url="//ar.wikipedia.org/x",
+    )
+    analysis = userscripts.ScriptPage(
+        title="User:A/global.js",
+        role="loader",
+        fingerprint="f",
+        imports=(twice, twice),
+    )
+    with db.session_scope() as session:
+        sweeper._replace_imports(session, FRWIKI, analysis)
+    with db.session_scope() as session:
+        stored = session.query(UserScriptImport).filter(UserScriptImport.wiki == FRWIKI).all()
+    # One row, no exception -- and in particular the page's other work is not
+    # rolled back with the row the database refused.
+    assert [(row.source_title, row.target_title) for row in stored] == [
+        ("User:A/global.js", "MediaWiki:Gadget-x.js"),
+    ]

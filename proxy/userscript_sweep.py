@@ -10,6 +10,10 @@ from backend.wikimedia_delivery import WikimediaClient
 DEFAULT_WIKIS = "fr.wikipedia.org,meta.wikimedia.org"
 
 
+class CensusIncompleteError(RuntimeError):
+    """Raised when at least one configured wiki could not be covered this run."""
+
+
 def _int_env(name: str, default: int) -> int:
     try:
         return max(0, int(os.environ.get(name, default)))
@@ -72,37 +76,67 @@ def main() -> int:
     limit = _int_env("USERSCRIPT_LIMIT", 0)
     watch_limit = _int_env("USERSCRIPT_WATCH_LIMIT", userscript_sweep.WATCH_LIMIT) or userscript_sweep.WATCH_LIMIT
 
+    def cover(client: WikimediaClient, wiki: str) -> None:
+        """Bring one wiki up to date and report what that took, in three lines."""
+        summary = userscript_sweep.run(
+            client.request,
+            wiki,
+            full=full,
+            limit=limit,
+            watch_limit=watch_limit,
+        )
+        sys.stdout.write(
+            "userscript-census: "
+            f"wiki={summary['wiki']} mode={summary['mode']} "
+            f"asked={summary['asked']} fetched={summary['fetched']} "
+            f"written={summary['written']} skipped={summary['skipped']} "
+            f"unreadable={summary['unreadable']}"
+            f"{_progress(summary)}\n",
+        )
+        stamped = userscript_creation_dates.backfill([wiki])
+        sys.stdout.write(
+            "userscript-creation-dates: "
+            f"wiki={wiki} replica={'yes' if wiki in stamped else 'no'} "
+            f"stamped={stamped.get(wiki, 0)}\n",
+        )
+        ranked = userscript_projection.project(wiki)
+        sys.stdout.write(
+            "userscript-directory: "
+            f"wiki={ranked['wiki']} candidates={ranked['candidates']} "
+            f"originals={ranked['originals']} active={ranked['active']} "
+            f"archive={ranked['archive']}\n",
+        )
+
     def body() -> None:
+        """Cover every configured wiki, and let each one fail on its own.
+
+        The wikis are independent corpora that happen to share a run, so a run
+        that stops at the first exception spends its whole budget on the wikis
+        before the bad one and never reaches the wikis after it. That is not
+        hypothetical: on 2026-08-23 a single Meta page whose loads collided
+        under the database's collation raised out of Meta's ingest, and because
+        enwiki is third in the list, enwiki's first sweep stopped advancing --
+        three runs later the job guard disabled the job, and neither wiki moved
+        again. Ordering decided which corpus starved, which is not a thing
+        ordering should decide.
+
+        The run still fails if any wiki did, because a wiki that cannot be
+        covered is a job failure and the guard is right to count it. What
+        changes is that the other wikis get their turn first.
+        """
         client = WikimediaClient()
+        failed: list[str] = []
         for wiki in _wikis():
-            summary = userscript_sweep.run(
-                client.request,
-                wiki,
-                full=full,
-                limit=limit,
-                watch_limit=watch_limit,
-            )
-            sys.stdout.write(
-                "userscript-census: "
-                f"wiki={summary['wiki']} mode={summary['mode']} "
-                f"asked={summary['asked']} fetched={summary['fetched']} "
-                f"written={summary['written']} skipped={summary['skipped']} "
-                f"unreadable={summary['unreadable']}"
-                f"{_progress(summary)}\n",
-            )
-            stamped = userscript_creation_dates.backfill([wiki])
-            sys.stdout.write(
-                "userscript-creation-dates: "
-                f"wiki={wiki} replica={'yes' if wiki in stamped else 'no'} "
-                f"stamped={stamped.get(wiki, 0)}\n",
-            )
-            ranked = userscript_projection.project(wiki)
-            sys.stdout.write(
-                "userscript-directory: "
-                f"wiki={ranked['wiki']} candidates={ranked['candidates']} "
-                f"originals={ranked['originals']} active={ranked['active']} "
-                f"archive={ranked['archive']}\n",
-            )
+            try:
+                cover(client, wiki)
+            except Exception as error:  # noqa: BLE001 - one wiki's failure is not the next wiki's
+                failed.append(wiki)
+                sys.stdout.write(
+                    f"userscript-census: wiki={wiki} failed error={type(error).__name__}: {error}\n",
+                )
+        if failed:
+            message = f"census failed for {', '.join(failed)}"
+            raise CensusIncompleteError(message)
 
     return job_runner.run_job("userscript-census", body)
 

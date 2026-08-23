@@ -29,6 +29,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import and_, func, or_, tuple_
+from sqlalchemy.exc import IntegrityError
 
 from backend import db, userscripts
 from backend import userscript_census as census
@@ -178,27 +179,54 @@ def _replace_imports(session: Session, wiki: str, analysis: userscripts.ScriptPa
         UserScriptImport.wiki == wiki,
         UserScriptImport.source_title == analysis.title,
     ).delete(synchronize_session=False)
-    # `userscripts.script_imports` already reduces repeated loads to one per
-    # (verb, wiki, title, url), which is exactly this table's unique key, so no
-    # second pass is needed here. That holds only while every title and URL
-    # reaching it is already in storage's spelling, which is what the format-mark
-    # strip in `canonical_title` and `_resolve` is for: Python compares these
-    # strings byte by byte, MySQL compares them under a collation that ignores
-    # invisible marks, and where the two disagree it is this INSERT that fails
-    # and takes the whole wiki's ingest down with it. The tests run on SQLite,
-    # which compares bytes, so they cannot be the thing that catches a new gap.
-    for found in analysis.imports:
-        session.add(
-            UserScriptImport(
-                wiki=wiki,
-                source_title=analysis.title,
-                verb=found.verb,
-                target_wiki=found.wiki,
-                target_title=found.title,
-                target_url=found.url[:MAX_STORED_URL],
-                is_stylesheet=found.is_stylesheet,
-            ),
-        )
+    rows = [
+        {
+            "wiki": wiki,
+            "source_title": analysis.title,
+            "verb": found.verb,
+            "target_wiki": found.wiki,
+            "target_title": found.title,
+            "target_url": found.url[:MAX_STORED_URL],
+            "is_stylesheet": found.is_stylesheet,
+        }
+        for found in analysis.imports
+    ]
+    # `userscripts.script_imports` has already reduced repeated loads to one per
+    # (verb, wiki, title, url), but that is Python's idea of one, not this
+    # table's. Python compares these strings byte by byte; MySQL compares them
+    # under a collation that folds case and ignores invisible marks, so two
+    # loads Python calls distinct can be one row to the database -- User:.../
+    # global.js on Meta loads both `MediaWiki:Gadget-LinkTranslator.js` and
+    # `Mediawiki:gadget-LinkTranslator.js`, which are the same page and the same
+    # key. Predicting the fold is the wrong repair: it means restating a
+    # collation this code cannot see, and the tests run on SQLite, which
+    # compares bytes and so can never disagree with a prediction. So the
+    # database decides what a duplicate is. A page whose loads all survive costs
+    # one savepoint; only a page that actually collides is retried a row at a
+    # time, and the row that loses is dropped rather than raised -- one page's
+    # spelling is not a reason to fail the wiki, per this module's contract.
+    if _insert_all(session, rows):
+        return
+    for row in rows:
+        _insert_all(session, [row])
+
+
+def _insert_all(session: Session, rows: Sequence[dict[str, Any]]) -> bool:
+    """Add `rows` in one savepoint, reporting whether the database accepted them.
+
+    A rejected savepoint rolls back only these rows; the surrounding session --
+    the page, its analysis, the sweep's cursor -- survives, which is the whole
+    reason for the nesting. The rows are passed as field values rather than as
+    instances because a rollback expunges whatever the savepoint added, and the
+    retry needs objects that were never in the failed transaction.
+    """
+    try:
+        with session.begin_nested():
+            session.add_all(UserScriptImport(**row) for row in rows)
+            session.flush()
+    except IntegrityError:
+        return False
+    return True
 
 
 def store_page(session: Session, wiki: str, page: census.PageContent, rank: int | None) -> None:
