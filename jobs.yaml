@@ -387,7 +387,11 @@
   #
   # The hourly run follows recent changes. A full sweep is thousands of requests
   # and is asked for with USERSCRIPT_SWEEP=1 -- except that a wiki which has
-  # never completed one, or which is part-way through one, sweeps regardless.
+  # never completed one, which is part-way through one, or whose census was
+  # built on an enumeration road the host can now better, sweeps regardless.
+  # That third case is how a wiki swept from the search index before the replica
+  # road existed picks the replicas up; it costs one sweep per wiki, once,
+  # because the sweep records the road it took and is then left alone.
   # USERSCRIPT_LIMIT bounds how many pages a single run reads, and the wiki's
   # sweep cursor carries the rest to the next run, so a corpus far larger than
   # one hour's budget converges over a day or two instead of timing out. 2000
