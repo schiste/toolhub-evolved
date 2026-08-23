@@ -81,6 +81,7 @@ interface ToolinfoSource {
 type ToolStatus =
 	| { level: "green"; label: "Healthy" }
 	| { level: "yellow"; label: "Experimental" }
+	| { level: "grey"; label: "Archived" }
 	| { level: "red"; label: "Deprecated" };
 
 /** A normalized tool record — the shape every view/component consumes. */
@@ -117,13 +118,16 @@ interface Tool {
 	translate: string | null;
 	deprecated: boolean;
 	experimental: boolean;
+	// "active", "archived", or "" when nothing has measured whether anybody uses
+	// this tool -- which is the case for everything the official catalog supplies.
+	lifecycle: string;
 	modified: string | null;
 	origin: string;
 	catalogProjection?: Record<string, any> | null;
 	cachedIconUrl?: string | null;
 	canonicalRecord?: Record<string, any>;
 	weeklyViews: number;
-	// statusOf() returns one of three fixed level/label pairs (see ToolStatus).
+	// statusOf() returns one of four fixed level/label pairs (see ToolStatus).
 	status: ToolStatus;
 	// Attached later by signals.js / Lane-B overlay — optional so freshly
 	// normalized records and enriched ones both type-check.

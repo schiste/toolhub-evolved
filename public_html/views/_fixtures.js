@@ -37,6 +37,7 @@ export const FIXTURE_TOOL = {
 	translate: "https://translatewiki.net/wiki/Translating:Citation_Helper",
 	deprecated: false,
 	experimental: false,
+	lifecycle: "",
 	modified: "2026-05-12T14:30:00Z",
 	origin: "crawler",
 	weeklyViews: 1842,

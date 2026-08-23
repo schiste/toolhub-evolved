@@ -396,6 +396,88 @@ arithmetic rather than design: that constant settles whether a page is its own
 script, this one settles where a script already known to be its own gets filed.
 Moving either must not move the other.
 
+## Becoming tools
+
+The directory is a list of scripts. `backend/userscript_toolinfo` is what turns
+each one into a tool the catalog can show — a card, a facet, a search hit and an
+author edge, all of which are reached by looking a name up in
+`canonical_tool_cache`. A script absent from that table does not exist as far as
+the product is concerned, so the promotion is a row there and not a parallel
+table of correct data nothing renders.
+
+Rows carry `source = wiki_userscript`, which is what stops a full catalog
+snapshot from pruning them and what keeps the projection from ever reporting
+that Toolhub said any of this. It is deliberately not the gadget lane's
+`wiki_gadget`: a gadget is declared by the wiki and a user script is inferred
+from a corpus, and an operator has to be able to trust or prune one without the
+other.
+
+The name is `userscript-<wiki>-<owner>-<filename>`, lowercased and slugged, so
+`User:Lupin/popups.js` on frwiki becomes
+`userscript-fr.wikipedia.org-lupin-popups.js`. Owner and filename together are
+what makes a user-script title unique on a wiki, so a name built from them is
+unique for the same reason — and unlike the title, it does not lead with a
+namespace that means nothing outside MediaWiki. A page whose owner or filename
+slugs to nothing (both written in a non-Latin script, say) gets no entry rather
+than one named after its wiki alone, which would collide with every other such
+page there.
+
+Everything in the record is a transcription. `title` is the filename the page
+carries, `author` is the owner MediaWiki's own title rules put the page under,
+`url` is the page and `repository` is `?action=raw` — for a user script the page
+_is_ the source, which is the whole reason this census exists. There is no
+description: a script's documentation lives wherever its author chose to put it,
+and this lane does not read prose. A missing description is a gap somebody can
+fill; an inferred one is this codebase putting words in an author's mouth.
+
+### Archived scripts are catalogued, and said so
+
+Every original is promoted, including the three quarters of them nothing loads.
+A catalogue that omitted those would report a smaller wiki than the real one,
+for the same reason `tier_of` files rather than deletes.
+
+The tier travels with the record as `_lifecycle`, `active` or `archived`, which
+the model denormalizes into a `canonical_tool_cache.lifecycle` column a facet can
+filter on. The record is the single account of it and the column is derived, the
+same way `search_text` and `card_record` are; a column written independently
+would be a second account, and the two would eventually disagree. An archived
+tool renders a neutral grey **Archived** badge rather than the green "Healthy"
+one, which would be a lie about a script nothing loads.
+
+`_lifecycle` is emphatically not the toolinfo `deprecated` flag, and the
+underscore is there to say it is not toolinfo at all. `deprecated` is a
+maintainer saying "stop using my tool"; `archived` is this codebase saying
+"nothing we can see loads it". Inferring the first from the second would put
+words in a maintainer's mouth, so where both are present the maintainer's own
+claim is the one shown.
+
+### What does not become a tool
+
+The exclusions are counted rather than silently dropped, so they appear in the
+job log instead of as an unexplained difference between two numbers.
+
+| Count        | What it is                                                         |
+| ------------ | ------------------------------------------------------------------ |
+| `stylesheet` | The wiki parses the page as `css` or `sanitized-css`               |
+| `unnamed`    | Owner or filename slugs to nothing                                 |
+| `duplicate`  | Two page titles that slug to one catalogue name; the first wins    |
+| `conflicted` | Some other source already owns that name, and is never overwritten |
+
+The stylesheet rule reads `content_model`, which is what MediaWiki reports about
+a page, and never the suffix — the two demonstrably disagree, and frwiki serves
+`User:Penquista/monobook.css` as `javascript`. The wiki is right about its own
+pages; the suffix is a habit.
+
+A name that stops being wanted is `retired`: the page is gone, or has stopped
+being an original, or has turned out to be a stylesheet. Either way the only
+thing that ever asserted this tool exists has stopped saying so. Retirement
+enqueues the name for people reconciliation and invalidates its cached reads.
+
+`synchronize()` reads no wiki. The census is the only part of this lane that
+talks to MediaWiki; the promotion rebuilds records from what the directory
+concluded, so re-deciding what counts as a tool costs seconds and never depends
+on a wiki being reachable.
+
 ## Stored data
 
 All five tables are rebuildable from a fresh sweep. None holds anything that is
@@ -525,8 +607,13 @@ USERSCRIPT_LIMIT=2000
 - `USERSCRIPT_WATCH_LIMIT` — recent-changes entries per watch. Independent of
   `USERSCRIPT_LIMIT`, so bounding sweeps does not shrink the hourly watch.
 
-The projection follows every run. See [RUNBOOK.md](RUNBOOK.md) for lock
-reclamation, log locations, and the shared job contract.
+The projection follows every run, and the catalogue promotion follows the
+projection — including on a run that changed nothing, since it talks to no wiki
+and a change to what this codebase considers a tool should take effect on the
+next sweep rather than waiting for somebody to edit a page. Each prints one
+line, `userscript-directory:` and `userscript-catalogue:`. See
+[RUNBOOK.md](RUNBOOK.md) for lock reclamation, log locations, and the shared job
+contract.
 
 ## Wikis in the census
 
@@ -642,14 +729,16 @@ rather than a canonical one.
   one is filed as a `fork` of it — 3,074 pages across the three wikis, 1,428 of
   them `.js`, in groups the filename rule could not reach. See "Resemblance, and
   why it is not a hash" above.
-- **39% of the directory's candidates are stylesheets.** A page's role is read
-  from its body, and a long `.css` page is as much a "script" as a long `.js`
-  one to that test. Of the pages the directory collapsed on 2026-08-21, 12,470 of
-  enwiki's 32,154 were `content_model = css`, 4,450 of meta's 10,299 and 2,246 of
-  frwiki's 6,551. They fold correctly — most of the largest near-copy groups on every
-  wiki are people copying each other's `monobook.css` — but a user stylesheet is
-  not a tool, and promoting one into the catalog would be wrong. Nothing filters
-  on `content_model` yet.
+- **39% of the directory's candidates are stylesheets.** Closed, at the
+  boundary where it matters. A page's role is read from its body, and a long
+  `.css` page is as much a "script" as a long `.js` one to that test; of the
+  pages the directory collapsed on 2026-08-21, 12,470 of enwiki's 32,154 were
+  `content_model = css`, 4,450 of meta's 10,299 and 2,246 of frwiki's 6,551.
+  They stay in the directory, which describes user space and where they fold
+  correctly — most of the largest near-copy groups on every wiki are people
+  copying each other's `monobook.css`. They do not become tools: the promotion
+  filters on the wiki's own `content_model` and counts what it excluded. See
+  "Becoming tools" above.
 - **Gadget usage is not joined in.** Demand is counted from pages this census can
   read. A script installed as a wiki gadget is loaded by people who never create
   a page at all, and the `gadgetusage` API knows those numbers; nothing reads it.

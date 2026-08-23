@@ -191,6 +191,10 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "card_record": f"{json_col} NULL",
             "modified_at_sort": "DATETIME NULL",
             "generation": "INTEGER NOT NULL DEFAULT 0",
+            # Empty is the correct value for every row that existed before this
+            # column did: nothing had measured whether anybody used them, and
+            # saying so is what the empty value means.
+            "lifecycle": "VARCHAR(16) NOT NULL DEFAULT ''",
         },
         "toolforge_account_projection": {
             "developer_username": "VARCHAR(255) NOT NULL DEFAULT ''",

@@ -96,6 +96,10 @@ test("API scalar helpers preserve core data priority and empty semantics", () =>
 	assert.deepEqual(api.statusOf({ deprecated: true, experimental: true }), { level: "red", label: "Deprecated" });
 	assert.deepEqual(api.statusOf({ experimental: true }), { level: "yellow", label: "Experimental" });
 	assert.deepEqual(api.statusOf({}), { level: "green", label: "Healthy" });
+	assert.deepEqual(api.statusOf({ lifecycle: "archived" }), { level: "grey", label: "Archived" });
+	assert.deepEqual(api.statusOf({ lifecycle: "active" }), { level: "green", label: "Healthy" });
+	// A maintainer's own claim about their tool outranks our reading of who loads it.
+	assert.deepEqual(api.statusOf({ deprecated: true, lifecycle: "archived" }), { level: "red", label: "Deprecated" });
 });
 
 test("normalizeTool maps live Toolhub schema into compact UI schema", () => {

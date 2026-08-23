@@ -4,7 +4,13 @@
 import os
 import sys
 
-from backend import job_runner, userscript_creation_dates, userscript_projection, userscript_sweep
+from backend import (
+    job_runner,
+    userscript_creation_dates,
+    userscript_projection,
+    userscript_sweep,
+    userscript_toolinfo,
+)
 from backend.wikimedia_delivery import WikimediaClient
 
 DEFAULT_WIKIS = "fr.wikipedia.org,meta.wikimedia.org"
@@ -108,6 +114,20 @@ def main() -> int:
             f"wiki={ranked['wiki']} candidates={ranked['candidates']} "
             f"originals={ranked['originals']} active={ranked['active']} "
             f"archive={ranked['archive']}\n",
+        )
+        # Follows every projection, including one that changed nothing. It talks
+        # to no wiki -- it rebuilds records from what the directory concluded --
+        # so running it unconditionally means a change to what this codebase
+        # considers a tool takes effect on the next sweep rather than waiting
+        # for a wiki to be edited.
+        catalogued = userscript_toolinfo.synchronize(wiki)
+        sys.stdout.write(
+            "userscript-catalogue: "
+            f"wiki={catalogued['wiki']} originals={catalogued['originals']} "
+            f"written={catalogued['written']} unchanged={catalogued['unchanged']} "
+            f"stylesheet={catalogued['stylesheet']} unnamed={catalogued['unnamed']} "
+            f"duplicate={catalogued['duplicate']} conflicted={catalogued['conflicted']} "
+            f"retired={catalogued['retired']}\n",
         )
 
     def body() -> None:

@@ -150,6 +150,7 @@ export function localToolBase(name, rec) {
 					maintainer: USER.name,
 					deprecated: false,
 					experimental: false,
+					lifecycle: "",
 					origin: "api"
 				},
 				rec
@@ -173,7 +174,13 @@ export function newToolBase(name) {
 	return rec ? localToolBase(name, rec) : null;
 }
 /**
- * @param {{ deprecated: boolean; experimental: boolean }} t
+ * Rank what is worth saying about a tool, most consequential first.
+ *
+ * Deprecated and experimental come first because a maintainer said them about
+ * their own tool. Archived is below both because nobody said it: it is this
+ * codebase's observation that nothing it can see loads the tool, and a
+ * maintainer's own claim about their work outranks our reading of the traffic.
+ * @param {{ deprecated: boolean; experimental: boolean; lifecycle?: string }} t
  * @returns {ToolStatus}
  */
 export function statusOf(t) {
@@ -181,7 +188,9 @@ export function statusOf(t) {
 		? { level: "red", label: "Deprecated" }
 		: t.experimental
 			? { level: "yellow", label: "Experimental" }
-			: { level: "green", label: "Healthy" };
+			: t.lifecycle === "archived"
+				? { level: "grey", label: "Archived" }
+				: { level: "green", label: "Healthy" };
 }
 /* ================================================================= LOCAL CATALOG API
    Every product read comes from the same-origin, versioned local replica.
@@ -818,6 +827,10 @@ export function normalizeTool(t) {
 	);
 	const deprecated = Boolean(t.deprecated || ann.deprecated);
 	const experimental = Boolean(t.experimental || ann.experimental);
+	// Not from any toolinfo, which is what the underscore says: the backend
+	// writes it for records it synthesized from a wiki, and leaves it off
+	// everything the official catalog supplied.
+	const lifecycle = typeof t._lifecycle === "string" ? t._lifecycle : "";
 	/** @type {Tool} */
 	const o = {
 		name: t.name,
@@ -852,6 +865,7 @@ export function normalizeTool(t) {
 		translate: pick(t.translate_url, ann.translate_url, null),
 		deprecated,
 		experimental,
+		lifecycle,
 		modified: t.modified_date || t.modified || null,
 		origin: t.origin || "crawler",
 		catalogProjection: t._catalogProjection || null,
@@ -860,7 +874,7 @@ export function normalizeTool(t) {
 		accountPerson: t.accountPerson && typeof t.accountPerson.id === "string" ? { ...t.accountPerson } : undefined,
 		relationshipPeople: Array.isArray(t.relationshipPeople) ? t.relationshipPeople : [],
 		weeklyViews: 0,
-		status: statusOf({ deprecated, experimental })
+		status: statusOf({ deprecated, experimental, lifecycle })
 	};
 	applyToolOverlay(o);
 	INDEX[o.name] = o; // cache for quick-view

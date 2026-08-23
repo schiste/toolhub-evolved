@@ -9,6 +9,12 @@ SOURCE_REPOSITORY_SCAN = "repository_scan"
 # A record this codebase synthesized from what a wiki publishes about a
 # gadget, rather than one anybody wrote by hand or Toolhub handed us.
 SOURCE_WIKI_GADGET = "wiki_gadget"
+# The same, for a user-space script page the census read and the directory
+# named as an original. Kept apart from SOURCE_WIKI_GADGET because the two are
+# established by different evidence -- a gadget is declared by the wiki, a user
+# script is inferred from a corpus -- and because a catalog operator has to be
+# able to prune or trust one without the other.
+SOURCE_WIKI_USERSCRIPT = "wiki_userscript"
 
 SYNC_OFFICIAL = "official"
 SYNC_LOCAL_DRAFT = "local_draft"
@@ -50,7 +56,19 @@ PERSON_REL_VALUES = {
 # authorization, contributor eligibility, reconciliation, and audit code.
 PUBLIC_PERSON_REL_VALUES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER)
 
-SOURCE_VALUES = {SOURCE_OFFICIAL, SOURCE_LOCAL, SOURCE_REPOSITORY_SCAN, SOURCE_WIKI_GADGET}
+# Whether anybody other than a tool's own author is known to use it. This is
+# Evolved's observation, not the maintainer's claim, and it is deliberately not
+# the toolinfo `deprecated` flag: "deprecated" means an author said stop using
+# this, while "archived" here means only that nothing this codebase can see
+# loads it. Inferring the first from the second would put words in a
+# maintainer's mouth. An empty value is the honest default and means nothing has
+# measured this tool either way, which is true of everything Toolhub hands us.
+LIFECYCLE_UNKNOWN = ""
+LIFECYCLE_ACTIVE = "active"
+LIFECYCLE_ARCHIVED = "archived"
+LIFECYCLE_VALUES = {LIFECYCLE_UNKNOWN, LIFECYCLE_ACTIVE, LIFECYCLE_ARCHIVED}
+
+SOURCE_VALUES = {SOURCE_OFFICIAL, SOURCE_LOCAL, SOURCE_REPOSITORY_SCAN, SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT}
 SYNC_VALUES = {SYNC_OFFICIAL, SYNC_LOCAL_DRAFT, SYNC_LOCAL_FALLBACK, SYNC_EVOLVED_REAL, SYNC_ERROR}
 REVIEW_VALUES = {REVIEW_OPEN, REVIEW_PENDING, REVIEW_APPROVED, REVIEW_REJECTED}
 AUTHOR_CLAIM_STATUS_VALUES = {
