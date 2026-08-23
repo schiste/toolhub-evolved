@@ -1,13 +1,14 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-race-that-ran-every-minute -->
-<!-- Release title: The Race That Ran Every Minute -->
-<!-- Source range: 687bd78..3de43e8 (1 commit) -->
+<!-- Release id: what-the-source-actually-said -->
+<!-- Release title: What The Source Actually Said -->
+<!-- Source range: f182bfd..a7d945e (7 commits) -->
 
 # What's New for Users
 
-- Four separate jobs keep Evolved's contributor records consistent, and only one of them can run at a time. They take turns through a single marker: whoever claims it first does the work, and the others step aside. That part was working. What nobody had noticed is that they all reach for it at the very same second.
-- Every one of these jobs is scheduled on the minute, and one of them runs every minute. So they never queue politely behind each other -- they collide, on every single run, and the loser simply gives up and waits for its next turn.
-- Giving up costs almost nothing if your next turn is a minute away. It costs a great deal if your next turn is a week away. The full weekly rebuild of contributor identities is exactly that job, and it had been told to give up immediately: on 23 August it woke, collided with the once-a-minute job, and went back to sleep after four seconds having rebuilt nothing. The next attempt was seven days later.
-- Each job now waits for its turn in proportion to what missing it would cost. The once-a-minute job still never waits, because it tries again immediately. The hourly jobs wait two minutes. The weekly rebuild waits ten.
-- The waiting is a limit, not a delay: when nothing is in the way the job starts instantly, and in practice the job it collides with finishes in about ten seconds. The hourly identity job had been losing better than one run in four this way, and should now lose almost none.
+- Evolved reads a tool's source code to work out what it is built with. This release corrects that reading in two opposite directions: it had been naming technologies it never saw, and staying silent about ones it had.
+- The clearest case was React. The rule that recognised it matched the ordinary English word, case-insensitively, anywhere in any file -- so a bot whose README said "the bot will react to new edits" was catalogued as a React tool. The rules also read lockfiles, where the line `node_modules/react` turns up in any checkout that has ever installed React for any reason at all. Recognising React now takes either a real use of it in JavaScript, or a declaration in the tool's own manifest.
+- In the opposite direction: files ending in `.jsx` were never read. Not scored low, not skipped as test files -- refused outright, before anything looked inside them. A React application written in `.jsx`, which is how most of them are written, had no source Evolved would open, so its framework, its language and every package it imports went unrecorded. `.mjs` and `.cjs` were in the same position.
+- Evolved could tell you a tool used Flask, but not which Flask. It walked the names in every manifest and lockfile and discarded the version written beside each one. Versions are now read from all six lockfile formats and from the manifests themselves, and the tool page shows `Flask 3.0.2` where a manifest pins a single release. Where two manifests pin different releases it still shows only the name: there is no single answer there, and choosing one would be a guess presented as a measurement.
+- Everything the repository scanner learns -- which commit it read, on which branch, how many people work on the project, whether the host has archived it -- already reached your browser, and almost none of it was shown. A "Repository data" section now sits in the Metadata evidence panel of every scanned tool. Two of those facts, whether the repository is archived and whether the checkout was dirty, were being dropped before they even got that far, although both change the health score displayed on the same page.
+- Finally, the provenance panel warned that "sources disagree" about a tool's Wikis and Technologies when the sources agreed completely. A tool that runs on eleven wikis has eleven separate records saying so, and counting those was being read as eleven sources arguing with each other. A disagreement is now reported only when a source's evidence was kept, judged valid, and still left out of the answer.
