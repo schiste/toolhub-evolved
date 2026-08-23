@@ -412,12 +412,19 @@ def _resolve(verb: str, argument: str, wiki: str, spellings: Spellings) -> tuple
     if _URL_ARGUMENT.match(raw):
         host, title = wiki_target(raw, spellings)
         return (host, title, raw)
-    # A MediaWiki URL with no host names a page on the wiki that wrote it.
+    # A MediaWiki URL with no host names a page on the wiki that wrote it --
+    # and one that names no page names nothing at all. A truncated
+    # `/w/index.php?title=` is not a title just because it is a leftover.
     if raw.startswith("/"):
         title = page_named_by(urlparse(raw), spellings(wiki))
-        if title:
-            return (wiki, title, "")
-    return (wiki, canonical_title(_decoded(raw), spellings=spellings(wiki)), "")
+        return (wiki, title, "") if title else ("", "", "")
+    # Everything else is a bare page title, unless it still carries a scheme.
+    # That means a URL this census cannot read -- a non-HTTP scheme, a
+    # fragment torn out of a longer string -- and no page title contains
+    # "://". Storing one files the edge under a target that can never exist,
+    # which reads in the census as unmet demand rather than as unread input.
+    title = canonical_title(_decoded(raw), spellings=spellings(wiki))
+    return ("", "", "") if "://" in title else (wiki, title, "")
 
 
 def script_imports(body: str, *, wiki: str = "", spellings: Spellings = no_spellings) -> tuple[ScriptImport, ...]:

@@ -442,3 +442,21 @@ def test_a_url_that_names_no_page_stays_an_opaque_url():
     (found,) = userscripts.script_imports(body, wiki=FRWIKI)
     assert (found.wiki, found.title) == ("", "")
     assert found.url.endswith("bundle.js")
+
+
+def test_a_relative_url_that_names_no_page_is_not_an_edge():
+    # A query string with an empty `title=` is a leftover, not a target. Stored
+    # as a title it becomes demand for a page nobody can ever create.
+    assert userscripts.script_imports("importScript('/w/index.php?title=');", wiki=FRWIKI) == ()
+
+
+def test_a_relative_path_that_is_not_a_wiki_path_is_not_an_edge():
+    assert userscripts.script_imports("importScript('/static/js/thing.js');", wiki=FRWIKI) == ()
+
+
+def test_an_argument_with_a_scheme_this_census_cannot_read_is_not_a_title():
+    # Really in the corpus, on a page whose author was working locally. It is a
+    # URL, so it is not a page title; it is not HTTP, so there is nothing here
+    # to fetch or point at either.
+    body = "importScript('ftp://localhost/copyvio version-finale.js?');"
+    assert userscripts.script_imports(body, wiki=FRWIKI) == ()
