@@ -1775,6 +1775,42 @@ class WikiGadget(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class WikiNamespaceSpelling(Base):
+    """What one wiki calls its user namespace, in every spelling it answers to.
+
+    MediaWiki serves the user namespace under a localized name and accepts an
+    unbounded number of aliases for it, so `Benutzer:X/common.js` and
+    `User:X/common.js` are one page on dewiki and two strings everywhere else.
+    The census keys pages and load edges on a canonical title, which means a
+    spelling it does not know how to fold is a page it files twice and an edge
+    that resolves to nothing.
+
+    Stored rather than fetched per use because the census that needs it runs in
+    one process and the projection that reads its output runs in another, and
+    because these names change about as often as a wiki is renamed. A row that
+    could not be read keeps its previous spellings rather than losing them,
+    since a wiki being briefly unreachable is not evidence that it renamed
+    anything.
+    """
+
+    __tablename__ = "wiki_namespace_spellings"
+    wiki: Mapped[str] = mapped_column(String(255), primary_key=True)
+    # Every name this wiki answers to for namespace 2, canonical name included.
+    # A list rather than a joined string because the spellings are matched
+    # whole and one of them can contain anything a title can.
+    spellings: Mapped[list] = mapped_column(JSON, default=list)
+    # When the spellings above were last read successfully -- what dates them.
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When a read was last attempted, whether or not it worked. Separate from
+    # `read_at` so that a wiki nobody can reach is not asked again by every
+    # pass: on one clock an unreadable wiki is permanently stale, and every
+    # resolver built spends a request rediscovering that.
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Why the last attempt ended, so an empty spelling list can tell "this wiki
+    # has no aliases" apart from "this wiki has never been read".
+    status: Mapped[str] = mapped_column(String(32), default="")
+
+
 class ListRevisionChange(Base):
     """Which tools one Toolhub list revision added or removed.
 

@@ -53,7 +53,17 @@ class Lagging(RuntimeError):
 class FakeWiki:
     """An Action API that answers from a dict of pages, and can be made to fail."""
 
-    def __init__(self, pages, *, changes=None, unreadable=(), page_size=None, lagged_after=None):
+    def __init__(
+        self,
+        pages,
+        *,
+        changes=None,
+        unreadable=(),
+        page_size=None,
+        lagged_after=None,
+        namespace_name="User",
+        namespace_aliases=(),
+    ):
         # title -> (model, body, revid, timestamp)
         self.pages = dict(pages)
         self.changes = list(changes or [])
@@ -63,6 +73,13 @@ class FakeWiki:
         #: so a test can put the refusal in the middle of a run rather than at
         #: its start -- which is where it does the damage.
         self.lagged_after = lagged_after
+        #: What this wiki calls namespace 2, and what else it answers to for it.
+        #: Defaulted to a plain English wiki so that a test which is not about
+        #: namespaces reads like one -- but answered rather than omitted,
+        #: because a fake that cannot answer siteinfo would make every sweep
+        #: here silently fall back to the built-in spellings.
+        self.namespace_name = namespace_name
+        self.namespace_aliases = tuple(namespace_aliases)
         self.content_requests = 0
         self.requests = []
         self.totals = {}
@@ -70,6 +87,8 @@ class FakeWiki:
     # -- dispatch -------------------------------------------------------
     def request(self, domain, method, params):
         self.requests.append((domain, method, params))
+        if params.get("meta") == "siteinfo":
+            return self._siteinfo()
         if params.get("list") == "search":
             return self._search(params)
         if params.get("list") == "recentchanges":
@@ -123,6 +142,18 @@ class FakeWiki:
 
     def _changes(self):
         return {"query": {"recentchanges": self.changes}}
+
+    def _siteinfo(self):
+        # Shaped like the real answer: `canonical` is `User` on every wiki,
+        # `name` is the localized one, and aliases are a separate list keyed by
+        # namespace id -- which is why the fold cannot be derived from `name`
+        # alone.
+        return {
+            "query": {
+                "namespaces": {"2": {"id": 2, "canonical": "User", "name": self.namespace_name}},
+                "namespacealiases": [{"id": 2, "alias": alias} for alias in self.namespace_aliases],
+            },
+        }
 
 
 def page(body, *, model="javascript", revid="1", stamp="2024-01-01T00:00:00Z"):
@@ -286,6 +317,49 @@ def test_a_wiki_that_says_it_is_behind_is_not_asked_the_same_batch_in_halves():
     # The titles behind the refusal were never asked for, so they are not
     # unreadable -- calling them that would record them as covered and looked at.
     assert unreadable == 0
+
+
+def test_a_wiki_s_own_namespace_name_is_read_and_folds_its_titles():
+    # Until the sweep asked, the fold knew `User`, `Utilisateur` and
+    # `Utilisatrice` and nothing else, so every dewiki page was stored under a
+    # title no page answers to and every load edge into it resolved to nothing.
+    dewiki = "de.wikipedia.org"
+    wiki = FakeWiki(
+        {
+            "Benutzer:PerfektesChaos/js/lint.js": page("importScript('Benutzer:PerfektesChaos/js/core.js');"),
+            "Benutzer:PerfektesChaos/js/core.js": page("var core = 1;"),
+        },
+        namespace_name="Benutzer",
+        namespace_aliases=("Benutzerin",),
+    )
+    sweeper.ingest(wiki.request, dewiki, list(wiki.pages), ranked=True)
+    assert stored("User:PerfektesChaos/js/lint.js", wiki=dewiki) is not None
+    assert stored("Benutzer:PerfektesChaos/js/lint.js", wiki=dewiki) is None
+    # And the load edge lands on the row rather than dangling, which is the
+    # whole point of folding the title in the first place.
+    targets = resolved_targets("User:PerfektesChaos/js/lint.js", wiki=dewiki)
+    assert targets == {"User:PerfektesChaos/js/core.js": (dewiki, "User:PerfektesChaos/js/core.js")}
+
+
+def test_one_sweep_asks_a_wiki_for_its_namespace_names_once():
+    titles = [f"Benutzer:U{index}/x.js" for index in range(census.CONTENT_BATCH + 5)]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles}, namespace_name="Benutzer")
+    sweeper.ingest(wiki.request, "de.wikipedia.org", titles, ranked=True)
+    siteinfo = [asked for asked in wiki.requests if asked[2].get("meta") == "siteinfo"]
+    # Once, not once per page and not once per resolver: a sweep that paid a
+    # request per load edge would cost more in namespace lookups than in content.
+    assert len(siteinfo) == 1
+
+
+def test_a_wiki_that_will_not_say_what_it_calls_its_namespace_is_swept_anyway():
+    # The fold falls back to the built-ins, which is exactly the behavior that
+    # existed before any of this. An unreadable siteinfo must cost coverage,
+    # not the run.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    wiki._siteinfo = lambda: (_ for _ in ()).throw(Boom("siteinfo"))
+    summary = sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)
+    assert summary["written"] == 1
+    assert stored("User:A/one.js") is not None
 
 
 def test_pages_read_before_the_refusal_are_still_written():
