@@ -128,14 +128,28 @@ def demand(session: Session, wiki: str) -> dict[str, set[str]]:
     resolver move them tomorrow, because the key now follows the page rather
     than the spelling.
 
-    A page loading itself is not demand for it. This is the common case rather
-    than a curiosity -- a script that installs its own helper subpage would
-    otherwise vote for itself -- and comparing identities rather than titles
-    catches it however the self-reference happened to be written.
+    **Loading your own page is not demand for it, and self-loading is only the
+    narrowest case of that.** `User:X/common.js` loading `User:X/helper.js` is
+    one person wiring up their own setup, and counting it makes every helper
+    subpage on the wiki look like it has a user. Demand is the argument a script
+    makes for becoming a gadget, and an author is not evidence for their own
+    script. Skipping the whole of somebody's own space, rather than only the
+    exact page, is what the note about "a script that installs its own helper
+    subpage" always described.
+
+    Owners are compared, never titles: both come from the census row, which
+    resolved them at the point the page's namespace was known, so this holds on
+    a wiki whose namespace 2 is called something else.
+
+    A source with no census row -- which in practice means a load stored on a
+    wiki this instance has not censused -- has no resolved owner to compare, so
+    it stands for itself and still counts. Guessing an owner out of its title
+    here is exactly what `owner_of_user_page` says not to do: the namespace it
+    would have to strip is the target wiki's, not this one's.
     """
     source, target = aliased(UserScriptPage), aliased(UserScriptPage)
     rows = (
-        session.query(UserScriptImport.source_title, source.id, source.owner, target.id, target.title)
+        session.query(UserScriptImport.source_title, source.id, source.owner, target.id, target.owner, target.title)
         .select_from(UserScriptImport)
         .join(target, target.id == UserScriptImport.target_page_id)
         .outerjoin(
@@ -149,14 +163,17 @@ def demand(session: Session, wiki: str) -> dict[str, set[str]]:
         .all()
     )
     loads: dict[str, set[str]] = {}
-    for source_title, source_id, owner, target_id, title in rows:
+    for source_title, source_id, owner, target_id, target_owner, title in rows:
         # Null on the left of this comparison is an unswept source, which cannot
         # be the page it is loading -- that one has a census row by definition.
         if source_id == target_id:
             continue
-        # The owner comes from the census row, which resolved it when the page's
-        # namespace was known. A source with no census row -- and so no owner to
-        # name -- stands for itself and still counts once.
+        # An empty owner on either side is a page whose namespace did not parse,
+        # and it is not a match for another one: otherwise every unattributable
+        # load would cancel against every other. The identity check above is
+        # what still catches a self-load among those.
+        if owner and owner == target_owner:
+            continue
         loads.setdefault(title, set()).add(owner or source_title)
     return loads
 

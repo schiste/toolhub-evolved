@@ -169,6 +169,54 @@ def test_a_page_loading_itself_is_not_demand_for_itself():
     assert entries() == [("User:Aaa/tool.js", directory.TIER_ARCHIVE, 0, 0, 1)]
 
 
+def test_a_page_loading_another_page_of_its_own_owner_is_not_demand():
+    # The case self-loading was only the narrowest instance of: one person
+    # wiring up their own setup. Counting it makes every helper subpage on the
+    # wiki look like it has a user, which is exactly what demand is meant to
+    # distinguish.
+    page("User:Aaa/helper.js")
+    page("User:Aaa/common.js", role="shim")
+    page("User:Aaa/vector.js", role="shim")
+    loads("User:Aaa/common.js", "User:Aaa/helper.js")
+    loads("User:Aaa/vector.js", "User:Aaa/helper.js")
+    projection.project(FRWIKI)
+    assert entries() == [("User:Aaa/helper.js", directory.TIER_ARCHIVE, 0, 0, 1)]
+
+
+def test_somebody_else_loading_the_same_helper_still_counts():
+    # The owner's own loads are dropped; the moment a second person loads it,
+    # the script has the demand it is claiming.
+    page("User:Aaa/helper.js")
+    page("User:Aaa/common.js", role="shim")
+    page("User:Bbb/common.js", role="shim")
+    loads("User:Aaa/common.js", "User:Aaa/helper.js")
+    loads("User:Bbb/common.js", "User:Aaa/helper.js")
+    projection.project(FRWIKI)
+    assert entries() == [("User:Aaa/helper.js", directory.TIER_ACTIVE, 1, 0, 1)]
+
+
+def test_an_owner_loading_their_own_script_from_another_wiki_is_still_the_owner():
+    # Usernames are global across Wikimedia wikis, so `User:Aaa` on enwiki is
+    # the author of `User:Aaa/tool.js` on frwiki, and their own cross-wiki load
+    # is not the argument for a global gadget it would otherwise look like.
+    page("User:Aaa/tool.js")
+    page("User:Aaa/common.js", role="shim", wiki=ENWIKI)
+    loads("User:Aaa/common.js", "User:Aaa/tool.js", wiki=ENWIKI, target_wiki=FRWIKI)
+    projection.project(FRWIKI)
+    assert entries() == [("User:Aaa/tool.js", directory.TIER_ARCHIVE, 0, 0, 1)]
+
+
+def test_pages_whose_owner_did_not_parse_do_not_cancel_against_each_other():
+    # An empty owner is "not known", not "the same person". Treating two
+    # unattributable pages as one owner would silently delete demand rather
+    # than decline to count it.
+    page("NoNamespace.js")
+    page("AlsoNoNamespace.js", role="shim")
+    loads("AlsoNoNamespace.js", "NoNamespace.js")
+    projection.project(FRWIKI)
+    assert entries() == [("NoNamespace.js", directory.TIER_ACTIVE, 1, 0, 1)]
+
+
 def test_a_load_from_another_wiki_still_counts():
     # These edges are the argument for a global gadget, so they must not be
     # filtered out by selecting imports on the source's wiki.
