@@ -17,21 +17,28 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-def _sweep_progress(summary: dict) -> str:
-    """Render the part of a sweep's result a watch has no equivalent of.
+def _progress(summary: dict) -> str:
+    """Render the part of a run's result the other mode has no equivalent of.
 
     Written into the same line rather than a second one because these are the
-    three numbers that say whether a wiki is converging: which road named its
-    pages, how many there are, and how far this run got. A census that quietly
-    stopped being exact -- a replica that went away, leaving a capped search
-    behind -- shows up here rather than only as a total that stopped growing.
+    numbers that say whether a wiki is converging. For a sweep: which road named
+    its pages, how many there are, and how far this run got -- a census that
+    quietly stopped being exact, a replica that went away leaving a capped search
+    behind, shows up here rather than only as a total that stopped growing.
+
+    For a watch it is the cursor, which is the only thing in the whole run that
+    says how current the census is. Every other number a watch prints describes
+    the run; the wiki timestamp it has consumed up to describes the data. A watch
+    resuming a month back reports five pages written and looks like a quiet hour,
+    and the line said nothing to tell the two apart. `none` is a cursor that has
+    never been set, which starts at the oldest row the wiki still keeps.
     """
-    if summary.get("mode") != "sweep":
-        return ""
-    return (
-        f" source={summary['source']} enumerated={summary['enumerated']} "
-        f"sweep_cursor={summary['sweep_cursor']} complete={int(bool(summary['complete']))}"
-    )
+    if summary.get("mode") == "sweep":
+        return (
+            f" source={summary['source']} enumerated={summary['enumerated']} "
+            f"sweep_cursor={summary['sweep_cursor']} complete={int(bool(summary['complete']))}"
+        )
+    return f" cursor={summary['cursor'] or 'none'}"
 
 
 def _wikis() -> list[str]:
@@ -81,7 +88,7 @@ def main() -> int:
                 f"asked={summary['asked']} fetched={summary['fetched']} "
                 f"written={summary['written']} skipped={summary['skipped']} "
                 f"unreadable={summary['unreadable']}"
-                f"{_sweep_progress(summary)}\n",
+                f"{_progress(summary)}\n",
             )
             stamped = userscript_creation_dates.backfill([wiki])
             sys.stdout.write(

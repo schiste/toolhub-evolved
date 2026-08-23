@@ -826,6 +826,17 @@ SWEPT = {
     "complete": True,
 }
 
+#: The same for a watch, whose log line reads a cursor a sweep does not have.
+WATCHED = {
+    "mode": "watch",
+    "asked": 0,
+    "fetched": 0,
+    "written": 0,
+    "skipped": 0,
+    "unreadable": 0,
+    "cursor": "2026-08-06T17:22:45Z",
+}
+
 
 @pytest.fixture
 def _job_env(monkeypatch):
@@ -884,8 +895,26 @@ def test_an_unusable_watch_limit_falls_back_to_the_default(monkeypatch, raw, exp
     monkeypatch.setattr(
         job.userscript_sweep,
         "run",
-        lambda _request, wiki, **kwargs: asked.append(kwargs["watch_limit"])
-        or {"wiki": wiki, "mode": "watch", "asked": 0, "fetched": 0, "written": 0, "skipped": 0, "unreadable": 0},
+        lambda _request, wiki, **kwargs: asked.append(kwargs["watch_limit"]) or dict(WATCHED, wiki=wiki),
     )
     assert job.main() == 0
     assert asked == [expected]
+
+
+def test_a_watch_reports_the_wiki_time_it_has_caught_up_to(monkeypatch, capsys, _job_env):
+    # The number that separates a quiet hour from a census weeks behind. Both
+    # write nothing and print the same five zeros; only the cursor says which
+    # one just happened.
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")
+    monkeypatch.setattr(job.userscript_sweep, "run", lambda _request, wiki, **_kwargs: dict(WATCHED, wiki=wiki))
+    assert job.main() == 0
+    out = capsys.readouterr().out
+    assert "mode=watch" in out
+    assert "cursor=2026-08-06T17:22:45Z" in out
+
+
+def test_a_watch_that_has_never_run_says_so_rather_than_printing_a_blank(monkeypatch, capsys, _job_env):
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")
+    monkeypatch.setattr(job.userscript_sweep, "run", lambda _request, wiki, **_kwargs: dict(WATCHED, wiki=wiki, cursor=""))
+    assert job.main() == 0
+    assert "cursor=none" in capsys.readouterr().out
