@@ -68,6 +68,16 @@ SEARCH_SORT: Final = "create_timestamp_asc"
 # re-reading it one title at a time would cost.
 CONTENT_BATCH: Final = 50
 
+# Seconds of replication lag past which the wiki should refuse us rather than
+# serve a slow answer. This is the documented way for a bulk background reader
+# to be a good citizen: the wiki sheds us first, and its refusal is a reason to
+# come back next hour, not a failure. `backend.wiki_api` sends the same value on
+# its own queries; the census reaches the API through `WikimediaClient`, which
+# adds only `format` and `formatversion`, so the census has to say it itself.
+MAXLAG_SECONDS: Final = 5
+#: The error code a wiki answers with when it is further behind than that.
+MAXLAG_ERROR: Final = "maxlag"
+
 
 @dataclass(frozen=True)
 class Discovery:
@@ -188,6 +198,7 @@ def content_params(titles: Iterable[str]) -> dict[str, Any]:
         "rvprop": "ids|timestamp|content",
         "rvslots": "main",
         "titles": "|".join(titles),
+        "maxlag": MAXLAG_SECONDS,
     }
 
 
@@ -211,6 +222,7 @@ def search_params(query: str, offset: int) -> dict[str, Any]:
         "srlimit": SEARCH_PAGE_SIZE,
         "srprop": "",
         "srsort": SEARCH_SORT,
+        "maxlag": MAXLAG_SECONDS,
     }
     if offset:
         params["sroffset"] = offset

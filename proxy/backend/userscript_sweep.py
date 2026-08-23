@@ -56,6 +56,18 @@ WATCH_LIMIT: int = 500
 # failure is treated as systemic rather than as one oversized batch.
 SPLIT_BUDGET: int = 5
 
+
+class ReplicationLagged(Exception):  # noqa: N818 - a condition of the wiki, not an error of ours
+    """The wiki refused a read because its replicas are behind.
+
+    Its own class because the split in `read_titles` reads a failed batch as
+    "too large" and halves it. A `maxlag` refusal fails identically, so without
+    this the census would answer the wiki's request for less traffic by making
+    about six times as many requests, and burn `SPLIT_BUDGET` doing it. Sending
+    `maxlag` without telling the two apart is worse than not sending it at all.
+    """
+
+
 # How many (wiki, title) pairs to name in one IN clause when resolving loads to
 # pages. A run writing two thousand pages can hold tens of thousands of loads,
 # and one statement naming all of them is a statement no engine should be asked
@@ -69,6 +81,11 @@ EMPTY_COUNTS: dict[str, int] = {
     "skipped": 0,
     "unreadable": 0,
     "resolved": 0,
+    #: Set when the wiki refused a read for replication lag. A count elsewhere
+    #: says what a run did; this says the run was cut short, which is the only
+    #: thing that makes the other counts an incomplete answer rather than a
+    #: small one.
+    "lagged": 0,
 }
 
 
@@ -91,10 +108,20 @@ def _read_batch(
     wiki: str,
     batch: Sequence[str],
 ) -> tuple[tuple[census.PageContent, ...], bool]:
-    """Read one batch of titles, reporting failure rather than raising it."""
+    """Read one batch of titles, reporting failure rather than raising it.
+
+    Except a lag refusal, which is raised: it is the one failure that says
+    something about the wiki rather than about this batch, and the only correct
+    answer to it is to stop asking.
+    """
     try:
         payload = request(wiki, "GET", census.content_params(batch))
-    except Exception:  # noqa: BLE001 - a failed read is one gap in the census, never a job failure
+    except Exception as error:
+        # Anything else is one gap in the census, never a job failure. The code
+        # is read off the exception rather than matched by type because the
+        # client normalizes every API refusal into one class.
+        if getattr(error, "code", "") == census.MAXLAG_ERROR:
+            raise ReplicationLagged(str(error)) from error
         return ((), False)
     return (census.read_pages(payload), True)
 
@@ -103,7 +130,7 @@ def read_titles(
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
     titles: Sequence[str],
-) -> tuple[list[census.PageContent], int]:
+) -> tuple[list[census.PageContent], int, bool]:
     """Fetch and parse pages in API-sized batches, counting the titles left unread.
 
     A batch can fail for the batch's own sake: fifty user scripts can exceed the
@@ -120,23 +147,31 @@ def read_titles(
     the network, not their size, and splitting would multiply a wiki-wide outage
     into many times the requests. Past `SPLIT_BUDGET` failures the run stops
     splitting and simply records what it could not read; the next run asks again.
+
+    A lag refusal ends the read there and is reported as the third value. What
+    was already read is still returned, because it is already paid for and the
+    caller can still write it -- but the titles behind it were never asked for,
+    and saying so is what stops the caller from recording them as covered.
     """
     read: list[census.PageContent] = []
     unreadable = 0
     budget = SPLIT_BUDGET
     for batch in census.batched(titles):
-        pages, ok = _read_batch(request, wiki, batch)
-        if ok:
-            read.extend(pages)
-            continue
-        if budget <= 0:
-            unreadable += len(batch)
-            continue
-        budget -= 1
-        found, lost = _read_halves(request, wiki, batch)
+        try:
+            pages, ok = _read_batch(request, wiki, batch)
+            if ok:
+                read.extend(pages)
+                continue
+            if budget <= 0:
+                unreadable += len(batch)
+                continue
+            budget -= 1
+            found, lost = _read_halves(request, wiki, batch)
+        except ReplicationLagged:
+            return (read, unreadable, True)
         read.extend(found)
         unreadable += lost
-    return (read, unreadable)
+    return (read, unreadable, False)
 
 
 def _read_halves(
@@ -332,7 +367,8 @@ def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map ar
     ahead = revisions or {}
     wanted = [title for title in titles if not _settled(userscripts.canonical_title(title), stored, ranks, ahead)]
     summary["skipped"] = len(titles) - len(wanted)
-    pages, summary["unreadable"] = read_titles(request, wiki, wanted)
+    pages, summary["unreadable"], lagged = read_titles(request, wiki, wanted)
+    summary["lagged"] = int(lagged)
     summary["fetched"] = len(pages)
     with db.session_scope() as session:
         for page in pages:
@@ -535,8 +571,8 @@ def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limi
     """Walk a wiki's script corpus into the directory, over as many runs as it takes.
 
     `limit` bounds one run, not the census. enwiki holds ~155,000 script pages,
-    which is some 7,800 content requests -- more than one scheduled job should
-    hold a wiki's API budget for. So a bounded run reads its slice, records how
+    which is some 3,100 content requests at `CONTENT_BATCH` 50 -- more than one
+    scheduled job should hold a wiki's API budget for. So a bounded run reads its slice, records how
     far it got, and the next run continues from there; only the run that reaches
     the end of the enumeration counts as a completed sweep, tombstones what the
     wiki no longer lists, and lets the wiki fall through to watching.
@@ -552,6 +588,13 @@ def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limi
     window = found.titles[start : start + limit] if limit else found.titles[start:]
     finished = start + len(window) >= len(found.titles)
     summary = ingest(request, wiki, window, ranked=True, rank_offset=start, revisions=found.revisions)
+    # A wiki that asked us to stop was not covered to the end of the window, and
+    # the cursor is the only record of that. Holding it re-asks this window next
+    # run rather than stepping over pages nobody read -- and re-asking is nearly
+    # free, because what did get written now matches the revision the
+    # enumeration reports and is skipped before a request is spent on it.
+    if summary["lagged"]:
+        finished = False
     with db.session_scope() as session:
         # A partial walk says nothing about the pages it never asked for, so it
         # is never allowed to declare them gone. Tombstoning compares against the
@@ -564,7 +607,7 @@ def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limi
         state.enumeration_totals = found.totals
         state.enumeration_complete = whole_wiki
         state.enumeration_source = found.source
-        state.sweep_cursor = 0 if finished else start + len(window)
+        state.sweep_cursor = cursor if summary["lagged"] else (0 if finished else start + len(window))
         state.sweeps_completed += 1 if finished else 0
         state.status = "idle"
         state.last_success_at = utcnow()
@@ -614,7 +657,10 @@ def watch(
     summary = ingest(request, wiki, titles, ranked=False) if titles else dict(EMPTY_COUNTS)
     with db.session_scope() as session:
         state = _record_totals(session, wiki)
-        state.changes_cursor = latest_timestamp(payload, cursor)
+        # Same rule as the sweep cursor: a watch cut short by lag has not read
+        # the changes it enumerated, and advancing over them would lose the
+        # edits for good -- a watch has no second pass to find them again.
+        state.changes_cursor = cursor if summary["lagged"] else latest_timestamp(payload, cursor)
         state.last_success_at = utcnow()
         cursor = state.changes_cursor
     return {"wiki": wiki, "mode": "watch", "cursor": cursor, **summary}

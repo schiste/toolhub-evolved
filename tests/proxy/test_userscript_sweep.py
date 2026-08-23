@@ -44,15 +44,26 @@ class Boom(RuntimeError):
     """A transport failure, as the client would raise it."""
 
 
+class Lagging(RuntimeError):
+    """A maxlag refusal, as `WikimediaClient` normalizes it: an error with a code."""
+
+    code = census.MAXLAG_ERROR
+
+
 class FakeWiki:
     """An Action API that answers from a dict of pages, and can be made to fail."""
 
-    def __init__(self, pages, *, changes=None, unreadable=(), page_size=None):
+    def __init__(self, pages, *, changes=None, unreadable=(), page_size=None, lagged_after=None):
         # title -> (model, body, revid, timestamp)
         self.pages = dict(pages)
         self.changes = list(changes or [])
         self.unreadable = set(unreadable)
         self.page_size = page_size or census.SEARCH_PAGE_SIZE
+        #: Content requests to answer before the wiki starts refusing for lag,
+        #: so a test can put the refusal in the middle of a run rather than at
+        #: its start -- which is where it does the damage.
+        self.lagged_after = lagged_after
+        self.content_requests = 0
         self.requests = []
         self.totals = {}
 
@@ -83,6 +94,9 @@ class FakeWiki:
         }
 
     def _content(self, params):
+        self.content_requests += 1
+        if self.lagged_after is not None and self.content_requests > self.lagged_after:
+            raise Lagging("Waiting for a database server: 9 seconds lagged.")
         asked = params["titles"].split("|")
         if any(title in self.unreadable for title in asked):
             raise Boom(params["titles"])
@@ -220,7 +234,7 @@ def test_discovery_order_is_the_order_the_search_index_gave():
 
 def test_titles_are_read_in_batches_and_missing_pages_are_skipped():
     wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
-    read, unreadable = sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js", "User:Gone/x.js"])
+    read, unreadable, _lagged = sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js", "User:Gone/x.js"])
     assert [found.title for found in read] == ["User:A/one.js"]
     assert unreadable == 0
 
@@ -230,7 +244,7 @@ def test_a_failed_batch_is_retried_one_title_at_a_time():
         {"User:A/one.js": page("var a = 1;"), "User:B/two.js": page("var b = 2;")},
         unreadable={"User:B/two.js"},
     )
-    read, unreadable = sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js", "User:B/two.js"])
+    read, unreadable, _lagged = sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js", "User:B/two.js"])
     # The whole batch failed on one page, and splitting rescued the other.
     assert [found.title for found in read] == ["User:A/one.js"]
     assert unreadable == 1
@@ -242,7 +256,7 @@ def test_a_fat_batch_is_halved_rather_than_taken_apart_title_by_title():
     # for the response cap costs a handful of extra requests, not one per title.
     titles = [f"User:U{index}/x.js" for index in range(8)]
     wiki = FakeWiki({title: page("var a = 1;") for title in titles}, unreadable={"User:U5/x.js"})
-    read, unreadable = sweeper.read_titles(wiki.request, FRWIKI, titles)
+    read, unreadable, _lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
     assert [found.title for found in read] == [title for title in titles if title != "User:U5/x.js"]
     assert unreadable == 1
     asked = [params["titles"].split("|") for _d, _m, params in wiki.requests]
@@ -252,10 +266,68 @@ def test_a_fat_batch_is_halved_rather_than_taken_apart_title_by_title():
     assert sorted(len(batch) for batch in asked) == [1, 1, 2, 2, 4, 4, 8]
 
 
+def test_every_content_request_asks_the_wiki_to_refuse_it_when_replicas_are_behind():
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js"])
+    assert wiki.requests[0][2]["maxlag"] == census.MAXLAG_SECONDS
+
+
+def test_a_wiki_that_says_it_is_behind_is_not_asked_the_same_batch_in_halves():
+    # The whole point of telling a lag refusal apart from an oversized batch.
+    # Both fail a batch identically, and the split would answer a wiki asking
+    # for less traffic with about six times as many requests.
+    titles = [f"User:U{index}/x.js" for index in range(census.CONTENT_BATCH * 2)]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles}, lagged_after=1)
+    read, unreadable, lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
+    assert lagged is True
+    # One batch answered, one refused, and nothing after it: no halving.
+    assert wiki.content_requests == 2
+    assert len(read) == census.CONTENT_BATCH
+    # The titles behind the refusal were never asked for, so they are not
+    # unreadable -- calling them that would record them as covered and looked at.
+    assert unreadable == 0
+
+
+def test_pages_read_before_the_refusal_are_still_written():
+    titles = [f"User:U{index}/x.js" for index in range(census.CONTENT_BATCH * 2)]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles}, lagged_after=1)
+    summary = sweeper.ingest(wiki.request, FRWIKI, titles, ranked=True)
+    assert summary["written"] == census.CONTENT_BATCH
+    assert summary["lagged"] == 1
+
+
+def test_a_sweep_cut_short_by_lag_leaves_its_cursor_where_it_was():
+    # The cursor is the only record that the window was not covered. Advancing
+    # it over pages nobody asked for would drop them until the next full sweep.
+    titles = [f"User:U{index:03d}/x.js" for index in range(census.CONTENT_BATCH * 2)]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles}, lagged_after=1)
+    summary = sweeper.sweep(wiki.request, FRWIKI, limit=len(titles))
+    assert summary["lagged"] == 1
+    assert summary["sweep_cursor"] == 0
+    with db.session_scope() as session:
+        state = session.query(UserScriptCensusState).filter_by(wiki=FRWIKI).one()
+    assert state.sweep_cursor == 0
+    # And it is not a completed sweep, so nothing was tombstoned as gone.
+    assert state.sweeps_completed == 0
+    assert state.enumeration_complete is False
+
+
+def test_a_watch_cut_short_by_lag_leaves_its_cursor_where_it_was():
+    # A watch has no second pass: an advanced cursor loses those edits for good.
+    wiki = FakeWiki(
+        {"User:A/one.js": page("var a = 1;")},
+        changes=[{"title": "User:A/one.js", "ns": 2, "timestamp": "2026-01-02T00:00:00Z"}],
+        lagged_after=0,
+    )
+    summary = sweeper.watch(wiki.request, FRWIKI)
+    assert summary["lagged"] == 1
+    assert summary["cursor"] == ""
+
+
 def test_splitting_stops_once_the_failures_look_systemic():
     titles = [f"User:U{index}/x.js" for index in range(census.CONTENT_BATCH * (sweeper.SPLIT_BUDGET + 2))]
     wiki = FakeWiki({title: page("var a = 1;") for title in titles}, unreadable=set(titles))
-    read, unreadable = sweeper.read_titles(wiki.request, FRWIKI, titles)
+    read, unreadable, _lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
     assert read == []
     assert unreadable == len(titles)
     # Five batches were split into single reads; the rest were written off whole.
@@ -898,6 +970,7 @@ SWEPT = {
     "written": 0,
     "skipped": 0,
     "unreadable": 0,
+    "lagged": 0,
     "source": "replica",
     "enumerated": 0,
     "sweep_cursor": 0,
@@ -912,6 +985,7 @@ WATCHED = {
     "written": 0,
     "skipped": 0,
     "unreadable": 0,
+    "lagged": 0,
     "cursor": "2026-08-06T17:22:45Z",
 }
 
