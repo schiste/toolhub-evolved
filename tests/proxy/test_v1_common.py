@@ -1421,3 +1421,40 @@ def test_data_patch_strips_meta_and_canonical_keys():
     patch = {"title": "T", "source": "local", "name": "n", "origin": "api", "keep": 1}
     cleaned = v1c.data_patch(patch)
     assert cleaned == {"title": "T", "keep": 1}
+
+
+def test_source_technology_summary_carries_only_technologies_with_a_declared_version():
+    report = {
+        "technology": [
+            {"value": "Flask", "label": "Flask", "version": "3.0.2", "versionSpecs": ["==3.0.2"]},
+            {"value": "Python", "label": "Python", "versionSpecs": [">=3.11"]},
+            {"value": "JavaScript", "label": "JavaScript"},
+            "not a row",
+        ]
+    }
+    assert v1c.source_technology_summary(report) == [
+        {"value": "Flask", "label": "Flask", "version": "3.0.2", "spec": "==3.0.2"},
+        # A range is a declaration without a release, so it travels as a spec.
+        {"value": "Python", "label": "Python", "spec": ">=3.11"},
+    ]
+
+
+def test_source_technology_summary_drops_the_spec_when_manifests_disagree():
+    """Two constraints mean no single declaration, so neither is shown as the one."""
+    report = {"technology": [{"value": "Flask", "label": "Flask", "versionSpecs": ["==2.3.3", "==3.0.2"]}]}
+    assert v1c.source_technology_summary(report) == []
+
+
+def test_source_technology_summary_is_empty_without_a_technology_list():
+    assert v1c.source_technology_summary({}) == []
+    assert v1c.source_technology_summary({"technology": "nope"}) == []
+
+
+def test_source_technology_summary_stops_at_the_public_cap():
+    report = {
+        "technology": [
+            {"value": f"Tech{index}", "label": f"Tech{index}", "version": "1.0.0"}
+            for index in range(v1c.MAX_PUBLIC_TECHNOLOGIES + 5)
+        ]
+    }
+    assert len(v1c.source_technology_summary(report)) == v1c.MAX_PUBLIC_TECHNOLOGIES

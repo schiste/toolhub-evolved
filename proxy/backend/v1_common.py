@@ -588,6 +588,41 @@ def source_repository_summary(report: dict[str, Any]) -> dict[str, Any] | None:
     return summary or None
 
 
+#: How many versioned technologies the public summary carries. The analyzer
+#: caps the patch it suggests at 20, so a longer list here would describe
+#: something the catalog never shows.
+MAX_PUBLIC_TECHNOLOGIES = 20
+
+
+def source_technology_summary(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect the declared version behind each detected technology.
+
+    A technology with no version is left out rather than carried with an empty
+    one: the catalog already lists the technology, and this exists only to say
+    which release. Two manifests disagreeing produce a row with `spec` and no
+    `version` -- there is a declaration to show, but no single answer.
+    """
+    rows = report.get("technology") if isinstance(report.get("technology"), list) else []
+    summary: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        version = str(row.get("version") or "")
+        specs = row.get("versionSpecs") if isinstance(row.get("versionSpecs"), list) else []
+        spec = str(specs[0]) if len(specs) == 1 else ""
+        if not version and not spec:
+            continue
+        entry: dict[str, Any] = {"value": str(row.get("value") or ""), "label": str(row.get("label") or "")}
+        if version:
+            entry["version"] = version
+        if spec:
+            entry["spec"] = spec
+        summary.append(entry)
+        if len(summary) >= MAX_PUBLIC_TECHNOLOGIES:
+            break
+    return summary
+
+
 def latest_public_health_core(s: Any, tool_name: str) -> dict[str, Any] | None:  # noqa: ANN401 - SQLAlchemy session
     row = s.execute(latest_public_health_core_statement(tool_name)).scalars().first()
     report = row.report if row is not None and isinstance(row.report, dict) else {}
@@ -604,6 +639,7 @@ def latest_public_health_core(s: Any, tool_name: str) -> dict[str, Any] | None: 
         "replacedBy": str(health_core.get("replacedBy") or ""),
         "dimensions": health_core.get("dimensions") if isinstance(health_core.get("dimensions"), list) else [],
         "repository": source_repository_summary(report),
+        "technologies": source_technology_summary(report),
         "createdAt": iso(row.created_at),
         "reviewedAt": iso(row.reviewed_at),
         "source": SOURCE_LOCAL,

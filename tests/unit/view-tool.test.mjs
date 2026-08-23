@@ -1656,3 +1656,40 @@ test("viewTool renders repository data for a tool with no catalog provenance", a
 	assert.ok(r.html.includes("Metadata evidence"));
 	assert.ok(r.html.includes("Repository data"));
 });
+
+test("viewTool shows the version beside each technology the source declared one for", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("versioned", { title: "Versioned", technologyUsed: ["Flask", "python", "JavaScript"] })
+	);
+	h.attachEvolvedSummaries.mockImplementation(async (tools) => {
+		tools[0].evolvedSummary = {
+			health: {
+				sourceHealth: {
+					technologies: [
+						{ value: "Flask", label: "Flask", version: "3.0.2", spec: "==3.0.2" },
+						// The catalog spells this one lowercase; the analyzer does not.
+						{ value: "Python", label: "Python", spec: ">=3.11" }
+					]
+				}
+			}
+		};
+		return tools;
+	});
+	const r = await tool.viewTool("versioned");
+	assert.ok(r.html.includes("Flask 3.0.2"));
+	assert.ok(r.html.includes("python &gt;=3.11"));
+	// Nothing declared a JavaScript version, so it stays the bare name.
+	assert.ok(r.html.includes("JavaScript"));
+	assert.ok(!r.html.includes("JavaScript "));
+});
+
+test("viewTool leaves the technology names alone when no source analysis ran", async () => {
+	h.getTool.mockResolvedValue(toolFixture("plain", { title: "Plain", technologyUsed: ["Flask"] }));
+	h.attachEvolvedSummaries.mockImplementation(async (tools) => {
+		tools[0].evolvedSummary = { health: { sourceHealth: { repository: { provider: "github" } } } };
+		return tools;
+	});
+	const r = await tool.viewTool("plain");
+	assert.ok(r.html.includes("Flask"));
+	assert.ok(!r.html.includes("Flask 3"));
+});

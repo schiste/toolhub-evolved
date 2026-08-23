@@ -430,6 +430,34 @@ function isContradicted(rows) {
 	});
 }
 
+/**
+ * The catalog's technology names, each carrying the version the source declared.
+ *
+ * The catalog stores the plain name -- `Flask`, not `Flask 3.0.2` -- because
+ * that is what the toolinfo vocabulary is. The version is a separate
+ * measurement of the same thing, so it is joined here at the point of display
+ * and nowhere earlier. Names are matched case-insensitively: upstream catalog
+ * entries and the analyzer disagree on capitalization often enough that an
+ * exact match would silently drop the version for `python` but not `Python`.
+ *
+ * @param {string[] | null | undefined} names
+ * @param {Array<Record<string, any>> | null | undefined} technologies
+ */
+function technologyLabels(names, technologies) {
+	const versions = new Map();
+	for (const row of Array.isArray(technologies) ? technologies : []) {
+		const value = String(row?.value || "").toLowerCase();
+		const version = String(row?.version || row?.spec || "");
+		if (value && version && !versions.has(value)) versions.set(value, version);
+	}
+	return (names || [])
+		.map((item) => {
+			const version = versions.get(String(item).toLowerCase());
+			return version ? `${esc(item)} ${esc(version)}` : esc(item);
+		})
+		.join(", ");
+}
+
 /** @param {unknown} value */
 function repositoryFlag(value) {
 	return value ? t("tool.repositoryDataYes", "yes") : t("tool.repositoryDataNo", "no");
@@ -969,7 +997,7 @@ export async function viewTool(name) {
 					${metaItem(t("tool.metaLicense", "License"), esc(tool.license))}
 					${metaItem(t("tool.metaWorksOn", "Works on"), wikiLabel(tool.forWikis))}
 					${metaItem(t("tool.metaInterfaceLanguages", "Interface languages"), langLabel(tool.uiLanguages))}
-					${metaItem(t("tool.metaTechnology", "Technology"), (tool.technologyUsed || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
+					${metaItem(t("tool.metaTechnology", "Technology"), technologyLabels(tool.technologyUsed, evolvedSummary?.health?.sourceHealth?.technologies))}
 					${metaItem(t("tool.metaAudiences", "Audiences"), (tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 				</div>
 				${catalogProvenancePanel(tool.catalogProjection, evolvedSummary?.health?.sourceHealth?.repository)}
