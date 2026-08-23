@@ -1,13 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-half-that-was-never-read -->
-<!-- Release title: The Half That Was Never Read -->
-<!-- Source range: c1980f8..72b721e (2 commits) -->
+<!-- Release id: the-threshold-that-fell-on-the-hour -->
+<!-- Release title: The Threshold That Fell On The Hour -->
+<!-- Source range: c7d15ae..687bd78 (2 commits) -->
 
 # What's New for Users
 
-- Evolved's directory of Wikipedia user scripts now covers English Wikipedia, alongside French Wikipedia and Meta. That matters because English Wikipedia is where the largest population of user scripts is written, so it is where a script someone is about to write is most likely to already exist under another name.
-- Meta's coverage was quietly incomplete. Evolved found script pages by asking Wikipedia's search index, and that index refuses to page past its ten-thousandth result, so Evolved was reading about 500 of Meta's 25,354 script pages. Nothing it showed you was wrong -- it said plainly that it had read only part of the wiki -- but most of that wiki was simply invisible to it.
-- Evolved now reads the list of pages from the Wikimedia databases directly, which answers the same question exactly and with no limit. It also asks each page what kind of content it holds rather than guessing from the filename, which finds the twenty to sixty pages per wiki that hold JavaScript under a name not ending in `.js`, and skips the ordinary wiki pages that do.
-- Wikis too large to read in one go are now read across several runs, each picking up where the last one stopped rather than starting over. English Wikipedia's 155,561 script pages take about three days to read the first time, and minutes an hour to stay current afterwards.
-- A wiki is only treated as fully surveyed by the run that reaches its last page, so a script is never marked as removed on the strength of a partial reading. Until that run happens the directory says which wikis it has finished and which it is still working through.
+- When a background job is asked to stop, it is now always the job itself that hears the request, in every place Evolved starts one. Two steps of the deploy -- the database migration and the cache warm-up -- were starting their work behind a wrapper that received the stop request on their behalf and never passed it on, so instead of finishing the statement in hand they were cut off where they stood. A migration is the worst possible thing to interrupt mid-sentence.
+- The job that keeps contributor identities consistent could get stuck for an extra hour at a time, silently. Each run leaves a marker while it works and clears it when it finishes; a run that is killed cannot clear its own marker, so the next run is allowed to remove one that is old enough to be certain nobody is still using it.
+- That age threshold was set to exactly one hour, and the job runs exactly once an hour -- so the marker was always inspected at the very moment it became removable, and whichever arrived first decided the outcome. Of the twenty-four times this actually happened, the recorded ages ranged from 3,588 to 3,613 seconds: ten of them fell on the wrong side and waited another silent hour for no reason.
+- The threshold is now fifty minutes, which is reached comfortably before the next run looks at it, and the job is allowed twenty-five minutes to finish rather than fifteen. Its slowest genuine run on record took just over thirteen minutes, so it now has roughly twice the room it needs instead of slightly less.
