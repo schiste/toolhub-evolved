@@ -267,12 +267,14 @@ def test_a_set_with_no_readable_timestamp_is_undated_rather_than_epoch():
 # --- namespace names ---------------------------------------------------------
 
 
-def _siteinfo(namespaces=None, aliases=None):
+def _siteinfo(namespaces=None, aliases=None, interwiki=None):
     payload = {"query": {}}
     if namespaces is not None:
         payload["query"]["namespaces"] = namespaces
     if aliases is not None:
         payload["query"]["namespacealiases"] = aliases
+    if interwiki is not None:
+        payload["query"]["interwikimap"] = interwiki
     return payload
 
 
@@ -325,7 +327,81 @@ def test_a_malformed_alias_list_does_not_break_the_read():
     assert found == ("User", "Benutzer")
 
 
-def test_the_query_asks_for_namespaces_and_their_aliases():
+def test_the_query_asks_for_namespaces_their_aliases_and_the_interwiki_map():
     url = wiki_api.siteinfo_url("de.wikipedia.org")
     assert "meta=siteinfo" in url
     assert "namespacealiases" in url
+    assert "interwikimap" in url
+
+
+# --- interwiki prefixes -------------------------------------------------------
+
+
+def test_each_prefix_keeps_only_the_host_its_template_points_at():
+    found = wiki_api.interwiki_hosts(
+        _siteinfo(
+            interwiki=[
+                {"prefix": "en", "url": "https://en.wikipedia.org/wiki/$1"},
+                # Protocol-relative is the common shape in a real interwikimap.
+                {"prefix": "W", "url": "//en.wikipedia.org/wiki/$1"},
+                {"prefix": "commons", "url": "https://commons.wikimedia.org/wiki/$1"},
+            ],
+        ),
+    )
+    assert found == {
+        "en": "en.wikipedia.org",
+        "w": "en.wikipedia.org",
+        "commons": "commons.wikimedia.org",
+    }
+
+
+def test_a_prefix_that_is_also_a_namespace_name_on_this_wiki_is_dropped():
+    # The trap this function exists for. On enwiki `wikipedia:` is both the
+    # project namespace and an interwiki prefix, and MediaWiki resolves the
+    # namespace first -- 3,736 census edges start with `Wikipedia:`.
+    found = wiki_api.interwiki_hosts(
+        _siteinfo(
+            {
+                "2": {"id": 2, "canonical": "User", "name": "User"},
+                "4": {"id": 4, "canonical": "Project", "name": "Wikipedia"},
+            },
+            [{"id": 4, "alias": "WP"}],
+            [
+                {"prefix": "wikipedia", "url": "https://en.wikipedia.org/wiki/$1"},
+                {"prefix": "wp", "url": "https://en.wikipedia.org/wiki/$1"},
+                {"prefix": "d", "url": "https://www.wikidata.org/wiki/$1"},
+            ],
+        ),
+    )
+    # An alias counts as a namespace name too: `WP:` reaches the namespace.
+    assert found == {"d": "www.wikidata.org"}
+
+
+def test_an_entry_naming_no_host_or_no_prefix_is_dropped():
+    found = wiki_api.interwiki_hosts(
+        _siteinfo(
+            interwiki=[
+                {"prefix": "broken", "url": "not a url at all"},
+                {"prefix": "", "url": "https://en.wikipedia.org/wiki/$1"},
+                {"url": "https://en.wikipedia.org/wiki/$1"},
+                "nonsense",
+                {"prefix": "en", "url": "https://en.wikipedia.org/wiki/$1"},
+            ],
+        ),
+    )
+    assert found == {"en": "en.wikipedia.org"}
+
+
+def test_a_payload_with_no_interwiki_map_names_no_prefixes():
+    assert wiki_api.interwiki_hosts(_siteinfo()) == {}
+    assert wiki_api.interwiki_hosts(_siteinfo(interwiki="nonsense")) == {}
+    assert wiki_api.interwiki_hosts({}) == {}
+    assert wiki_api.interwiki_hosts(None) == {}
+
+
+def test_an_absurdly_long_interwiki_map_is_bounded():
+    entries = [
+        {"prefix": f"p{index}", "url": "https://en.wikipedia.org/wiki/$1"}
+        for index in range(wiki_api.MAX_INTERWIKI_PREFIXES + 50)
+    ]
+    assert len(wiki_api.interwiki_hosts(_siteinfo(interwiki=entries))) == wiki_api.MAX_INTERWIKI_PREFIXES

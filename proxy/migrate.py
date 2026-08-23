@@ -74,6 +74,20 @@ from backend.sync import (
 # thousands of rows, large enough that the walk is not dominated by round trips.
 BACKFILL_CHUNK = 1000
 
+# The unique key on `user_script_imports`, and the columns it now covers. Named
+# here rather than read off the model because the migration has to name it in
+# DDL, and a mismatch between the two would be a silent no-op every deploy.
+WIDENED_IMPORT_KEY = "ux_user_script_imports_edge"
+WIDENED_IMPORT_KEY_COLUMNS = (
+    "wiki",
+    "source_title",
+    "verb",
+    "target_wiki",
+    "target_title",
+    "target_url",
+    "target_module",
+)
+
 # MariaDB's two ways of saying "another writer holds this row": 1205 is having
 # waited out innodb_lock_wait_timeout, 1213 is having been picked as a deadlock
 # victim. Both mean come back later. Every other OperationalError -- a dropped
@@ -135,6 +149,7 @@ def migrations() -> Iterator[MigrationResult]:
     yield MigrationResult("unified relationship evidence", _backfill_relationship_evidence())
     yield MigrationResult("display-only attribution evidence", _migrate_display_attributions())
     yield MigrationResult("retired legacy people projections", _retire_legacy_people_tables())
+    yield MigrationResult("user-script load key widened for modules", _widen_userscript_import_key())
     yield MigrationResult("user-script loads resolved to pages", _backfill_userscript_import_targets())
 
 
@@ -172,6 +187,44 @@ def _ensure_catalog_read_indexes() -> int:
                 connection.exec_driver_sql(f"DROP INDEX {name}")
             created += 1
     return created
+
+
+def _widen_userscript_import_key() -> int:
+    """Add `target_module` to the unique key on `user_script_imports`.
+
+    A load that names a ResourceLoader module rather than a page leaves
+    `target_wiki`, `target_title`, and `target_url` all blank, so under the old
+    six-column key every module a page loads is the same row. `mw.loader.load`
+    is usually called several times in a row, and the writer drops the loser of
+    a duplicate rather than raising -- so without this, a page asking for three
+    gadgets would be recorded as asking for one, silently.
+
+    The old key is a prefix of the new one, so no existing row can become a
+    duplicate and the create cannot fail on data. The drop is by name because
+    the original constraint was declared unnamed and MariaDB named it after its
+    first column; a fresh database already creates the named form, and there
+    the search below finds nothing and this does nothing.
+    """
+    engine = db.engine()
+    inspector = inspect(engine)
+    table = UserScriptImport.__tablename__
+    if table not in set(inspector.get_table_names()):
+        return 0
+    unique = {item["name"] for item in inspector.get_indexes(table) if item.get("unique")}
+    if WIDENED_IMPORT_KEY in unique or not unique:
+        return 0
+    columns = ", ".join(f"`{name}`" for name in WIDENED_IMPORT_KEY_COLUMNS)
+    with engine.begin() as connection:
+        for name in sorted(unique):
+            if engine.dialect.name in {"mysql", "mariadb"}:
+                connection.exec_driver_sql(f"DROP INDEX `{name}` ON {table}")
+            else:
+                connection.exec_driver_sql(f"DROP INDEX {name}")
+        # No USING HASH: this key is far past InnoDB's 3072-byte prefix limit,
+        # and MariaDB converts a unique key that long to a hash index by itself
+        # -- which is what the existing one already is.
+        connection.exec_driver_sql(f"CREATE UNIQUE INDEX {WIDENED_IMPORT_KEY} ON {table} ({columns})")
+    return 1
 
 
 def _backfill_userscript_import_targets() -> int:

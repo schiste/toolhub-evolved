@@ -498,12 +498,15 @@ rather than a canonical one.
 
 ## Known gaps
 
-- **`_NAMESPACE_ALIASES` covers English and French.** Titles from any other wiki
-  are stored under that wiki's own prefix. Owners resolve correctly regardless,
-  but a page written two ways on such a wiki is two rows, and `fingerprint()`
-  normalizes only those same three aliases when hashing a body. Widening it
-  properly means reading each wiki's namespace names and aliases from
-  `meta=siteinfo`, which nothing does.
+- **`fingerprint()` still folds English and French only.** Closed for titles:
+  `backend/wiki_prefixes` reads each wiki's namespace names, aliases and
+  interwiki map from `meta=siteinfo`, stores them, and hands them to the fold,
+  so `Benutzer:X/y.js` and `en:User:Lupin/popups.js` now resolve to the page
+  and wiki they name. `fingerprint()` deliberately did not move with it:
+  fingerprints are stored and compared against each other, so widening the rule
+  that produces them rewrites every hash already written and makes each page
+  look like a fork of itself until the whole corpus is swept again. It belongs with
+  the fork work below, which touches hashing anyway.
 - **Demand does not skip same-owner loads.** `demand()` skips only a page
   loading _itself_, though its docstring describes the broader case — "a script
   that installs its own helper subpage would otherwise vote for itself". With
@@ -522,19 +525,25 @@ rather than a canonical one.
   read. A script installed as a wiki gadget is loaded by people who never create
   a page at all, and the `gadgetusage` API knows those numbers; nothing reads it.
 - **Half of frwiki's load edges resolve to nothing, and most of them never
-  will.** Of 8,216 stored edges, 4,029 name a page the census holds. Checking
-  the other 638 distinct titles against the live API is what tells them apart,
-  and the answer is mostly not a bug: 279 name a `User:` page that does not
+  will.** Of 8,216 stored edges, 4,029 named a page the census holds. Checking
+  the other 638 distinct titles against the live API is what told them apart,
+  and the answer was mostly not a bug: 279 name a `User:` page that does not
   exist on frwiki at all — loads of scripts long since deleted or never
   created, which nothing can resolve because there is nothing to resolve to.
   Another 173 name `MediaWiki:` gadget definitions, correctly unresolved because
-  the census enumerates user space only. What is left is small and mixed: 53
-  name a `User:` page that _does_ exist on frwiki and is missing from the census
-  anyway (see below), ~16 use a namespace alias from another language
-  (`Benutzer:`, `Gebruiker:`) that `canonical_title` does not fold, ~6 carry an
-  interwiki prefix (`:En:`, `:Id:`) that belongs in `target_wiki`, and 38 name
-  no namespace. Raw `/w/index.php?title=…` URLs and `[[…]]` brackets used to be
-  in this list and are now normalized at parse time.
+  the census enumerates user space only. The rest was small and mixed, and the
+  three parts of it that were bugs are now closed: ~16 used a namespace alias
+  from another language (`Benutzer:`, `Gebruiker:`) and ~6 carried an interwiki
+  prefix (`:En:`, `:Id:`), both of which the per-wiki prefixes above now fold
+  and follow; 38 named no namespace, and an argument that names no page now
+  produces no edge at all rather than an unresolvable one; and a
+  `mw.loader.load('ext.gadget.x')` names a ResourceLoader module, which is
+  recorded in `target_module` rather than misfiled as a title. Raw
+  `/w/index.php?title=…` URLs and `[[…]]` brackets were normalized at parse time
+  earlier. What remains is 53 titles that name a `User:` page which _does_ exist
+  on frwiki and is missing from the census anyway (see below). **The figures in
+  this bullet predate those fixes**; the next full sweep is what re-measures
+  them.
 - **920 frwiki pages are missing from a census that reports itself complete.**
   Not a sweep-depth, staleness or drift problem — all three were measured and
   ruled out. frwiki's user space holds 14,431 script pages in the Wiki Replicas
