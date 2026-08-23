@@ -256,10 +256,19 @@
   # evidence rows on the last completed run -- so the cost only rises. Read
   # `phaseSeconds` in the job's own output before spending this headroom again:
   # if the local half is what grew, more time is the wrong answer twice running.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile --stale-after 3600 -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
+  #
+  # 1500 rather than 1800 because --stale-after is derived from it and would
+  # otherwise land on the schedule. A leaked lock is only ever inspected by a
+  # run, so its age is a multiple of the hour; at --stale-after 3600 the first
+  # inspection and the threshold coincide and jitter decides the outcome. The
+  # 24 reclaims recorded in people-identity-reconcile.err range 3588-3613s, so
+  # 10 of them would have skipped and waited another silent hour. 3000 is
+  # inspected at 3600 with 600s to spare, and 1500 is still nearly twice the
+  # 803s worst completed run.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile --stale-after 3000 -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
   image: python3.13
   schedule: "43 * * * *"
-  timeout: 1800
+  timeout: 1500
   emails: onfailure
 
 - name: people-attribution-reconverge

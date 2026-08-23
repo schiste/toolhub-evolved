@@ -246,6 +246,57 @@ def test_the_recorder_stores_a_run_and_keeps_history_bounded(tmp_path):
     assert all(row.succeeded for row in rows)
 
 
+# Scheduler jitter observed on the reclaim lines in people-identity-reconcile.err
+# is about +/- 13s around the interval. 120s is an order of magnitude above that.
+RECLAIM_MARGIN_SECONDS = 120
+# Below this, a run that skips the boundary is retried soon enough that the extra
+# silence is not worth designing against: the whole cost of a miss is one interval.
+RECLAIM_CHECKED_ABOVE_SECONDS = 600
+
+
+def _guarded_stale_after() -> dict[str, int]:
+    """--stale-after per job name, read from the commands jobs.yaml declares."""
+    declared = {}
+    for line in (ROOT / "jobs.yaml").read_text().splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("command:") or "--job-name" not in stripped:
+            continue
+        name = re.search(r"--job-name (\S+)", stripped)
+        stale = re.search(r"--stale-after (\d+)", stripped)
+        if name and stale:
+            declared[name.group(1)] = int(stale.group(1))
+    return declared
+
+
+def test_no_reclaim_threshold_lands_on_the_schedule_it_will_be_measured_against():
+    """A lock is only ever inspected by a run, so its age is a multiple of the period.
+
+    The guard reclaims at `age >= stale-after`, and a leaked lock is first seen
+    by the next run at `ceil(stale / period) * period`. When stale-after is
+    itself a multiple of the period those two coincide, and jitter alone decides
+    whether the run reclaims or skips. people-identity-reconcile shipped exactly
+    that way for one release: stale-after 3600 on an hourly schedule, where the
+    24 recorded reclaims ranged 3588-3613s -- 10 of them below the threshold
+    they were being compared against, each costing another silent hour.
+    """
+    stale_after = _guarded_stale_after()
+    assert stale_after, "no guarded commands found; the jobs.yaml parser above is broken"
+    checked = []
+    too_close = []
+    for job in job_catalog.load():
+        declared = stale_after.get(job.name)
+        period = job.expected_interval_minutes * 60
+        if declared is None or job.continuous or period < RECLAIM_CHECKED_ABOVE_SECONDS:
+            continue
+        checked.append(job.name)
+        first_look = -(-declared // period) * period
+        if first_look - declared < RECLAIM_MARGIN_SECONDS:
+            too_close.append(f"{job.name}: stale-after={declared} first inspected at {first_look}s (period {period})")
+    # A filter that excluded everything would make the assertion below vacuous.
+    assert len(checked) >= 10, f"only {len(checked)} jobs were actually checked"
+    assert too_close == [], too_close
+
+
 def test_every_job_with_a_timeout_reclaims_its_lock_at_twice_that_timeout():
     """A killed pod cannot release its guard lock, so the threshold is derived.
 
