@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-half-that-was-never-read -->
 <!-- Release title: The Half That Was Never Read -->
-<!-- Source range: c1980f8..7f2cb28 (2 commits) -->
+<!-- Source range: c1980f8..72b721e (2 commits) -->
 
 # Technical Release Notes
 
