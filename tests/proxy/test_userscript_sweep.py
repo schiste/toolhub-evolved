@@ -731,6 +731,81 @@ def test_a_full_run_sweeps_a_wiki_that_was_already_swept():
     assert sweeper.run(wiki.request, FRWIKI, full=True)["mode"] == "sweep"
 
 
+# -- and re-choosing it when the road moves under the census ------------
+
+
+def _looks_like_toolforge(monkeypatch, tmp_path):
+    """Give this host replica credentials, and no replica to use them on.
+
+    Both halves matter. The credentials are what makes the exact road *look*
+    available, which is the condition a stored census is measured against; the
+    reader that raises is what every host without a live replica behind those
+    credentials actually does, and what the fallback exists to survive. Left to
+    connect for real this would sit on a DNS timeout instead.
+    """
+    path = tmp_path / "replica.my.cnf"
+    path.write_text("[client]\nuser='s55555'\npassword='sekrit'\n", encoding="utf-8")
+    monkeypatch.setenv(wiki_replica.CONFIG_PATH_ENV, str(path))
+
+    def unreachable(*_args, **_kwargs):
+        raise Boom("no replica behind these credentials")
+
+    monkeypatch.setattr(wiki_replica, "dbnames_for", unreachable)
+
+
+def _recorded(wiki=FRWIKI):
+    with db.session_scope() as session:
+        state = session.get(UserScriptCensusState, wiki)
+        return (state.enumeration_source, state.sweeps_completed)
+
+
+def test_a_sweep_writes_down_which_road_named_the_pages():
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    sweeper.run(wiki.request, FRWIKI)
+    assert _recorded() == ("search", 1)
+
+
+def test_a_census_built_on_the_capped_road_is_swept_again_once_the_exact_one_is_reachable(
+    monkeypatch, tmp_path
+):
+    # The defect this exists for. frwiki finished a sweep from the search index
+    # the day before the replica road landed, and a finished sweep never runs
+    # again -- so it watched for changes over a census 920 pages short of the
+    # wiki, and nothing in the state row disagreed.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    sweeper.run(wiki.request, FRWIKI)
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "watch"
+    _looks_like_toolforge(monkeypatch, tmp_path)
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "sweep"
+
+
+def test_a_census_that_never_recorded_its_road_is_swept_once_and_then_knows(monkeypatch, tmp_path):
+    # What every row in the table looked like before the column existed. Blank
+    # is unknown, not exact, and one sweep is what turns it into either.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    sweeper.run(wiki.request, FRWIKI)
+    with db.session_scope() as session:
+        session.get(UserScriptCensusState, FRWIKI).enumeration_source = ""
+    _looks_like_toolforge(monkeypatch, tmp_path)
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "sweep"
+    assert _recorded()[0] == "search-fallback"
+
+
+def test_a_replica_that_is_present_and_failing_does_not_re_sweep_the_wiki_every_run(
+    monkeypatch, tmp_path
+):
+    # The loop this could have been. Asking "is a better road available" of the
+    # credentials alone would sweep the wiki on every run for as long as the
+    # replica stayed down -- thousands of requests an hour to arrive at exactly
+    # the list already stored. What the census records is the road it got, not
+    # the road it hoped for.
+    _looks_like_toolforge(monkeypatch, tmp_path)
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "sweep"
+    assert _recorded()[0] == "search-fallback"
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "watch"
+
+
 # -- the job entrypoint -------------------------------------------------
 
 import userscript_sweep as job  # noqa: E402

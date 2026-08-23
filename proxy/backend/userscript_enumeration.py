@@ -29,6 +29,13 @@ be able to run a census. What the fallback gives up is completeness on a large
 wiki, and it says so -- `complete` stays false and the sweep declines to
 tombstone anything on the strength of a list it knows is a prefix of the truth.
 
+Which road a census took is therefore part of what it is, not a detail of how
+it was built, and `superseded` is how a stored census is asked whether the road
+behind it still is the best one. It has to be asked, because a finished sweep
+never runs again on its own: frwiki was swept from the index the day before the
+replica road landed, and kept a census 920 pages short of its user space for as
+long as nobody noticed.
+
 `page_id` order is creation order for free. Ids are handed out in creation
 sequence and never reused, so the position of a title in this list is the
 ordering `backend.userscript_projection` reads as creation order wherever the
@@ -49,6 +56,7 @@ if TYPE_CHECKING:
 #: Where an enumeration came from, reported so a run that fell back is legible.
 SOURCE_REPLICA = "replica"
 SOURCE_SEARCH = "search"
+SOURCE_SEARCH_FALLBACK = "search-fallback"
 
 
 @dataclass(frozen=True)
@@ -69,8 +77,17 @@ class Enumeration:
 def _by_search(
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
+    *,
+    source: str = SOURCE_SEARCH,
 ) -> Enumeration:
-    """Walk the search index for each script model, keeping its own honesty."""
+    """Walk the search index for each script model, keeping its own honesty.
+
+    `source` separates the two ways a census ends up here, which look identical
+    in the result and are opposite in what to do about them. `SOURCE_SEARCH` is
+    a host that never had the better road and may acquire it; falling back with
+    credentials in hand means the replica was tried and did not answer, and
+    trying again on the next run would fall back again.
+    """
 
     def search(query: str, offset: int) -> tuple[int, tuple[str, ...]]:
         return census.read_search(request(wiki, "GET", census.search_params(query, offset)))
@@ -83,7 +100,7 @@ def _by_search(
         titles.extend(found.titles)
         totals[model] = found.total
         complete = complete and found.complete
-    return Enumeration(titles=tuple(titles), totals=totals, complete=complete, source=SOURCE_SEARCH)
+    return Enumeration(titles=tuple(titles), totals=totals, complete=complete, source=source)
 
 
 def _prefix(request: Callable[[str, str, dict[str, Any]], Any], wiki: str) -> str:
@@ -145,11 +162,32 @@ def enumerate_wiki(
     rather than only in a count that stopped growing.
     """
     user = credentials()
-    if user is not None:
-        try:
-            found = _by_replica(request, wiki, user=user, connect=connect)
-        except Exception:  # noqa: BLE001 - an unreachable replica falls back, it does not fail the census
-            found = None
-        if found is not None:
-            return found
-    return _by_search(request, wiki)
+    if user is None:
+        return _by_search(request, wiki)
+    try:
+        found = _by_replica(request, wiki, user=user, connect=connect)
+    except Exception:  # noqa: BLE001 - an unreachable replica falls back, it does not fail the census
+        found = None
+    if found is not None:
+        return found
+    return _by_search(request, wiki, source=SOURCE_SEARCH_FALLBACK)
+
+
+def superseded(
+    source: str,
+    *,
+    credentials: Callable[[], wiki_replica.Credentials | None] = wiki_replica.credentials,
+) -> bool:
+    """Whether an enumeration recorded as `source` could be bettered on this host now.
+
+    Only the plain search road can be. It is what a host without replica
+    credentials gets, and a host that has since acquired them can name pages
+    that road structurally cannot reach -- so a census built on it is worth
+    building again. `SOURCE_SEARCH_FALLBACK` is the same list obtained *despite*
+    having the credentials, which is a replica that did not answer rather than
+    one that is not there; calling it superseded would sweep the wiki on every
+    run for as long as the failure lasts. An empty source is a census recorded
+    before the road was written down: unknown rather than exact, so it is
+    checked once and then knows what it is.
+    """
+    return source in ("", SOURCE_SEARCH) and credentials() is not None

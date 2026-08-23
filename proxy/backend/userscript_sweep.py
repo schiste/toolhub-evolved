@@ -471,6 +471,7 @@ def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limi
         state = _record_totals(session, wiki)
         state.enumeration_totals = found.totals
         state.enumeration_complete = whole_wiki
+        state.enumeration_source = found.source
         state.sweep_cursor = 0 if finished else start + len(window)
         state.sweeps_completed += 1 if finished else 0
         state.status = "idle"
@@ -543,10 +544,22 @@ def run(
     edits and call the wiki covered. A wiki part-way through a bounded sweep is
     in the same position for the same reason, and keeps sweeping until the
     cursor comes back to zero.
+
+    A completed sweep is not permanent either, and this is the case that has to
+    be looked for rather than waited for. Discovery has two roads, the exact one
+    is not always reachable, and a wiki that finished on the capped one keeps
+    that census for good -- nothing about watching for changes ever revisits
+    what the wiki was found to hold. frwiki did exactly this: swept from the
+    search index the day before the replica road landed, 920 pages short, and
+    watching contentedly ever since. So a census whose recorded road has since
+    been superseded is swept again. It cannot become a loop, because the sweep
+    writes down the road it actually got: a host where the replica keeps failing
+    records that it fell back, and `enumeration.superseded` leaves it alone.
     """
     with db.session_scope() as session:
         state = _state(session, wiki)
         swept, pending = state.sweeps_completed, state.sweep_cursor
-    if full or not swept or pending:
+        outdated = enumeration.superseded(state.enumeration_source)
+    if full or not swept or pending or outdated:
         return sweep(request, wiki, limit=limit)
     return watch(request, wiki, limit=watch_limit)
