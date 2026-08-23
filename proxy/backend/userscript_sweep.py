@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func
+from sqlalchemy import func, tuple_
 
 from backend import db, userscripts
 from backend import userscript_census as census
@@ -54,7 +54,20 @@ WATCH_LIMIT: int = 500
 # failure is treated as systemic rather than as one oversized batch.
 SPLIT_BUDGET: int = 5
 
-EMPTY_COUNTS: dict[str, int] = {"asked": 0, "fetched": 0, "written": 0, "skipped": 0, "unreadable": 0}
+# How many (wiki, title) pairs to name in one IN clause when resolving loads to
+# pages. A run writing two thousand pages can hold tens of thousands of loads,
+# and one statement naming all of them is a statement no engine should be asked
+# to plan; MySQL's max_allowed_packet, not correctness, is what this respects.
+RESOLVE_CHUNK: int = 500
+
+EMPTY_COUNTS: dict[str, int] = {
+    "asked": 0,
+    "fetched": 0,
+    "written": 0,
+    "skipped": 0,
+    "unreadable": 0,
+    "resolved": 0,
+}
 
 
 def discover(
@@ -238,6 +251,7 @@ def ingest(
     not the position in the batch.
     """
     summary = dict(EMPTY_COUNTS, asked=len(titles))
+    written: list[str] = []
     with db.session_scope() as session:
         known = _known_revisions(session, wiki, [userscripts.canonical_title(title) for title in titles])
     ranks = (
@@ -256,8 +270,68 @@ def ingest(
                 summary["skipped"] += 1
                 continue
             store_page(session, wiki, page, rank)
+            written.append(title)
             summary["written"] += 1
+        summary["resolved"] = resolve_targets(session, wiki, written)
     return summary
+
+
+def page_ids(session: Session, targets: Iterable[tuple[str, str]]) -> dict[tuple[str, str], int]:
+    """Read the page id for each (wiki, title) we hold, skipping the ones we do not."""
+    found: dict[tuple[str, str], int] = {}
+    for chunk in _chunked(sorted(set(targets))):
+        rows = session.query(UserScriptPage.wiki, UserScriptPage.title, UserScriptPage.id).filter(
+            tuple_(UserScriptPage.wiki, UserScriptPage.title).in_(chunk)
+        )
+        found.update({(wiki, title): page_id for wiki, title, page_id in rows})
+    return found
+
+
+def _chunked(items: Sequence[Any], size: int = RESOLVE_CHUNK) -> Iterable[Sequence[Any]]:
+    """Cut a list into pieces small enough to name in one IN clause."""
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
+def resolve_targets(session: Session, wiki: str, written: Sequence[str]) -> int:
+    """Point this run's loads at the pages they name, both directions.
+
+    A run creates resolvable edges two ways, and only doing one of them would
+    leave the graph permanently half-built. The pages it wrote have loads of
+    their own, whose targets may be pages stored long ago; and pages stored
+    long ago may hold loads that were waiting for exactly the pages this run
+    has just written. So both are resolved, scoped to this run's titles.
+
+    Scoping matters more than it looks. The obvious implementation -- sweep
+    every row where `target_page_id` is null -- re-reads the same unresolvable
+    rows on every run forever, because a load pointing at a wiki outside the
+    census never becomes resolvable and never stops being scanned. Driving from
+    what changed means the work is proportional to the run, not to the corpus.
+    """
+    if not written:
+        return 0
+    resolved = 0
+    for chunk in _chunked(written):
+        # Loads made *by* the pages this run wrote.
+        outbound = session.query(UserScriptImport).filter(
+            UserScriptImport.wiki == wiki,
+            UserScriptImport.source_title.in_(chunk),
+            UserScriptImport.target_title != "",
+        )
+        # Loads made *of* the pages this run wrote, from anywhere.
+        inbound = session.query(UserScriptImport).filter(
+            UserScriptImport.target_wiki == wiki,
+            UserScriptImport.target_title.in_(chunk),
+            UserScriptImport.target_page_id.is_(None),
+        )
+        rows = list(outbound) + list(inbound)
+        ids = page_ids(session, ((row.target_wiki, row.target_title) for row in rows))
+        for row in rows:
+            page_id = ids.get((row.target_wiki, row.target_title))
+            if page_id is not None and row.target_page_id != page_id:
+                row.target_page_id = page_id
+                resolved += 1
+    return resolved
 
 
 def _stored_rank(session: Session, wiki: str, title: str) -> int | None:

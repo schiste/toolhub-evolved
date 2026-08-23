@@ -155,6 +155,23 @@ def _members(origin: directory.Origin) -> list[tuple[str, str]]:
     ]
 
 
+def page_ids(session: Session, wiki: str) -> dict[str, int]:
+    """Map every live page title on this wiki to the identity that outlives the rebuild.
+
+    The collapse works in titles, because titles are what the evidence is made
+    of -- a shared basename, a matching fingerprint. But the rows it produces are
+    deleted and re-created on every run, so their own ids mean nothing outside
+    the run that wrote them. Carrying the census id alongside is what lets
+    anything else -- a link, a note, another table -- refer to a script and still
+    be referring to the same script after the next projection.
+    """
+    rows = session.query(UserScriptPage.title, UserScriptPage.id).filter(
+        UserScriptPage.wiki == wiki,
+        UserScriptPage.deleted_at.is_(None),
+    )
+    return dict(rows)
+
+
 def _write(
     session: Session,
     wiki: str,
@@ -169,6 +186,7 @@ def _write(
     somebody else's -- so a merge would have to reason about disappearance, and
     the projection is cheap enough that it never has to.
     """
+    identities = page_ids(session, wiki)
     for table in (UserScriptDirectoryEntry, UserScriptDirectoryMember):
         session.query(table).filter(table.wiki == wiki).delete(synchronize_session=False)
     for tier, origins in tiers.items():
@@ -176,6 +194,7 @@ def _write(
             session.add(
                 UserScriptDirectoryEntry(
                     wiki=wiki,
+                    script_id=identities.get(origin.original.title),
                     title=origin.original.title,
                     owner=origin.original.owner,
                     basename=origin.original.basename,
@@ -190,6 +209,8 @@ def _write(
                 session.add(
                     UserScriptDirectoryMember(
                         wiki=wiki,
+                        script_id=identities.get(title),
+                        origin_id=identities.get(origin.original.title),
                         title=title,
                         origin_title=origin.original.title,
                         relation=relation,

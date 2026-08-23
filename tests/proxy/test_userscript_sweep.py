@@ -14,6 +14,7 @@ from backend import db, userscript_census as census, userscript_sweep as sweeper
 from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage  # noqa: E402
 
 FRWIKI = "fr.wikipedia.org"
+ENWIKI = "en.wikipedia.org"
 
 
 @pytest.fixture(autouse=True)
@@ -133,6 +134,23 @@ def stored(title, wiki=FRWIKI):
             "size": row.size_bytes,
             "deleted": row.deleted_at is not None,
         }
+
+
+def resolved_targets(title, wiki=FRWIKI):
+    """Which page each of a source's loads points at, named rather than numbered.
+
+    Reading the edge back as `(wiki, title)` rather than as an id is deliberate:
+    a test that asserted on the number would pass just as happily if the resolver
+    pointed every load at the same wrong row.
+    """
+    with db.session_scope() as session:
+        pages = {row.id: (row.wiki, row.title) for row in session.query(UserScriptPage).all()}
+        rows = (
+            session.query(UserScriptImport)
+            .filter(UserScriptImport.wiki == wiki, UserScriptImport.source_title == title)
+            .all()
+        )
+        return {row.target_title: pages.get(row.target_page_id) for row in rows}
 
 
 def imports_of(title, wiki=FRWIKI):
@@ -302,6 +320,91 @@ def test_a_load_removed_from_a_page_stops_counting_as_demand():
     wiki.pages["User:A/one.js"] = page("var a = 1;", revid="2")
     sweeper.sweep(wiki.request, FRWIKI)
     assert imports_of("User:A/one.js") == []
+
+
+# -- resolving loads to pages -------------------------------------------
+
+
+def test_a_load_points_at_the_page_it_names_when_both_arrive_in_one_run():
+    wiki = FakeWiki(
+        {
+            "User:A/one.js": page('importScript("User:B/two.js");'),
+            "User:B/two.js": page("var b = 2;"),
+        },
+    )
+    summary = sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
+    assert summary["resolved"] == 1
+
+
+def test_a_page_written_now_finds_the_page_it_loads_from_an_earlier_run():
+    # The loader arrives second. Resolution has to look outward, from this run's
+    # pages to whatever the corpus already holds.
+    wiki = FakeWiki({"User:B/two.js": page("var b = 2;")})
+    sweeper.sweep(wiki.request, FRWIKI)
+    wiki.pages["User:A/one.js"] = page('importScript("User:B/two.js");')
+    sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
+
+
+def test_a_page_written_now_is_found_by_the_loads_that_were_waiting_for_it():
+    # The loader arrives first, and its load is unresolvable at the time. Nothing
+    # rewrites that page later, so only a resolver that also looks inward -- from
+    # this run's pages back to whoever names them -- ever closes this edge.
+    wiki = FakeWiki({"User:A/one.js": page('importScript("User:B/two.js");')})
+    sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": None}
+    wiki.pages["User:B/two.js"] = page("var b = 2;")
+    second = sweeper.sweep(wiki.request, FRWIKI)
+    assert second["skipped"] == 1
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
+
+
+def test_a_load_naming_a_page_the_census_does_not_hold_stays_unresolved():
+    # Null is the honest answer, not a gap to be filled. A user script may load a
+    # page that was deleted, renamed, or never existed, and inventing a row for
+    # it would turn a broken load into a working one.
+    wiki = FakeWiki({"User:A/one.js": page('importScript("User:B/gone.js");')})
+    sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/gone.js": None}
+
+
+def test_a_load_of_another_wiki_resolves_once_that_wiki_has_been_swept():
+    # Cross-wiki loads are how a script becomes shared infrastructure, and the
+    # wikis are swept independently, so the edge is nearly always closed by the
+    # run that reads the *target* -- long after the run that read the loader.
+    loader = 'mw.loader.load("//en.wikipedia.org/w/index.php?title=User:C/three.js&action=raw");'
+    fr = FakeWiki({"User:A/one.js": page(loader)})
+    sweeper.sweep(fr.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:C/three.js": None}
+    en = FakeWiki({"User:C/three.js": page("var c = 3;")})
+    sweeper.sweep(en.request, ENWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:C/three.js": (ENWIKI, "User:C/three.js")}
+
+
+def test_a_rewritten_page_does_not_lose_the_edges_it_still_has():
+    # Storing a page replaces its loads wholesale, which drops every resolution
+    # it had. The run that replaced them has to put them back, or an edited page
+    # would silently disconnect from the graph.
+    wiki = FakeWiki(
+        {
+            "User:A/one.js": page('importScript("User:B/two.js");'),
+            "User:B/two.js": page("var b = 2;"),
+        },
+    )
+    sweeper.sweep(wiki.request, FRWIKI)
+    wiki.pages["User:A/one.js"] = page('importScript("User:B/two.js");\nvar a = 1;', revid="2")
+    sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
+
+
+def test_a_watch_resolves_the_page_it_read_just_as_a_sweep_does():
+    wiki = FakeWiki({"User:B/two.js": page("var b = 2;")})
+    sweeper.sweep(wiki.request, FRWIKI)
+    wiki.pages["User:A/one.js"] = page('importScript("User:B/two.js");')
+    wiki.changes = [{"ns": 2, "title": "User:A/one.js", "timestamp": "2024-02-01T00:00:00Z"}]
+    sweeper.watch(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
 
 
 # -- skipping -----------------------------------------------------------
