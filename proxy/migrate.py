@@ -17,13 +17,15 @@ re-running this is cheap and safe, and a partial run simply resumes.
 
 import os
 import sys
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, inspect, or_, select, text
 from sqlalchemy.dialects.mysql import LONGTEXT, MEDIUMTEXT
+from sqlalchemy.exc import OperationalError
 
 from backend import (
     DEFAULT_DB_URL,
@@ -72,6 +74,19 @@ from backend.sync import (
 # thousands of rows, large enough that the walk is not dominated by round trips.
 BACKFILL_CHUNK = 1000
 
+# MariaDB's two ways of saying "another writer holds this row": 1205 is having
+# waited out innodb_lock_wait_timeout, 1213 is having been picked as a deadlock
+# victim. Both mean come back later. Every other OperationalError -- a dropped
+# connection, a missing table -- means something a deploy should not survive.
+LOCK_CONTENTION_ERRNOS = frozenset({1205, 1213})
+
+# Identifier namespaces as they were first spelled, and the names they were
+# given once the vocabulary distinguished a username from an account id.
+IDENTIFIER_NAMESPACE_RENAMES = {
+    "toolhub": people_index.NS_TOOLHUB_USERNAME,
+    "wiki": people_index.NS_WIKI_USERNAME,
+}
+
 
 @dataclass(frozen=True)
 class MigrationResult:
@@ -87,30 +102,40 @@ class MigrationResult:
 
 def run_once() -> list[MigrationResult]:
     """Apply every pending data migration and report what each one touched."""
-    return [
-        MigrationResult("digest render MEDIUMTEXT", _widen_digest_render_columns()),
-        MigrationResult("digest email subscriptions activated", _confirm_legacy_email_subscriptions()),
-        MigrationResult("out-of-scope digest editions retired", _retire_out_of_scope_digest_editions()),
-        MigrationResult("api_cache index columns", api_cache.backfill_index_columns()),
-        MigrationResult("catalog read indexes", _ensure_catalog_read_indexes()),
-        MigrationResult("canonical search_text", canonical_tools.backfill_search_text()),
-        MigrationResult("canonical card and sort projection", canonical_tools.backfill_read_projection()),
-        MigrationResult(
-            "catalog projections",
-            catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
-        ),
-        MigrationResult("catalog facet aggregate", catalog_facets.rebuild_global_payload(force=True)),
-        MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
-        MigrationResult("legacy Toolforge proof retirement", _retire_legacy_toolforge_proofs()),
-        MigrationResult("source attestation rules marker", _initialize_source_attestation_rules()),
-        MigrationResult("Toolforge relationship input marker", _initialize_toolforge_relationship_marker()),
-        MigrationResult("relationship verification timestamps", _backfill_relationship_verified_at()),
-        MigrationResult("people immutable ids, slugs and account links", _backfill_people_identity()),
-        MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
-        MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
-        MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
-        MigrationResult("user-script loads resolved to pages", _backfill_userscript_import_targets()),
-    ]
+    return list(migrations())
+
+
+def migrations() -> Iterator[MigrationResult]:
+    """Yield each migration's result as that migration finishes.
+
+    Separate from `run_once` so that a caller which prints can print as it goes:
+    a migration that raises used to discard the record of every migration that
+    had already run and committed, leaving a failed deploy with one line of
+    output and no way to tell how far it got. `run_once` keeps the eager
+    contract its name promises -- a generator nobody iterates runs nothing.
+    """
+    yield MigrationResult("digest render MEDIUMTEXT", _widen_digest_render_columns())
+    yield MigrationResult("digest email subscriptions activated", _confirm_legacy_email_subscriptions())
+    yield MigrationResult("out-of-scope digest editions retired", _retire_out_of_scope_digest_editions())
+    yield MigrationResult("api_cache index columns", api_cache.backfill_index_columns())
+    yield MigrationResult("catalog read indexes", _ensure_catalog_read_indexes())
+    yield MigrationResult("canonical search_text", canonical_tools.backfill_search_text())
+    yield MigrationResult("canonical card and sort projection", canonical_tools.backfill_read_projection())
+    yield MigrationResult(
+        "catalog projections",
+        catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
+    )
+    yield MigrationResult("catalog facet aggregate", catalog_facets.rebuild_global_payload(force=True))
+    yield MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims())
+    yield MigrationResult("legacy Toolforge proof retirement", _retire_legacy_toolforge_proofs())
+    yield MigrationResult("source attestation rules marker", _initialize_source_attestation_rules())
+    yield MigrationResult("Toolforge relationship input marker", _initialize_toolforge_relationship_marker())
+    yield MigrationResult("relationship verification timestamps", _backfill_relationship_verified_at())
+    yield MigrationResult("people immutable ids, slugs and account links", _backfill_people_identity())
+    yield MigrationResult("unified relationship evidence", _backfill_relationship_evidence())
+    yield MigrationResult("display-only attribution evidence", _migrate_display_attributions())
+    yield MigrationResult("retired legacy people projections", _retire_legacy_people_tables())
+    yield MigrationResult("user-script loads resolved to pages", _backfill_userscript_import_targets())
 
 
 def _ensure_catalog_read_indexes() -> int:
@@ -430,10 +455,97 @@ def _retire_legacy_toolforge_proofs() -> int:
     return touched
 
 
+def _is_lock_contention(error: OperationalError) -> bool:
+    """Report whether the database refused because another writer held the row."""
+    args = getattr(getattr(error, "orig", None), "args", ())
+    return bool(args) and args[0] in LOCK_CONTENTION_ERRNOS
+
+
+def _restate_identifiers(rows: Iterable[PersonIdentifier], now: datetime) -> int:
+    """Move one chunk of identifier rows onto the current namespace and kind."""
+    touched = 0
+    for identifier in rows:
+        namespace = IDENTIFIER_NAMESPACE_RENAMES.get(identifier.namespace, identifier.namespace)
+        kind = (
+            people_index.IDENTIFIER_STABLE
+            if namespace
+            in {
+                people_index.NS_TOOLHUB_USER_ID,
+                people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
+                people_index.NS_TOOLFORGE_UID_NUMBER,
+            }
+            else people_index.IDENTIFIER_HANDLE
+        )
+        if identifier.namespace != namespace or identifier.identifier_kind != kind or identifier.last_seen_at is None:
+            identifier.namespace = namespace
+            identifier.identifier_kind = kind
+            identifier.source = identifier.source or "legacy_people_projection"
+            identifier.is_current = True
+            identifier.last_seen_at = identifier.last_seen_at or identifier.created_at or now
+            identifier.updated_at = now
+            touched += 1
+    return touched
+
+
+def _normalize_identifier_vocabulary() -> tuple[int, int]:
+    """Restate legacy identifier rows, chunk by chunk. Returns (changed, deferred).
+
+    `person_identifiers` is written every minute by the reconcile queue and for
+    minutes at a time by `people-identity-reconcile`, so a pass over it will meet
+    rows another writer is holding. As one transaction over the whole table this
+    could not converge: waiting out `innodb_lock_wait_timeout` on a single row
+    rolled back every row already restated, so the same work was still pending on
+    the next deploy, and the deploy itself died here -- before `jobs load` and
+    before the release was recorded, leaving the host pulled but not deployed.
+
+    A chunk that cannot be locked is one some hourly job is writing right now.
+    Leaving it for the next deploy is the whole point; grinding through a retry
+    would be arguing with the writer that is winning.
+    """
+    changed = 0
+    deferred = 0
+    after = 0
+    now = utcnow()
+    while True:
+        with db.session_scope() as s:
+            ids = list(
+                s.execute(
+                    select(PersonIdentifier.id)
+                    .where(PersonIdentifier.id > after)
+                    .order_by(PersonIdentifier.id)
+                    .limit(BACKFILL_CHUNK)
+                ).scalars()
+            )
+        if not ids:
+            return (changed, deferred)
+        # The window is fixed, and the cursor advanced past it, before anything
+        # can raise. A chunk this deploy cannot have is then skipped rather than
+        # retried forever, which is what deferring inside the read would do.
+        window, after = (after, ids[-1]), ids[-1]
+        restated = 0
+        try:
+            with db.session_scope() as s:
+                rows = s.execute(
+                    select(PersonIdentifier).where(
+                        PersonIdentifier.id > window[0],
+                        PersonIdentifier.id <= window[1],
+                    )
+                ).scalars()
+                restated = _restate_identifiers(rows, now)
+        except OperationalError as error:
+            if not _is_lock_contention(error):
+                raise
+            deferred += len(ids)
+            continue
+        # Counted only once the commit has survived: session_scope flushes on
+        # exit, so the refusal usually arrives after the rows were restated in
+        # memory, and those rows did not change.
+        changed += restated
+
+
 def _backfill_people_identity() -> int:
     """Assign opaque IDs and slugs, classify identifiers, and link accounts."""
     touched = 0
-    now = utcnow()
     with db.session_scope() as s:
         for person in s.execute(select(Person).order_by(Person.id)).scalars():
             if not person.public_id:
@@ -441,34 +553,15 @@ def _backfill_people_identity() -> int:
                 touched += 1
         s.flush()
         touched += _backfill_person_slugs(s)
-        for identifier in s.execute(select(PersonIdentifier).order_by(PersonIdentifier.id)).scalars():
-            namespace_map = {
-                "toolhub": people_index.NS_TOOLHUB_USERNAME,
-                "wiki": people_index.NS_WIKI_USERNAME,
-            }
-            namespace = namespace_map.get(identifier.namespace, identifier.namespace)
-            kind = (
-                people_index.IDENTIFIER_STABLE
-                if namespace
-                in {
-                    people_index.NS_TOOLHUB_USER_ID,
-                    people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
-                    people_index.NS_TOOLFORGE_UID_NUMBER,
-                }
-                else people_index.IDENTIFIER_HANDLE
-            )
-            if (
-                identifier.namespace != namespace
-                or identifier.identifier_kind != kind
-                or identifier.last_seen_at is None
-            ):
-                identifier.namespace = namespace
-                identifier.identifier_kind = kind
-                identifier.source = identifier.source or "legacy_people_projection"
-                identifier.is_current = True
-                identifier.last_seen_at = identifier.last_seen_at or identifier.created_at or now
-                identifier.updated_at = now
-                touched += 1
+    restated, deferred = _normalize_identifier_vocabulary()
+    touched += restated
+    if deferred:
+        # Loud, because the alternative reading of a quiet deploy is that there
+        # was nothing to do. Convergence is left to the next one.
+        sys.stderr.write(
+            f"migrate: left {deferred} identifier rows to the next deploy; another writer held them\n",
+        )
+    with db.session_scope() as s:
         users = list(s.execute(select(User).order_by(User.id)).scalars())
         current_ids = {
             (row.namespace, row.normalized_value): row.person_id
@@ -741,7 +834,7 @@ def main(argv: list[str] | None = None) -> int:
     db.configure(configured or DEFAULT_DB_URL)
     db.init_schema()
     sys.stdout.write(f"migrate: dialect={db.engine().dialect.name} configured_db_url={'yes' if configured else 'no'}\n")
-    for result in run_once():
+    for result in migrations():
         sys.stdout.write(f"{result.log_line()}\n")
     return 0
 

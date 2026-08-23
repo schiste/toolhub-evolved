@@ -24,6 +24,7 @@ from backend.models import (  # noqa: E402
     DigestEdition,
     DigestSubscription,
     Person,
+    PersonIdentifier,
     ToolAuthorClaim,
     ToolAuthorKey,
     ToolPersonRelationship,
@@ -595,3 +596,134 @@ def test_migrate_resolves_user_script_loads_stored_before_the_column_existed(con
         page_id = session.query(UserScriptPage.id).scalar()
         rows = dict(session.query(UserScriptImport.target_title, UserScriptImport.target_page_id))
     assert rows == {"User:B/two.js": page_id, "User:B/gone.js": None}
+
+
+def held_by_another_writer(errno=1205):
+    """The exception SQLAlchemy raises when MariaDB refuses to wait any longer.
+
+    Built rather than provoked because the suite runs on SQLite, which has no
+    row locks to contend for. What is under test is the decision the migration
+    makes about the refusal, not the database's ability to produce one.
+    """
+    return migrate.OperationalError(
+        "UPDATE person_identifiers SET last_seen_at=?, updated_at=? WHERE person_identifiers.id = ?",
+        {},
+        RuntimeError(errno, "Lock wait timeout exceeded; try restarting transaction"),
+    )
+
+
+def legacy_identifiers(count):
+    """`count` identifier rows spelled the way the pre-vocabulary code wrote them."""
+    with db.session_scope() as s:
+        person = Person(canonical_key="person-under-migration", display_name="Person")
+        s.add(person)
+        s.flush()
+        s.add_all(
+            PersonIdentifier(
+                person_id=person.id,
+                namespace="toolhub",
+                value=f"user{index}",
+                normalized_value=f"user{index}",
+            )
+            for index in range(count)
+        )
+
+
+def test_a_chunk_another_writer_holds_is_left_for_the_next_deploy(configured_db, monkeypatch, capsys):
+    # The regression: as one transaction over the whole table, a single held row
+    # rolled back every row restated before it, so the pass could never converge
+    # and the deploy died before it loaded jobs or recorded the release.
+    legacy_identifiers(6)
+    monkeypatch.setattr(migrate, "BACKFILL_CHUNK", 2)
+    restate = migrate._restate_identifiers
+    seen = []
+
+    def refuse_the_second_chunk(rows, now):
+        rows = list(rows)
+        seen.append(len(rows))
+        restated = restate(rows, now)
+        if len(seen) == 2:
+            raise held_by_another_writer()
+        return restated
+
+    monkeypatch.setattr(migrate, "_restate_identifiers", refuse_the_second_chunk)
+    changed, deferred = migrate._normalize_identifier_vocabulary()
+
+    # Every chunk was visited, so one held chunk does not stop the walk...
+    assert seen == [2, 2, 2]
+    # ...and the two rows it could not have are reported as left behind rather
+    # than counted among the ones it changed.
+    assert (changed, deferred) == (4, 2)
+    with db.session_scope() as s:
+        namespaces = [
+            row for row in s.execute(select(PersonIdentifier.namespace).order_by(PersonIdentifier.id)).scalars()
+        ]
+    assert namespaces.count("toolhub") == 2
+
+
+def test_the_deferred_rows_are_restated_by_the_next_run(configured_db, monkeypatch):
+    # Convergence is the point of deferring rather than failing: what one deploy
+    # could not lock, the next one takes.
+    legacy_identifiers(6)
+    monkeypatch.setattr(migrate, "BACKFILL_CHUNK", 2)
+    restate = migrate._restate_identifiers
+    calls = []
+
+    def refuse_once(rows, now):
+        calls.append(1)
+        restated = restate(list(rows), now)
+        if len(calls) == 2:
+            raise held_by_another_writer()
+        return restated
+
+    monkeypatch.setattr(migrate, "_restate_identifiers", refuse_once)
+    migrate._normalize_identifier_vocabulary()
+    monkeypatch.setattr(migrate, "_restate_identifiers", restate)
+
+    assert migrate._normalize_identifier_vocabulary() == (2, 0)
+    assert migrate._normalize_identifier_vocabulary() == (0, 0)
+
+
+def test_a_database_error_that_is_not_contention_still_fails_the_deploy(configured_db, monkeypatch):
+    # The narrow escape hatch must stay narrow: a dropped connection is not a
+    # row someone else is holding, and a deploy should not survive one.
+    legacy_identifiers(2)
+    monkeypatch.setattr(
+        migrate,
+        "_restate_identifiers",
+        lambda rows, now: (_ for _ in ()).throw(held_by_another_writer(errno=2013)),
+    )
+    with pytest.raises(migrate.OperationalError):
+        migrate._normalize_identifier_vocabulary()
+
+
+def test_the_operator_is_told_what_was_left_behind(configured_db, monkeypatch, capsys):
+    legacy_identifiers(2)
+    monkeypatch.setattr(
+        migrate,
+        "_restate_identifiers",
+        lambda rows, now: (_ for _ in ()).throw(held_by_another_writer()),
+    )
+    migrate._backfill_people_identity()
+    assert "left 2 identifier rows to the next deploy" in capsys.readouterr().err
+
+
+def test_a_deadlock_victim_is_treated_as_contention_and_a_bare_error_is_not():
+    assert migrate._is_lock_contention(held_by_another_writer(errno=1213))
+    assert not migrate._is_lock_contention(migrate.OperationalError("SELECT 1", {}, RuntimeError()))
+
+
+def test_run_once_reports_the_migrations_that_finished_before_one_failed(configured_db, monkeypatch):
+    # A list built every migration before printing any, so a failure late in the
+    # sequence threw away the record of everything that had already committed.
+    monkeypatch.setattr(
+        migrate,
+        "_backfill_userscript_import_targets",
+        lambda: (_ for _ in ()).throw(RuntimeError("migration 19 fails")),
+    )
+    reported = []
+    with pytest.raises(RuntimeError):
+        for result in migrate.migrations():
+            reported.append(result.name)
+    assert "digest render MEDIUMTEXT" in reported
+    assert "user-script loads resolved to pages" not in reported

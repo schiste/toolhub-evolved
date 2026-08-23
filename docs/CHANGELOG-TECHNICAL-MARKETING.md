@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: ask-before-you-read -->
 <!-- Release title: Ask Before You Read -->
-<!-- Source range: 4eda3f4..a287bea (5 commits) -->
+<!-- Source range: 4eda3f4..bebc3d0 (7 commits) -->
 
 # Technical Release Notes
 
@@ -12,3 +12,4 @@
 - `USERSCRIPT_LIMIT` rises from 6000 to 20000, chosen from measured wall clock rather than request count: three wikis at 6000 completed in under 7 minutes of the hourly tick. Three at 20000 is ~1200 requests in roughly 20 minutes.
 - Three comments that computed enwiki's cost at superseded constants are corrected: 78 hourly runs at the old 2000 limit, and 7,800 content requests at the old batch size of 20. Validation: 2,714 proxy tests pass; ruff check, ruff format, cspell and jscpd are clean.
 - `source_technology_summary`'s docstring claimed two manifests disagreeing "produce a row with `spec` and no `version`". They do not: `spec` is set only when there is exactly one declaration, so a disagreement leaves both fields empty and the row is dropped -- which is what `test_source_technology_summary_drops_the_spec_when_manifests_disagree` has asserted all along. Comment only; no behaviour changed. It is described here rather than in the previous release because that release was already recorded at 4eda3f4, before the correction was written.
+- `_backfill_people_identity` walked all of `person_identifiers` in one transaction, against a table the reconcile queue writes every minute. It waited out the row-lock timeout twice on 23 August and died at the full 50s both times, and could not converge -- the timeout rolled back every row restated before the held one. It is now a keyset walk in `BACKFILL_CHUNK` windows with a transaction each; a chunk refused with MariaDB 1205 or 1213 is deferred to the next deploy and reported on stderr, while every other `OperationalError` still fails the deploy. `run_once` also built its whole list before printing any of it, so a failure discarded the record of everything already committed; `migrations()` yields as it goes.
