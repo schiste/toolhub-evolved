@@ -41,12 +41,18 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
 from typing import Final
 from urllib.parse import ParseResult, parse_qs, unquote, urlparse
 
 from backend.wikimedia_urls import without_format_marks
+
+# Names one wiki answers to for its user namespace, looked up by wiki. A
+# callable rather than a mapping because the set of wikis a corpus refers to is
+# discovered while reading it -- a load can name any wiki that exists.
+Spellings = Callable[[str], tuple[str, ...]]
 
 # What a page is. A directory holds ROLE_SCRIPT pages and nothing else, but the
 # other three are not noise to be dropped -- a shim is the cleanest statement of
@@ -165,8 +171,35 @@ _WHITESPACE: Final = re.compile(r"\s+")
 # is returned as `Utilisatrice:Evpok`. Keying anything on the returned spelling
 # splits one page into two.
 _NAMESPACE_ALIASES: Final = ("User", "Utilisateur", "Utilisatrice")
-_ALIAS_PREFIX: Final = re.compile(rf"^(?:{'|'.join(_NAMESPACE_ALIASES)})\s*:\s*", re.IGNORECASE)
 _ALIAS_ANYWHERE: Final = re.compile(rf"\b(?:{'|'.join(_NAMESPACE_ALIASES)})\s*:", re.IGNORECASE)
+
+
+@cache
+def _alias_prefix(spellings: tuple[str, ...]) -> re.Pattern[str]:
+    """Match a user-namespace prefix written in any of these spellings.
+
+    The built-ins are always included, so a wiki whose own names could not be
+    read still folds the two spellings that were folded before this was
+    wiki-aware -- widening this must never be able to narrow it.
+
+    Every spelling is escaped. The built-ins are literals and did not need it,
+    but these arrive from a remote wiki's siteinfo, and a namespace name is
+    free text as far as this code is concerned.
+    """
+    known = (*_NAMESPACE_ALIASES, *spellings)
+    alternatives = "|".join(re.escape(spelling) for spelling in known)
+    return re.compile(rf"^(?:{alternatives})\s*:\s*", re.IGNORECASE)
+
+
+def no_spellings(_wiki: str) -> tuple[str, ...]:
+    """Name no extra namespace spelling for any wiki.
+
+    The default everywhere a resolver is optional, which keeps every caller
+    that has no database -- tests, and the pure analysis of a single body --
+    working on the built-ins alone.
+    """
+    return ()
+
 
 _URL_ARGUMENT: Final = re.compile(r"^(?:https?:)?//", re.IGNORECASE)
 
@@ -176,7 +209,7 @@ _PERCENT_ESCAPE: Final = re.compile(r"%[0-9A-Fa-f]{2}")
 _WIKI_PATH: Final = re.compile(r"^/wiki/(?P<title>.+)$")
 
 
-def page_named_by(parsed: ParseResult) -> str | None:
+def page_named_by(parsed: ParseResult, spellings: tuple[str, ...] = ()) -> str | None:
     """Return the title a parsed MediaWiki URL names, or None when it names none.
 
     Split out from `wiki_target` because the same two spellings turn up without
@@ -186,14 +219,14 @@ def page_named_by(parsed: ParseResult) -> str | None:
     """
     query = parse_qs(parsed.query).get("title")
     if query:
-        return canonical_title(query[0])  # parse_qs has already decoded it
+        return canonical_title(query[0], spellings=spellings)  # parse_qs has already decoded it
     path = _WIKI_PATH.match(parsed.path)
     if path:
-        return canonical_title(unquote(path.group("title")))
+        return canonical_title(unquote(path.group("title")), spellings=spellings)
     return None
 
 
-def wiki_target(url: str) -> tuple[str, str]:
+def wiki_target(url: str, spellings: Spellings = no_spellings) -> tuple[str, str]:
     """Split a URL into the wiki and page it names, or ("", "") if it names neither.
 
     Both MediaWiki spellings appear in the corpus: the raw-action query form
@@ -215,7 +248,9 @@ def wiki_target(url: str) -> tuple[str, str]:
     host = parsed.netloc.lower()
     if not host:
         return ("", "")
-    title = page_named_by(parsed)
+    # The host's own spellings, not the loading wiki's: this title belongs to
+    # whatever wiki the URL names.
+    title = page_named_by(parsed, spellings(host))
     return (host, title) if title is not None else ("", "")
 
 
@@ -267,7 +302,7 @@ def strip_comments(body: str) -> str:
     return _LINE_COMMENT.sub(" ", _BLOCK_COMMENT.sub(_blank_block, body or ""))
 
 
-def canonical_title(title: str) -> str:
+def canonical_title(title: str, *, spellings: tuple[str, ...] = ()) -> str:
     """Return one spelling of a wiki page title.
 
     Underscores become spaces, runs of whitespace collapse, a localized user
@@ -275,11 +310,17 @@ def canonical_title(title: str) -> str:
     capitalized because `$wgCapitalLinks` is true on every Wikipedia. (It is
     not true on every Wiktionary; a wiki where it is false would need this
     made conditional before its titles could be keyed on.)
+
+    `spellings` are the extra names one wiki answers to for its user namespace,
+    read from that wiki's siteinfo. They must be the names of the wiki the
+    *title* belongs to, which for a cross-wiki load is the target's, not the
+    loading page's -- `Benutzer:` means namespace 2 on dewiki and means nothing
+    at all on frwiki.
     """
     clean = " ".join(without_format_marks(str(title or "")).replace("_", " ").split())
     if not clean:
         return ""
-    stem = _ALIAS_PREFIX.sub("", clean)
+    stem = _alias_prefix(tuple(spellings)).sub("", clean)
     if stem != clean:
         clean = f"User:{stem}"
     namespace, separator, name = clean.partition(":")
@@ -358,7 +399,7 @@ def _decoded(raw: str) -> str:
     return unquote(raw) if _PERCENT_ESCAPE.search(raw) else raw
 
 
-def _resolve(verb: str, argument: str, wiki: str) -> tuple[str, str, str]:
+def _resolve(verb: str, argument: str, wiki: str, spellings: Spellings) -> tuple[str, str, str]:
     """Turn one quoted loader argument into (wiki, title, url); "" where unusable."""
     # Cleaned before anything reads it, so the URL this returns and the title
     # derived from it are both already in storage's spelling.
@@ -367,19 +408,19 @@ def _resolve(verb: str, argument: str, wiki: str) -> tuple[str, str, str]:
         return ("", "", "")
     template = _local_template(verb, wiki)
     if template:
-        return (wiki, canonical_title(template.format(name=raw)), "")
+        return (wiki, canonical_title(template.format(name=raw), spellings=spellings(wiki)), "")
     if _URL_ARGUMENT.match(raw):
-        host, title = wiki_target(raw)
+        host, title = wiki_target(raw, spellings)
         return (host, title, raw)
     # A MediaWiki URL with no host names a page on the wiki that wrote it.
     if raw.startswith("/"):
-        title = page_named_by(urlparse(raw))
+        title = page_named_by(urlparse(raw), spellings(wiki))
         if title:
             return (wiki, title, "")
-    return (wiki, canonical_title(_decoded(raw)), "")
+    return (wiki, canonical_title(_decoded(raw), spellings=spellings(wiki)), "")
 
 
-def script_imports(body: str, *, wiki: str = "") -> tuple[ScriptImport, ...]:
+def script_imports(body: str, *, wiki: str = "", spellings: Spellings = no_spellings) -> tuple[ScriptImport, ...]:
     """Return every resolvable load in `body`, in source order, without repeats.
 
     Repeats are dropped because this is used to count *demand*, and a page that
@@ -392,7 +433,7 @@ def script_imports(body: str, *, wiki: str = "") -> tuple[ScriptImport, ...]:
     for match in _edge_pattern(wiki).finditer(strip_comments(body)):
         verb = match.group("verb")
         argument = match.group("argument")
-        target, title, url = _resolve(verb, argument, wiki)
+        target, title, url = _resolve(verb, argument, wiki, spellings)
         if not title and not url:
             continue
         key = (verb, target, title, url)
@@ -403,11 +444,19 @@ def script_imports(body: str, *, wiki: str = "") -> tuple[ScriptImport, ...]:
     return tuple(found)
 
 
-def analyze(title: str, body: str, *, wiki: str = "") -> ScriptPage:
-    """Analyze one page in a single pass over its body."""
+def analyze(title: str, body: str, *, wiki: str = "", spellings: Spellings = no_spellings) -> ScriptPage:
+    """Analyze one page in a single pass over its body.
+
+    `fingerprint` is deliberately not given the wiki's spellings. Fingerprints
+    are stored and compared against each other, so widening the rule that
+    produces them would change every hash already written and make a page look
+    like a fork of itself until the whole wiki had been swept again. Folding
+    them is worth doing with fork detection, where the comparison is being
+    reworked anyway, and not as a side effect of learning a namespace name.
+    """
     return ScriptPage(
-        title=canonical_title(title),
+        title=canonical_title(title, spellings=spellings(wiki)),
         role=classify(body, wiki=wiki),
         fingerprint=fingerprint(body),
-        imports=script_imports(body, wiki=wiki),
+        imports=script_imports(body, wiki=wiki, spellings=spellings),
     )

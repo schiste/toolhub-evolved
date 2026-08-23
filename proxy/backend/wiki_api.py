@@ -80,6 +80,20 @@ def definition_url(domain: str) -> str:
     )
 
 
+# What a wiki calls namespace 2, and everything else it answers to for it.
+# `namespaces` carries the localized name and the canonical one; `namespacealiases`
+# carries the rest, including spellings kept for backwards compatibility after a
+# rename. Both are needed: neither is a superset of the other.
+SITEINFO_PARAMS = {"meta": "siteinfo", "siprop": "namespaces|namespacealiases"}
+
+USER_NAMESPACE_ID = 2
+
+
+def siteinfo_url(domain: str) -> str:
+    """Return the query for a wiki's namespace names and aliases."""
+    return _api_url(domain, SITEINFO_PARAMS)
+
+
 def pages_url(domain: str, titles: tuple[str, ...]) -> str:
     """Return the query for the current revision of each named page."""
     return _api_url(domain, {**REVISION_PARAMS, "titles": "|".join(titles[: wiki_sources.MAX_PAGES])})
@@ -176,3 +190,31 @@ def head(found: tuple[Revision, ...]) -> str:
 def last_edited_at(found: tuple[Revision, ...]) -> str:
     """Return the most recent edit timestamp across the set, or "" if none is known."""
     return max((revision.edited_at for revision in found if revision.edited_at), default="")
+
+
+def user_namespace_spellings(payload: object) -> tuple[str, ...]:
+    """Return every name a siteinfo payload says namespace 2 answers to.
+
+    The canonical name comes first and the rest follow in the order the wiki
+    listed them, because the first spelling is the one worth showing a reader
+    when the census has to name the namespace itself.
+
+    A payload missing the namespace entirely returns nothing rather than
+    guessing `User`. The caller already has a built-in fallback; inventing a
+    spelling here would make an unreadable wiki indistinguishable from one that
+    genuinely answers to nothing else.
+    """
+    query = _object(_object(payload).get("query"))
+    namespace = _object(_object(query.get("namespaces")).get(str(USER_NAMESPACE_ID)))
+    listed = [namespace.get("canonical"), namespace.get("name")]
+    aliases = query.get("namespacealiases")
+    if isinstance(aliases, list):
+        listed += [_object(alias).get("alias") for alias in aliases if _object(alias).get("id") == USER_NAMESPACE_ID]
+    found: list[str] = []
+    for spelling in listed:
+        text = str(spelling or "").strip()
+        # Compared casefolded because that is how the fold matches them, and a
+        # wiki that lists `User` as both canonical name and alias is one name.
+        if text and text.casefold() not in {seen.casefold() for seen in found}:
+            found.append(text)
+    return tuple(found)

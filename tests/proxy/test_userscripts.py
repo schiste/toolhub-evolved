@@ -52,6 +52,57 @@ def test_localized_user_namespaces_collapse_onto_one_spelling():
     assert userscripts.canonical_title("user : Evpok/LiveRCparam.js") == "User:Evpok/LiveRCparam.js"
 
 
+def test_a_wiki_s_own_namespace_name_folds_once_it_has_been_read():
+    # The built-ins cover the two wikis censused first and nothing else, so
+    # dewiki's own name has to be handed in. Without it the title is stored as
+    # a string no page answers to, and every load edge pointing at it resolves
+    # to nothing.
+    assert userscripts.canonical_title("Benutzer:PerfektesChaos/js/lint.js") == "Benutzer:PerfektesChaos/js/lint.js"
+    folded = userscripts.canonical_title("Benutzer:PerfektesChaos/js/lint.js", spellings=("Benutzer", "Benutzerin"))
+    assert folded == "User:PerfektesChaos/js/lint.js"
+
+
+def test_a_wiki_s_names_widen_the_fold_and_never_narrow_it():
+    # A wiki that names only its own spellings must still fold the built-ins,
+    # so that learning a namespace name can never un-fold a title already
+    # stored under the old rule.
+    assert userscripts.canonical_title("User:Foo/x.js", spellings=("Benutzer",)) == "User:Foo/x.js"
+    assert userscripts.canonical_title("Utilisateur:Foo/x.js", spellings=("Benutzer",)) == "User:Foo/x.js"
+
+
+def test_a_namespace_name_is_matched_as_text_and_not_as_a_pattern():
+    # These arrive from a remote wiki's siteinfo. A name carrying regex
+    # punctuation must match itself and nothing else -- and must not blow up
+    # the census that asked for it.
+    assert userscripts.canonical_title("A.C:Foo/x.js", spellings=("A.C",)) == "User:Foo/x.js"
+    assert userscripts.canonical_title("AXC:Foo/x.js", spellings=("A.C",)) == "AXC:Foo/x.js"
+
+
+def test_a_cross_wiki_load_is_folded_by_the_target_s_names_not_the_loader_s():
+    # `Benutzer:` means namespace 2 on dewiki and means nothing at all on
+    # frwiki, so the spellings that decide this fold are the host's.
+    def spellings(wiki):
+        return ("Benutzer",) if wiki == "de.wikipedia.org" else ()
+
+    body = "mw.loader.load('//de.wikipedia.org/w/index.php?title=Benutzer:PerfektesChaos/js.js&action=raw&ctype=text/javascript');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI, spellings=spellings)
+    assert (found.wiki, found.title) == ("de.wikipedia.org", "User:PerfektesChaos/js.js")
+
+
+def test_a_fingerprint_does_not_move_when_a_wiki_s_names_are_learned():
+    # Fingerprints are stored and compared against each other. Widening the
+    # rule that produces them would rewrite every hash already written and make
+    # each page look like a fork of itself until the whole corpus was reswept.
+    def spellings(_wiki):
+        return ("Benutzer",)
+
+    body = "// [[Benutzer:PerfektesChaos]]\nimportScript('Benutzer:X/y.js');"
+    plain = userscripts.analyze("Benutzer:X/y.js", body, wiki="de.wikipedia.org")
+    aware = userscripts.analyze("Benutzer:X/y.js", body, wiki="de.wikipedia.org", spellings=spellings)
+    assert aware.title == "User:X/y.js"
+    assert aware.fingerprint == plain.fingerprint
+
+
 def test_underscores_and_runs_of_whitespace_are_one_title():
     assert userscripts.canonical_title("User:Le_Galéanthrope/Monobook.js") == "User:Le Galéanthrope/Monobook.js"
     assert userscripts.canonical_title("  User:Foo   Bar/x.js  ") == "User:Foo Bar/x.js"

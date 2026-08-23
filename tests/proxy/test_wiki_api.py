@@ -262,3 +262,70 @@ def test_a_set_with_no_readable_timestamp_is_undated_rather_than_epoch():
     found = wiki_api.revisions(_payload(_page("User:E/t.js", timestamp="")))
     assert wiki_api.last_edited_at(found) == ""
     assert wiki_api.last_edited_at(()) == ""
+
+
+# --- namespace names ---------------------------------------------------------
+
+
+def _siteinfo(namespaces=None, aliases=None):
+    payload = {"query": {}}
+    if namespaces is not None:
+        payload["query"]["namespaces"] = namespaces
+    if aliases is not None:
+        payload["query"]["namespacealiases"] = aliases
+    return payload
+
+
+def test_the_canonical_and_localized_names_are_both_read():
+    # Neither is derivable from the other, and both are titles the wiki serves:
+    # dewiki answers to `User:` as well as to `Benutzer:`.
+    found = wiki_api.user_namespace_spellings(
+        _siteinfo({"2": {"id": 2, "canonical": "User", "name": "Benutzer"}}),
+    )
+    assert found == ("User", "Benutzer")
+
+
+def test_aliases_for_the_user_namespace_are_read_and_others_are_not():
+    found = wiki_api.user_namespace_spellings(
+        _siteinfo(
+            {"2": {"id": 2, "canonical": "User", "name": "Utilisateur"}},
+            [
+                {"id": 2, "alias": "Utilisatrice"},
+                # Namespace 3 is user talk. Folding its name onto `User:` would
+                # merge a script page with the discussion about it.
+                {"id": 3, "alias": "Discussion utilisateur"},
+            ],
+        ),
+    )
+    assert found == ("User", "Utilisateur", "Utilisatrice")
+
+
+def test_a_name_listed_twice_in_different_case_is_one_name():
+    # The fold matches case-insensitively, so `User` as both canonical name and
+    # alias would otherwise put the same alternative in the pattern twice.
+    found = wiki_api.user_namespace_spellings(
+        _siteinfo({"2": {"id": 2, "canonical": "User", "name": "User"}}, [{"id": 2, "alias": "user"}]),
+    )
+    assert found == ("User",)
+
+
+def test_a_payload_without_the_user_namespace_names_nothing():
+    # Not a guess of `User`: the caller has its own fallback, and inventing a
+    # spelling here would make an unreadable wiki look like one that answered.
+    assert wiki_api.user_namespace_spellings(_siteinfo({"0": {"id": 0, "canonical": "", "name": ""}})) == ()
+    assert wiki_api.user_namespace_spellings(_siteinfo()) == ()
+    assert wiki_api.user_namespace_spellings({}) == ()
+    assert wiki_api.user_namespace_spellings(None) == ()
+
+
+def test_a_malformed_alias_list_does_not_break_the_read():
+    found = wiki_api.user_namespace_spellings(
+        _siteinfo({"2": {"id": 2, "canonical": "User", "name": "Benutzer"}}, ["nonsense", {"id": 2}]),
+    )
+    assert found == ("User", "Benutzer")
+
+
+def test_the_query_asks_for_namespaces_and_their_aliases():
+    url = wiki_api.siteinfo_url("de.wikipedia.org")
+    assert "meta=siteinfo" in url
+    assert "namespacealiases" in url
