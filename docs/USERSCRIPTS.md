@@ -351,8 +351,16 @@ routes are public, read-rate-limited, and touch only the local database.
   renamed and is reused when one is deleted.
 
 **Every response carries coverage metadata**, so an empty result never reads as
-"nothing exists": `pages`, `sweepsCompleted`, `sweptAt`, `computedAt`, and the
-per-tier counts. A wiki whose first sweep has not finished says so.
+"nothing exists": `pages`, `sweepsCompleted`, `enumerated`, `enumeratedBy` and
+the per-tier counts, plus three separate timestamps. They are separate because a
+census is stale in three unrelated ways and only one of them is about the job
+still running: `checkedAt` is the last run of any kind — liveness, and the one
+that says nothing about the data, since a watch stamps it hourly whether the
+wiki moved or not; `sweptAt` is when this wiki's user space was last enumerated
+and walked; `currentTo` is the wiki's own clock, how far into recent changes the
+watch has read. frwiki has been all three at once — checked this hour, swept in
+July, current to a fortnight ago — and a reader given only the first would have
+called it fresh. A wiki whose first sweep has not finished says so.
 
 Asking for a page that was folded away answers `404` with
 `{"error": "not an original", "filedUnder": "<origin title>", "filedUnderId": <id>}`

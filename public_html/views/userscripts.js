@@ -80,10 +80,13 @@ function relationLabel(relation) {
 }
 
 /**
- * What the numbers on this page were computed from.
+ * What the numbers on this page were computed from, and how current they are.
  *
- * An empty `sweptAt` is the case worth spelling out: it means no full census
- * has finished, so every count on the page is a floor rather than a total.
+ * Three dates rather than one, because "the job ran an hour ago" is not the
+ * same claim as "this is what the wiki held an hour ago", and only the first is
+ * cheap to know. A wiki swept in July and caught up to the first week of August
+ * is a perfectly healthy hourly job over month-old data, and a reader shown one
+ * timestamp would have no way to tell.
  * @param {any} coverage
  */
 function coverageStrip(coverage) {
@@ -91,7 +94,7 @@ function coverageStrip(coverage) {
 	// Two separate ways of being partial, and a wiki can be both at once: never
 	// swept yet, and too large to enumerate in one pass. Say each one plainly.
 	const notices = [];
-	if (!coverage.sweptAt) {
+	if (!Number(coverage.sweepsCompleted || 0)) {
 		notices.push(
 			t(
 				"userscripts.neverSwept",
@@ -111,6 +114,7 @@ function coverageStrip(coverage) {
 	return `${notice}<div class="detail__meta">
 		${metaItem(t("userscripts.pagesSeen", "Script pages seen"), fmt(Number(coverage.pages || 0)))}
 		${metaItem(t("userscripts.sweptAt", "Last full sweep"), timeTag(coverage.sweptAt))}
+		${metaItem(t("userscripts.currentTo", "Changes read up to"), timeTag(coverage.currentTo))}
 		${metaItem(t("userscripts.computedAt", "Directory rebuilt"), timeTag(coverage.computedAt))}
 	</div>`;
 }

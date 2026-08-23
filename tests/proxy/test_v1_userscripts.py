@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Read endpoints over a wiki's user-script directory: listing, one script, coverage."""
 
+from datetime import datetime
+
 import pytest
 from flask import Flask
 
@@ -145,7 +147,10 @@ def test_an_unswept_wiki_says_so_rather_than_looking_empty(app, client):
         "pages": 0,
         "sweepsCompleted": 0,
         "sweptAt": "",
+        "currentTo": "",
+        "checkedAt": "",
         "enumerated": True,
+        "enumeratedBy": "",
         "computedAt": "",
         "active": 0,
         "archive": 0,
@@ -156,13 +161,44 @@ def test_coverage_reports_the_sweep_behind_the_directory(app, client):
     with app.app_context():
         corpus()
         with db.session_scope() as session:
-            session.add(UserScriptCensusState(wiki=FRWIKI, sweeps_completed=2, last_success_at=utcnow()))
+            session.add(
+                UserScriptCensusState(
+                    wiki=FRWIKI,
+                    sweeps_completed=2,
+                    last_started_at=utcnow(),
+                    last_success_at=utcnow(),
+                )
+            )
     disclosed = client.get(f"/v1/userscripts/directory/?wiki={FRWIKI}").get_json()["coverage"]
     assert disclosed["sweepsCompleted"] == 2
     assert disclosed["sweptAt"].endswith("Z")
     assert disclosed["computedAt"].endswith("Z")
     assert (disclosed["pages"], disclosed["active"], disclosed["archive"]) == (4, 1, 1)
     assert disclosed["enumerated"] is True
+
+
+def test_a_live_job_over_a_stale_census_is_not_reported_as_a_fresh_directory(app, client):
+    # frwiki, exactly: swept once on 21 July, watched successfully every hour
+    # since, and reading recent changes from 6 August. One timestamp -- the one
+    # the hourly run stamps -- would have called this current.
+    with app.app_context():
+        corpus()
+        with db.session_scope() as session:
+            session.add(
+                UserScriptCensusState(
+                    wiki=FRWIKI,
+                    sweeps_completed=1,
+                    last_started_at=datetime(2026, 7, 21, 8, 23, 11),
+                    last_success_at=utcnow(),
+                    changes_cursor="2026-08-06T17:22:45Z",
+                    enumeration_source="search",
+                )
+            )
+    disclosed = client.get(f"/v1/userscripts/directory/?wiki={FRWIKI}").get_json()["coverage"]
+    assert disclosed["sweptAt"].startswith("2026-07-21")
+    assert disclosed["currentTo"] == "2026-08-06T17:22:45Z"
+    assert disclosed["checkedAt"] > disclosed["sweptAt"]
+    assert disclosed["enumeratedBy"] == "search"
 
 
 def test_coverage_admits_a_wiki_too_large_to_enumerate_in_one_pass(app, client):
@@ -175,6 +211,7 @@ def test_coverage_admits_a_wiki_too_large_to_enumerate_in_one_pass(app, client):
                 UserScriptCensusState(
                     wiki=FRWIKI,
                     sweeps_completed=1,
+                    last_started_at=utcnow(),
                     last_success_at=utcnow(),
                     enumeration_complete=False,
                 )
