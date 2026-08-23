@@ -1311,3 +1311,88 @@ def test_a_declared_runtime_names_the_technology_and_the_version_it_requires():
     assert rows["Go"]["version"] == "1.21"
     # The language version is not a module the tool depends on.
     assert "go:go" not in values(report, "dependencies")
+
+
+def test_a_lockfile_naming_react_does_not_make_the_tool_a_react_tool():
+    """The bug: one `node_modules/react` line catalogued any checkout that installed it."""
+    report = analyze_source_files(
+        [
+            {
+                "path": "package-lock.json",
+                "content": json.dumps({"packages": {"node_modules/react": {"version": "18.2.0"}}}),
+            }
+        ]
+    )
+    assert "React" not in values(report, "technology")
+    assert "npm:react" in values(report, "dependencies")
+
+
+def test_the_english_word_react_is_not_a_framework():
+    report = analyze_source_files(
+        [
+            {"path": "README.md", "content": "The bot will react to new edits.\n"},
+            {"path": "app.js", "content": "// react to the click event\nconst x = 1;\n"},
+            {"path": "bot.py", "content": '"""We react to changes."""\n'},
+        ]
+    )
+    assert "React" not in values(report, "technology")
+
+
+def test_a_usage_quoted_in_documentation_is_documentation():
+    """A README showing how to import React is writing about it, not calling it."""
+    report = analyze_source_files(
+        [{"path": "README.md", "content": "Install it, then:\n\n```js\nimport React from 'react';\n```\n"}]
+    )
+    assert "React" not in values(report, "technology")
+
+
+def test_react_is_read_from_a_usage_in_browser_source():
+    for content in (
+        "import React from 'react';\n",
+        'import { useState } from "react";\n',
+        "const React = require('react');\n",
+        "React.createElement('div');\n",
+    ):
+        report = analyze_source_files([{"path": "src/ui.js", "content": content}])
+        assert "React" in values(report, "technology"), content
+    # A different library whose name ends in the same letters is not React.
+    report = analyze_source_files([{"path": "src/ui.js", "content": "import { h } from 'preact';\n"}])
+    assert "React" not in values(report, "technology")
+
+
+def test_a_declared_package_names_its_technology_when_no_source_file_reached_it():
+    report = analyze_source_files(
+        [{"path": "package.json", "content": json.dumps({"dependencies": {"react": "18.2.0"}})}]
+    )
+    row = rows_by_value(report, "technology")["React"]
+    assert row["category"] == "framework"
+    assert row["version"] == "18.2.0"
+    # Declared, not observed, so it sits below every source-observed rule.
+    assert row["confidence"] < 0.9
+
+
+def test_a_promoted_technology_keeps_the_category_its_kind_belongs_in():
+    report = analyze_source_files(
+        [{"path": "package.json", "content": json.dumps({"dependencies": {"vue": "3.4.21", "flask": "1.0"}})}]
+    )
+    rows = rows_by_value(report, "technology")
+    assert rows["Vue"]["category"] == "language"
+    # A pypi package declared in package.json is not a pypi dependency.
+    assert "Flask" not in rows
+
+
+def test_only_evidence_somebody_wrote_down_can_promote_a_technology():
+    lockfile_only = source_analyzer.Finding(
+        value="npm:react", label="react (npm)", kind="dependencies", category="locked", confidence=0.8
+    )
+    lockfile_only.add(0.8, "Locked npm dependency.", {"sourceClass": "lockfile"})
+    assert source_analyzer._declared_evidence(lockfile_only) is None
+
+    declared = source_analyzer.Finding(
+        value="npm:react", label="react (npm)", kind="dependencies", category="runtime", confidence=0.9
+    )
+    declared.add(0.9, "Locked npm dependency.", {"sourceClass": "lockfile"})
+    declared.add(0.9, "Declared npm runtime dependency.", {"sourceClass": "manifest", "path": "package.json"})
+    # The lockfile row came first and is skipped: the evidence shown has to be
+    # the one the promotion actually rests on.
+    assert source_analyzer._declared_evidence(declared)["path"] == "package.json"

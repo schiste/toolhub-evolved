@@ -352,7 +352,18 @@ TECH_RULES = (
     ("Pywikibot", re.compile(r"\bpywikibot\b", re.IGNORECASE), 0.96),
     ("mwclient", re.compile(r"\bmwclient\b", re.IGNORECASE), 0.95),
     ("Node.js", re.compile(r"\b(express|fastify|koa)\b|\"scripts\"\s*:", re.IGNORECASE), 0.72),
-    ("React", re.compile(r"\bReact\b|from\s+[\"']react[\"']", re.IGNORECASE), 0.82),
+    # Deliberately not IGNORECASE, and deliberately requiring a usage rather
+    # than a mention, for the same reason as `mw.Api` below. `\bReact\b` under
+    # IGNORECASE matched the English word in a comment, and -- because the rules
+    # read every file rather than only code -- the string `node_modules/react`
+    # in a lockfile, so any checkout that had ever installed React was
+    # catalogued as a React tool. A package the tool actually declares still
+    # names it, through TECHNOLOGY_PACKAGES.
+    (
+        "React",
+        re.compile(r"\bReact\.[A-Za-z_]|\bfrom\s+[\"']react[\"']|\brequire\s*\(\s*[\"']react[\"']"),
+        0.82,
+    ),
     # Deliberately not IGNORECASE, and deliberately requiring the call: `mw.Api`
     # and `mw.loader.using` are JavaScript identifiers, so `MW.API` is not one
     # of them, and a bare mention is somebody writing *about* the API rather
@@ -366,7 +377,10 @@ TECH_RULES = (
 # evidence of it found anywhere else is a quotation. A Python docstring naming
 # `mw.Api` is the case that prompted this.
 BROWSER_SCRIPT_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".vue"})
-TECH_RULE_SUFFIXES = {"MediaWiki JavaScript": BROWSER_SCRIPT_SUFFIXES}
+TECH_RULE_SUFFIXES = {
+    "MediaWiki JavaScript": BROWSER_SCRIPT_SUFFIXES,
+    "React": BROWSER_SCRIPT_SUFFIXES,
+}
 
 # A file the wiki would serve as a user script. Read off the name rather than
 # the contents: the suffix is what makes a wiki page a script, and it says so
@@ -383,19 +397,33 @@ RUNTIME_TECHNOLOGY = {
     "go": "Go",
 }
 
-#: The package that carries the version for a technology the rules detect from
-#: source. `from flask import ...` says the tool uses Flask; only the manifest
-#: says which Flask, and it says it under a name the technology finding does
-#: not share, so the two are joined here rather than by string match.
+#: The package behind each technology, and the category the technology belongs
+#: in when the package is all that names it. `from flask import ...` says the
+#: tool uses Flask; only the manifest says which Flask, and it says it under a
+#: name the technology finding does not share, so the two are joined here
+#: rather than by string match.
 TECHNOLOGY_PACKAGES = {
-    "Flask": "pypi:flask",
-    "Django": "pypi:django",
-    "Pywikibot": "pypi:pywikibot",
-    "mwclient": "pypi:mwclient",
-    "React": "npm:react",
-    "Vue": "npm:vue",
-    "TypeScript": "npm:typescript",
+    "Flask": ("pypi:flask", "framework"),
+    "Django": ("pypi:django", "framework"),
+    "Pywikibot": ("pypi:pywikibot", "framework"),
+    "mwclient": ("pypi:mwclient", "framework"),
+    "React": ("npm:react", "framework"),
+    "Vue": ("npm:vue", "language"),
+    "TypeScript": ("npm:typescript", "language"),
 }
+
+#: Source classes that mean somebody wrote the dependency into this tool: a
+#: manifest, or an import in its own code. A `lockfile` row is the resolver's
+#: output instead -- it names every transitive package a build would fetch,
+#: which is why one line of `node_modules/react` used to be enough. The
+#: low-provenance classes are left out for the same reason: a package a fixture
+#: imports is not a technology the tool is built with.
+DECLARED_DEPENDENCY_SOURCE_CLASSES = frozenset({"config", "frontend", "manifest", "runtime"})
+
+#: The confidence a technology earns from a declared package alone. Below every
+#: source-observed rule in TECH_RULES: declaring a dependency is deliberate, but
+#: it is evidence of an intent to use rather than of a use.
+DECLARED_TECHNOLOGY_CONFIDENCE = 0.8
 
 USER_SCRIPT_SUFFIX = ".user.js"
 
@@ -1782,21 +1810,46 @@ def _scan_manifest_dependencies(findings: dict[tuple[str, str], Finding], source
         _scan_lockfile_dependencies(findings, source_file)
 
 
-def _apply_technology_versions(findings: dict[tuple[str, str], Finding]) -> None:
-    """Copy each package's declared version onto the technology it stands for.
+def _declared_evidence(dependency: Finding) -> dict[str, Any] | None:
+    """Return the first evidence for a dependency somebody wrote down."""
+    for item in dependency.evidence:
+        if str(item.get("sourceClass") or "") in DECLARED_DEPENDENCY_SOURCE_CLASSES:
+            return item
+    return None
 
-    Only onto technologies already found. A resolved package is evidence of a
-    release, never of a usage, so it annotates a technology the source proved
-    and conjures none. Runs after every file, because the manifest naming the
+
+def _reconcile_technology_packages(findings: dict[tuple[str, str], Finding]) -> None:
+    """Join each technology to the package that carries its name and version.
+
+    Both directions. A package the tool declares -- in a manifest, or by
+    importing it from its own code -- is evidence the tool is built with that
+    technology, so it can name one no source file reached. A package a lockfile
+    resolved is not, because a lockfile names every transitive dependency a
+    build would fetch and the tool chose almost none of them. Either way the
+    constraint travels onto the technology, because the manifest naming the
     version and the source proving the usage are rarely the same file.
     """
-    for technology, package in TECHNOLOGY_PACKAGES.items():
-        finding = findings.get(("technology", technology))
+    for technology, (package, category) in TECHNOLOGY_PACKAGES.items():
         dependency = findings.get(("dependencies", package))
-        if finding is None or dependency is None:
+        if dependency is None:
             continue
+        key = ("technology", technology)
+        if key not in findings:
+            evidence = _declared_evidence(dependency)
+            if evidence is None:
+                continue
+            _put(
+                findings,
+                kind="technology",
+                value=technology,
+                label=technology,
+                category=category,
+                confidence=DECLARED_TECHNOLOGY_CONFIDENCE,
+                reason="Declared dependency on this technology's package.",
+                evidence=evidence,
+            )
         for spec in dependency.version_specs:
-            finding.note_version(spec)
+            findings[key].note_version(spec)
 
 
 def _local_python_import_roots(files: list[SourceFile]) -> set[str]:
@@ -3420,7 +3473,7 @@ def analyze_source_files(
             _scan_actions(findings, source_file.path, line_number, line)
             _scan_oauth_scopes(findings, source_file.path, line_number, line)
             _scan_warnings(findings, source_file.path, line_number, line)
-    _apply_technology_versions(findings)
+    _reconcile_technology_packages(findings)
     report: dict[str, Any] = {
         "toolName": tool_name or "",
         "sourceLabel": source_label or "",
