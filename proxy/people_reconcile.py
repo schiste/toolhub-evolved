@@ -14,15 +14,51 @@ from backend import db, job_runner, people_reconcile
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-# --reconverge runs hourly, but the lock it shares is held for the whole of the
-# weekly full pass -- longer than the gap between two reconverge runs. So the
-# job's premise that "skipped now, converges an hour later" costs nothing does
-# not hold while that pass runs: it is skipped every hour until the pass ends.
-# On 2026-08-17 five consecutive attempts were skipped that way. Queueing
-# briefly turns that run of skips into one short wait. Only this mode waits:
-# the per-minute drain has another attempt sixty seconds later and should keep
-# skipping, and the full pass is the run everyone else is waiting on.
-RECONVERGE_LOCK_WAIT_SECONDS = 120
+# Every mode below takes one shared advisory lock, and every schedule that
+# uses it fires on the minute: `* * * * *` at :00 of each minute, `43 * * * *`
+# at :43:00, `13 5 * * 0` at 05:13:00. They do not queue behind one another,
+# they race, at the same instant, on every run. So each mode needs a stated
+# answer to "how long is winning this worth to me", and the honest measure is
+# what losing costs: how long until this mode gets another attempt.
+#
+#   --queue            another attempt in 1 minute  -> never waits
+#   --reconverge       another attempt in 1 hour    -> waits
+#   --identities-only  another attempt in 1 hour    -> waits
+#   --apply            another attempt in 7 days    -> waits longest
+#
+# The earlier rule read the contention backwards: it gave the only wait to
+# --reconverge on the grounds that "the full pass is the run everyone else is
+# waiting on". The full pass is in fact the mode most often turned away, and
+# the one that pays a week for it -- on 2026-08-23 it reclaimed its file lock,
+# lost this one to the drain, and exited in four seconds having done nothing.
+#
+# The numbers are measured, not chosen. The drain holds the lock for 6-11s in
+# practice against a 300s timeout ceiling. 120s has been --reconverge's wait
+# since 2026-08-17, over which it lost the lock on 3.6% of runs, against 26.7%
+# for --identities-only -- the same shape of job, same hourly cadence, no
+# wait. So 120s is what an hour of loss buys, demonstrated. Only the full pass
+# can afford to outlast the drain's ceiling as well, and it is the one whose
+# next chance is seven days away, so it alone is given that much.
+HOURLY_LOCK_WAIT_SECONDS = 120
+FULL_PASS_LOCK_WAIT_SECONDS = 600
+
+
+def _lock_wait_seconds(args: argparse.Namespace) -> int:
+    """How long this mode is willing to lose to the race for the shared lock.
+
+    Set by how soon this mode gets another attempt, never by how much work it
+    is carrying: the drain is the largest job here by volume and is the one
+    that must never wait, because sixty seconds later it tries again.
+
+    The modes with no schedule -- a bare dry run, and --retirements -- are only
+    ever started by hand, so nothing will retry them at all. They wait the
+    longest for the same reason the weekly pass does.
+    """
+    if args.queue:
+        return 0
+    if args.reconverge or args.identities_only:
+        return HOURLY_LOCK_WAIT_SECONDS
+    return FULL_PASS_LOCK_WAIT_SECONDS
 
 
 @contextmanager
@@ -157,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         "people-reconcile",
         body,
         lock=True,
-        lock_wait_seconds=RECONVERGE_LOCK_WAIT_SECONDS if args.reconverge else 0,
+        lock_wait_seconds=_lock_wait_seconds(args),
         # Every mode here re-decides from present evidence and writes in one
         # transaction, so a run that lost its connection left nothing behind and
         # a second attempt reaches the same state the first would have.
