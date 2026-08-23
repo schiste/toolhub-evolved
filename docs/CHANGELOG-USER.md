@@ -1,11 +1,14 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: ask-before-you-read -->
-<!-- Release title: Ask Before You Read -->
-<!-- Source range: 4eda3f4..bebc3d0 (7 commits) -->
+<!-- Release id: every-script-a-tool -->
+<!-- Release title: Every Script a Tool -->
+<!-- Source range: bebc3d0..1e7b87b (10 commits) -->
 
 # What's New for Users
 
-- The English Wikipedia user-script directory now fills in over about 8 hours instead of 26. Until it is complete, coverage keeps saying so rather than letting a partial count read as the whole wiki.
-- The census now asks each wiki whether it is keeping up before reading from it, and stops for the hour when the answer is no. A wiki under load is never made to serve a bulk reader.
-- A run that stops early no longer skips the pages it did not reach. It resumes from exactly where it left off next hour, so nothing falls out of the directory because of one busy afternoon.
+- The user scripts living in Wikipedia's user space are now tools in the directory, with an author, a link and their source, the same as anything else you can find here. They have never had catalogue entries because nobody writes a tool description for a personal page.
+- A script nobody but its author is known to load is listed too, marked **Archived** rather than left out. "We found nothing" and "nothing is there" are different answers, and the directory now keeps them apart instead of quietly reporting a smaller wiki than the real one.
+- Personal stylesheets no longer count as tools. They stay in the census, which describes user space, but a page the wiki itself reads as CSS does not become a catalogue entry.
+- A script someone copied and tweaked is now recognized as a version of the one it came from, even when the two were renamed apart. Before, only a byte-for-byte copy counted, so the same script under three names looked like three tools.
+- An author loading their own script no longer counts as that script being in demand. It was roughly 40% of the signal, and it made a private draft look as wanted as a script other people install.
+- Scripts referenced in German, Dutch or any other language's user namespace, or across wikis with a prefix like `en:`, now resolve to the page they name instead of vanishing.
