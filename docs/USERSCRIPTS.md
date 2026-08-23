@@ -107,6 +107,15 @@ Three limits shape the code:
   sweep, tombstones what the wiki no longer lists, and lets the wiki fall
   through to watching.
 
+A census keeps whichever road it got, so the road is recorded with it in
+`enumeration_source` — `replica`, `search` (no credentials on this host), or
+`search-fallback` (credentials, but the replica did not answer). A finished
+sweep never runs again on its own, so without this a wiki swept from the index
+before the replica road existed would hold that census for good. `run()` sweeps
+again when the recorded road has since been superseded, which only `search`
+ever is: `search-fallback` means the exact road was tried and failed, and
+re-trying it every run would sweep the wiki hourly to arrive at the same list.
+
 Nothing here fetches on its own. Every Action API call goes through the existing
 `WikimediaClient`, which validates the host before each request.
 
@@ -276,13 +285,13 @@ Moving either must not move the other.
 All five tables are rebuildable from a fresh sweep. None holds anything that is
 not already publicly readable on the wiki.
 
-| Table                           | Contents                                                                                                                                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, revision id, `discovery_rank`, body, `deleted_at`                                    |
-| `user_script_imports`           | One row per load edge, keyed on source, verb and target; `target_page_id` is that target resolved to a page; `is_stylesheet` separates CSS loads from script loads |
-| `user_script_census_state`      | Per-wiki cursors and counters: `changes_cursor`, `sweep_cursor`, `sweeps_completed`, `enumeration_complete`, `enumeration_totals`, status, timings, last error     |
-| `user_script_directory`         | The projected directory: one row per original, with `script_id`, `tier`, `demand`, `instances` and `position`                                                      |
-| `user_script_directory_members` | Every page folded under an original, with its `relation`, `script_id` and `origin_id`                                                                              |
+| Table                           | Contents                                                                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, revision id, `discovery_rank`, body, `deleted_at`                                                      |
+| `user_script_imports`           | One row per load edge, keyed on source, verb and target; `target_page_id` is that target resolved to a page; `is_stylesheet` separates CSS loads from script loads                   |
+| `user_script_census_state`      | Per-wiki cursors and counters: `changes_cursor`, `sweep_cursor`, `sweeps_completed`, `enumeration_complete`, `enumeration_totals`, `enumeration_source`, status, timings, last error |
+| `user_script_directory`         | The projected directory: one row per original, with `script_id`, `tier`, `demand`, `instances` and `position`                                                                        |
+| `user_script_directory_members` | Every page folded under an original, with its `relation`, `script_id` and `origin_id`                                                                                                |
 
 ### Identity
 
@@ -342,8 +351,16 @@ routes are public, read-rate-limited, and touch only the local database.
   renamed and is reused when one is deleted.
 
 **Every response carries coverage metadata**, so an empty result never reads as
-"nothing exists": `pages`, `sweepsCompleted`, `sweptAt`, `computedAt`, and the
-per-tier counts. A wiki whose first sweep has not finished says so.
+"nothing exists": `pages`, `sweepsCompleted`, `enumerated`, `enumeratedBy` and
+the per-tier counts, plus three separate timestamps. They are separate because a
+census is stale in three unrelated ways and only one of them is about the job
+still running: `checkedAt` is the last run of any kind — liveness, and the one
+that says nothing about the data, since a watch stamps it hourly whether the
+wiki moved or not; `sweptAt` is when this wiki's user space was last enumerated
+and walked; `currentTo` is the wiki's own clock, how far into recent changes the
+watch has read. frwiki has been all three at once — checked this hour, swept in
+July, current to a fortnight ago — and a reader given only the first would have
+called it fresh. A wiki whose first sweep has not finished says so.
 
 Asking for a page that was folded away answers `404` with
 `{"error": "not an original", "filedUnder": "<origin title>", "filedUnderId": <id>}`
@@ -518,14 +535,19 @@ rather than a canonical one.
   interwiki prefix (`:En:`, `:Id:`) that belongs in `target_wiki`, and 38 name
   no namespace. Raw `/w/index.php?title=…` URLs and `[[…]]` brackets used to be
   in this list and are now normalized at parse time.
-- **53 frwiki pages are loaded, exist, and are absent from a complete census.**
-  They are in user space, they are actively imported by other scripts, and
-  `enumeration_complete` is set with a sweep an hour old. Three explanations are
-  ruled out: not sweep depth (the census holds 252 depth-2 and 12 depth-3 pages,
-  and 26 of the 53 are depth-1), not sweep staleness, not recent drift (sampled
-  creation dates run 2015–2025, none since the last sweep). 22 of the 53 are
-  under one owner's `Twinkle/` tree. Whatever the enumeration is missing, it is
-  not something the coverage block currently discloses.
+- **920 frwiki pages are missing from a census that reports itself complete.**
+  Not a sweep-depth, staleness or drift problem — all three were measured and
+  ruled out. frwiki's user space holds 14,431 script pages in the Wiki Replicas
+  and 13,617 in the search index, and frwiki's census was built from the index,
+  the day before the replica road landed. `enumeration_complete` was set
+  truthfully: no model crossed the offset cap. That is not the same claim as
+  "the index named every page", and nothing recorded which road had made it, so
+  a finished sweep sat there watching for changes over a corpus 920 pages short.
+  meta and enwiki were still mid-sweep on the day the replica road landed and
+  picked it up for free — frwiki was stranded for having finished. The road is
+  now recorded (`enumeration_source`) and a census built on a superseded one is
+  swept again, so the 920 arrive on the next scheduled run. The 53 in the bullet
+  above are the subset something actually loads.
 - **Nothing analyses the code yet.** The directory is the prerequisite — security
   review, API-usage extraction, and "which of these should be one global gadget"
   all run on top of it and none of them exist.

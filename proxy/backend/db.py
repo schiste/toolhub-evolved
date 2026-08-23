@@ -233,6 +233,11 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         },
         "user_script_census_state": {
             "sweep_cursor": "INTEGER NOT NULL DEFAULT 0",
+            # No backfill: an existing row cannot say which road it took, and
+            # guessing would either strand the wikis swept from the index or
+            # re-sweep the ones that were not. Blank means unknown, which the
+            # sweep resolves by enumerating once and writing down what it got.
+            "enumeration_source": "VARCHAR(32) NOT NULL DEFAULT ''",
         },
         "user_script_imports": {
             # Null means "no page we hold answers to that name", which is the

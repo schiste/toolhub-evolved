@@ -2329,6 +2329,7 @@
 	"userscripts.apply": "Apply",
 	"userscripts.backToDirectory": "← Back to the directory",
 	"userscripts.computedAt": "Directory rebuilt",
+	"userscripts.currentTo": "Changes read up to",
 	"userscripts.demand": "Users loading it",
 	"userscripts.docTitle": "User scripts — Toolhub",
 	"userscripts.errorBody": "This is not an empty directory — the request failed.",

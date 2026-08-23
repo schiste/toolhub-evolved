@@ -1628,6 +1628,12 @@ class UserScriptCensusState(Base):
     imports_known: Mapped[int] = mapped_column(Integer, default=0)
     enumeration_complete: Mapped[bool] = mapped_column(Boolean, default=True)
     enumeration_totals: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Which road in `backend.userscript_enumeration` named the pages behind this
+    # census. The roads are not equivalent and a census keeps whichever one it
+    # got, so this is the only thing that can say a finished sweep is finished
+    # against a list that is no longer the best available. Empty on a row
+    # written before the column existed, which reads as unknown, not as exact.
+    enumeration_source: Mapped[str] = mapped_column(String(32), default="")
     sweeps_completed: Mapped[int] = mapped_column(Integer, default=0)
     # How far into the enumeration the last bounded sweep got, and 0 when a
     # sweep finished. A wiki whose corpus is larger than one run's budget is

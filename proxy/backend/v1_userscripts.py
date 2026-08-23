@@ -53,14 +53,24 @@ def _offset(raw: str) -> int:
 
 
 def coverage(s: Session, wiki: str) -> dict[str, Any]:
-    """Describe what this wiki's directory is built from, and when it was last built.
+    """Describe what this wiki's directory is built from, and how current it is.
 
-    Two different ways of being partial are reported separately, because they
-    have different remedies. `sweptAt` being empty says no full sweep has ever
-    completed -- wait for one. `enumerated` being false says the wiki holds
-    more script pages than one search pass can walk, so no amount of waiting
-    will finish it; the enumeration itself has to be narrowed. Either way the
-    counts below are a floor rather than a total.
+    Three timestamps, because a census can be stale in three unrelated ways and
+    only one of them is about the job still running. `checkedAt` is liveness --
+    the last run of any kind -- and it is the one that says nothing at all about
+    the data, since a watch stamps it every hour whether the wiki moved or not.
+    `sweptAt` is when this wiki's user space was last enumerated and walked, and
+    `currentTo` is the wiki's own clock: how far into recent changes the watch
+    has read. A directory can be an hour old by `checkedAt`, a month old by
+    `sweptAt`, and current to a fortnight ago by `currentTo`, all at once, and a
+    reader given only the first would call it fresh.
+
+    Two ways of being partial are reported separately, because they have
+    different remedies. `sweepsCompleted` at zero says no full sweep has ever
+    finished -- wait for one. `enumerated` being false says the wiki holds more
+    script pages than one search pass can walk, so no amount of waiting will
+    finish it. `enumeratedBy` names the road behind the counts, which is what
+    distinguishes an exact census from one that merely never hit a cap.
     """
     state = s.get(UserScriptCensusState, wiki)
     pages = int(
@@ -86,8 +96,11 @@ def coverage(s: Session, wiki: str) -> dict[str, Any]:
         "wiki": wiki,
         "pages": pages,
         "sweepsCompleted": int(state.sweeps_completed) if state else 0,
-        "sweptAt": common.iso(state.last_success_at) if state else "",
+        "sweptAt": common.iso(state.last_started_at) if state else "",
+        "currentTo": (state.changes_cursor or "") if state else "",
+        "checkedAt": common.iso(state.last_success_at) if state else "",
         "enumerated": bool(state.enumeration_complete) if state else True,
+        "enumeratedBy": (state.enumeration_source or "") if state else "",
         "computedAt": common.iso(computed),
         "active": counts[directory.TIER_ACTIVE],
         "archive": counts[directory.TIER_ARCHIVE],
