@@ -36,9 +36,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import and_
+from sqlalchemy.orm import aliased
 
 from backend import db, userscripts
 from backend import userscript_directory as directory
+from backend import userscript_sweep as sweep
 from backend.models import (
     UserScriptDirectoryEntry,
     UserScriptDirectoryMember,
@@ -116,33 +118,46 @@ def demand(session: Session, wiki: str) -> dict[str, set[str]]:
     cross-wiki edges are the strongest argument any script has for becoming a
     global gadget.
 
+    Counted by resolved identity rather than by the literal string the load was
+    written with. A script names its target in whatever spelling its author
+    reached for, and the census files every page under one canonical title, so
+    keying on the raw string records demand against names no candidate answers
+    to -- where nothing will ever read it. Measured on frwiki before the change:
+    644 of 1,389 title-keyed entries named no page at all, and not one of them
+    was a candidate. So this moves no score today. It is what lets a better
+    resolver move them tomorrow, because the key now follows the page rather
+    than the spelling.
+
     A page loading itself is not demand for it. This is the common case rather
     than a curiosity -- a script that installs its own helper subpage would
-    otherwise vote for itself.
+    otherwise vote for itself -- and comparing identities rather than titles
+    catches it however the self-reference happened to be written.
     """
+    source, target = aliased(UserScriptPage), aliased(UserScriptPage)
     rows = (
-        session.query(UserScriptImport.source_title, UserScriptImport.target_title, UserScriptPage.owner)
+        session.query(UserScriptImport.source_title, source.id, source.owner, target.id, target.title)
+        .select_from(UserScriptImport)
+        .join(target, target.id == UserScriptImport.target_page_id)
         .outerjoin(
-            UserScriptPage,
+            source,
             and_(
-                UserScriptPage.wiki == UserScriptImport.wiki,
-                UserScriptPage.title == UserScriptImport.source_title,
+                source.wiki == UserScriptImport.wiki,
+                source.title == UserScriptImport.source_title,
             ),
         )
-        .filter(
-            UserScriptImport.target_title != "",
-            UserScriptImport.target_wiki.in_(["", wiki]),
-        )
+        .filter(target.wiki == wiki, target.deleted_at.is_(None))
         .all()
     )
     loads: dict[str, set[str]] = {}
-    for source_title, target_title, owner in rows:
-        if source_title == target_title:
+    for source_title, source_id, owner, target_id, title in rows:
+        # Null on the left of this comparison is an unswept source, which cannot
+        # be the page it is loading -- that one has a census row by definition.
+        if source_id == target_id:
             continue
         # The owner comes from the census row, which resolved it when the page's
         # namespace was known. A source with no census row -- and so no owner to
         # name -- stands for itself and still counts once.
-        loads.setdefault(target_title, set()).add(owner or source_title)
+        loads.setdefault(title, set()).add(owner or source_title)
     return loads
 
 
@@ -153,6 +168,23 @@ def _members(origin: directory.Origin) -> list[tuple[str, str]]:
         *[(page.title, RELATION_COPY) for page in origin.copies],
         *[(page.title, RELATION_VARIANT) for page in origin.variants],
     ]
+
+
+def page_ids(session: Session, wiki: str) -> dict[str, int]:
+    """Map every live page title on this wiki to the identity that outlives the rebuild.
+
+    The collapse works in titles, because titles are what the evidence is made
+    of -- a shared basename, a matching fingerprint. But the rows it produces are
+    deleted and re-created on every run, so their own ids mean nothing outside
+    the run that wrote them. Carrying the census id alongside is what lets
+    anything else -- a link, a note, another table -- refer to a script and still
+    be referring to the same script after the next projection.
+    """
+    rows = session.query(UserScriptPage.title, UserScriptPage.id).filter(
+        UserScriptPage.wiki == wiki,
+        UserScriptPage.deleted_at.is_(None),
+    )
+    return dict(rows)
 
 
 def _write(
@@ -169,6 +201,7 @@ def _write(
     somebody else's -- so a merge would have to reason about disappearance, and
     the projection is cheap enough that it never has to.
     """
+    identities = page_ids(session, wiki)
     for table in (UserScriptDirectoryEntry, UserScriptDirectoryMember):
         session.query(table).filter(table.wiki == wiki).delete(synchronize_session=False)
     for tier, origins in tiers.items():
@@ -176,6 +209,7 @@ def _write(
             session.add(
                 UserScriptDirectoryEntry(
                     wiki=wiki,
+                    script_id=identities.get(origin.original.title),
                     title=origin.original.title,
                     owner=origin.original.owner,
                     basename=origin.original.basename,
@@ -190,6 +224,8 @@ def _write(
                 session.add(
                     UserScriptDirectoryMember(
                         wiki=wiki,
+                        script_id=identities.get(title),
+                        origin_id=identities.get(origin.original.title),
                         title=title,
                         origin_title=origin.original.title,
                         relation=relation,
@@ -208,6 +244,11 @@ def project(wiki: str) -> dict[str, Any]:
     a corpus that has moved on.
     """
     with db.session_scope() as session:
+        # Demand is counted by identity, so the edges have to carry one before
+        # they are read. Repairing here rather than trusting the sweep to have
+        # done it keeps a directory from going quiet because two jobs ran in an
+        # unlucky order.
+        repaired = sweep.resolve_pending(session, wiki)
         pages = candidates(session, wiki)
         loads = demand(session, wiki)
         origins = directory.collapse(pages, loads)
@@ -216,6 +257,7 @@ def project(wiki: str) -> dict[str, Any]:
     return {
         "wiki": wiki,
         "candidates": len(pages),
+        "repaired": repaired,
         "originals": sum(counts.values()),
         "active": counts.get(directory.TIER_ACTIVE, 0),
         "archive": counts.get(directory.TIER_ARCHIVE, 0),

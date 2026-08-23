@@ -107,6 +107,15 @@ Three limits shape the code:
   sweep, tombstones what the wiki no longer lists, and lets the wiki fall
   through to watching.
 
+A census keeps whichever road it got, so the road is recorded with it in
+`enumeration_source` — `replica`, `search` (no credentials on this host), or
+`search-fallback` (credentials, but the replica did not answer). A finished
+sweep never runs again on its own, so without this a wiki swept from the index
+before the replica road existed would hold that census for good. `run()` sweeps
+again when the recorded road has since been superseded, which only `search`
+ever is: `search-fallback` means the exact road was tried and failed, and
+re-trying it every run would sweep the wiki hourly to arrive at the same list.
+
 Nothing here fetches on its own. Every Action API call goes through the existing
 `WikimediaClient`, which validates the host before each request.
 
@@ -236,6 +245,21 @@ any script has for becoming a global gadget. A page loading itself is not demand
 for it; a script that installs its own helper subpage would otherwise vote for
 itself.
 
+**Demand is counted by identity, not by spelling.** A load is counted once it has
+been resolved to the page it names; the map is then keyed on that page's
+canonical title rather than on the string the script happened to write. Keying on
+the raw string files demand under names no candidate answers to — measured on
+frwiki before the change, 644 of 1,389 entries named no page at all, and not one
+of them was a candidate, so the switch moved no score. It is what lets a better
+resolver move them: the key now follows the page.
+
+Because of that, projection repairs its own input before reading it, resolving any
+load into the wiki that names a page already held. That is a join and not a scan
+for nulls, so a load pointing outside the census is never rewritten and never
+re-examined. The alternative was to trust that a sweep had run first, and a
+directory that goes quiet because two jobs ran in an unlucky order reports
+success while saying nothing. `project()` returns the repair count as `repaired`.
+
 ## Tiers
 
 `tier_of` files every original into one of two tiers, and the boundary is one
@@ -261,13 +285,47 @@ Moving either must not move the other.
 All five tables are rebuildable from a fresh sweep. None holds anything that is
 not already publicly readable on the wiki.
 
-| Table                           | Contents                                                                                                                                                       |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, revision id, `discovery_rank`, body, `deleted_at`                                |
-| `user_script_imports`           | One row per load edge, keyed on source, verb and target; `is_stylesheet` separates CSS loads from script loads                                                 |
-| `user_script_census_state`      | Per-wiki cursors and counters: `changes_cursor`, `sweep_cursor`, `sweeps_completed`, `enumeration_complete`, `enumeration_totals`, status, timings, last error |
-| `user_script_directory`         | The projected directory: one row per original, with `tier`, `demand`, `instances` and `position`                                                               |
-| `user_script_directory_members` | Every page folded under an original, with its `relation`                                                                                                       |
+| Table                           | Contents                                                                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `user_script_pages`             | One row per observed page: owner, basename, content model, role, fingerprint, revision id, `discovery_rank`, body, `deleted_at`                                                      |
+| `user_script_imports`           | One row per load edge, keyed on source, verb and target; `target_page_id` is that target resolved to a page; `is_stylesheet` separates CSS loads from script loads                   |
+| `user_script_census_state`      | Per-wiki cursors and counters: `changes_cursor`, `sweep_cursor`, `sweeps_completed`, `enumeration_complete`, `enumeration_totals`, `enumeration_source`, status, timings, last error |
+| `user_script_directory`         | The projected directory: one row per original, with `script_id`, `tier`, `demand`, `instances` and `position`                                                                        |
+| `user_script_directory_members` | Every page folded under an original, with its `relation`, `script_id` and `origin_id`                                                                                                |
+
+### Identity
+
+A script's identity is `user_script_pages.id`. It is assigned when the page is
+first observed, kept across every re-read — `store_page()` finds and updates,
+never deletes and re-inserts — and retired by setting `deleted_at` rather than
+by removing the row. It is the only number here that is safe to write down
+anywhere else.
+
+The directory tables have ids of their own and those are not it. Both are
+deleted and rebuilt whole on every projection, so their `id` columns are
+renumbered on a schedule no caller can see. That is why each carries the census
+identity alongside the title:
+
+- `user_script_directory.script_id` — the page the collapse named as the
+  original of this entry.
+- `user_script_directory_members.script_id` / `.origin_id` — the two ends of the
+  "this page folded onto that script" edge, said in identities.
+- `user_script_imports.target_page_id` — the load edge said in identities.
+
+`target_page_id` is nullable and stays null for most rows, which is the honest
+answer rather than a gap: a load can name a page that was deleted, renamed,
+never existed, or lives on a wiki outside the census, and there is no row to
+point at. The sweep resolves both directions of what each run writes — the loads
+made _by_ the pages it stored, and the loads made _of_ them from anywhere — so a
+cross-wiki edge closes on whichever run reads the second end. It never scans for
+unresolved rows, because a load pointing outside the census never becomes
+resolvable and would be re-read forever; the one-off backfill in `migrate.py`
+covers the rows written before the column existed.
+
+None of these columns is a foreign key. They are added to live tables by
+additive DDL, which cannot carry a constraint, so declaring one would create it
+in a fresh test database and nowhere else — and a constraint the tests enforce
+but production does not is worse than no constraint at all.
 
 `backend.userscript_projection.project()` rebuilds the last two from the first
 two. It is whole-corpus and idempotent: running it twice over unchanged pages
@@ -287,17 +345,27 @@ routes are public, read-rate-limited, and touch only the local database.
   entries, each with its coverage.
 - `GET /v1/userscripts/directory/?wiki=&tier=&owner=&limit=&offset=` — one tier
   of one wiki's directory. `limit` defaults to 25 and clamps to 200.
-- `GET /v1/userscripts/script/?wiki=&title=` — one original plus the pages folded
-  under it.
+- `GET /v1/userscripts/script/?id=` or `?wiki=&title=` — one original plus the
+  pages folded under it. Both the entry and each member carry `id`, the census
+  identity described above; prefer it over the title, which moves when a page is
+  renamed and is reused when one is deleted.
 
 **Every response carries coverage metadata**, so an empty result never reads as
-"nothing exists": `pages`, `sweepsCompleted`, `sweptAt`, `computedAt`, and the
-per-tier counts. A wiki whose first sweep has not finished says so.
+"nothing exists": `pages`, `sweepsCompleted`, `enumerated`, `enumeratedBy` and
+the per-tier counts, plus three separate timestamps. They are separate because a
+census is stale in three unrelated ways and only one of them is about the job
+still running: `checkedAt` is the last run of any kind — liveness, and the one
+that says nothing about the data, since a watch stamps it hourly whether the
+wiki moved or not; `sweptAt` is when this wiki's user space was last enumerated
+and walked; `currentTo` is the wiki's own clock, how far into recent changes the
+watch has read. frwiki has been all three at once — checked this hour, swept in
+July, current to a fortnight ago — and a reader given only the first would have
+called it fresh. A wiki whose first sweep has not finished says so.
 
 Asking for a page that was folded away answers `404` with
-`{"error": "not an original", "filedUnder": "<origin title>"}` rather than a bare
-miss — where the page went is the most useful thing the directory can say about
-it.
+`{"error": "not an original", "filedUnder": "<origin title>", "filedUnderId": <id>}`
+rather than a bare miss — where the page went is the most useful thing the
+directory can say about it.
 
 ## The directory page
 
@@ -453,6 +521,33 @@ rather than a canonical one.
 - **Gadget usage is not joined in.** Demand is counted from pages this census can
   read. A script installed as a wiki gadget is loaded by people who never create
   a page at all, and the `gadgetusage` API knows those numbers; nothing reads it.
+- **Half of frwiki's load edges resolve to nothing, and most of them never
+  will.** Of 8,216 stored edges, 4,029 name a page the census holds. Checking
+  the other 638 distinct titles against the live API is what tells them apart,
+  and the answer is mostly not a bug: 279 name a `User:` page that does not
+  exist on frwiki at all — loads of scripts long since deleted or never
+  created, which nothing can resolve because there is nothing to resolve to.
+  Another 173 name `MediaWiki:` gadget definitions, correctly unresolved because
+  the census enumerates user space only. What is left is small and mixed: 53
+  name a `User:` page that _does_ exist on frwiki and is missing from the census
+  anyway (see below), ~16 use a namespace alias from another language
+  (`Benutzer:`, `Gebruiker:`) that `canonical_title` does not fold, ~6 carry an
+  interwiki prefix (`:En:`, `:Id:`) that belongs in `target_wiki`, and 38 name
+  no namespace. Raw `/w/index.php?title=…` URLs and `[[…]]` brackets used to be
+  in this list and are now normalized at parse time.
+- **920 frwiki pages are missing from a census that reports itself complete.**
+  Not a sweep-depth, staleness or drift problem — all three were measured and
+  ruled out. frwiki's user space holds 14,431 script pages in the Wiki Replicas
+  and 13,617 in the search index, and frwiki's census was built from the index,
+  the day before the replica road landed. `enumeration_complete` was set
+  truthfully: no model crossed the offset cap. That is not the same claim as
+  "the index named every page", and nothing recorded which road had made it, so
+  a finished sweep sat there watching for changes over a corpus 920 pages short.
+  meta and enwiki were still mid-sweep on the day the replica road landed and
+  picked it up for free — frwiki was stranded for having finished. The road is
+  now recorded (`enumeration_source`) and a census built on a superseded one is
+  swept again, so the 920 arrive on the next scheduled run. The 53 in the bullet
+  above are the subset something actually loads.
 - **Nothing analyses the code yet.** The directory is the prerequisite — security
   review, API-usage extraction, and "which of these should be one global gadget"
   all run on top of it and none of them exist.

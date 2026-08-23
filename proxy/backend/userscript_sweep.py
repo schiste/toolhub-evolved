@@ -28,7 +28,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_, tuple_
+from sqlalchemy.exc import IntegrityError
 
 from backend import db, userscripts
 from backend import userscript_census as census
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
     from sqlalchemy.orm import Session
+    from sqlalchemy.sql.elements import ColumnElement
 
 # Bodies are stored so re-analysis stays free, but no single page may dominate
 # the table. MEDIUMTEXT holds far more than this; the cap is about what is worth
@@ -54,7 +56,20 @@ WATCH_LIMIT: int = 500
 # failure is treated as systemic rather than as one oversized batch.
 SPLIT_BUDGET: int = 5
 
-EMPTY_COUNTS: dict[str, int] = {"asked": 0, "fetched": 0, "written": 0, "skipped": 0, "unreadable": 0}
+# How many (wiki, title) pairs to name in one IN clause when resolving loads to
+# pages. A run writing two thousand pages can hold tens of thousands of loads,
+# and one statement naming all of them is a statement no engine should be asked
+# to plan; MySQL's max_allowed_packet, not correctness, is what this respects.
+RESOLVE_CHUNK: int = 500
+
+EMPTY_COUNTS: dict[str, int] = {
+    "asked": 0,
+    "fetched": 0,
+    "written": 0,
+    "skipped": 0,
+    "unreadable": 0,
+    "resolved": 0,
+}
 
 
 def discover(
@@ -91,15 +106,19 @@ def read_titles(
 ) -> tuple[list[census.PageContent], int]:
     """Fetch and parse pages in API-sized batches, counting the titles left unread.
 
-    A batch can fail for the batch's own sake: twenty user scripts can exceed the
+    A batch can fail for the batch's own sake: fifty user scripts can exceed the
     client's two-megabyte response cap while every one of them fits comfortably
     alone, and regrouping the same titles next run would fail identically
-    forever. So a failed batch is re-read one title at a time, which turns a
-    permanent twenty-page hole into one honestly oversized page.
+    forever. So a failed batch is halved and each half asked for again, down to
+    the single title that is genuinely too big to read. Halving rather than
+    going straight to singles is what makes a large `CONTENT_BATCH` worth
+    having: one fat page in a batch of fifty costs about six extra requests
+    instead of fifty, so the batch size can be set by what the wiki will answer
+    rather than by what a bad batch would cost to recover from.
 
     That retry is budgeted. When batches keep failing the cause is the wiki or
     the network, not their size, and splitting would multiply a wiki-wide outage
-    into twenty times the requests. Past `SPLIT_BUDGET` failures the run stops
+    into many times the requests. Past `SPLIT_BUDGET` failures the run stops
     splitting and simply records what it could not read; the next run asks again.
     """
     read: list[census.PageContent] = []
@@ -114,15 +133,45 @@ def read_titles(
             unreadable += len(batch)
             continue
         budget -= 1
-        for title in batch:
-            single, alone = _read_batch(request, wiki, (title,))
-            read.extend(single)
-            unreadable += 0 if alone else 1
+        found, lost = _read_halves(request, wiki, batch)
+        read.extend(found)
+        unreadable += lost
     return (read, unreadable)
 
 
-def _known_revisions(session: Session, wiki: str, titles: Sequence[str]) -> dict[str, str]:
-    """Revision ids already stored for these titles, so unchanged pages are skipped.
+def _read_halves(
+    request: Callable[[str, str, dict[str, Any]], Any],
+    wiki: str,
+    batch: Sequence[str],
+) -> tuple[list[census.PageContent], int]:
+    """Re-read a failed batch by halving it, returning what came back and what did not.
+
+    A single title that fails has nothing left to divide, and is the honestly
+    oversized -- or deleted, or otherwise unreadable -- page the split was
+    looking for. It is counted, not raised: per this module, a page that cannot
+    be read is an observation.
+    """
+    if len(batch) <= 1:
+        return ([], len(batch))
+    read: list[census.PageContent] = []
+    unreadable = 0
+    middle = len(batch) // 2
+    for half in (batch[:middle], batch[middle:]):
+        pages, ok = _read_batch(request, wiki, half)
+        if ok:
+            read.extend(pages)
+            continue
+        found, lost = _read_halves(request, wiki, half)
+        read.extend(found)
+        unreadable += lost
+    return (read, unreadable)
+
+
+def _stored_state(session: Session, wiki: str, titles: Sequence[str]) -> dict[str, tuple[str, int]]:
+    """Revision id and discovery rank already stored for each of these titles.
+
+    Both together, in one statement, because both decide whether a page needs
+    writing and asking per page cost one SELECT per page of every sweep.
 
     Tombstoned pages are deliberately left out. A page that was deleted and then
     restored comes back at the revision it left at, so matching on revision alone
@@ -131,7 +180,7 @@ def _known_revisions(session: Session, wiki: str, titles: Sequence[str]) -> dict
     if not titles:
         return {}
     rows = (
-        session.query(UserScriptPage.title, UserScriptPage.revision)
+        session.query(UserScriptPage.title, UserScriptPage.revision, UserScriptPage.discovery_rank)
         .filter(
             UserScriptPage.wiki == wiki,
             UserScriptPage.title.in_(list(titles)),
@@ -139,7 +188,7 @@ def _known_revisions(session: Session, wiki: str, titles: Sequence[str]) -> dict
         )
         .all()
     )
-    return dict(rows)
+    return {title: (revision, rank) for title, revision, rank in rows}
 
 
 def _next_rank(session: Session, wiki: str) -> int:
@@ -164,27 +213,54 @@ def _replace_imports(session: Session, wiki: str, analysis: userscripts.ScriptPa
         UserScriptImport.wiki == wiki,
         UserScriptImport.source_title == analysis.title,
     ).delete(synchronize_session=False)
-    # `userscripts.script_imports` already reduces repeated loads to one per
-    # (verb, wiki, title, url), which is exactly this table's unique key, so no
-    # second pass is needed here. That holds only while every title and URL
-    # reaching it is already in storage's spelling, which is what the format-mark
-    # strip in `canonical_title` and `_resolve` is for: Python compares these
-    # strings byte by byte, MySQL compares them under a collation that ignores
-    # invisible marks, and where the two disagree it is this INSERT that fails
-    # and takes the whole wiki's ingest down with it. The tests run on SQLite,
-    # which compares bytes, so they cannot be the thing that catches a new gap.
-    for found in analysis.imports:
-        session.add(
-            UserScriptImport(
-                wiki=wiki,
-                source_title=analysis.title,
-                verb=found.verb,
-                target_wiki=found.wiki,
-                target_title=found.title,
-                target_url=found.url[:MAX_STORED_URL],
-                is_stylesheet=found.is_stylesheet,
-            ),
-        )
+    rows = [
+        {
+            "wiki": wiki,
+            "source_title": analysis.title,
+            "verb": found.verb,
+            "target_wiki": found.wiki,
+            "target_title": found.title,
+            "target_url": found.url[:MAX_STORED_URL],
+            "is_stylesheet": found.is_stylesheet,
+        }
+        for found in analysis.imports
+    ]
+    # `userscripts.script_imports` has already reduced repeated loads to one per
+    # (verb, wiki, title, url), but that is Python's idea of one, not this
+    # table's. Python compares these strings byte by byte; MySQL compares them
+    # under a collation that folds case and ignores invisible marks, so two
+    # loads Python calls distinct can be one row to the database -- User:.../
+    # global.js on Meta loads both `MediaWiki:Gadget-LinkTranslator.js` and
+    # `Mediawiki:gadget-LinkTranslator.js`, which are the same page and the same
+    # key. Predicting the fold is the wrong repair: it means restating a
+    # collation this code cannot see, and the tests run on SQLite, which
+    # compares bytes and so can never disagree with a prediction. So the
+    # database decides what a duplicate is. A page whose loads all survive costs
+    # one savepoint; only a page that actually collides is retried a row at a
+    # time, and the row that loses is dropped rather than raised -- one page's
+    # spelling is not a reason to fail the wiki, per this module's contract.
+    if _insert_all(session, rows):
+        return
+    for row in rows:
+        _insert_all(session, [row])
+
+
+def _insert_all(session: Session, rows: Sequence[dict[str, Any]]) -> bool:
+    """Add `rows` in one savepoint, reporting whether the database accepted them.
+
+    A rejected savepoint rolls back only these rows; the surrounding session --
+    the page, its analysis, the sweep's cursor -- survives, which is the whole
+    reason for the nesting. The rows are passed as field values rather than as
+    instances because a rollback expunges whatever the savepoint added, and the
+    retry needs objects that were never in the failed transaction.
+    """
+    try:
+        with session.begin_nested():
+            session.add_all(UserScriptImport(**row) for row in rows)
+            session.flush()
+    except IntegrityError:
+        return False
+    return True
 
 
 def store_page(session: Session, wiki: str, page: census.PageContent, rank: int | None) -> None:
@@ -218,15 +294,22 @@ def store_page(session: Session, wiki: str, page: census.PageContent, rank: int 
     _replace_imports(session, wiki, analysis)
 
 
-def ingest(
+def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map are all one caller's context
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
     titles: Sequence[str],
     *,
     ranked: bool,
     rank_offset: int = 0,
+    revisions: dict[str, str] | None = None,
 ) -> dict[str, int]:
     """Read the named pages and write the ones that changed.
+
+    `revisions` is what the caller already knows about the wiki's current
+    revision ids, before a single page has been asked for. The replica road
+    hands over the whole enumeration's worth, and every page it settles is a
+    content request never made -- which is the entire cost of a sweep. Omitted,
+    or empty from a road that cannot say, every page is fetched as before.
 
     `ranked` says whether the caller's ordering is creation order. A sweep's is;
     a watch's is not, and its pages keep whatever order they already had.
@@ -238,35 +321,168 @@ def ingest(
     not the position in the batch.
     """
     summary = dict(EMPTY_COUNTS, asked=len(titles))
+    written: list[str] = []
     with db.session_scope() as session:
-        known = _known_revisions(session, wiki, [userscripts.canonical_title(title) for title in titles])
+        stored = _stored_state(session, wiki, [userscripts.canonical_title(title) for title in titles])
     ranks = (
         {userscripts.canonical_title(title): rank_offset + index for index, title in enumerate(titles)}
         if ranked
         else {}
     )
-    pages, summary["unreadable"] = read_titles(request, wiki, titles)
+    ahead = revisions or {}
+    wanted = [title for title in titles if not _settled(userscripts.canonical_title(title), stored, ranks, ahead)]
+    summary["skipped"] = len(titles) - len(wanted)
+    pages, summary["unreadable"] = read_titles(request, wiki, wanted)
     summary["fetched"] = len(pages)
     with db.session_scope() as session:
         for page in pages:
             title = userscripts.canonical_title(page.title)
             rank = ranks.get(title)
-            unchanged = known.get(title) == page.revision
-            if unchanged and (rank is None or rank == _stored_rank(session, wiki, title)):
+            if _settled(title, stored, ranks, {title: page.revision}):
                 summary["skipped"] += 1
                 continue
             store_page(session, wiki, page, rank)
+            written.append(title)
             summary["written"] += 1
+        summary["resolved"] = resolve_targets(session, wiki, written)
     return summary
 
 
-def _stored_rank(session: Session, wiki: str, title: str) -> int | None:
-    """Read the rank already recorded for one page, or None when it has no row."""
-    return (
-        session.query(UserScriptPage.discovery_rank)
-        .filter(UserScriptPage.wiki == wiki, UserScriptPage.title == title)
-        .scalar()
+def _settled(
+    title: str,
+    stored: dict[str, tuple[str, int]],
+    ranks: dict[str, int],
+    revisions: dict[str, str],
+) -> bool:
+    """Whether this page is already stored exactly as this run would store it.
+
+    Two things have to agree. The revision says the body has not moved; the rank
+    says the page still sits where this enumeration puts it, which a page can
+    fail while its body is untouched -- delete a page created before it and
+    everything after shifts up.
+
+    `revisions` is whatever the caller can say about the current revision at the
+    moment it asks. From the replica it is the whole enumeration, known before
+    any page is fetched, and a page that settles here is a request never made.
+    From a fetched page it is that one page, and settling only saves the write.
+    A title absent from it is never settled: not knowing the current revision is
+    not evidence that it matches.
+    """
+    current = revisions.get(title)
+    if not current:
+        return False
+    known = stored.get(title)
+    if known is None or known[0] != current:
+        return False
+    rank = ranks.get(title)
+    return rank is None or rank == known[1]
+
+
+def page_ids(session: Session, targets: Iterable[tuple[str, str]]) -> dict[tuple[str, str], int]:
+    """Read the page id for each (wiki, title) we hold, skipping the ones we do not."""
+    found: dict[tuple[str, str], int] = {}
+    for chunk in _chunked(sorted(set(targets))):
+        rows = session.query(UserScriptPage.wiki, UserScriptPage.title, UserScriptPage.id).filter(
+            tuple_(UserScriptPage.wiki, UserScriptPage.title).in_(chunk)
+        )
+        found.update({(wiki, title): page_id for wiki, title, page_id in rows})
+    return found
+
+
+def _chunked(items: Sequence[Any], size: int = RESOLVE_CHUNK) -> Iterable[Sequence[Any]]:
+    """Cut a list into pieces small enough to name in one IN clause."""
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
+def _target_wiki(row: UserScriptImport) -> str:
+    """Which wiki a load points at, given that naming none means naming its own."""
+    return row.target_wiki or row.wiki
+
+
+def _targets_wiki(wiki: str) -> ColumnElement[bool]:
+    """Match loads that land on `wiki`, however the row happened to say so."""
+    return or_(
+        UserScriptImport.target_wiki == wiki,
+        and_(UserScriptImport.target_wiki == "", UserScriptImport.wiki == wiki),
     )
+
+
+def resolve_targets(session: Session, wiki: str, written: Sequence[str]) -> int:
+    """Point this run's loads at the pages they name, both directions.
+
+    A run creates resolvable edges two ways, and only doing one of them would
+    leave the graph permanently half-built. The pages it wrote have loads of
+    their own, whose targets may be pages stored long ago; and pages stored
+    long ago may hold loads that were waiting for exactly the pages this run
+    has just written. So both are resolved, scoped to this run's titles.
+
+    Scoping matters more than it looks. The obvious implementation -- sweep
+    every row where `target_page_id` is null -- re-reads the same unresolvable
+    rows on every run forever, because a load pointing at a wiki outside the
+    census never becomes resolvable and never stops being scanned. Driving from
+    what changed means the work is proportional to the run, not to the corpus.
+    """
+    if not written:
+        return 0
+    resolved = 0
+    for chunk in _chunked(written):
+        # Loads made *by* the pages this run wrote.
+        outbound = session.query(UserScriptImport).filter(
+            UserScriptImport.wiki == wiki,
+            UserScriptImport.source_title.in_(chunk),
+            UserScriptImport.target_title != "",
+        )
+        # Loads made *of* the pages this run wrote, from anywhere -- including
+        # the ones that named no wiki at all, which mean the one they sit on.
+        inbound = session.query(UserScriptImport).filter(
+            _targets_wiki(wiki),
+            UserScriptImport.target_title.in_(chunk),
+            UserScriptImport.target_page_id.is_(None),
+        )
+        rows = list(outbound) + list(inbound)
+        ids = page_ids(session, ((_target_wiki(row), row.target_title) for row in rows))
+        for row in rows:
+            page_id = ids.get((_target_wiki(row), row.target_title))
+            if page_id is not None and row.target_page_id != page_id:
+                row.target_page_id = page_id
+                resolved += 1
+    return resolved
+
+
+def resolve_pending(session: Session, wiki: str) -> int:
+    """Resolve every load into this wiki that names a page we already hold.
+
+    `resolve_targets` is scoped to one run's titles, which is right for a sweep
+    and wrong for a reader. Anything that counts demand by identity needs the
+    edges it can see to already be resolved, and it has no way of knowing which
+    run should have done it -- rows written before the column existed, or while
+    a sweep was interrupted, would simply be missing, and missing demand reads
+    as a quiet directory rather than as an error.
+
+    So this repairs its own input before use. It is not the null scan
+    `resolve_targets` deliberately avoids: the join *is* the bound, and a load
+    pointing outside the census matches no page and is never updated. Only rows
+    that can resolve are touched, so on a healthy corpus it writes nothing.
+    """
+    rows = (
+        session.query(UserScriptImport, UserScriptPage.id)
+        .join(
+            # The filter below already pins the effective target wiki to `wiki`,
+            # so the page only has to match on title.
+            UserScriptPage,
+            and_(UserScriptPage.wiki == wiki, UserScriptPage.title == UserScriptImport.target_title),
+        )
+        .filter(
+            _targets_wiki(wiki),
+            UserScriptImport.target_title != "",
+            UserScriptImport.target_page_id.is_(None),
+        )
+        .all()
+    )
+    for row, page_id in rows:
+        row.target_page_id = page_id
+    return len(rows)
 
 
 def _state(session: Session, wiki: str) -> UserScriptCensusState:
@@ -335,7 +551,7 @@ def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limi
     start = _resume_from(cursor, found)
     window = found.titles[start : start + limit] if limit else found.titles[start:]
     finished = start + len(window) >= len(found.titles)
-    summary = ingest(request, wiki, window, ranked=True, rank_offset=start)
+    summary = ingest(request, wiki, window, ranked=True, rank_offset=start, revisions=found.revisions)
     with db.session_scope() as session:
         # A partial walk says nothing about the pages it never asked for, so it
         # is never allowed to declare them gone. Tombstoning compares against the
@@ -347,6 +563,7 @@ def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limi
         state = _record_totals(session, wiki)
         state.enumeration_totals = found.totals
         state.enumeration_complete = whole_wiki
+        state.enumeration_source = found.source
         state.sweep_cursor = 0 if finished else start + len(window)
         state.sweeps_completed += 1 if finished else 0
         state.status = "idle"
@@ -419,10 +636,22 @@ def run(
     edits and call the wiki covered. A wiki part-way through a bounded sweep is
     in the same position for the same reason, and keeps sweeping until the
     cursor comes back to zero.
+
+    A completed sweep is not permanent either, and this is the case that has to
+    be looked for rather than waited for. Discovery has two roads, the exact one
+    is not always reachable, and a wiki that finished on the capped one keeps
+    that census for good -- nothing about watching for changes ever revisits
+    what the wiki was found to hold. frwiki did exactly this: swept from the
+    search index the day before the replica road landed, 920 pages short, and
+    watching contentedly ever since. So a census whose recorded road has since
+    been superseded is swept again. It cannot become a loop, because the sweep
+    writes down the road it actually got: a host where the replica keeps failing
+    records that it fell back, and `enumeration.superseded` leaves it alone.
     """
     with db.session_scope() as session:
         state = _state(session, wiki)
         swept, pending = state.sweeps_completed, state.sweep_cursor
-    if full or not swept or pending:
+        outdated = enumeration.superseded(state.enumeration_source)
+    if full or not swept or pending or outdated:
         return sweep(request, wiki, limit=limit)
     return watch(request, wiki, limit=watch_limit)

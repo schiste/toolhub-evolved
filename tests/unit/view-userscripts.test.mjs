@@ -18,6 +18,8 @@ const coverage = {
 	pages: 2051,
 	sweepsCompleted: 3,
 	sweptAt: "2026-08-19T00:00:00Z",
+	currentTo: "2026-08-19T06:00:00Z",
+	checkedAt: "2026-08-19T07:00:00Z",
 	computedAt: "2026-08-19T01:00:00Z",
 	active: 603,
 	archive: 661
@@ -113,11 +115,29 @@ test("the directory ranks scripts by the people loading them and links each one"
 	assert.match(view.html, /In use \(603\)/);
 	assert.match(view.html, /Archive \(661\)/);
 	assert.match(view.html, /Script pages seen/);
+	assert.match(view.html, /Changes read up to/);
 	assert.doesNotMatch(view.html, /counts are a floor/);
 });
 
+test("a directory rebuilt this hour still says how old the data under it is", async () => {
+	// The failure this guards: an hourly job stamping a fresh timestamp over a
+	// census weeks behind the wiki. All three dates have to reach the reader,
+	// because only together do they say which kind of stale this is.
+	const behind = { ...coverage, sweptAt: "2026-07-21T00:00:00Z", currentTo: "2026-08-06T17:22:45Z" };
+	respond({
+		wikiList: { count: 1, results: [behind] },
+		directory: { ...listing, coverage: behind }
+	});
+	const view = await viewUserScripts();
+	assert.match(view.html, /datetime="2026-07-21T00:00:00\.000Z"/);
+	assert.match(view.html, /datetime="2026-08-06T17:22:45\.000Z"/);
+});
+
 test("a wiki with no finished sweep says its counts are a floor", async () => {
-	const unswept = { ...coverage, sweptAt: "", active: 0, archive: 0 };
+	// Keyed on the count of finished sweeps, not on a timestamp. A wiki part-way
+	// through its first sweep has a `sweptAt` -- the run that is under way -- and
+	// its counts are exactly the floor this notice exists to declare.
+	const unswept = { ...coverage, sweepsCompleted: 0, active: 0, archive: 0 };
 	respond({
 		wikiList: { count: 1, results: [unswept] },
 		directory: { ...listing, count: 0, total: 0, results: [], coverage: unswept }

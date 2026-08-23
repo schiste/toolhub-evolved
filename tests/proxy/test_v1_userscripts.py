@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Read endpoints over a wiki's user-script directory: listing, one script, coverage."""
 
+from datetime import datetime
+
 import pytest
 from flask import Flask
 
@@ -45,6 +47,16 @@ def loads(source, target, *, wiki=FRWIKI):
     with db.session_scope() as session:
         session.add(
             UserScriptImport(wiki=wiki, source_title=source, verb="importScript", target_title=target),
+        )
+
+
+def identity(title, wiki=FRWIKI):
+    """The census id of one page -- the identity the endpoints hand back."""
+    with db.session_scope() as session:
+        return (
+            session.query(UserScriptPage.id)
+            .filter(UserScriptPage.wiki == wiki, UserScriptPage.title == title)
+            .scalar()
         )
 
 
@@ -135,7 +147,10 @@ def test_an_unswept_wiki_says_so_rather_than_looking_empty(app, client):
         "pages": 0,
         "sweepsCompleted": 0,
         "sweptAt": "",
+        "currentTo": "",
+        "checkedAt": "",
         "enumerated": True,
+        "enumeratedBy": "",
         "computedAt": "",
         "active": 0,
         "archive": 0,
@@ -146,13 +161,44 @@ def test_coverage_reports_the_sweep_behind_the_directory(app, client):
     with app.app_context():
         corpus()
         with db.session_scope() as session:
-            session.add(UserScriptCensusState(wiki=FRWIKI, sweeps_completed=2, last_success_at=utcnow()))
+            session.add(
+                UserScriptCensusState(
+                    wiki=FRWIKI,
+                    sweeps_completed=2,
+                    last_started_at=utcnow(),
+                    last_success_at=utcnow(),
+                )
+            )
     disclosed = client.get(f"/v1/userscripts/directory/?wiki={FRWIKI}").get_json()["coverage"]
     assert disclosed["sweepsCompleted"] == 2
     assert disclosed["sweptAt"].endswith("Z")
     assert disclosed["computedAt"].endswith("Z")
     assert (disclosed["pages"], disclosed["active"], disclosed["archive"]) == (4, 1, 1)
     assert disclosed["enumerated"] is True
+
+
+def test_a_live_job_over_a_stale_census_is_not_reported_as_a_fresh_directory(app, client):
+    # frwiki, exactly: swept once on 21 July, watched successfully every hour
+    # since, and reading recent changes from 6 August. One timestamp -- the one
+    # the hourly run stamps -- would have called this current.
+    with app.app_context():
+        corpus()
+        with db.session_scope() as session:
+            session.add(
+                UserScriptCensusState(
+                    wiki=FRWIKI,
+                    sweeps_completed=1,
+                    last_started_at=datetime(2026, 7, 21, 8, 23, 11),
+                    last_success_at=utcnow(),
+                    changes_cursor="2026-08-06T17:22:45Z",
+                    enumeration_source="search",
+                )
+            )
+    disclosed = client.get(f"/v1/userscripts/directory/?wiki={FRWIKI}").get_json()["coverage"]
+    assert disclosed["sweptAt"].startswith("2026-07-21")
+    assert disclosed["currentTo"] == "2026-08-06T17:22:45Z"
+    assert disclosed["checkedAt"] > disclosed["sweptAt"]
+    assert disclosed["enumeratedBy"] == "search"
 
 
 def test_coverage_admits_a_wiki_too_large_to_enumerate_in_one_pass(app, client):
@@ -165,6 +211,7 @@ def test_coverage_admits_a_wiki_too_large_to_enumerate_in_one_pass(app, client):
                 UserScriptCensusState(
                     wiki=FRWIKI,
                     sweeps_completed=1,
+                    last_started_at=utcnow(),
                     last_success_at=utcnow(),
                     enumeration_complete=False,
                 )
@@ -182,13 +229,15 @@ def test_one_script_lists_the_pages_filed_under_it(app, client):
     assert body["instances"] == 2
     # Byte-identical is a fact and a shared name is an inference; a reviewer
     # has to be able to tell which filed each page.
-    assert body["members"] == [
-        {"title": "User:Bbb/popular.js", "relation": projection.RELATION_COPY},
-        {"title": "User:Ccc/popular.js", "relation": projection.RELATION_COPY},
-    ]
+    with app.app_context():
+        members = [
+            {"id": identity(title), "title": title, "relation": projection.RELATION_COPY}
+            for title in ("User:Bbb/popular.js", "User:Ccc/popular.js")
+        ]
+    assert body["members"] == members
 
 
-def test_one_script_requires_both_a_wiki_and_a_title(client):
+def test_one_script_requires_an_identity_or_a_wiki_and_title(client):
     assert client.get("/v1/userscripts/script/").status_code == 400
     assert client.get(f"/v1/userscripts/script/?wiki={FRWIKI}").status_code == 400
 
@@ -196,9 +245,52 @@ def test_one_script_requires_both_a_wiki_and_a_title(client):
 def test_a_folded_page_is_told_where_it_went(app, client):
     with app.app_context():
         corpus()
+        origin = identity("User:Aaa/popular.js")
     resp = client.get(f"/v1/userscripts/script/?wiki={FRWIKI}&title=User:Bbb/popular.js")
     assert resp.status_code == 404
-    assert resp.get_json() == {"error": "not an original", "filedUnder": "User:Aaa/popular.js"}
+    assert resp.get_json() == {
+        "error": "not an original",
+        "filedUnder": "User:Aaa/popular.js",
+        "filedUnderId": origin,
+    }
+
+
+def test_a_script_answers_to_its_identity_as_well_as_to_its_title(app, client):
+    with app.app_context():
+        corpus()
+        script = identity("User:Aaa/popular.js")
+    by_title = client.get(f"/v1/userscripts/script/?wiki={FRWIKI}&title=User:Aaa/popular.js").get_json()
+    by_id = client.get(f"/v1/userscripts/script/?id={script}").get_json()
+    assert by_title["id"] == script
+    assert by_id == by_title
+
+
+def test_an_identity_survives_a_rebuild_that_renumbers_every_directory_row(app, client):
+    # The point of disclosing the census id rather than the directory row id.
+    # Projecting again deletes and re-inserts every row in both directory
+    # tables, so a caller who had written down a row id would now be holding a
+    # number that means something else -- or nothing.
+    with app.app_context():
+        corpus()
+        script = identity("User:Aaa/popular.js")
+        page("User:Ggg/unrelated.js", rank=4)
+        projection.project(FRWIKI)
+    assert client.get(f"/v1/userscripts/script/?id={script}").get_json()["title"] == "User:Aaa/popular.js"
+
+
+def test_a_folded_page_answers_to_its_identity_too(app, client):
+    with app.app_context():
+        corpus()
+        forked, origin = identity("User:Bbb/popular.js"), identity("User:Aaa/popular.js")
+    resp = client.get(f"/v1/userscripts/script/?id={forked}")
+    assert resp.status_code == 404
+    assert resp.get_json()["filedUnderId"] == origin
+
+
+def test_an_identity_nobody_has_seen_is_a_plain_404(app, client):
+    with app.app_context():
+        corpus()
+    assert client.get("/v1/userscripts/script/?id=999999").status_code == 404
 
 
 def test_a_title_nobody_has_seen_is_a_plain_404(app, client):

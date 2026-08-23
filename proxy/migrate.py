@@ -37,6 +37,7 @@ from backend import (
     maintainer_index,
     people_index,
     source_attestations,
+    userscript_sweep,
 )
 from backend.author_claims import claim_relationship_for_method
 from backend.models import (
@@ -54,6 +55,7 @@ from backend.models import (
     ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
     User,
+    UserScriptImport,
     utcnow,
 )
 from backend.sync import (
@@ -64,6 +66,11 @@ from backend.sync import (
     PERSON_REL_MAINTAINER,
     PERSON_REL_RECORD_OWNER,
 )
+
+# How many rows one backfill pass holds open at a time. Small enough that a
+# deploy never waits on a single statement over a table with hundreds of
+# thousands of rows, large enough that the walk is not dominated by round trips.
+BACKFILL_CHUNK = 1000
 
 
 @dataclass(frozen=True)
@@ -102,6 +109,7 @@ def run_once() -> list[MigrationResult]:
         MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
         MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
+        MigrationResult("user-script loads resolved to pages", _backfill_userscript_import_targets()),
     ]
 
 
@@ -113,6 +121,7 @@ def _ensure_catalog_read_indexes() -> int:
     targets = (
         (CanonicalToolCache.__table__, "ix_canonical_tool_cache_modified_at_sort"),
         (CatalogFacetValue.__table__, "ix_catalog_facet_values_field_value_tool"),
+        (UserScriptImport.__table__, "ix_user_script_imports_target_page"),
     )
     created = 0
     for table, name in targets:
@@ -138,6 +147,49 @@ def _ensure_catalog_read_indexes() -> int:
                 connection.exec_driver_sql(f"DROP INDEX {name}")
             created += 1
     return created
+
+
+def _backfill_userscript_import_targets() -> int:
+    """Point the loads stored before `target_page_id` existed at the pages they name.
+
+    The sweep resolves what each run writes, in both directions, which closes
+    every edge a live corpus creates. It cannot close the ones that were already
+    there: a wiki whose sweep finished long ago rewrites almost nothing, so its
+    loads would sit unresolved until the pages around them happened to change.
+
+    A full scan of the null rows is the wrong shape for the sweep -- a load
+    naming a wiki outside the census is null forever and would be re-read on
+    every run -- but it is exactly the right shape once. This walks by id so the
+    work is chunked rather than one statement over the whole table, and rows it
+    cannot resolve are simply left alone, which is what makes it safe to run
+    again on the next deploy.
+    """
+    engine = db.engine()
+    if UserScriptImport.__tablename__ not in set(inspect(engine).get_table_names()):
+        return 0
+    resolved = 0
+    after = 0
+    while True:
+        with db.session_scope() as session:
+            rows = (
+                session.query(UserScriptImport)
+                .filter(UserScriptImport.target_page_id.is_(None), UserScriptImport.id > after)
+                .order_by(UserScriptImport.id)
+                .limit(BACKFILL_CHUNK)
+                .all()
+            )
+            if not rows:
+                return resolved
+            after = rows[-1].id
+            pages = userscript_sweep.page_ids(
+                session,
+                ((row.target_wiki, row.target_title) for row in rows if row.target_title),
+            )
+            for row in rows:
+                page_id = pages.get((row.target_wiki, row.target_title))
+                if page_id is not None:
+                    row.target_page_id = page_id
+                    resolved += 1
 
 
 def _widen_digest_render_columns() -> int:

@@ -37,7 +37,7 @@ import configparser
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -170,8 +170,14 @@ SCRIPT_MODELS = ("javascript", "css")
 # CirrusSearch refuses an offset past 10,000 and its prefix clauses do not
 # compose, so on a wiki the size of Meta it can name a prefix of the truth and
 # cannot be made to prove it named the rest.
+#
+# `page_latest` is the current revision id, and it rides along free: it is a
+# column on the row this query already reads. Carrying it is what lets a sweep
+# decide a page is unchanged *before* asking the API for its body -- the fetch
+# is the entire cost of a sweep, and without this a wiki's second sweep costs
+# exactly as much as its first to discover that almost nothing moved.
 ENUMERATION_QUERY = (
-    "SELECT p.page_content_model, p.page_title "
+    "SELECT p.page_content_model, p.page_title, p.page_latest "
     "FROM page p "
     "WHERE p.page_namespace = %s AND p.page_content_model IN (%s, %s) "
     "ORDER BY p.page_id"
@@ -212,19 +218,30 @@ def read_dbnames(rows: Iterable[Sequence[Any]]) -> dict[str, str]:
     return found
 
 
-def read_page_titles(rows: Iterable[Sequence[Any]]) -> tuple[tuple[str, str], ...]:
-    """Pair each page's content model with its title, keeping the order read.
+#: Position of `page_latest` in an enumeration row. Named because a row can be
+#: shorter -- a caller reading an older query, or a fixture that predates the
+#: column -- and a page with no revision id is still a page.
+REVISION_COLUMN: Final = 2
+
+
+def read_page_titles(rows: Iterable[Sequence[Any]]) -> tuple[tuple[str, str, str], ...]:
+    """Give each page its content model, title, and current revision id, in order.
 
     The order is the answer, not an incidental property of it, so this returns a
     sequence rather than the mapping `read_creation_dates` returns: a dict keyed
     by title would lose the creation ordering the query went to the trouble of
     producing.
+
+    A row with no revision id yields an empty one rather than being dropped. The
+    page is real and belongs in the enumeration; what is missing is only the
+    shortcut that would have let a sweep skip fetching it.
     """
-    found: list[tuple[str, str]] = []
+    found: list[tuple[str, str, str]] = []
     for row in rows:
         model, title = _decoded(row[0]), _decoded(row[1])
+        revision = _decoded(row[REVISION_COLUMN]) if len(row) > REVISION_COLUMN and row[REVISION_COLUMN] else ""
         if model and title:
-            found.append((model, title))
+            found.append((model, title, revision))
     return tuple(found)
 
 
@@ -330,7 +347,7 @@ def script_titles_for(
     *,
     user: Credentials,
     connect: Connect = open_connection,
-) -> tuple[tuple[str, str], ...]:
+) -> tuple[tuple[str, str, str], ...]:
     """Every user-space script page on one wiki, in creation order, with its model.
 
     Titles come back in the replica's own spelling -- no namespace, underscores

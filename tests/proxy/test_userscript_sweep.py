@@ -10,10 +10,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import db, userscript_census as census, userscript_sweep as sweeper, wiki_replica  # noqa: E402
+from backend import db, userscript_census as census, userscript_sweep as sweeper  # noqa: E402
+from backend import userscripts, wiki_replica  # noqa: E402
 from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage  # noqa: E402
 
 FRWIKI = "fr.wikipedia.org"
+ENWIKI = "en.wikipedia.org"
 
 
 @pytest.fixture(autouse=True)
@@ -135,6 +137,23 @@ def stored(title, wiki=FRWIKI):
         }
 
 
+def resolved_targets(title, wiki=FRWIKI):
+    """Which page each of a source's loads points at, named rather than numbered.
+
+    Reading the edge back as `(wiki, title)` rather than as an id is deliberate:
+    a test that asserted on the number would pass just as happily if the resolver
+    pointed every load at the same wrong row.
+    """
+    with db.session_scope() as session:
+        pages = {row.id: (row.wiki, row.title) for row in session.query(UserScriptPage).all()}
+        rows = (
+            session.query(UserScriptImport)
+            .filter(UserScriptImport.wiki == wiki, UserScriptImport.source_title == title)
+            .all()
+        )
+        return {row.target_title: pages.get(row.target_page_id) for row in rows}
+
+
 def imports_of(title, wiki=FRWIKI):
     with db.session_scope() as session:
         rows = (
@@ -215,6 +234,22 @@ def test_a_failed_batch_is_retried_one_title_at_a_time():
     # The whole batch failed on one page, and splitting rescued the other.
     assert [found.title for found in read] == ["User:A/one.js"]
     assert unreadable == 1
+
+
+def test_a_fat_batch_is_halved_rather_than_taken_apart_title_by_title():
+    # This is what lets `CONTENT_BATCH` be set by what the API will answer
+    # rather than by what a bad batch costs to recover from: one page too big
+    # for the response cap costs a handful of extra requests, not one per title.
+    titles = [f"User:U{index}/x.js" for index in range(8)]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles}, unreadable={"User:U5/x.js"})
+    read, unreadable = sweeper.read_titles(wiki.request, FRWIKI, titles)
+    assert [found.title for found in read] == [title for title in titles if title != "User:U5/x.js"]
+    assert unreadable == 1
+    asked = [params["titles"].split("|") for _d, _m, params in wiki.requests]
+    # The halves are visible in the sizes asked for, and only the pair either
+    # side of the unreadable page was ever read alone: seven requests where
+    # falling straight to single titles would have cost nine.
+    assert sorted(len(batch) for batch in asked) == [1, 1, 2, 2, 4, 4, 8]
 
 
 def test_splitting_stops_once_the_failures_look_systemic():
@@ -304,7 +339,153 @@ def test_a_load_removed_from_a_page_stops_counting_as_demand():
     assert imports_of("User:A/one.js") == []
 
 
+# -- resolving loads to pages -------------------------------------------
+
+
+def test_a_load_points_at_the_page_it_names_when_both_arrive_in_one_run():
+    wiki = FakeWiki(
+        {
+            "User:A/one.js": page('importScript("User:B/two.js");'),
+            "User:B/two.js": page("var b = 2;"),
+        },
+    )
+    summary = sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
+    assert summary["resolved"] == 1
+
+
+def test_a_page_written_now_finds_the_page_it_loads_from_an_earlier_run():
+    # The loader arrives second. Resolution has to look outward, from this run's
+    # pages to whatever the corpus already holds.
+    wiki = FakeWiki({"User:B/two.js": page("var b = 2;")})
+    sweeper.sweep(wiki.request, FRWIKI)
+    wiki.pages["User:A/one.js"] = page('importScript("User:B/two.js");')
+    sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
+
+
+def test_a_page_written_now_is_found_by_the_loads_that_were_waiting_for_it():
+    # The loader arrives first, and its load is unresolvable at the time. Nothing
+    # rewrites that page later, so only a resolver that also looks inward -- from
+    # this run's pages back to whoever names them -- ever closes this edge.
+    wiki = FakeWiki({"User:A/one.js": page('importScript("User:B/two.js");')})
+    sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": None}
+    wiki.pages["User:B/two.js"] = page("var b = 2;")
+    second = sweeper.sweep(wiki.request, FRWIKI)
+    assert second["skipped"] == 1
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
+
+
+def test_a_load_naming_a_page_the_census_does_not_hold_stays_unresolved():
+    # Null is the honest answer, not a gap to be filled. A user script may load a
+    # page that was deleted, renamed, or never existed, and inventing a row for
+    # it would turn a broken load into a working one.
+    wiki = FakeWiki({"User:A/one.js": page('importScript("User:B/gone.js");')})
+    sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/gone.js": None}
+
+
+def test_a_load_of_another_wiki_resolves_once_that_wiki_has_been_swept():
+    # Cross-wiki loads are how a script becomes shared infrastructure, and the
+    # wikis are swept independently, so the edge is nearly always closed by the
+    # run that reads the *target* -- long after the run that read the loader.
+    loader = 'mw.loader.load("//en.wikipedia.org/w/index.php?title=User:C/three.js&action=raw");'
+    fr = FakeWiki({"User:A/one.js": page(loader)})
+    sweeper.sweep(fr.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:C/three.js": None}
+    en = FakeWiki({"User:C/three.js": page("var c = 3;")})
+    sweeper.sweep(en.request, ENWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:C/three.js": (ENWIKI, "User:C/three.js")}
+
+
+def test_a_rewritten_page_does_not_lose_the_edges_it_still_has():
+    # Storing a page replaces its loads wholesale, which drops every resolution
+    # it had. The run that replaced them has to put them back, or an edited page
+    # would silently disconnect from the graph.
+    wiki = FakeWiki(
+        {
+            "User:A/one.js": page('importScript("User:B/two.js");'),
+            "User:B/two.js": page("var b = 2;"),
+        },
+    )
+    sweeper.sweep(wiki.request, FRWIKI)
+    wiki.pages["User:A/one.js"] = page('importScript("User:B/two.js");\nvar a = 1;', revid="2")
+    sweeper.sweep(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
+
+
+def test_a_watch_resolves_the_page_it_read_just_as_a_sweep_does():
+    wiki = FakeWiki({"User:B/two.js": page("var b = 2;")})
+    sweeper.sweep(wiki.request, FRWIKI)
+    wiki.pages["User:A/one.js"] = page('importScript("User:B/two.js");')
+    wiki.changes = [{"ns": 2, "title": "User:A/one.js", "timestamp": "2024-02-01T00:00:00Z"}]
+    sweeper.watch(wiki.request, FRWIKI)
+    assert resolved_targets("User:A/one.js") == {"User:B/two.js": (FRWIKI, "User:B/two.js")}
+
+
 # -- skipping -----------------------------------------------------------
+
+
+def test_a_page_the_enumeration_says_has_not_moved_is_never_asked_for():
+    # The point of carrying `page_latest` out of the replica. Fetching is the
+    # entire cost of a sweep, so a page settled before the request is a request
+    # that never happens -- which is what makes a wiki's second sweep cheap.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;", revid="7")})
+    sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)
+    before = len(wiki.requests)
+    summary = sweeper.ingest(
+        wiki.request,
+        FRWIKI,
+        ["User:A/one.js"],
+        ranked=True,
+        revisions={"User:A/one.js": "7"},
+    )
+    assert (summary["skipped"], summary["fetched"], summary["written"]) == (1, 0, 0)
+    assert len(wiki.requests) == before
+
+
+def test_a_page_the_enumeration_says_moved_is_fetched_and_rewritten():
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;", revid="7")})
+    sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)
+    wiki.pages["User:A/one.js"] = page("var a = 2;", revid="8")
+    summary = sweeper.ingest(
+        wiki.request,
+        FRWIKI,
+        ["User:A/one.js"],
+        ranked=True,
+        revisions={"User:A/one.js": "8"},
+    )
+    assert (summary["skipped"], summary["fetched"], summary["written"]) == (0, 1, 1)
+    assert stored("User:A/one.js")["body"] == "var a = 2;"
+
+
+def test_a_page_the_enumeration_cannot_date_is_fetched_rather_than_assumed_unchanged():
+    # A missing revision is the absence of a shortcut, not evidence of anything.
+    # Treating it as unchanged would let one gap in the replica's answer freeze
+    # a page in the directory at whatever it last happened to say.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;", revid="7")})
+    sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)
+    summary = sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True, revisions={})
+    assert summary["fetched"] == 1
+
+
+def test_an_unmoved_page_that_shifted_in_creation_order_is_still_fetched():
+    # Rank is stored on the page row, so a page whose body never changed but
+    # whose position did has to be written -- and the pre-fetch skip must not
+    # settle it on the revision alone.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;", revid="7")})
+    sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)
+    summary = sweeper.ingest(
+        wiki.request,
+        FRWIKI,
+        ["User:A/one.js"],
+        ranked=True,
+        rank_offset=5,
+        revisions={"User:A/one.js": "7"},
+    )
+    assert (summary["fetched"], summary["written"]) == (1, 1)
+    assert stored("User:A/one.js")["rank"] == 5
 
 
 def test_a_page_whose_revision_has_not_moved_is_not_rewritten():
@@ -628,6 +809,81 @@ def test_a_full_run_sweeps_a_wiki_that_was_already_swept():
     assert sweeper.run(wiki.request, FRWIKI, full=True)["mode"] == "sweep"
 
 
+# -- and re-choosing it when the road moves under the census ------------
+
+
+def _looks_like_toolforge(monkeypatch, tmp_path):
+    """Give this host replica credentials, and no replica to use them on.
+
+    Both halves matter. The credentials are what makes the exact road *look*
+    available, which is the condition a stored census is measured against; the
+    reader that raises is what every host without a live replica behind those
+    credentials actually does, and what the fallback exists to survive. Left to
+    connect for real this would sit on a DNS timeout instead.
+    """
+    path = tmp_path / "replica.my.cnf"
+    path.write_text("[client]\nuser='s55555'\npassword='sekrit'\n", encoding="utf-8")
+    monkeypatch.setenv(wiki_replica.CONFIG_PATH_ENV, str(path))
+
+    def unreachable(*_args, **_kwargs):
+        raise Boom("no replica behind these credentials")
+
+    monkeypatch.setattr(wiki_replica, "dbnames_for", unreachable)
+
+
+def _recorded(wiki=FRWIKI):
+    with db.session_scope() as session:
+        state = session.get(UserScriptCensusState, wiki)
+        return (state.enumeration_source, state.sweeps_completed)
+
+
+def test_a_sweep_writes_down_which_road_named_the_pages():
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    sweeper.run(wiki.request, FRWIKI)
+    assert _recorded() == ("search", 1)
+
+
+def test_a_census_built_on_the_capped_road_is_swept_again_once_the_exact_one_is_reachable(
+    monkeypatch, tmp_path
+):
+    # The defect this exists for. frwiki finished a sweep from the search index
+    # the day before the replica road landed, and a finished sweep never runs
+    # again -- so it watched for changes over a census 920 pages short of the
+    # wiki, and nothing in the state row disagreed.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    sweeper.run(wiki.request, FRWIKI)
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "watch"
+    _looks_like_toolforge(monkeypatch, tmp_path)
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "sweep"
+
+
+def test_a_census_that_never_recorded_its_road_is_swept_once_and_then_knows(monkeypatch, tmp_path):
+    # What every row in the table looked like before the column existed. Blank
+    # is unknown, not exact, and one sweep is what turns it into either.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    sweeper.run(wiki.request, FRWIKI)
+    with db.session_scope() as session:
+        session.get(UserScriptCensusState, FRWIKI).enumeration_source = ""
+    _looks_like_toolforge(monkeypatch, tmp_path)
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "sweep"
+    assert _recorded()[0] == "search-fallback"
+
+
+def test_a_replica_that_is_present_and_failing_does_not_re_sweep_the_wiki_every_run(
+    monkeypatch, tmp_path
+):
+    # The loop this could have been. Asking "is a better road available" of the
+    # credentials alone would sweep the wiki on every run for as long as the
+    # replica stayed down -- thousands of requests an hour to arrive at exactly
+    # the list already stored. What the census records is the road it got, not
+    # the road it hoped for.
+    _looks_like_toolforge(monkeypatch, tmp_path)
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "sweep"
+    assert _recorded()[0] == "search-fallback"
+    assert sweeper.run(wiki.request, FRWIKI)["mode"] == "watch"
+
+
 # -- the job entrypoint -------------------------------------------------
 
 import userscript_sweep as job  # noqa: E402
@@ -646,6 +902,17 @@ SWEPT = {
     "enumerated": 0,
     "sweep_cursor": 0,
     "complete": True,
+}
+
+#: The same for a watch, whose log line reads a cursor a sweep does not have.
+WATCHED = {
+    "mode": "watch",
+    "asked": 0,
+    "fetched": 0,
+    "written": 0,
+    "skipped": 0,
+    "unreadable": 0,
+    "cursor": "2026-08-06T17:22:45Z",
 }
 
 
@@ -706,8 +973,82 @@ def test_an_unusable_watch_limit_falls_back_to_the_default(monkeypatch, raw, exp
     monkeypatch.setattr(
         job.userscript_sweep,
         "run",
-        lambda _request, wiki, **kwargs: asked.append(kwargs["watch_limit"])
-        or {"wiki": wiki, "mode": "watch", "asked": 0, "fetched": 0, "written": 0, "skipped": 0, "unreadable": 0},
+        lambda _request, wiki, **kwargs: asked.append(kwargs["watch_limit"]) or dict(WATCHED, wiki=wiki),
     )
     assert job.main() == 0
     assert asked == [expected]
+
+
+def test_a_watch_reports_the_wiki_time_it_has_caught_up_to(monkeypatch, capsys, _job_env):
+    # The number that separates a quiet hour from a census weeks behind. Both
+    # write nothing and print the same five zeros; only the cursor says which
+    # one just happened.
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")
+    monkeypatch.setattr(job.userscript_sweep, "run", lambda _request, wiki, **_kwargs: dict(WATCHED, wiki=wiki))
+    assert job.main() == 0
+    out = capsys.readouterr().out
+    assert "mode=watch" in out
+    assert "cursor=2026-08-06T17:22:45Z" in out
+
+
+def test_a_watch_that_has_never_run_says_so_rather_than_printing_a_blank(monkeypatch, capsys, _job_env):
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")
+    monkeypatch.setattr(job.userscript_sweep, "run", lambda _request, wiki, **_kwargs: dict(WATCHED, wiki=wiki, cursor=""))
+    assert job.main() == 0
+    assert "cursor=none" in capsys.readouterr().out
+
+
+def test_one_wikis_failure_does_not_cost_the_next_wiki_its_turn(monkeypatch, capsys, _job_env):
+    # The 2026-08-23 outage: a Meta page raised out of ingest, enwiki was third
+    # in the list, and enwiki's first sweep stopped advancing for three runs
+    # until the guard disabled the job. Ordering decided which corpus starved.
+    covered = []
+
+    def run(_request, wiki, **_kwargs):
+        if wiki == "meta.wikimedia.org":
+            raise RuntimeError("Duplicate entry for key 'wiki'")
+        covered.append(wiki)
+        return dict(SWEPT, wiki=wiki)
+
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org")
+    monkeypatch.setattr(job.userscript_sweep, "run", run)
+    # Still a failure -- a wiki that could not be covered is one the guard
+    # should count, and `job_runner` signals that by letting it out -- but not
+    # before every other wiki has had its run.
+    with pytest.raises(job.CensusIncompleteError, match="census failed for meta.wikimedia.org"):
+        job.main()
+    assert covered == ["fr.wikipedia.org", "en.wikipedia.org"]
+    out = capsys.readouterr().out
+    assert "wiki=meta.wikimedia.org failed error=RuntimeError" in out
+
+
+def test_two_loads_the_database_calls_one_do_not_fail_the_page():
+    # The 2026-08-23 crash. MySQL folds case and invisible marks where Python
+    # does not, so a page can offer two loads that are one row to the database
+    # -- Meta's User:.../global.js loads both `MediaWiki:Gadget-x.js` and
+    # `Mediawiki:gadget-x.js`. SQLite compares bytes and cannot be made to fold
+    # anything, so the collision is stated at the level the fix works at: two
+    # entries that the unique key cannot tell apart. Whatever a real collation
+    # merges arrives here looking exactly like this.
+    twice = userscripts.ScriptImport(
+        verb="mw.loader.load",
+        argument="//ar.wikipedia.org/x",
+        wiki="ar.wikipedia.org",
+        title="MediaWiki:Gadget-x.js",
+        url="//ar.wikipedia.org/x",
+    )
+    analysis = userscripts.ScriptPage(
+        title="User:A/global.js",
+        role="loader",
+        fingerprint="f",
+        imports=(twice, twice),
+    )
+    with db.session_scope() as session:
+        sweeper._replace_imports(session, FRWIKI, analysis)
+    with db.session_scope() as session:
+        stored = session.query(UserScriptImport).filter(UserScriptImport.wiki == FRWIKI).all()
+    # One row, no exception -- and in particular the page's other work is not
+    # rolled back with the row the database refused.
+    assert [(row.source_title, row.target_title) for row in stored] == [
+        ("User:A/global.js", "MediaWiki:Gadget-x.js"),
+    ]

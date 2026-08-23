@@ -20,9 +20,9 @@ USER = wiki_replica.Credentials(user="s55555", password="sekrit")
 
 #: What frwiki's replica holds, in page-id order, and what it calls user space.
 REPLICA_ROWS = (
-    ("javascript", "Tom_Smith/monobook.js"),
-    ("css", "Ada/vector.css"),
-    ("javascript", "Zoe/tools.js"),
+    ("javascript", "Tom_Smith/monobook.js", "101"),
+    ("css", "Ada/vector.css", "102"),
+    ("javascript", "Zoe/tools.js", "103"),
 )
 
 
@@ -107,8 +107,36 @@ def test_titles_are_spelled_the_way_the_wiki_itself_spells_them(monkeypatch):
 
 
 def test_underscores_from_the_replica_become_the_spaces_the_api_answers_with(monkeypatch):
-    with_replica(monkeypatch, (("javascript", "Tom_Smith/monobook.js"),))
+    with_replica(monkeypatch, (("javascript", "Tom_Smith/monobook.js", "101"),))
     assert enumerate_with(FakeWiki()).titles == ("Utilisateur:Tom Smith/monobook.js",)
+
+
+def test_the_replica_hands_back_the_current_revision_of_every_page_it_names(monkeypatch):
+    # This map is what makes a wiki's second sweep cheap: a page whose stored
+    # revision already matches never has to be fetched to find that out. It is
+    # keyed the way the census stores titles -- canonically, so frwiki's
+    # `Utilisateur:` and the canonical `User:` are the same page and not two.
+    with_replica(monkeypatch)
+    assert enumerate_with(FakeWiki()).revisions == {
+        "User:Tom Smith/monobook.js": "101",
+        "User:Ada/vector.css": "102",
+        "User:Zoe/tools.js": "103",
+    }
+
+
+def test_a_page_the_replica_cannot_date_is_named_without_a_revision(monkeypatch):
+    # Absent is not a claim that the page is unchanged -- it is the absence of
+    # a shortcut, so the page stays in the enumeration and the sweep fetches it.
+    with_replica(monkeypatch, (("javascript", "Ada/a.js", ""),))
+    found = enumerate_with(FakeWiki())
+    assert found.titles == ("Utilisateur:Ada/a.js",)
+    assert found.revisions == {}
+
+
+def test_the_search_road_offers_no_revisions_rather_than_wrong_ones(monkeypatch):
+    with_replica(monkeypatch, dbname="")
+    wiki = FakeWiki(titles=[("javascript", "User:A/one.js")])
+    assert enumerate_with(wiki).revisions == {}
 
 
 # --- falling back to the search road ---------------------------------------
@@ -125,13 +153,13 @@ def test_a_host_with_no_replica_credentials_walks_the_search_index(monkeypatch):
 def test_an_unreachable_replica_falls_back_rather_than_failing_the_census(monkeypatch):
     with_replica(monkeypatch, fail=True)
     wiki = FakeWiki(titles=[("javascript", "User:A/one.js")])
-    assert enumerate_with(wiki).source == enumeration.SOURCE_SEARCH
+    assert enumerate_with(wiki).source == enumeration.SOURCE_SEARCH_FALLBACK
 
 
 def test_a_wiki_the_replica_map_has_never_heard_of_falls_back(monkeypatch):
     with_replica(monkeypatch, dbname="")
     wiki = FakeWiki(titles=[("javascript", "User:A/one.js")])
-    assert enumerate_with(wiki).source == enumeration.SOURCE_SEARCH
+    assert enumerate_with(wiki).source == enumeration.SOURCE_SEARCH_FALLBACK
 
 
 def test_a_wiki_that_will_not_name_user_space_falls_back(monkeypatch):
@@ -139,7 +167,7 @@ def test_a_wiki_that_will_not_name_user_space_falls_back(monkeypatch):
     # returned, and a half-spelled enumeration is worse than a capped one.
     with_replica(monkeypatch)
     wiki = FakeWiki(prefix="", titles=[("javascript", "User:A/one.js")])
-    assert enumerate_with(wiki).source == enumeration.SOURCE_SEARCH
+    assert enumerate_with(wiki).source == enumeration.SOURCE_SEARCH_FALLBACK
 
 
 def test_a_replica_that_returns_nothing_falls_back_rather_than_emptying_the_wiki(monkeypatch):
@@ -148,7 +176,7 @@ def test_a_replica_that_returns_nothing_falls_back_rather_than_emptying_the_wiki
     with_replica(monkeypatch, ())
     wiki = FakeWiki(titles=[("javascript", "User:A/one.js")])
     found = enumerate_with(wiki)
-    assert found.source == enumeration.SOURCE_SEARCH
+    assert found.source == enumeration.SOURCE_SEARCH_FALLBACK
     assert found.titles == ("User:A/one.js",)
 
 
@@ -165,3 +193,35 @@ def test_the_replica_road_costs_one_request_to_the_wiki(monkeypatch):
     wiki = FakeWiki()
     enumerate_with(wiki)
     assert [params.get("meta") for params in wiki.requests] == ["siteinfo"]
+
+
+# --- whether a stored census is still on the best road ---------------------
+
+
+def test_a_census_from_the_index_is_superseded_once_the_replicas_are_reachable():
+    # The whole point: a wiki swept before the replica road existed holds a
+    # census nothing would ever revisit, because a finished sweep never runs
+    # again on its own.
+    assert enumeration.superseded(enumeration.SOURCE_SEARCH, credentials=lambda: USER) is True
+
+
+def test_a_census_from_the_index_stands_where_there_is_no_better_road():
+    assert enumeration.superseded(enumeration.SOURCE_SEARCH, credentials=lambda: None) is False
+
+
+def test_a_census_from_the_replicas_is_never_superseded():
+    assert enumeration.superseded(enumeration.SOURCE_REPLICA, credentials=lambda: USER) is False
+
+
+def test_a_fallback_taken_with_credentials_in_hand_is_not_asked_to_try_again():
+    # A replica that is present and not answering would otherwise re-sweep the
+    # wiki on every run for as long as the failure lasts, which is thousands of
+    # requests an hour to arrive at the same list.
+    assert enumeration.superseded(enumeration.SOURCE_SEARCH_FALLBACK, credentials=lambda: USER) is False
+
+
+def test_a_census_that_never_recorded_its_road_is_checked_once():
+    # Rows written before the road was stored: unknown rather than exact. One
+    # sweep resolves it either way, because the sweep writes down what it got.
+    assert enumeration.superseded("", credentials=lambda: USER) is True
+    assert enumeration.superseded("", credentials=lambda: None) is False

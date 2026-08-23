@@ -347,3 +347,47 @@ def test_only_a_script_is_a_directory_candidate():
     page = userscripts.analyze("User:Orlodrim/portail-eval.js", body, wiki=FRWIKI)
     assert page.role == userscripts.ROLE_SCRIPT
     assert page.is_candidate is True
+
+
+def test_a_relative_index_php_url_names_a_page_on_the_wiki_that_wrote_it():
+    # 47 of frwiki's distinct load targets were stored as the whole query
+    # string, because a URL with no host was not recognized as a URL at all.
+    body = "importScript('/w/index.php?title=MediaWiki:Common.js/edit.js&action=raw&ctype=text/javascript');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI)
+    assert (found.wiki, found.title) == (FRWIKI, "MediaWiki:Common.js/edit.js")
+
+
+def test_a_relative_pretty_path_names_a_page_too():
+    (found,) = userscripts.script_imports("importScript('/wiki/User:Foo/bar.js');", wiki=FRWIKI)
+    assert (found.wiki, found.title) == (FRWIKI, "User:Foo/bar.js")
+
+
+def test_a_target_written_as_a_wikilink_is_still_a_title():
+    (found,) = userscripts.script_imports("importScript('[[Utilisateur:Dr Brains/VerifEval.js]]');", wiki=FRWIKI)
+    assert found.title == "User:Dr Brains/VerifEval.js"
+
+
+def test_a_percent_encoded_target_names_the_page_it_decodes_to():
+    # Copied out of a URL. The page exists; the spelling is what did not.
+    body = "importScript('User:%C3%9Ejarkur/Highlight recently added text.js');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI)
+    assert found.title == "User:Þjarkur/Highlight recently added text.js"
+
+
+def test_a_title_with_a_bare_percent_is_left_alone():
+    # `unquote` only consumes a valid escape, and a real title may hold a `%`.
+    (found,) = userscripts.script_imports("importScript('User:Foo/100% sure.js');", wiki=FRWIKI)
+    assert found.title == "User:Foo/100% sure.js"
+
+
+def test_an_absolute_cross_wiki_url_is_unaffected_by_the_relative_case():
+    body = "importScript('https://en.wikipedia.org/w/index.php?title=User:Lupin/popups.js&action=raw');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI)
+    assert (found.wiki, found.title) == ("en.wikipedia.org", "User:Lupin/popups.js")
+
+
+def test_a_url_that_names_no_page_stays_an_opaque_url():
+    body = "mw.loader.load('https://tools.wmflabs.org/somewhere/bundle.js');"
+    (found,) = userscripts.script_imports(body, wiki=FRWIKI)
+    assert (found.wiki, found.title) == ("", "")
+    assert found.url.endswith("bundle.js")

@@ -1564,6 +1564,14 @@ class UserScriptImport(Base):
     A target may be a page on another wiki: 1,160 of frwiki's 1,807 URL imports
     leave the wiki, and those edges are the whole argument for a global gadget.
     A target that resolves to no page at all keeps its URL and an empty title.
+
+    `target_page_id` is the same edge said in identities rather than in names.
+    The names stay: they are what the code on the page actually wrote, and a
+    load naming a page nobody has written is still a fact worth keeping. The id
+    is only ever set when a page we hold answers to that name, which is why it
+    is nullable and stays null for the majority of edges -- a load pointing at
+    one of the wikis outside the census can never resolve, and saying so with
+    NULL is more honest than inventing a row for it.
     """
 
     __tablename__ = "user_script_imports"
@@ -1571,6 +1579,8 @@ class UserScriptImport(Base):
         UniqueConstraint("wiki", "source_title", "verb", "target_wiki", "target_title", "target_url"),
         # Demand is always read target-first: "who loads this page?"
         Index("ix_user_script_imports_target", "target_wiki", "target_title"),
+        # And once resolved, target-first by identity: "who loads *this script*?"
+        Index("ix_user_script_imports_target_page", "target_page_id"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     wiki: Mapped[str] = mapped_column(String(255), index=True)
@@ -1579,6 +1589,13 @@ class UserScriptImport(Base):
     target_wiki: Mapped[str] = mapped_column(String(255), default="")
     target_title: Mapped[str] = mapped_column(String(512), default="")
     target_url: Mapped[str] = mapped_column(String(2000), default="")
+    # Deliberately a plain integer and not a ForeignKey. The column is added to
+    # a live table by additive DDL, which cannot add a constraint alongside it,
+    # so declaring one here would exist in a fresh test database and nowhere
+    # else -- and a constraint the tests enforce but production does not is
+    # worse than no constraint at all. Referential integrity is maintained by
+    # the resolver, which only ever writes an id it has just read.
+    target_page_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_stylesheet: Mapped[bool] = mapped_column(Boolean, default=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -1611,6 +1628,12 @@ class UserScriptCensusState(Base):
     imports_known: Mapped[int] = mapped_column(Integer, default=0)
     enumeration_complete: Mapped[bool] = mapped_column(Boolean, default=True)
     enumeration_totals: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Which road in `backend.userscript_enumeration` named the pages behind this
+    # census. The roads are not equivalent and a census keeps whichever one it
+    # got, so this is the only thing that can say a finished sweep is finished
+    # against a list that is no longer the best available. Empty on a row
+    # written before the column existed, which reads as unknown, not as exact.
+    enumeration_source: Mapped[str] = mapped_column(String(32), default="")
     sweeps_completed: Mapped[int] = mapped_column(Integer, default=0)
     # How far into the enumeration the last bounded sweep got, and 0 when a
     # sweep finished. A wiki whose corpus is larger than one run's budget is
@@ -1643,8 +1666,15 @@ class UserScriptDirectoryEntry(Base):
         UniqueConstraint("wiki", "title"),
         # The directory is read one tier at a time, already ordered.
         Index("ix_user_script_directory_position", "wiki", "tier", "position"),
+        # And one script at a time, by the identity that outlives the rebuild.
+        Index("ix_user_script_directory_script", "script_id"),
     )
+    # `id` is this row's identity and lasts until the next projection deletes it.
+    # `script_id` is the *script's* identity -- the page the collapse named as
+    # the original -- and is the only number here worth writing down anywhere
+    # else, because it survives a rebuild that renumbers every row in the table.
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    script_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     wiki: Mapped[str] = mapped_column(String(255), index=True)
     title: Mapped[str] = mapped_column(String(512))
     owner: Mapped[str] = mapped_column(String(255), default="", index=True)
@@ -1672,8 +1702,16 @@ class UserScriptDirectoryMember(Base):
     __table_args__ = (
         UniqueConstraint("wiki", "title"),
         Index("ix_user_script_directory_members_origin", "wiki", "origin_title"),
+        Index("ix_user_script_directory_members_origin_id", "origin_id"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # The same two edges as the titles below, said in identities. Both are
+    # nullable and neither is a ForeignKey, for the reason `UserScriptImport`
+    # gives: these columns reach a live table by additive DDL, which cannot
+    # carry a constraint, and a constraint that exists only in the test database
+    # is worse than none.
+    script_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    origin_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     wiki: Mapped[str] = mapped_column(String(255), index=True)
     title: Mapped[str] = mapped_column(String(512))
     origin_title: Mapped[str] = mapped_column(String(512))

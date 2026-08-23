@@ -233,6 +233,27 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         },
         "user_script_census_state": {
             "sweep_cursor": "INTEGER NOT NULL DEFAULT 0",
+            # No backfill: an existing row cannot say which road it took, and
+            # guessing would either strand the wikis swept from the index or
+            # re-sweep the ones that were not. Blank means unknown, which the
+            # sweep resolves by enumerating once and writing down what it got.
+            "enumeration_source": "VARCHAR(32) NOT NULL DEFAULT ''",
+        },
+        "user_script_imports": {
+            # Null means "no page we hold answers to that name", which is the
+            # normal state for a load pointing outside the census. The resolver
+            # fills it in as the pages arrive; nothing reads it as a count.
+            "target_page_id": "INTEGER NULL",
+        },
+        # Both directory tables are deleted and rebuilt whole on every
+        # projection run, so these need no backfill -- the next run writes them.
+        # They still need the column to exist before that run does.
+        "user_script_directory": {
+            "script_id": "INTEGER NULL",
+        },
+        "user_script_directory_members": {
+            "script_id": "INTEGER NULL",
+            "origin_id": "INTEGER NULL",
         },
         "user_script_pages": {
             # Empty until a sweep reaches the Wiki Replicas. The directory's

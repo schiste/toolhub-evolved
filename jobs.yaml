@@ -373,7 +373,13 @@
   # Daily because definition pages change rarely; the catalogue pass that
   # follows reads no wiki at all, so it also picks up any change to what this
   # codebase considers a tool on the next tick.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-census -- /usr/bin/env GADGET_WIKIS=fr.wikipedia.org,meta.wikimedia.org /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/gadget_census.py
+  #
+  # English Wikipedia is here for the same reason it is on the user-script
+  # census: it declares more gadgets than either of the others -- 113 against
+  # frwiki's 95 and Meta's 75 -- and a gadget there is the form a successful
+  # user script most often ends up in. It costs one more request a day, because
+  # a wiki's whole gadget inventory is one page.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-census -- /usr/bin/env GADGET_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/gadget_census.py
   image: python3.13
   schedule: "9 4 * * *"
   emails: onfailure
@@ -387,11 +393,19 @@
   #
   # The hourly run follows recent changes. A full sweep is thousands of requests
   # and is asked for with USERSCRIPT_SWEEP=1 -- except that a wiki which has
-  # never completed one, or which is part-way through one, sweeps regardless.
+  # never completed one, which is part-way through one, or whose census was
+  # built on an enumeration road the host can now better, sweeps regardless.
+  # That third case is how a wiki swept from the search index before the replica
+  # road existed picks the replicas up; it costs one sweep per wiki, once,
+  # because the sweep records the road it took and is then left alone.
   # USERSCRIPT_LIMIT bounds how many pages a single run reads, and the wiki's
   # sweep cursor carries the rest to the next run, so a corpus far larger than
-  # one hour's budget converges over a day or two instead of timing out. 2000
-  # titles is 100 content requests at CONTENT_BATCH=20.
+  # one hour's budget converges over a day or two instead of timing out. 6000
+  # titles is 120 content requests at CONTENT_BATCH=50 -- three times the pages
+  # of the old 2000, for barely more requests than the 100 that cost, because
+  # the batch size and not politeness was the throttle. At 0.03 requests a
+  # second this is nowhere near any published limit; what bounds a run is its
+  # wall clock against the hourly tick.
   #
   # Meta is here for the cross-wiki edges: global.js lives there and loads
   # scripts hosted on other wikis, which is the strongest signal a script has
@@ -400,7 +414,7 @@
   # matters is most likely to already exist under a different name. Its 155,561
   # pages are why USERSCRIPT_LIMIT exists: its first sweep runs for about 78
   # hourly runs, then the wiki falls through to watching like the other two.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org USERSCRIPT_LIMIT=2000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org USERSCRIPT_LIMIT=6000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
   image: python3.13
   schedule: "23 * * * *"
   emails: onfailure

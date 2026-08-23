@@ -5,5 +5,13 @@
 	"format": ["python"],
 	"reporters": ["console", "json"],
 	"output": ".quality/jscpd-python",
-	"ignore": ["node_modules/**", ".quality/**", ".venv/**", "proxy/var/**", "tests/**", "**/__pycache__/**"]
+	"ignore": [
+		"node_modules/**",
+		".quality/**",
+		".venv/**",
+		"proxy/var/**",
+		"tests/**",
+		"**/__pycache__/**",
+		".aethyme/worktrees/**"
+	]
 }
