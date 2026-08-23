@@ -373,7 +373,13 @@
   # Daily because definition pages change rarely; the catalogue pass that
   # follows reads no wiki at all, so it also picks up any change to what this
   # codebase considers a tool on the next tick.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-census -- /usr/bin/env GADGET_WIKIS=fr.wikipedia.org,meta.wikimedia.org /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/gadget_census.py
+  #
+  # English Wikipedia is here for the same reason it is on the user-script
+  # census: it declares more gadgets than either of the others -- 113 against
+  # frwiki's 95 and Meta's 75 -- and a gadget there is the form a successful
+  # user script most often ends up in. It costs one more request a day, because
+  # a wiki's whole gadget inventory is one page.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-census -- /usr/bin/env GADGET_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/gadget_census.py
   image: python3.13
   schedule: "9 4 * * *"
   emails: onfailure
