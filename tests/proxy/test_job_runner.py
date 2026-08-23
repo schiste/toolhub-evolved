@@ -101,21 +101,68 @@ def test_the_lock_is_taken_without_waiting_unless_a_wait_is_asked_for(monkeypatc
     assert seen == [0, 120]
 
 
-def test_only_reconvergence_waits_for_the_shared_people_lock(monkeypatch):
-    """The mode whose next attempt is an hour away is the one that waits."""
+def _scheduled_modes() -> dict[str, str]:
+    """Map each people_reconcile.py mode flag to the job that schedules it.
+
+    Read out of jobs.yaml rather than restated here: a flag renamed on one
+    side and not the other has to fail, not quietly test a mode nobody runs.
+    """
+    modes: dict[str, str] = {}
+    name = ""
+    for line in (ROOT / "jobs.yaml").read_text().splitlines():
+        if line.startswith("- name: "):
+            name = line.removeprefix("- name: ").strip()
+        if "people_reconcile.py" in line:
+            tail = line.split("people_reconcile.py", 1)[1]
+            flags = [token for token in tail.split() if token.startswith("--")]
+            if flags:
+                modes[flags[0]] = name
+    return modes
+
+
+def _wait_for(mode: str, monkeypatch) -> int:
+    """Ask the entrypoint itself what it would wait, rather than the constant."""
     import people_reconcile as entrypoint
 
-    seen = []
+    seen: list[int] = []
     monkeypatch.setattr(
         job_runner,
         "run_job",
         lambda _name, _body, **kwargs: seen.append(kwargs.get("lock_wait_seconds")) or job_contract.EXIT_OK,
     )
-    entrypoint.main(["--reconverge"])
-    entrypoint.main(["--queue"])
-    entrypoint.main(["--apply"])
+    entrypoint.main([mode])
+    return seen[0]
 
-    assert seen == [entrypoint.RECONVERGE_LOCK_WAIT_SECONDS, 0, 0]
+
+def test_each_mode_waits_in_proportion_to_how_long_until_its_next_attempt(monkeypatch):
+    """One lock, four schedules that all fire on the minute, so they race.
+
+    What a mode should spend winning that race is what losing it costs, and
+    that is the gap to its next attempt -- not how much work it carries. The
+    weekly pass had this backwards and skipped a whole week's run on
+    2026-08-23 after losing to a drain that would have retried in a minute.
+    """
+    jobs = {job.name: job for job in job_catalog.load(ROOT / "jobs.yaml")}
+    modes = _scheduled_modes()
+    # Four modes share this lock; a parser that found fewer is not testing the
+    # ordering, it is testing whichever ones it happened to match.
+    assert len(modes) >= 4, modes
+
+    observed = []
+    for mode, job_name in modes.items():
+        assert job_name in jobs, f"{mode} names a job jobs.yaml does not declare"
+        period = jobs[job_name].expected_interval_minutes
+        assert period > 0, f"{job_name} has no period to reason about"
+        observed.append((period, mode, _wait_for(mode, monkeypatch)))
+
+    ordered = sorted(observed)
+    waits = [wait for _period, _mode, wait in ordered]
+    assert waits == sorted(waits), ordered
+    # The most frequent mode is the one that must never queue: it has another
+    # attempt before a wait would even have finished.
+    assert ordered[0][2] == 0, ordered[0]
+    # ... and the rarest must, or nothing retries it until its next period.
+    assert ordered[-1][2] > 0, ordered[-1]
 
 
 def test_a_sweep_reports_how_long_its_remote_and_local_phases_took(monkeypatch):
@@ -165,16 +212,51 @@ def test_a_sweep_that_raises_still_reports_the_phase_it_died_in(monkeypatch):
     assert "local" in phases
 
 
-def test_the_reconvergence_wait_stays_inside_its_own_job_timeout():
-    """Waiting past the timeout would be a kill, which is worse than a skip."""
-    import people_reconcile as entrypoint
+def test_no_mode_waits_so_long_that_its_own_job_is_killed_instead(monkeypatch):
+    """Waiting past the timeout would be a kill, which is worse than a skip.
 
-    timeout = 0
-    for job in job_catalog.load(ROOT / "jobs.yaml"):
-        if job.name == "people-attribution-reconverge":
-            timeout = job.timeout_seconds
-    assert timeout, "people-attribution-reconverge must declare a timeout"
-    assert entrypoint.RECONVERGE_LOCK_WAIT_SECONDS < timeout / 2
+    Toolforge counts the wait against the job's own timeout rather than adding
+    to it, so every second spent here is a second the run that follows does
+    not get.
+    """
+    jobs = {job.name: job for job in job_catalog.load(ROOT / "jobs.yaml")}
+    modes = _scheduled_modes()
+    assert len(modes) >= 4, modes
+
+    for mode, job_name in modes.items():
+        timeout = jobs[job_name].timeout_seconds
+        assert timeout, f"{job_name} must declare a timeout"
+        assert _wait_for(mode, monkeypatch) < timeout / 2, mode
+
+
+def test_only_the_weekly_pass_outlasts_the_whole_drain_it_races(monkeypatch):
+    """The deliberate line between the hourly wait and the full pass's.
+
+    In practice the drain holds the lock for well under a minute, which any of
+    these waits covers. Waiting out its declared timeout as well is insurance
+    the hourly modes cannot afford inside their own timeouts and do not need,
+    because they try again in an hour. The full pass tries again in a week.
+    """
+    jobs = {job.name: job for job in job_catalog.load(ROOT / "jobs.yaml")}
+    modes = _scheduled_modes()
+    drain = jobs[modes["--queue"]]
+    assert drain.expected_interval_minutes == 1, "the drain is the mode that runs every minute"
+
+    assert _wait_for("--apply", monkeypatch) > drain.timeout_seconds
+    for mode in ("--reconverge", "--identities-only"):
+        assert 0 < _wait_for(mode, monkeypatch) <= drain.timeout_seconds, mode
+
+
+def test_an_unscheduled_mode_waits_like_the_pass_nothing_will_retry(monkeypatch):
+    """--retirements and a bare dry run are only ever started by hand.
+
+    Compared against the other modes rather than against the constant it is
+    routed to, which would agree with itself whatever that constant became.
+    """
+    retirements = _wait_for("--retirements", monkeypatch)
+
+    assert retirements == _wait_for("--apply", monkeypatch)
+    assert retirements > _wait_for("--reconverge", monkeypatch)
 
 
 def test_interval_minutes_uses_the_longest_month_for_a_monthly_schedule():
