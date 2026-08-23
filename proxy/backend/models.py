@@ -1737,9 +1737,10 @@ class UserScriptDirectoryMember(Base):
     wiki: Mapped[str] = mapped_column(String(255), index=True)
     title: Mapped[str] = mapped_column(String(512))
     origin_title: Mapped[str] = mapped_column(String(512))
-    # `original`, `copy` (byte-identical), or `variant` (a crowded filename).
-    # A copy and a variant are folded by different evidence and a reviewer needs
-    # to know which: byte-identical is a fact, a shared name is an inference.
+    # `original`, `copy` (byte-identical), `fork` (most of the same body), or
+    # `variant` (a crowded filename). Each is folded by different evidence and a
+    # reviewer needs to know which: byte-identical is a fact, a resemblance is an
+    # observation, a shared name is an inference.
     relation: Mapped[str] = mapped_column(String(16), default="")
     computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 

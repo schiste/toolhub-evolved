@@ -53,23 +53,34 @@ if TYPE_CHECKING:
 # How many distinct owners must share a filename before the later pages under
 # it are presumed to be instances rather than scripts. Five is low on purpose;
 # it is only safe because of INDEPENDENT_DEMAND below.
+#
+# Measured on all three censused wikis, the cost of lowering it accelerates and
+# the return on raising it does not. Going 5 -> 4 buys back 102 originals on
+# enwiki, 4 -> 3 buys 189 and 3 -> 2 buys 365; going 5 -> 8 costs about 94 an
+# owner, 8 -> 12 about 37, and 12 -> 25 about 17. frwiki and meta trace the same
+# convex curve at a tenth the size. Five is the last threshold before folding
+# gets expensive, on three corpora rather than one -- see docs/USERSCRIPTS.md.
 CROWDED_OWNERS = 5
 
 # How many distinct sources must load a page for it to keep its identity
 # regardless of what it is called. This is the one number here that is a
 # judgement rather than a measurement -- it encodes what counts as reuse, which
-# is a question about the directory, not a fact about the wiki. On frwiki the
-# name rule alone leaves 1,229 originals, and the guard rescues pages back:
+# is a question about the directory, not a fact about the wiki. Measured on the
+# three censused wikis, with the name rule alone as the baseline, the guard
+# rescues pages back:
 #
-#     >= 1 source   1,264 originals   +35
-#     >= 2 sources  1,239             +10
-#     >= 3 sources  1,233              +4
-#     >= 5 sources  1,232              +3
-#     >= 25 sources 1,229              +0
+#                    enwiki   frwiki   meta
+#     name rule only   6,028    1,338  2,412
+#     >= 25 sources      +22       +2     +2
+#     >= 5 sources       +28       +2     +5
+#     >= 3 sources       +15       +3     +5
+#     >= 2 sources       +19       +4     +9
+#     >= 1 source        +95      +46   +169
 #
-# Nearly the whole effect sits between 1 and 2, so the choice is really binary:
-# either somebody other than the author loading a page is enough to make it its
-# own script, or it is not. It is. A page that one other person loads is being
+# The largest single step is at 1 on every wiki, and everything above it is a
+# thin tail, so the choice is really binary: either somebody other than the
+# author loading a page is enough to make it its own script, or it is not. It
+# is. A page that one other person loads is being
 # used by somebody who is not its owner, and a directory that folds it away
 # reports that the reuse never happened -- a false negative about the only thing
 # this module exists to find. Folding a genuine instance into its tool costs a
@@ -344,6 +355,12 @@ def tier_of(origin: Origin, demand: Mapping[str, set[str]]) -> str:
     than design: that one settles whether a page is its own script, this one
     settles where a script already known to be its own gets filed. Moving either
     must not move the other.
+
+    The split it produces is the steadiest number in this subsystem. On enwiki
+    1,700 of 6,207 scripts are active, on frwiki 410 of 1,395 and on meta 720 of
+    2,602 -- 27.4%, 29.4% and 27.7% of corpora that differ by a factor of four
+    in size and completely in language and purpose. Whatever this boundary is
+    measuring, it is not an frwiki habit.
     """
     return TIER_ACTIVE if _demand_for(origin.pages, demand) else TIER_ARCHIVE
 

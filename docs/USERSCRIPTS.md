@@ -46,9 +46,9 @@ CSS-model pages are enumerated — they have to be, because a `.css` page can ho
 JavaScript. What this document previously claimed, that a page whose body is
 really CSS never earns a directory entry, is not true and was never measured:
 `classify()` reads a role off the number of code lines, and a long stylesheet is
-a `script` to that test. 12,470 of enwiki's 32,154 directory candidates are
-`content_model = css`. See the gap at the end; there is still no stylesheet tier
-and no plan for one.
+a `script` to that test. Of the 32,154 enwiki directory candidates counted on
+2026-08-21, 12,470 are `content_model = css`. See the gap at the end; there is
+still no stylesheet tier and no plan for one.
 
 **Analysis runs on the body with comments removed.** `fingerprint()` hashes the
 comment-stripped, whitespace-normalized text for exactly one reason: Popups
@@ -180,16 +180,27 @@ User-namespace creations in it are neither `.js` nor `.css`.
 
 ## The collapse: originals and instances
 
-`backend.userscript_directory` decides which pages are distinct scripts. The
-first production sweep, on 2026-08-21, read 13,616 user-space `.js` and `.css`
-pages on frwiki. 6,556 of them are real scripts, and those 6,556 pages are
-**1,453 distinct scripts** — 671 with a live audience, 782 archived.
+`backend.userscript_directory` decides which pages are distinct scripts. Read
+against production on 2026-08-23, across all three censused wikis:
 
-(The pilot figures this document previously carried — 9,919 pages, 2,051
-scripts, 1,264 originals — were measured over `.js` alone, on a smaller
-enumeration, and before the search was sorted into creation order.)
+| Wiki   | Script pages | Distinct scripts | Active | Archived |
+| ------ | ------------ | ---------------- | ------ | -------- |
+| enwiki | 39,950       | 6,207            | 1,700  | 4,507    |
+| meta   | 10,299       | 2,602            | 720    | 1,882    |
+| frwiki | 6,551        | 1,395            | 410    | 985      |
 
-Getting from 6,556 to 1,453 is not deduplication. Most of the difference is not
+enwiki is still being enumerated and its page count is a floor, not a total.
+frwiki is complete: 13,616 user-space `.js` and `.css` pages, 6,551 of them real
+scripts.
+
+(The frwiki figures this document previously carried — 1,453 scripts, 671
+active — were measured before a load from the target's own owner stopped
+counting as demand, which is most of the difference in the tiers, and before the
+near-copy fold existed, which is most of the difference in the scripts. The
+pilot figures before those — 9,919 pages, 2,051 scripts, 1,264 originals — were
+measured over `.js` alone and before the search was sorted into creation order.)
+
+Getting from 6,551 to 1,395 is not deduplication. Most of the difference is not
 byte-identical copies at all — it is per-user configuration. In the pilot, 472
 people had a page called `LiveRCparam.js`, each holding their own settings for
 one shared tool. Hashing finds none of them, because no two are the same.
@@ -206,32 +217,52 @@ What finds them is content and the filename, in three passes:
    collapse ranks by: creation date first, `discovery_rank` where none is
    known.
 
-Five owners is a low threshold and blunt enough to be dangerous on its own — a
-genuinely popular name would bury real scripts — so it never fires alone:
+Five owners is a low threshold, and it is where it is because of what the curve
+does either side of it. Lowering it costs originals at an accelerating rate;
+raising it buys them back at a flat, low one. On enwiki, 5 → 4 recovers 102
+scripts, 4 → 3 recovers 189 and 3 → 2 recovers 365, while 5 → 8 costs about 94
+scripts an owner, 8 → 12 about 37 and 12 → 25 about 17. frwiki and meta trace the
+same convex shape at a tenth the size:
+
+| Owners | enwiki | meta  | frwiki |
+| ------ | ------ | ----- | ------ |
+| ≥ 2    | 5,551  | 2,435 | 1,268  |
+| ≥ 3    | 5,916  | 2,518 | 1,346  |
+| ≥ 4    | 6,105  | 2,573 | 1,383  |
+| ≥ 5    | 6,207  | 2,602 | 1,395  |
+| ≥ 8    | 6,488  | 2,623 | 1,449  |
+| ≥ 12   | 6,635  | 2,665 | 1,478  |
+| ≥ 25   | 6,854  | 2,793 | 1,608  |
+
+Five is the last threshold before folding gets expensive. It is still blunt
+enough to be dangerous on its own — a genuinely popular name would bury real
+scripts — so it never fires alone:
 
 > **A page that other people demonstrably load keeps its identity, whatever it is
 > called.**
 
 That guard is `INDEPENDENT_DEMAND`, and it is set to 1. It is the one number in
 this subsystem that is a judgement rather than a measurement, and the measurement
-is what makes the judgement easy. Measured on the pilot corpus, starting from
-the 1,229 originals the name rule leaves on its own:
+is what makes the judgement easy. Starting from what the name rule leaves on its
+own, and counting the scripts each threshold rescues back:
 
-| Guard threshold | Originals | Rescued |
-| --------------- | --------- | ------- |
-| ≥ 1 source      | 1,264     | +35     |
-| ≥ 2 sources     | 1,239     | +10     |
-| ≥ 3 sources     | 1,233     | +4      |
-| ≥ 5 sources     | 1,232     | +3      |
-| ≥ 25 sources    | 1,229     | +0      |
+| Guard threshold | enwiki | meta  | frwiki |
+| --------------- | ------ | ----- | ------ |
+| name rule alone | 6,028  | 2,412 | 1,338  |
+| ≥ 25 sources    | +22    | +2    | +2     |
+| ≥ 5 sources     | +28    | +5    | +2     |
+| ≥ 3 sources     | +15    | +5    | +3     |
+| ≥ 2 sources     | +19    | +9    | +4     |
+| ≥ 1 source      | +95    | +169  | +46    |
 
-Nearly the whole effect sits between 1 and 2, so the choice is binary: either
-somebody other than the author loading a page is enough to make it its own
-script, or it is not. It is. Folding a genuine instance into its tool costs a
-duplicate entry that demand ranking pushes to the bottom anyway; the reverse
-error is silent and unrecoverable. Protecting reused pages directly is also what
-let the crowd threshold drop from 25 owners to 5 — folding 787 pages instead of
-670 while losing nothing anybody imports.
+The largest single step is at 1 on all three wikis, and everything above it is a
+thin tail — so the choice is binary: either somebody other than the author
+loading a page is enough to make it its own script, or it is not. It is. Folding
+a genuine instance into its tool costs a duplicate entry that demand ranking
+pushes to the bottom anyway; the reverse error is silent and unrecoverable.
+Protecting reused pages directly is also what lets the crowd threshold sit at 5
+rather than 25 — folding 1,066 more enwiki pages, 267 more on frwiki and 241 more
+on meta, while losing nothing anybody imports.
 
 The rule validates itself in a way worth stating, because it is the reason to
 trust it on a wiki nobody has hand-checked. "Earliest wins" recovers tool authors
@@ -345,13 +376,20 @@ distinct source rather than a threshold, because the tiers answer different
 questions:
 
 - **`active`** — "what could become a gadget". At least one person other than the
-  author loads it. Ordered most-loaded first. **603 scripts on frwiki.**
+  author loads it. Ordered most-loaded first.
 - **`archive`** — "what exists". No importer anybody can see. Ordered oldest
   first, which is the order the cold-storage question is actually asked in.
-  **661 scripts on frwiki.**
 
 Nothing is dropped for being unloaded. The archive tier exists so that "we found
 nothing" and "nothing is there" stay distinguishable.
+
+The split it produces is the steadiest number in this subsystem: 1,700 of 6,207
+scripts active on enwiki, 720 of 2,602 on meta, 410 of 1,395 on frwiki — 27.4%,
+27.7% and 29.4%. Those corpora differ by a factor of four in size and completely
+in language and purpose, so whatever this boundary measures, it is not an frwiki
+habit. Roughly three quarters of everything user space holds is code nobody but
+its author loads, and that appears to be a property of user space rather than of
+any one wiki.
 
 The tier boundary currently coincides with `INDEPENDENT_DEMAND`, which is
 arithmetic rather than design: that constant settles whether a page is its own
@@ -585,15 +623,20 @@ rather than a canonical one.
   the near-copy fold recognizes two bodies that differ only in a namespace
   spelling without being told the spellings.
 - **The thresholds have not been re-read since same-owner demand stopped
-  counting.** Closed, in that `demand()` now skips a load from anywhere in the
-  target's own owner's space rather than only a page loading itself. What is
-  left is a calibration question, not a bug: `INDEPENDENT_DEMAND` and the tier
-  split were measured when self-demand was still in the numbers, and roughly
-  40% of pages with demand had nothing but their author's. See the next gap.
-- **Thresholds are calibrated against one wiki.** `CROWDED_OWNERS`,
-  `INDEPENDENT_DEMAND` and the tier split were all measured on frwiki. Meta is
-  swept but only partially enumerated, so it is not yet a second data point to
-  check them against.
+  counting.** Closed. `demand()` now skips a load from anywhere in the target's
+  own owner's space rather than only a page loading itself, which removes 44% of
+  enwiki's pages-with-demand, 40% of frwiki's and 37% of meta's — an author
+  loading their own script was that large a share of the signal. The thresholds
+  were then re-read with the rule in place; see the next gap.
+- **Thresholds are calibrated against one wiki.** Closed. `CROWDED_OWNERS`,
+  `INDEPENDENT_DEMAND` and the tier split were re-measured on 2026-08-23 against
+  enwiki, meta and frwiki together, with the same-owner demand rule and the
+  near-copy fold both in place — the state neither was originally measured in.
+  All three hold, and none of the constants moved. The evidence is in "The
+  collapse" and "Tiers" above: the crowd curve is convex about 5 on every wiki,
+  the guard's largest rescue is at 1 on every wiki, and the active share lands
+  between 27% and 30% on all three. What is _not_ closed is enwiki's
+  enumeration, which is still running, so its counts are a floor.
 - **Fork detection is a hash.** Closed. Every page carries a sketch of its body
   alongside its fingerprint, and a page more than 0.9 of the way to an earlier
   one is filed as a `fork` of it — 3,074 pages across the three wikis, 1,428 of
@@ -601,9 +644,9 @@ rather than a canonical one.
   why it is not a hash" above.
 - **39% of the directory's candidates are stylesheets.** A page's role is read
   from its body, and a long `.css` page is as much a "script" as a long `.js`
-  one to that test. Of the pages the directory collapses, 12,470 of enwiki's
-  32,154 are `content_model = css`, 4,450 of meta's 10,299 and 2,246 of frwiki's
-  6,551. They fold correctly — most of the largest near-copy groups on every
+  one to that test. Of the pages the directory collapsed on 2026-08-21, 12,470 of
+  enwiki's 32,154 were `content_model = css`, 4,450 of meta's 10,299 and 2,246 of
+  frwiki's 6,551. They fold correctly — most of the largest near-copy groups on every
   wiki are people copying each other's `monobook.css` — but a user stylesheet is
   not a tool, and promoting one into the catalog would be wrong. Nothing filters
   on `content_model` yet.
