@@ -3,6 +3,7 @@ import { esc } from "../lib/core/dom.js";
 import { mountJsonReport } from "../lib/organisms/json-report.js";
 import { t } from "../lib/core/i18n.js";
 import { button } from "../lib/atoms/button.js";
+import { loadingRegion, skeletonBlock, skeletonLine } from "../lib/molecules/skeleton.js";
 
 const STYLESHEET = "/styles/statistics.css";
 
@@ -176,8 +177,38 @@ export function statisticsHTML(data) {
 	</div>`;
 }
 
+// The report opens with a ledger of four figures, then runs as a sequence of
+// charted sections. Two stand-in sections are enough to show that shape without
+// reserving a whole screen of space the answer may not need.
+const SKELETON_LEDGER_CELLS = 4;
+const SKELETON_SECTIONS = 2;
+
+function sectionSkeleton() {
+	return `<section class="statistics-section">
+		<div class="statistics-section__head">
+			<div>${skeletonLine("skeleton--w-xs")}${skeletonLine("skeleton-page__title skeleton--w-md")}</div>
+			<p>${skeletonLine("skeleton-page__intro skeleton--w-xl")}</p>
+		</div>
+		${skeletonBlock("statistics-skeleton__chart")}
+	</section>`;
+}
+
 const loadingHTML = () =>
-	`<div class="statistics-loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("statistics.loading", "Calculating catalog quality"))}</span></div>`;
+	loadingRegion({
+		label: t("statistics.loading", "Calculating catalog quality"),
+		className: "statistics-loading",
+		bodyClass: "statistics-report",
+		body: `<header class="statistics-report__head">
+			<div>
+				${skeletonLine("skeleton--w-xs")}
+				${skeletonLine("skeleton-page__title skeleton--w-md")}
+				${skeletonLine("skeleton-page__intro skeleton--w-xl")}
+			</div>
+			<p>${skeletonLine("skeleton--w-lg")}</p>
+		</header>
+		<dl class="statistics-ledger">${`<div><dt>${skeletonLine("skeleton--w-lg")}</dt><dd>${skeletonLine("skeleton--w-sm")}</dd></div>`.repeat(SKELETON_LEDGER_CELLS)}</dl>
+		${sectionSkeleton().repeat(SKELETON_SECTIONS)}`
+	});
 
 const errorHTML = () =>
 	`<div class="statistics-error" role="alert"><h1>${esc(t("statistics.errorTitle", "Statistics are temporarily unavailable"))}</h1><p>${esc(t("statistics.errorBody", "The last quality snapshot could not be loaded."))}</p>${button(t("statistics.retry", "Try again"), { attrs: "data-statistics-retry" })}</div>`;

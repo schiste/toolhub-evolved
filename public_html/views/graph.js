@@ -6,6 +6,7 @@ import { hasContext } from "../lib/core/signals.js";
 import { button, iconButton } from "../lib/atoms/button.js";
 import { communityColors, forceGraph } from "../lib/organisms/force-graph.js";
 import { openQuickView } from "../lib/organisms/quickview.js";
+import { loadingRegion, skeletonBlock } from "../lib/molecules/skeleton.js";
 
 const GRAPH_LIMITS = [250, 500, 1000, 2000, 4000];
 const GRAPH_GROUPINGS = [
@@ -150,6 +151,19 @@ function graphFilters(nodes) {
 	</div>`;
 }
 
+/**
+ * The map is one large canvas, so its loading state is one shape the size of
+ * the canvas rather than a composition of smaller ones.
+ */
+function graphLoading() {
+	return loadingRegion({
+		label: t("graph.loading", "Preparing the tool map"),
+		className: "graph__loading-region",
+		bodyClass: "graph__skeleton",
+		body: skeletonBlock()
+	});
+}
+
 export function viewGraph() {
 	const state = graphRequestState();
 	const html = `
@@ -160,7 +174,7 @@ export function viewGraph() {
 			${graphToolbar()}
 			${graphOptions(state)}
 			<div data-graph-filters hidden></div>
-			<div id="graph-canvas" class="graph__canvas"><div class="graph__loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("graph.loading", "Preparing the tool map"))}</span></div></div>
+			<div id="graph-canvas" class="graph__canvas">${graphLoading()}</div>
 			<p class="empty" data-graph-empty hidden>${t("graph.mapEmpty", "No richly documented tools are available for the map right now.")}</p>
 			<p class="empty graph__filter-empty" data-graph-filter-empty hidden>${t("graph.filterEmpty", "No tools match these filters.")}</p>
 			<div class="graph__legend" data-graph-legend aria-label="${t("graph.mapLegend", "Map legend")}" hidden></div>

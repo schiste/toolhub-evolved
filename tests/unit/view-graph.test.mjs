@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test, vi, beforeEach } from "vitest";
 // backend graph payload (network), communityColors/forceGraph (canvas), openQuickView and hasContext
 // are all mocked so the legend HTML + mount() wiring are exercised deterministically. esc stays real.
@@ -238,4 +239,29 @@ test("viewGraph: a missing communityMeta yields only the 'Other' legend entry", 
 	await vi.waitFor(() => assert.equal(forceGraphMod.forceGraph.mock.calls.length, 1));
 	assert.match(document.body.innerHTML, /graph__legend-text">Other<\/span>/);
 	assert.doesNotMatch(document.body.innerHTML, /\(undefined\)/);
+});
+
+test("the canvas waits as one shape rather than as a written sentence", () => {
+	document.body.innerHTML = viewGraph().html;
+	const region = document.querySelector("#graph-canvas [role='status']");
+	assert.equal(region.querySelector(".visually-hidden").textContent, "Preparing the tool map");
+	const body = region.querySelector('[aria-hidden="true"]');
+	assert.ok(body.classList.contains("graph__skeleton"));
+	assert.equal(body.textContent.trim(), "");
+	assert.ok(body.querySelector(".skeleton--block"));
+	assert.equal(region.querySelector(".spinner"), null);
+});
+
+test("the map skeleton is exactly as tall as the map that replaces it", () => {
+	// Two files have to agree on that height or the canvas grows under the reader
+	// the moment the layout arrives.
+	const styled = /\.graph__skeleton > \.skeleton \{\n\theight: (\d+)px;/.exec(
+		readFileSync("public_html/styles/organisms.css", "utf8")
+	);
+	const rendered = /forceGraph\(target, next, \{[^}]*height: (\d+)/.exec(
+		readFileSync("public_html/views/graph.js", "utf8")
+	);
+	assert.ok(styled, "no height declared for the map skeleton");
+	assert.ok(rendered, "no height passed to forceGraph");
+	assert.equal(styled[1], rendered[1]);
 });

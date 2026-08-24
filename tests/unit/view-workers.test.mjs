@@ -264,3 +264,18 @@ test("summary counts lead with the worst status", async () => {
 	);
 	assert.ok(html.indexOf('data-status="failing"') < html.indexOf('data-status="healthy"'));
 });
+
+test("the wait is a skeleton of the report, announced but not written out", () => {
+	const view = viewWorkers();
+	document.body.innerHTML = view.html;
+	const region = document.querySelector(".workers-loading");
+	assert.equal(region.getAttribute("role"), "status");
+	assert.equal(region.querySelector(".visually-hidden").textContent, "Checking background workers");
+	// The shapes stand in for the grid the report will fill, and none of them is
+	// readable text: a reader sees placeholders, not the word "loading".
+	const body = region.querySelector('[aria-hidden="true"]');
+	assert.ok(body.classList.contains("workers-page__inner"));
+	assert.equal(body.textContent.trim(), "");
+	assert.equal(body.querySelectorAll(".workers-card--skeleton").length, 6);
+	assert.equal(region.querySelector(".spinner"), null);
+});

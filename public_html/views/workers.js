@@ -3,6 +3,7 @@ import { esc } from "../lib/core/dom.js";
 import { mountJsonReport } from "../lib/organisms/json-report.js";
 import { t } from "../lib/core/i18n.js";
 import { button } from "../lib/atoms/button.js";
+import { loadingRegion, skeletonLine } from "../lib/molecules/skeleton.js";
 
 const STYLESHEET = "/styles/workers.css";
 
@@ -229,8 +230,33 @@ function workersHTML(payload) {
 	</div>`;
 }
 
+// Enough cards to fill the first screen of the grid without pretending to know
+// how many jobs the backend will report.
+const SKELETON_CARDS = 6;
+
+function workerCardSkeleton() {
+	const fact = `<div><dt>${skeletonLine("skeleton--w-lg")}</dt><dd>${skeletonLine("skeleton--w-md")}</dd></div>`;
+	return `<article class="workers-card workers-card--skeleton">
+		<header class="workers-card__head">
+			<div class="workers-card__ident">${skeletonLine("skeleton--w-lg")}${skeletonLine("skeleton--w-md")}</div>
+			${skeletonLine("skeleton--badge")}
+		</header>
+		<dl class="workers-card__facts">${fact.repeat(3)}</dl>
+	</article>`;
+}
+
 const loadingHTML = () =>
-	`<div class="workers-loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("workers.loading", "Checking background workers"))}</span></div>`;
+	loadingRegion({
+		label: t("workers.loading", "Checking background workers"),
+		className: "workers-loading",
+		bodyClass: "workers-page__inner",
+		body: `<header class="workers-hero">
+			${skeletonLine("skeleton--w-xs")}
+			${skeletonLine("skeleton-page__title skeleton--w-md")}
+			${skeletonLine("skeleton-page__intro skeleton--w-xl")}
+		</header>
+		<div class="workers-grid">${workerCardSkeleton().repeat(SKELETON_CARDS)}</div>`
+	});
 
 const errorHTML = () =>
 	`<div class="workers-error" role="alert"><h1>${esc(t("workers.errorTitle", "Worker status is temporarily unavailable"))}</h1><p>${esc(t("workers.errorBody", "The background job report could not be loaded."))}</p>${button(t("workers.retry", "Try again"), { attrs: "data-workers-retry" })}</div>`;

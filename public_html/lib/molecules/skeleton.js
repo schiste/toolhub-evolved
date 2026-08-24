@@ -21,6 +21,29 @@ function classes(...parts) {
 }
 
 /**
+ * Live region wrapper every loading state shares.
+ *
+ * The shapes are decorative and marked `aria-hidden`, so the region would
+ * announce nothing without a text label riding along. The label is hidden
+ * visually rather than dropped, because the shapes already say "loading" to
+ * anyone who can see them.
+ *
+ * @param {object} options
+ * @param {string} options.label announced status, e.g. "Loading search results"
+ * @param {string} options.className classes for the region root
+ * @param {string} [options.labelClass] extra classes for the label
+ * @param {string} options.bodyClass classes for the element holding the shapes
+ * @param {string} options.body skeleton markup
+ * @returns {string}
+ */
+export function loadingRegion({ label, className, labelClass = "", bodyClass, body }) {
+	return `<div class="${esc(className)}" role="status" aria-live="polite" aria-atomic="true">
+		<span class="${classes(labelClass, "visually-hidden")}">${esc(label)}</span>
+		<div class="${esc(bodyClass)}" aria-hidden="true">${body}</div>
+	</div>`;
+}
+
+/**
  * Decorative placeholder line. Keep loading text outside skeleton bodies so
  * assistive tech gets one concise status instead of fake content.
  * @param {string} [className]
@@ -337,10 +360,11 @@ function routeSkeleton(path = "") {
  */
 export function routeSkeletonHTML(path) {
 	const skeleton = routeSkeleton(path);
-	return `<div class="container page route-loading route-loading--skeleton route-loading--${esc(skeleton.modifier)}" role="status" aria-live="polite" aria-atomic="true">
-		<span class="route-loading__label visually-hidden">${esc(skeleton.label)}</span>
-		<div class="route-loading__body" aria-hidden="true">
-			${skeleton.body}
-		</div>
-	</div>`;
+	return loadingRegion({
+		label: skeleton.label,
+		className: `container page route-loading route-loading--skeleton route-loading--${skeleton.modifier}`,
+		labelClass: "route-loading__label",
+		bodyClass: "route-loading__body",
+		body: skeleton.body
+	});
 }

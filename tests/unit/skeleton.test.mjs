@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { test } from "vitest";
 import {
 	cardGridSkeleton,
+	loadingRegion,
 	routeSkeletonHTML,
 	skeletonBlock,
 	skeletonLine,
@@ -86,4 +87,20 @@ test("skeleton CSS is token-driven and disables shimmer for reduced motion", () 
 	assert.match(css, /animation: skeleton-sheen 1\.2s ease-in-out infinite/);
 	assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 	assert.match(css, /animation: none/);
+});
+
+test("loadingRegion announces its label and hides the shapes it wraps", () => {
+	const html = loadingRegion({
+		label: "Loading <everything>",
+		className: "demo-loading",
+		bodyClass: "demo-body",
+		body: skeletonLine()
+	});
+	assert.match(html, /class="demo-loading" role="status" aria-live="polite" aria-atomic="true"/);
+	assert.match(html, /class="demo-body" aria-hidden="true"/);
+	assert.match(html, /Loading &lt;everything&gt;/);
+	// Without the label the region would announce nothing at all, since the only
+	// thing inside it is aria-hidden.
+	assert.equal(statusText(html), "Loading <everything>");
+	assert.ok(document.querySelector(".demo-loading > .visually-hidden"));
 });

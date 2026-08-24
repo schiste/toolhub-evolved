@@ -93,3 +93,19 @@ test("statistics request failures remain retryable instead of looking empty", as
 	await vi.waitFor(() => assert.match(document.body.textContent, /3,000/));
 	assert.equal(h.backendGetJson.mock.calls.length, 2);
 });
+
+test("the wait is a skeleton of the ledger, announced but not written out", () => {
+	const view = viewStatistics();
+	document.body.innerHTML = view.html;
+	const region = document.querySelector(".statistics-loading");
+	assert.equal(region.getAttribute("role"), "status");
+	assert.equal(region.querySelector(".visually-hidden").textContent, "Calculating catalog quality");
+	// The shapes stand in for the report's own layout, and none of them is
+	// readable text: a reader sees placeholders, not the word "loading".
+	const body = region.querySelector('[aria-hidden="true"]');
+	assert.ok(body.classList.contains("statistics-report"));
+	assert.equal(body.textContent.trim(), "");
+	assert.equal(body.querySelectorAll(".statistics-ledger > div").length, 4);
+	assert.equal(body.querySelectorAll(".statistics-section").length, 2);
+	assert.equal(region.querySelector(".spinner"), null);
+});

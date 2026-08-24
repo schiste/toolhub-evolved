@@ -6,19 +6,20 @@
 	max-width: var(--container-wide);
 }
 
-.workers-loading,
-.workers-error {
-	display: flex;
-	align-items: center;
-	gap: var(--space-3);
+/* The skeleton carries the report's own grid, so the region only has to hold
+   open the height the report will take. */
+.workers-loading {
 	min-height: 22rem;
-	color: var(--color-text-secondary);
 }
 
 .workers-error {
+	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
 	justify-content: center;
+	gap: var(--space-3);
+	min-height: 22rem;
+	color: var(--color-text-secondary);
 }
 
 .workers-error :where(h1, p) {
@@ -190,6 +191,14 @@
 
 .workers-card__ident {
 	min-width: 0;
+}
+
+/* A real card's identity block is sized by the job name inside it. The
+   placeholder holds no text, so its share of the row has to be stated. */
+.workers-card--skeleton .workers-card__ident {
+	display: grid;
+	gap: var(--space-2);
+	flex: 1 1 auto;
 }
 
 .workers-card__head h2 {

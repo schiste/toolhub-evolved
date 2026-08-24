@@ -506,6 +506,13 @@
 	flex-direction: column;
 	color: var(--color-destructive);
 }
+
+/* One shape the size of the rendered map, so the canvas does not grow under the
+   reader the moment the layout arrives. Keep in step with the `height` passed
+   to forceGraph() in views/graph.js. */
+.graph__skeleton > .skeleton {
+	height: 560px;
+}
 #graph-canvas,
 .graph__canvas,
 .graph--ego > div {

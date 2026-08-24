@@ -5,19 +5,24 @@
 	max-width: var(--container-wide);
 }
 
-.statistics-loading,
-.statistics-error {
-	display: flex;
-	align-items: center;
-	gap: var(--space-3);
+/* The skeleton carries the report's own grid, so the region only has to hold
+   open the height the report will take. */
+.statistics-loading {
 	min-height: 22rem;
-	color: var(--color-text-secondary);
+}
+
+.statistics-skeleton__chart {
+	min-height: 12rem;
 }
 
 .statistics-error {
-	align-items: flex-start;
+	display: flex;
 	flex-direction: column;
+	align-items: flex-start;
 	justify-content: center;
+	gap: var(--space-3);
+	min-height: 22rem;
+	color: var(--color-text-secondary);
 }
 
 .statistics-error :where(h1, p) {
@@ -378,12 +383,6 @@
 	.statistics-method dl > div {
 		grid-template-columns: 1fr;
 		gap: var(--space-1);
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.statistics-page .spinner {
-		animation: none;
 	}
 }
 
