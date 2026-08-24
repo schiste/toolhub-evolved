@@ -448,7 +448,8 @@ def _upsert_identifier(  # noqa: PLR0913 - explicit identity provenance fields
     ).scalar_one_or_none()
     kind, intrinsically_verified = _identifier_spec(namespace)
     now = checked_at or utcnow()
-    if row is None:
+    created = row is None
+    if created:
         row = PersonIdentifier(
             person_id=person.id,
             namespace=namespace,
@@ -477,9 +478,10 @@ def _upsert_identifier(  # noqa: PLR0913 - explicit identity provenance fields
         # established by OAuth, Toolsadmin, or the stable identity bridge.
         row.source = source
     row.is_current = True
-    row.last_seen_at = now
     row.retired_at = None
-    row.updated_at = now
+    # Both flags above are set before the guard reads the row: they are data,
+    # and a pass that flips one must carry a fresh timestamp with it.
+    _stamp_identifier_if_changed(s, row, now, created=created)
     return row
 
 
@@ -663,6 +665,32 @@ def _stamp_person_if_changed(s: Session, person: Person, when: datetime, *, crea
     """
     if created or s.is_modified(person, include_collections=False):
         person.updated_at = when
+
+
+def _stamp_identifier_if_changed(s: Session, row: PersonIdentifier, when: datetime, *, created: bool = False) -> None:
+    """Restamp an identifier only when the row itself actually moved.
+
+    The defect `_stamp_person_if_changed` describes, one table over and missed
+    when that one was fixed. `person_identifiers` is re-derived by every pass
+    over the identity graph and rewritten by `people-reconcile-incremental`
+    every minute, so confirming an unchanged identifier is overwhelmingly the
+    common case, and stamping it anyway takes a row lock on that table to store
+    a value nothing reads: no query selects `last_seen_at`, and the only code
+    that consults it, `_restate_identifiers` in `migrate.py`, tests it for NULL.
+
+    The 2026-08-24 deploy died of it. `UPDATE person_identifiers SET
+    last_seen_at=..., updated_at=... WHERE person_identifiers.id = 14078`
+    waited out its lock timeout against the reconcile job and aborted
+    `_backfill_people_identity` before the webservice was restarted, leaving
+    the host pulled but serving the previous build. Two timestamps and no data
+    is again the proof there was nothing to write.
+
+    A row the caller has just built is stamped regardless: it has no prior
+    value to compare, and `is_modified` reports pending instances as unchanged.
+    """
+    if created or s.is_modified(row, include_collections=False):
+        row.last_seen_at = when
+        row.updated_at = when
 
 
 def ensure_official_account_person(

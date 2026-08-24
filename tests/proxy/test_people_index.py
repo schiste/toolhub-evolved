@@ -874,3 +874,94 @@ def test_a_person_whose_row_moved_is_restamped():
 
         assert person.display_name == "Grace Hopper"
         assert person.updated_at > marker
+
+
+def _current_identifier(s, namespace: str, value: str) -> PersonIdentifier:
+    """Return the one identifier row a namespace/value pair resolves to."""
+    return s.execute(
+        select(PersonIdentifier).where(
+            PersonIdentifier.namespace == namespace,
+            PersonIdentifier.normalized_value == value.casefold(),
+        )
+    ).scalar_one()
+
+
+def test_reconfirming_an_unchanged_identifier_writes_nothing():
+    # The 2026-08-24 deploy waited out its lock timeout on exactly this
+    # statement -- `SET last_seen_at=..., updated_at=...` and no data -- against
+    # people-reconcile-incremental, which rewrites this table every minute.
+    with db.session_scope() as s:
+        people_index.ensure_person(
+            s,
+            display_name="Ada",
+            toolhub_user_id="ada-1",
+            toolhub_username="Ada",
+            source="toolhub_public_account",
+        )
+        s.flush()
+        row = _current_identifier(s, people_index.NS_TOOLHUB_USER_ID, "ada-1")
+        marker = utcnow() - timedelta(days=3)
+        row.last_seen_at = marker
+        row.updated_at = marker
+        s.flush()
+
+        people_index.ensure_person(
+            s,
+            display_name="Ada",
+            toolhub_user_id="ada-1",
+            toolhub_username="Ada",
+            source="toolhub_public_account",
+        )
+
+        assert row not in s.dirty
+        assert row.last_seen_at == marker
+        assert row.updated_at == marker
+
+
+def test_an_identifier_whose_row_moved_is_restamped():
+    # Same identifier, respelled by its source. `normalized_value` is unchanged,
+    # so this is the same row -- but `value` moved, and provenance must follow.
+    with db.session_scope() as s:
+        people_index.ensure_person(
+            s,
+            display_name="Ada",
+            toolhub_user_id="ada-2",
+            wiki_username="ada lovelace",
+            source="wiki",
+        )
+        s.flush()
+        row = _current_identifier(s, people_index.NS_WIKI_USERNAME, "ada lovelace")
+        marker = utcnow() - timedelta(days=3)
+        row.last_seen_at = marker
+        row.updated_at = marker
+        s.flush()
+
+        people_index.ensure_person(
+            s,
+            display_name="Ada",
+            toolhub_user_id="ada-2",
+            wiki_username="Ada Lovelace",
+            source="wiki",
+        )
+
+        assert row.value == "Ada Lovelace"
+        assert row.last_seen_at > marker
+        assert row.updated_at > marker
+
+
+def test_a_newly_created_identifier_carries_a_timestamp():
+    # A pending row reports as unmodified, so without the created flag the
+    # guard would leave every new identifier unstamped.
+    with db.session_scope() as s:
+        before = utcnow() - timedelta(seconds=1)
+        people_index.ensure_person(
+            s,
+            display_name="Ada",
+            toolhub_user_id="ada-3",
+            source="toolhub_public_account",
+        )
+        s.flush()
+
+        row = _current_identifier(s, people_index.NS_TOOLHUB_USER_ID, "ada-3")
+        assert row.last_seen_at is not None
+        assert row.last_seen_at >= before
