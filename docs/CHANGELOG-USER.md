@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: who-the-gadget-is-for -->
 <!-- Release title: What the Gadget Asks For -->
-<!-- Source range: e61d34417..4b244128e (12 commits) -->
+<!-- Source range: e61d34417..8d07eb470 (7 commits) -->
 
 # What's New for Users
 
@@ -12,5 +12,5 @@
 - What a tool asks your browser for now counts toward its grade. Reading your clipboard is not the same as reading every site you visit, and until now neither one changed the score at all. Requests are graded by how far past their own page they reach — your camera, microphone, files and saved logins at one end, your tabs, history and cookies in the middle, the page the tool already runs on at the other. Tools that ask for nothing are unaffected.
 - A gadget's report lists the shared code it pulls in. Gadgets do not have a package file, but their registration line names the MediaWiki modules loaded before they run. Those are now listed as dependencies like any other, which is often the clearest sign of what a gadget actually talks to.
 - Stylesheets are read, not just counted. A gadget's CSS can pull fonts and images from outside the movement's servers, and every reader's browser address is sent along when it does — no script required. Those fetches are now reported.
-- Search no longer buries current tools under archived ones. Archived tools now sit behind a Status filter instead of being mixed into every result — on Meta alone the census counts 1,874 archived user scripts against 729 live ones, so the default was hiding what people were looking for. Tick Archived when you want them back.
+- Search no longer buries current tools under archived ones. Archived tools now sit behind a Status filter instead of being mixed into every result — on Meta alone the census counts 1,874 archived user scripts against 729 live ones, so the default was hiding what people were looking for. Tick Archived when you want them back. The "per page" control changed at the same time: search, authors and accounts used to keep three separate lists of their own and now share one — 8, 13, 21, 34, 55, 89 or 144 results, opening at 21 rather than 24, with the gaps widening as the numbers grow because choosing between 130 and 144 is not a decision anyone makes.
 - The feature status page had fallen behind what source analysis does. It listed the signals the analysis extracted when it first shipped and never mentioned browser permissions, endpoints, or the fact that gadgets and user scripts are read straight off the wiki they live on. It now describes both, and automatic repository analysis has an entry of its own.
