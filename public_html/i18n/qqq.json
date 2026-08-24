@@ -1463,7 +1463,7 @@
 	"static.healthScore.filtersTitle": "TODO: document this message.",
 	"static.healthScore.frontendAccessibilityRules": "TODO: document this message.",
 	"static.healthScore.gradeName": "TODO: document this message.",
-	"static.healthScore.gradeValue": "TODO: document this message.\n\nParameters:\n* $1 - TODO\n* $2 - TODO\n* $3 - TODO\n* $4 - TODO\n* $5 - TODO",
+	"static.healthScore.gradeValue": "Health grade bands, and when no grade is asserted.\n\nParameters:\n* $1 - the strong grade code\n* $2 - the good grade code\n* $3 - the needs-attention grade code\n* $4 - the high-risk grade code\n* $5 - the unknown grade code",
 	"static.healthScore.includedHeader": "TODO: document this message.",
 	"static.healthScore.intro": "TODO: document this message.",
 	"static.healthScore.maintainabilityComponents": "TODO: document this message.\n\nParameters:\n* $1 - TODO\n* $2 - TODO",

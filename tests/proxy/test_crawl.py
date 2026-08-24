@@ -136,7 +136,7 @@ def test_crawl_skipped_run_keeps_url_and_exit_status_healthy(monkeypatch, capsys
     monkeypatch.setattr(crawl.db, "configure", lambda *_a, **_k: None)
     monkeypatch.setattr(crawl.db, "init_schema", lambda: None)
     assert crawl.main() == 0  # job guard counts any non-zero exit as a failure
-    assert "1 skipped, 0 errors" in capsys.readouterr().out
+    assert "1 skipped (0 upstream unreachable), 0 errors" in capsys.readouterr().out
     with db.session_scope() as s:
         row = s.query(CrawlerUrl).one()
         assert row.last_status != SYNC_ERROR
@@ -148,7 +148,41 @@ def test_classify_upstream_routes_each_state():
     present = crawl.classify_upstream(crawl.UPSTREAM_PRESENT, "t")
     assert present is not None and present[0] == crawl.BUCKET_SKIPPED
     unreachable = crawl.classify_upstream(crawl.UPSTREAM_UNREACHABLE, "t")
-    assert unreachable is not None and unreachable[0] in {crawl.BUCKET_SKIPPED, crawl.BUCKET_ERROR}
+    # Pinned, not "either bucket": routing this to BUCKET_ERROR restores the
+    # three-strike disable the bucket split exists to prevent.
+    assert unreachable == (crawl.BUCKET_SKIPPED, "t: upstream check unavailable — skipped (never shadow an upstream record)")
+
+
+@pytest.mark.parametrize("status", [429, 500, 502, 503])
+def test_upstream_failure_status_is_unreachable_not_present(monkeypatch, status):
+    """A failing Toolhub must never be read as 'this name already exists there'."""
+    session = FakeSession(upstream_status=status)
+    assert crawl.upstream_state(session, "any-name") == crawl.UPSTREAM_UNREACHABLE
+
+
+@pytest.mark.parametrize("status", [200, 204])
+def test_upstream_success_status_is_present(monkeypatch, status):
+    session = FakeSession(upstream_status=status)
+    assert crawl.upstream_state(session, "any-name") == crawl.UPSTREAM_PRESENT
+
+
+def test_upstream_404_is_absent():
+    assert crawl.upstream_state(FakeSession(upstream_status=404), "any-name") == crawl.UPSTREAM_ABSENT
+
+
+def test_toolhub_outage_does_not_claim_the_tool_exists_upstream(monkeypatch):
+    """The whole point of F4: a 503 used to produce a green run whose log said
+    'exists upstream on Toolhub' about a name nobody successfully looked up."""
+    add_url()
+    body = json.dumps([ITEM]).encode()
+    monkeypatch.setattr(crawl.requests, "Session", lambda: FakeSession(feed_body=body, upstream_status=503))
+    monkeypatch.setattr(outbound, "require_allowed", lambda *_a, **_k: None)
+    run, unreachable = crawl.run_crawl_with_counts()
+    assert run.added == 0  # still never shadows an upstream record
+    assert run.ok is True  # still green: an outage must not trip the job guard
+    assert unreachable == 1  # but it is now countable
+    assert "exists upstream" not in " ".join(run.skipped)
+    assert "unavailable" in " ".join(run.skipped)
 
 
 def test_crawl_records_signed_toolinfo_claim_even_when_upstream_exists(monkeypatch):

@@ -13,691 +13,125 @@ import re
 import sys
 import tomllib
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from backend import source_endpoints, wiki_sources
-
-MAX_FILES = 120
-MAX_FILE_BYTES = 256 * 1024
-# Wiki pages get a larger ceiling than checkout files, because the cap is doing a
-# different job on each. In a clone, a file past 256 KiB is nearly always a
-# vendored bundle, a minified artifact or a fixture, and skipping it costs one
-# file out of hundreds. A wiki tool has no vendoring -- every page was typed by a
-# maintainer on-wiki -- and a gadget is frequently a single page, so the same
-# skip drops the whole tool rather than a file of it. That is how fr.wikipedia's
-# LiveRC, 700 KiB in one page, reached the analyzer with an empty file list and
-# failed the non-empty check instead of being read. Measured across the eight
-# wikis in the catalogue, 11 of 1647 gadget source pages exceed 256 KiB and one
-# exceeds this; MAX_TOTAL_BYTES still bounds the page set either way.
-MAX_WIKI_FILE_BYTES = 1024 * 1024
-# Not the effective ceiling for HTTP submissions: Flask's MAX_CONTENT_LENGTH
-# (1 MiB, set in backend.register) rejects the request body first, so a caller
-# coming through /v1/source-analysis/ can never reach this limit. It binds the
-# in-process callers that bypass the request layer — repository_scan.py feeding
-# a cloned checkout, and analyze_source.py run from the CLI — where nothing
-# else caps the aggregate. Read it as the analyzer's own limit, not the API's.
-MAX_TOTAL_BYTES = 2 * 1024 * 1024
-MAX_PATH_CHARS = 240
-MAX_LINE_CHARS = 500
-MAX_EXCERPT_CHARS = 180
-MAX_EVIDENCE_PER_FINDING = 5
-MAX_FINDINGS_PER_BUCKET = 40
-MAX_DEPENDENCY_NAME_CHARS = 120
-MAX_VERSION_CHARS = 40
-MAX_VERSION_SPECS_PER_FINDING = 5
-MAX_CONTEXT_LIST_ITEMS = 40
-MAX_CONTEXT_STRING_CHARS = 240
-MAX_ASSESSMENT_SIGNALS = 8
-MAX_SOURCE_CLASS_ITEMS = 20
-JS_SCOPED_PACKAGE_PARTS = 2
-CONFIDENCE_CAP = 0.99
-CONFIDENCE_REPEAT_BOOST = 0.03
-PROJECT_SUGGESTION_MIN_CONFIDENCE = 0.55
-TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE = 0.6
-EVOLVED_METADATA_MIN_CONFIDENCE = 0.55
-SCORING_MIN_CONFIDENCE = 0.55
-# The weight at which a file's word is taken for an address. Every other bucket
-# describes the repository -- it depends on this, it authenticates that way --
-# and a weak mention there is still true. The endpoints bucket claims the tool
-# talks to a service, and in a file that exists to point at things a mention is
-# usually not that: a README lists where to download the tool, a changelog cites
-# the ticket behind a fix, a test names a host nothing is listening on. Below
-# this weight the address is only recorded when the line around it shows a call
-# being made, which is the difference between citing an address and using one.
-#
-# Set at config (0.85) so that runtime, manifests, lockfiles, configuration and
-# the frontend are believed outright, and documentation (0.75), CI, tests and
-# examples must show their work. Measured over sixteen repositories this dropped
-# 104 findings, all of them install instructions, badge images, project home
-# pages and reading material; on cli/cli it was the whole report.
-ENDPOINT_TRUSTED_SOURCE_WEIGHT = 0.85
-SUGGESTION_MIN_SOURCE_WEIGHT = 0.55
-ASSESSMENT_STRONG_SCORE = 85
-ASSESSMENT_GOOD_SCORE = 70
-ASSESSMENT_ATTENTION_SCORE = 50
-ACTIVE_REPOSITORY_DAYS = 90
-QUIET_REPOSITORY_DAYS = 365
-STALE_REPOSITORY_DAYS = 730
-ACTIVE_MAINTAINER_DAYS = 90
-QUIET_MAINTAINER_DAYS = 365
-STALE_MAINTAINER_DAYS = 730
-HIGH_PROVENANCE_WEIGHT = 0.7
-MULTIPLE_CONTRIBUTOR_MIN = 2
-SMALL_COMMIT_HISTORY_THRESHOLD = 5
-#: Every suffix the JavaScript family is written under. One set, because the
-#: three questions asked of it -- may this file be read, are its imports npm
-#: imports, is `mw.Api(` in it a call rather than a quotation -- are all the
-#: same question of whether the file is JavaScript, and keeping three lists
-#: is what let them disagree: `.jsx` was in none of them, so a React tool
-#: written in `.jsx` had no source the analyzer could see, and `.mjs` and
-#: `.cjs` were named as browser scripts but never read, which made those
-#: entries dead.
-JS_SOURCE_SUFFIXES = frozenset({".cjs", ".js", ".jsx", ".mjs", ".ts", ".tsx", ".vue"})
-FRONTEND_SOURCE_EXTENSIONS = {".css", ".html"} | JS_SOURCE_SUFFIXES
-CONFIG_SOURCE_EXTENSIONS = {".ini", ".json", ".toml", ".yaml", ".yml", ".xml"}
-RUNTIME_SOURCE_EXTENSIONS = {".go", ".java", ".lua", ".php", ".py", ".rb", ".rs", ".sh"}
-IGNORED_SOURCE_DIRS = {
-    ".cache",
-    ".git",
-    ".mypy_cache",
-    ".nox",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".tox",
-    ".venv",
-    "__pycache__",
-    "bower_components",
-    "build",
-    "coverage",
-    "dist",
-    "node_modules",
-    "playwright-report",
-    "site-packages",
-    "test-results",
-    "vendor",
-}
-IGNORED_SOURCE_FILES = {
-    "cspell.json",
-}
-LOCAL_IMPORT_ROOTS = {
-    "app",
-    "backend",
-    "config",
-    "docs",
-    "migrations",
-    "proxy",
-    "public_html",
-    "scripts",
-    "tests",
-    "tools",
-}
-
-SOURCE_EXTENSIONS = {
-    ".css",
-    ".go",
-    ".html",
-    ".ini",
-    ".java",
-    ".json",
-    ".lua",
-    ".md",
-    ".php",
-    ".py",
-    ".rb",
-    ".rs",
-    ".sh",
-    ".txt",
-    ".toml",
-    ".xml",
-    ".yaml",
-    ".yml",
-} | JS_SOURCE_SUFFIXES
-
-MANIFEST_FILE_KINDS = {
-    "cargo.toml": "cargo",
-    "composer.json": "composer",
-    "gemfile": "rubygems",
-    "go.mod": "go",
-    "package.json": "npm",
-    "pipfile": "pypi",
-    "pyproject.toml": "python",
-    "requirements.txt": "pypi",
-}
-
-LOCKFILE_KINDS = {
-    "cargo.lock": "cargo",
-    "composer.lock": "composer",
-    "gemfile.lock": "rubygems",
-    "npm-shrinkwrap.json": "npm",
-    "package-lock.json": "npm",
-    "pipfile.lock": "pypi",
-    "pnpm-lock.yaml": "npm",
-    "poetry.lock": "pypi",
-    "yarn.lock": "npm",
-}
-
-DOCUMENTATION_FILE_KINDS = {
-    "authors": "authors",
-    "authors.md": "authors",
-    "changelog": "changelog",
-    "changelog.md": "changelog",
-    "code_of_conduct.md": "code-of-conduct",
-    "codeowners": "owners",
-    "contributing": "contributing",
-    "contributing.md": "contributing",
-    "copying": "license",
-    "copying.md": "license",
-    "license": "license",
-    "license.md": "license",
-    "maintainers": "owners",
-    "maintainers.md": "owners",
-    "readme": "readme",
-    "readme.md": "readme",
-    "security": "security",
-    "security.md": "security",
-}
-
-CI_FILE_KINDS = {
-    ".buildkite/pipeline.yml": "buildkite",
-    ".circleci/config.yml": "circleci",
-    ".gitlab-ci.yml": "gitlab-ci",
-    "azure-pipelines.yml": "azure-pipelines",
-    "bitbucket-pipelines.yml": "bitbucket-pipelines",
-    "noxfile.py": "nox",
-    "tox.ini": "tox",
-}
-
-RUNTIME_FILE_KINDS = {
-    ".lighttpd.conf": "lighttpd",
-    "app.py": "python-web-entrypoint",
-    "dockerfile": "container",
-    "jobs.yaml": "toolforge-jobs",
-    "lighttpd.conf": "lighttpd",
-    "nginx.conf": "nginx",
-    "procfile": "process",
-    "service.template": "toolforge-webservice",
-    "toolforge.yaml": "toolforge",
-    "uwsgi.ini": "uwsgi",
-    "webservice": "toolforge-webservice",
-}
-
-REPOSITORY_CONTEXT_REPOSITORY_KEYS = {
-    "analyzedAt",
-    "archived",
-    "branch",
-    "commitCount",
-    "commitSha",
-    "contributorCount",
-    "defaultBranch",
-    "dirty",
-    "lastCommitAgeDays",
-    "lastCommitAt",
-    "provider",
-    "tag",
-    "url",
-}
-
-# What the maintainer says about the tool's life, from toolinfo. Distinct from
-# `repository` (facts about the checkout and its host) and from `declared`
-# (claims about technical shape that the source is checked against). Nothing
-# here has a counterpart to detect: it is testimony, not evidence.
-REPOSITORY_CONTEXT_LIFECYCLE_KEYS = {
-    "deprecated",
-    "replacedBy",
-}
-
-REPOSITORY_CONTEXT_DECLARED_KEYS = {
-    "accessRights",
-    "apis",
-    "dependencies",
-    "healthUrl",
-    "license",
-    "oauthScopes",
-    "runtime",
-}
-
-REPOSITORY_CONTEXT_MAINTAINER_KEYS = {
-    "activeMaintainerCount",
-    "analyzedAt",
-    "lastActivityAgeDays",
-    "lastActivityAt",
-    "maintainerCount",
-    "recentActivityCount",
-    "source",
-}
-
-HEALTH_SIGNAL_RE = re.compile(r"\b(?:healthz|healthcheck|readiness|liveness|/health)\b", re.IGNORECASE)
-A11Y_SIGNAL_RE = re.compile(r"\b(?:aria-[a-z-]+|role=|lang=|tabindex|focus|keyboard|axe-core|axe)\b", re.IGNORECASE)
-ANALYSIS_TOOLING_RE = re.compile(
-    r"(?:^|/)(?:analyze[_-]?source|source[_-]?analy[sz]er|source-analysis)(?:[._/-]|$)",
-    re.IGNORECASE,
+from backend.source_analysis_assessments import (
+    _assessment_summary,
+    _assessments,
+    _health_core,
+    _health_summary,
+    _maintainer_activity_context,
+)
+from backend.source_analysis_common import (
+    A11Y_SIGNAL_RE,
+    ACTION_OBJECT_RE,
+    ACTION_QUERY_RE,
+    ACTION_RIGHTS,
+    ACTIVE_REPOSITORY_DAYS,
+    ANALYSIS_TOOLING_RE,
+    API_RULES,
+    AUTH_RULES,
+    CI_FILE_KINDS,
+    CONFIDENCE_CAP,
+    CONFIDENCE_MAX_CORROBORATING_FILES,
+    CONFIDENCE_REPEAT_BOOST,
+    CONFIG_SOURCE_EXTENSIONS,
+    CONTEXT_RESERVE_BUDGET_DIVISOR,
+    CONTEXT_RESERVE_QUOTAS,
+    CONTEXT_RESERVE_SLOTS,
+    CREDENTIAL_RE,
+    DECLARED_DEPENDENCY_SOURCE_CLASSES,
+    DECLARED_TECHNOLOGY_CONFIDENCE,
+    DOCUMENTATION_FILE_KINDS,
+    ENDPOINT_CALLED_CONFIDENCE,
+    ENDPOINT_CONFIDENCE,
+    ENDPOINT_TRUSTED_SOURCE_WEIGHT,
+    EVOLVED_METADATA_MIN_CONFIDENCE,
+    EXACT_VERSION_RE,
+    FRONTEND_SOURCE_EXTENSIONS,
+    GEM_LOCK_RE,
+    GEM_LOCK_VERSION_RE,
+    GEM_RE,
+    GEM_VERSION_RE,
+    GO_DIRECTIVE_RE,
+    GO_REQUIRE_RE,
+    GO_VERSION_RE,
+    HEALTH_SIGNAL_RE,
+    HIGH_PROVENANCE_WEIGHT,
+    IGNORED_PROJECT_DB_NAMES,
+    IGNORED_SOURCE_DIRS,
+    IGNORED_SOURCE_FILES,
+    JS_IMPORT_RE,
+    JS_SCOPED_PACKAGE_PARTS,
+    JS_SOURCE_SUFFIXES,
+    KNOWN_OAUTH_SCOPES,
+    LANGUAGE_SUBDOMAIN_RE,
+    LOCAL_IMPORT_ROOTS,
+    LOCKFILE_KINDS,
+    MANIFEST_FILE_KINDS,
+    MAX_ASSESSMENT_SIGNALS,
+    MAX_CONTEXT_LIST_ITEMS,
+    MAX_DEPENDENCY_NAME_CHARS,
+    MAX_EVIDENCE_PER_FINDING,
+    MAX_EXCERPT_CHARS,
+    MAX_FILE_BYTES,
+    MAX_FILES,
+    MAX_FINDINGS_PER_BUCKET,
+    MAX_LINE_CHARS,
+    MAX_PATH_CHARS,
+    MAX_SOURCE_CLASS_ITEMS,
+    MAX_TOTAL_BYTES,
+    MAX_VERSION_CHARS,
+    MAX_VERSION_SPECS_PER_FINDING,
+    MAX_WIKI_FILE_BYTES,
+    NON_VERSION_SPEC_PREFIXES,
+    NON_WIKI_SUBDOMAINS,
+    PHP_USE_RE,
+    PROJECT_DB_RE,
+    PROJECT_DOMAIN_RE,
+    PROJECT_FAMILY_DB_SUFFIX,
+    PROJECT_SUGGESTION_MIN_CONFIDENCE,
+    PUBLICATION_TRUSTED_SOURCE_WEIGHT,
+    PY_IMPORT_RE,
+    QUIET_REPOSITORY_DAYS,
+    READ_ACTIONS,
+    REPOSITORY_CONTEXT_DECLARED_KEYS,
+    REPOSITORY_CONTEXT_LIFECYCLE_KEYS,
+    REPOSITORY_CONTEXT_MAINTAINER_KEYS,
+    REPOSITORY_CONTEXT_REPOSITORY_KEYS,
+    REQ_NAME_RE,
+    REQUEST_SIGNAL_RE,
+    RUBY_REQUIRE_RE,
+    RUNTIME_FILE_KINDS,
+    RUNTIME_SOURCE_EXTENSIONS,
+    RUNTIME_TECHNOLOGY,
+    SCOPE_LINE_RE,
+    SCORING_MIN_CONFIDENCE,
+    SOURCE_CLASS_WEIGHTS,
+    SOURCE_EXTENSIONS,
+    STALE_REPOSITORY_DAYS,
+    TECH_BY_EXTENSION,
+    TECH_RULE_SUFFIXES,
+    TECH_RULES,
+    TECHNOLOGY_PACKAGES,
+    TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE,
+    UNVERSIONED_SPECS,
+    USER_SCRIPT_SUFFIX,
+    WIKI_KIND_TOOL_TYPE,
+    WIKIMEDIA_ORG_WIKIS,
+    YARN_LOCK_RE,
+    YARN_VERSION_RE,
+    _clean_context_string,
+    _has_category,
+    _has_write_access,
+    _int_context_value,
+    _parse_iso_datetime,
+    _publishable_rows,
 )
 
-SOURCE_CLASS_WEIGHTS = {
-    "analysis-tooling": 0.15,
-    "ci": 0.75,
-    "config": 0.85,
-    "docs": 0.75,
-    "example": 0.25,
-    "fixture": 0.15,
-    "frontend": 0.95,
-    "lockfile": 0.95,
-    "manifest": 1.0,
-    "runtime": 1.0,
-    "test": 0.35,
-    "unknown": 0.55,
-}
-
-HEALTH_DIMENSIONS = (
-    (
-        "tool-health",
-        "Tool health",
-        ("operational-readiness",),
-        1.25,
-        "Runtime, deployment, and health-check readiness.",
-    ),
-    (
-        "source-maintenance",
-        "Source maintenance",
-        ("maintenance-activity",),
-        1.0,
-        "Repository activity and source history freshness.",
-    ),
-    (
-        "maintainability",
-        "Maintainability",
-        ("maintenance-readiness", "dependency-health"),
-        1.0,
-        "Documentation, tests, CI, and dependency reproducibility.",
-    ),
-    (
-        "safety",
-        "Safety and permissions",
-        ("security-review", "permission-clarity"),
-        1.15,
-        "Credential, elevated-rights, and permission clarity signals.",
-    ),
-    (
-        "metadata-quality",
-        "Metadata quality",
-        ("metadata-completeness",),
-        0.65,
-        "Completeness of derived Toolhub metadata.",
-    ),
-    (
-        "accessibility",
-        "Frontend accessibility",
-        ("frontend-accessibility",),
-        0.6,
-        "Accessibility evidence for web-facing tools.",
-    ),
-)
-MAINTAINER_DIMENSION_WEIGHT = 1.2
-
-TECH_BY_EXTENSION = {
-    ".cjs": "JavaScript",
-    ".go": "Go",
-    ".java": "Java",
-    ".js": "JavaScript",
-    ".jsx": "JavaScript",
-    ".lua": "Lua",
-    ".mjs": "JavaScript",
-    ".php": "PHP",
-    ".py": "Python",
-    ".rb": "Ruby",
-    ".rs": "Rust",
-    ".sh": "Shell",
-    ".ts": "TypeScript",
-    ".tsx": "TypeScript",
-    ".vue": "Vue",
-}
-
-TECH_RULES = (
-    ("Python", re.compile(r"\b(import|from)\s+(flask|django|pywikibot|mwclient|requests)\b", re.IGNORECASE), 0.78),
-    ("Flask", re.compile(r"\bfrom\s+flask\s+import\b|\bFlask\s*\(", re.IGNORECASE), 0.9),
-    ("Django", re.compile(r"\bDJANGO_SETTINGS_MODULE\b|\bfrom\s+django\b", re.IGNORECASE), 0.9),
-    ("Pywikibot", re.compile(r"\bpywikibot\b", re.IGNORECASE), 0.96),
-    ("mwclient", re.compile(r"\bmwclient\b", re.IGNORECASE), 0.95),
-    ("Node.js", re.compile(r"\b(express|fastify|koa)\b|\"scripts\"\s*:", re.IGNORECASE), 0.72),
-    # Deliberately not IGNORECASE, and deliberately requiring a usage rather
-    # than a mention, for the same reason as `mw.Api` below. `\bReact\b` under
-    # IGNORECASE matched the English word in a comment, and -- because the rules
-    # read every file rather than only code -- the string `node_modules/react`
-    # in a lockfile, so any checkout that had ever installed React was
-    # catalogued as a React tool. A package the tool actually declares still
-    # names it, through TECHNOLOGY_PACKAGES.
-    (
-        "React",
-        re.compile(r"\bReact\.[A-Za-z_]|\bfrom\s+[\"']react[\"']|\brequire\s*\(\s*[\"']react[\"']"),
-        0.82,
-    ),
-    # Deliberately not IGNORECASE, and deliberately requiring the call: `mw.Api`
-    # and `mw.loader.using` are JavaScript identifiers, so `MW.API` is not one
-    # of them, and a bare mention is somebody writing *about* the API rather
-    # than calling it. The old spelling matched a prose mention anywhere in a
-    # checkout, which is how this project's own analyzer -- whose rules, tests
-    # and UI all quote `mw.Api` -- came to be catalogued as a gadget.
-    ("MediaWiki JavaScript", re.compile(r"\bmw\.loader\.using\s*\(|\bmw\.Api\s*\("), 0.9),
-)
-
-# JavaScript is the only place the MediaWiki JS API can be called or a React
-# component written, so evidence of either found anywhere else is a quotation.
-# A Python docstring naming `mw.Api` is the case that prompted this.
-TECH_RULE_SUFFIXES = {
-    "MediaWiki JavaScript": JS_SOURCE_SUFFIXES,
-    "React": JS_SOURCE_SUFFIXES,
-}
-
-# A file the wiki would serve as a user script. Read off the name rather than
-# the contents: the suffix is what makes a wiki page a script, and it says so
-# whatever the file goes on to contain.
-#: The technology each declared runtime constraint names, and the manifest key
-#: it is written under. A manifest that pins a runtime is naming the technology
-#: as surely as a source file written in it, so these create the finding rather
-#: than only annotating one -- `engines.node` is why a Node.js tool with no
-#: `.js` file at the root is still a Node.js tool.
-RUNTIME_TECHNOLOGY = {
-    "node": "Node.js",
-    "python": "Python",
-    "php": "PHP",
-    "go": "Go",
-}
-
-#: The package behind each technology, and the category the technology belongs
-#: in when the package is all that names it. `from flask import ...` says the
-#: tool uses Flask; only the manifest says which Flask, and it says it under a
-#: name the technology finding does not share, so the two are joined here
-#: rather than by string match.
-TECHNOLOGY_PACKAGES = {
-    "Flask": ("pypi:flask", "framework"),
-    "Django": ("pypi:django", "framework"),
-    "Pywikibot": ("pypi:pywikibot", "framework"),
-    "mwclient": ("pypi:mwclient", "framework"),
-    "React": ("npm:react", "framework"),
-    "Vue": ("npm:vue", "language"),
-    "TypeScript": ("npm:typescript", "language"),
-}
-
-#: Source classes that mean somebody wrote the dependency into this tool: a
-#: manifest, or an import in its own code. A `lockfile` row is the resolver's
-#: output instead -- it names every transitive package a build would fetch,
-#: which is why one line of `node_modules/react` used to be enough. The
-#: low-provenance classes are left out for the same reason: a package a fixture
-#: imports is not a technology the tool is built with.
-DECLARED_DEPENDENCY_SOURCE_CLASSES = frozenset({"config", "frontend", "manifest", "runtime"})
-
-#: The confidence a technology earns from a declared package alone. Below every
-#: source-observed rule in TECH_RULES: declaring a dependency is deliberate, but
-#: it is evidence of an intent to use rather than of a use.
-DECLARED_TECHNOLOGY_CONFIDENCE = 0.8
-
-USER_SCRIPT_SUFFIX = ".user.js"
-
-# The toolinfo vocabulary term for each kind of wiki-hosted source page.
-# `wiki_sources` already decides which kind a page is; this only spells the
-# answer the way toolinfo does.
-#
-# KIND_GADGET_PAGE has no entry, and that absence is the policy: a
-# `MediaWiki:Gadget-*` page becomes KIND_GADGET only once the definition page
-# has been read and found to list it, so anything still carrying the page kind
-# is either unregistered or unverified, and neither is a gadget anyone can
-# state. It yields no suggestion rather than a plausible one, because a
-# suggestion fills an empty catalogue field unattended.
-WIKI_KIND_TOOL_TYPE = {
-    wiki_sources.KIND_GADGET: "gadget",
-    wiki_sources.KIND_USER_SCRIPT: "user script",
-}
-
-PROJECT_DOMAIN_RE = re.compile(
-    r"\b(?:(?P<sub>[a-z0-9-]+)\.)?(?P<family>wikipedia|wikibooks|wikidata|wikimedia|wikinews|wikiquote|wikisource|wiktionary|wikiversity|wikivoyage|mediawiki)\.org\b",
-    re.IGNORECASE,
-)
-PROJECT_DB_RE = re.compile(
-    r"(?<![a-z0-9_.-])(?:commonswiki|wikidatawiki|metawiki|mediawikiwiki|[a-z][a-z0-9_]{1,14}wiki)(?![a-z0-9_-]|\.[a-z0-9_-])"
-)
-IGNORED_PROJECT_DB_NAMES = {"mediawiki"}
-ACTION_QUERY_RE = re.compile(r"[?&]action\s*=\s*[\"']?([a-z0-9_]+)", re.IGNORECASE)
-ACTION_OBJECT_RE = re.compile(r"\b[\"']?action[\"']?\s*:\s*[\"']([a-z0-9_]+)[\"']", re.IGNORECASE)
-SCOPE_LINE_RE = re.compile(r"\bscopes?\b|mwoauth", re.IGNORECASE)
-CSRF_RE = re.compile(
-    r"\b(?:csrf|edit)token\b|meta\s*=\s*tokens|\btokens\s*:\s*[\"']csrf|postWithToken\(\s*[\"']csrf",
-    re.IGNORECASE,
-)
-CREDENTIAL_RE = re.compile(
-    r"[\"']?\b(?:client[_-]?secret|consumer[_-]?secret|api[_-]?key|access[_-]?token|refresh[_-]?token|password)\b[\"']?\s*[:=]\s*(?:[rubfRUBF]*[\"'][^\"']{4,}[\"']|[A-Za-z0-9/+=-]{20,})",
-    re.IGNORECASE,
-)
-
-# What separates a URL that is called from a URL that is merely mentioned. A
-# README linking to an API and a client invoking it look the same to a URL
-# matcher, and this is the only cheap signal that tells them apart. It can only
-# raise confidence: a call made through a variable or a wrapper still reports
-# at the base, because the address is a fact whether or not this matches.
-REQUEST_SIGNAL_RE = re.compile(
-    r"\b(?:fetch|axios|XMLHttpRequest|ajax|urlopen|urlretrieve|requests?|session|httpx|got|"
-    r"curl|wget|HttpClient|WebClient|RestTemplate|file_get_contents|urlfetch)\b"
-    r"|\bmw\.(?:Api|loader)\b|\.(?:get|post|put|patch|delete|head)\s*\(",
-    re.IGNORECASE,
-)
-ENDPOINT_CONFIDENCE = 0.75
-ENDPOINT_CALLED_CONFIDENCE = 0.9
-
-API_RULES = (
-    (
-        "mediawiki-action-api",
-        "MediaWiki Action API",
-        re.compile(r"\bw/api\.php\b|\bmediawiki action api\b|\bmw\.Api\b|\bpywikibot\b|\bmwclient\b", re.IGNORECASE),
-        0.92,
-        "MediaWiki Action API client or endpoint detected.",
-    ),
-    (
-        "wikibase-api",
-        "Wikibase API",
-        re.compile(r"\bwb[a-z]+\b|\bWikibase\b", re.IGNORECASE),
-        0.92,
-        "Wikibase action or client detected.",
-    ),
-    (
-        "wikidata-query-service",
-        "Wikidata Query Service",
-        re.compile(r"query\.wikidata\.org/sparql|\bSPARQL\b", re.IGNORECASE),
-        0.94,
-        "SPARQL query endpoint detected.",
-    ),
-    (
-        "mediawiki-rest-api",
-        "MediaWiki REST API",
-        re.compile(r"/w/rest\.php|/api/rest_v1\b|\brestbase\b", re.IGNORECASE),
-        0.88,
-        "MediaWiki REST endpoint detected.",
-    ),
-    (
-        "toolforge",
-        "Toolforge platform",
-        re.compile(r"\btoolforge\b|\btoolsdb\b|replica\.my\.cnf|toolsadmin\.wikimedia\.org", re.IGNORECASE),
-        0.85,
-        "Toolforge runtime or service endpoint detected.",
-    ),
-    (
-        "commons-upload",
-        "Commons upload workflow",
-        re.compile(r"commons\.wikimedia\.org.*action\s*=\s*upload|Special:Upload|stash(?:file)?key", re.IGNORECASE),
-        0.9,
-        "Commons upload path detected.",
-    ),
-)
-
-AUTH_RULES = (
-    (
-        "oauth",
-        "OAuth",
-        re.compile(r"\bmwoauth\b|\boauth\b|client_id|redirect_uri|authorization:\s*bearer", re.IGNORECASE),
-        0.9,
-        "OAuth client or bearer-token flow detected.",
-    ),
-    (
-        "csrf-token",
-        "CSRF token",
-        CSRF_RE,
-        0.84,
-        "MediaWiki token handling detected.",
-    ),
-    (
-        "bot-password",
-        "Bot password",
-        re.compile(r"\bbot.?password\b|\blgname\b|\blgpassword\b", re.IGNORECASE),
-        0.86,
-        "Legacy bot-password login signal detected.",
-    ),
-)
-
-KNOWN_OAUTH_SCOPES = {
-    "basic": ("Basic identity", 0.7),
-    "blockusers": ("Block users", 0.9),
-    "createaccount": ("Create accounts", 0.82),
-    "createeditmovepage": ("Create, edit, and move pages", 0.9),
-    "delete": ("Delete pages", 0.88),
-    "editmywatchlist": ("Edit watchlist", 0.82),
-    "editpage": ("Edit pages", 0.9),
-    "email": ("Send email", 0.76),
-    "highvolume": ("High-volume API access", 0.82),
-    "patrol": ("Patrol changes", 0.84),
-    "privateinfo": ("Private account information", 0.9),
-    "rollback": ("Rollback edits", 0.86),
-    "sendemail": ("Send email", 0.78),
-    "uploadfile": ("Upload files", 0.9),
-    "viewdeleted": ("View deleted revisions", 0.82),
-    "viewmywatchlist": ("View watchlist", 0.8),
-}
-
-ACTION_RIGHTS = {
-    "block": (("block", "Block users", "administrator", 0.9),),
-    "createaccount": (("create-account", "Create accounts", "write", 0.82),),
-    "delete": (("delete", "Delete pages", "administrator", 0.92), ("csrf-token", "CSRF token", "write", 0.78)),
-    "edit": (("edit", "Edit pages", "write", 0.94), ("csrf-token", "CSRF token", "write", 0.78)),
-    "emailuser": (("send-email", "Send email to users", "write", 0.82), ("csrf-token", "CSRF token", "write", 0.74)),
-    "import": (("import", "Import pages", "administrator", 0.86), ("csrf-token", "CSRF token", "write", 0.76)),
-    "mergehistory": (
-        ("merge-history", "Merge page histories", "administrator", 0.86),
-        ("csrf-token", "CSRF token", "write", 0.76),
-    ),
-    "move": (("move", "Move pages", "write", 0.88), ("csrf-token", "CSRF token", "write", 0.78)),
-    "options": (("edit-preferences", "Edit user preferences", "write", 0.78),),
-    "patrol": (("patrol", "Patrol edits", "moderation", 0.86), ("csrf-token", "CSRF token", "write", 0.76)),
-    "protect": (("protect", "Protect pages", "administrator", 0.9), ("csrf-token", "CSRF token", "write", 0.78)),
-    "review": (("review", "Review pending changes", "moderation", 0.84), ("csrf-token", "CSRF token", "write", 0.76)),
-    "revisiondelete": (
-        ("revision-delete", "Delete or suppress revision data", "administrator", 0.9),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "rollback": (("rollback", "Rollback edits", "moderation", 0.86), ("csrf-token", "CSRF token", "write", 0.76)),
-    "tag": (("change-tags", "Apply change tags", "moderation", 0.72), ("csrf-token", "CSRF token", "write", 0.72)),
-    "undelete": (("undelete", "Undelete pages", "administrator", 0.9), ("csrf-token", "CSRF token", "write", 0.78)),
-    "upload": (("upload", "Upload files", "write", 0.94), ("csrf-token", "CSRF token", "write", 0.78)),
-    "userrights": (
-        ("user-rights", "Change user rights", "administrator", 0.92),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "watch": (("edit-watchlist", "Edit watchlist", "write", 0.78),),
-    "wbcreateclaim": (
-        ("edit", "Edit pages", "write", 0.88),
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.94),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbeditentity": (
-        ("edit", "Edit pages", "write", 0.9),
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.94),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbmergeitems": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.92),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbremoveclaims": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.92),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbsetaliases": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.9),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbsetclaim": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.94),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbsetclaimvalue": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.94),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbsetdescription": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.9),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbsetlabel": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.9),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbsetqualifier": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.92),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbsetreference": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.92),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-    "wbsetsitelink": (
-        ("wikibase-edit", "Edit Wikibase entities", "write", 0.9),
-        ("csrf-token", "CSRF token", "write", 0.78),
-    ),
-}
-
-READ_ACTIONS = {
-    "compare",
-    "expandtemplates",
-    "opensearch",
-    "parse",
-    "query",
-    "wbgetentities",
-    "wbsearchentities",
-}
-JS_IMPORT_RE = re.compile(
-    r"(?:\bfrom\s+[\"'](?P<from>[^\"']+)[\"']|\b(?:require|import)\(\s*[\"'](?P<call>[^\"']+)[\"']\s*\))"
-)
-PY_IMPORT_RE = re.compile(r"^\s*(?:from\s+([A-Za-z_][\w.]*)\s+import|import\s+([A-Za-z_][\w.]*))")
-PHP_USE_RE = re.compile(r"^\s*use\s+([A-Za-z_][\w\\]*)")
-RUBY_REQUIRE_RE = re.compile(r"^\s*require\s+[\"']([^\"']+)[\"']")
-GEM_RE = re.compile(r"^\s*gem\s+[\"']([^\"']+)[\"']")
-REQ_NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)")
-GO_REQUIRE_RE = re.compile(r"^\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+)\s+v?[0-9]")
-GEM_LOCK_RE = re.compile(r"^\s{4}([A-Za-z0-9_.-]+)\s+\(")
-YARN_LOCK_RE = re.compile(r"^[\"']?([^\"':,\s]+(?:/[^\"':,\s]+)?)(?:@npm:|@patch:|@workspace:|@[^:]*:)")
-
-#: A version constraint that pins one release, in any of the spellings the
-#: manifests use: `1.2.3`, `==1.2.3`, `=1.2.3`, `v1.2.3`. Everything else --
-#: `^1.2`, `>=3.0`, `~> 2.0` -- is a range, and a range is not a version.
-EXACT_VERSION_RE = re.compile(r"^(?:==|=|v)?\s*(\d+(?:\.\d+){0,3}(?:[-+][0-9A-Za-z.-]+)?)$")
-#: Constraints that name no version at all. Recording them would turn "no
-#: version declared" into "version declared as *", which reads as a fact.
-UNVERSIONED_SPECS = frozenset({"*", "x", "latest", "any", "@latest"})
-#: A dependency resolved from somewhere other than the registry. The string
-#: after the marker is a URL or a path, never a version.
-NON_VERSION_SPEC_PREFIXES = ("git+", "git:", "http://", "https://", "file:", "link:", "workspace:", "portal:", "npm:")
-#: Where a version sits in a `gem "name", "~> 1.2"` line and in a
-#: `name (1.2.3)` Gemfile.lock line.
-#: The constraint in a `gem "name", "~> 1.2"` line. It has to be the second
-#: positional argument: an option such as `gem "puma", group: "dev"` puts a
-#: bare word after the comma, and reading that as a version would report the
-#: group name as one.
-GEM_VERSION_RE = re.compile(r"^\s*gem\s+[\"'][^\"']+[\"']\s*,\s*[\"']([^\"']+)[\"']")
-GEM_LOCK_VERSION_RE = re.compile(r"^\s{4}[A-Za-z0-9_.-]+\s+\(([^)]+)\)")
-#: `module/path v1.2.3` in a go.mod require block.
-GO_VERSION_RE = re.compile(r"^\s*[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+\s+(v?\d[^\s/]*)")
-#: The `go 1.21` line in a go.mod, which names the language version rather
-#: than a module.
-GO_DIRECTIVE_RE = re.compile(r"^go\s+(\d[0-9.]*)$")
-#: The resolved version yarn and pnpm write on the line below a locator.
-YARN_VERSION_RE = re.compile(r"^\s+[\"']?version[\"']?:?\s+[\"']?([^\"'\s,]+)[\"']?\s*$")
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class SourceAnalysisError(ValueError):
@@ -720,29 +154,67 @@ class Finding:
     label: str
     kind: str
     category: str
-    confidence: float
+    #: The best single sighting, before corroboration. Read `confidence`.
+    base_confidence: float = 0.0
     reasons: set[str] = field(default_factory=set)
     evidence: list[dict[str, Any]] = field(default_factory=list)
     source_classes: set[str] = field(default_factory=set)
     max_source_weight: float = 0.0
+    #: The best source weight seen for each distinct file carrying this finding.
+    #: Corroboration is bounded by this, not by the number of sightings:
+    #: _finding_rank() already counts distinct paths for the same reason.
+    path_weights: dict[str, float] = field(default_factory=dict)
     #: Every constraint seen for this finding, as the manifest wrote it.
     version_specs: set[str] = field(default_factory=set)
     #: The subset of those that pin one release, normalized to the bare number.
     versions: set[str] = field(default_factory=set)
 
     def add(self, confidence: float, reason: str, evidence: dict[str, Any]) -> None:
-        """Merge repeated evidence into one finding."""
+        """Merge repeated evidence into one finding.
+
+        Records the sighting and nothing more. Confidence is derived from
+        everything recorded, by the `confidence` property, rather than being
+        accumulated here as files arrive -- see that property for why.
+        """
         source_class = str(evidence.get("sourceClass") or "unknown")
         source_weight = float(evidence.get("sourceWeight") or SOURCE_CLASS_WEIGHTS["unknown"])
-        adjusted_confidence = min(CONFIDENCE_CAP, max(0.0, confidence) * source_weight)
-        repeated_evidence_boost = (
-            CONFIDENCE_REPEAT_BOOST * source_weight if source_weight >= HIGH_PROVENANCE_WEIGHT else 0
-        )
-        self.confidence = min(CONFIDENCE_CAP, max(self.confidence, adjusted_confidence) + repeated_evidence_boost)
+        path = str(evidence.get("path") or "")
+        self.base_confidence = max(self.base_confidence, min(CONFIDENCE_CAP, max(0.0, confidence) * source_weight))
+        self.path_weights[path] = max(self.path_weights.get(path, 0.0), source_weight)
         self.reasons.add(reason)
         self.evidence.append(evidence)
         self.source_classes.add(source_class)
         self.max_source_weight = max(self.max_source_weight, source_weight)
+
+    @property
+    def confidence(self) -> float:
+        """How much this finding is believed, as a function of all its evidence.
+
+        Corroboration is counted per distinct file, and only for the few best.
+        The boost used to apply on every sighting, unbounded until the cap, so
+        ten hits in high-provenance code added about 0.29. That is the wrong
+        shape: repetition is only evidence when the sightings are independent
+        observations, and a rule misfiring on a common idiom produces the same
+        error many times rather than many findings. Confidence therefore rose
+        fastest exactly where the analyzer was most wrong -- `clean_wiki` reached
+        0.82 from a 0.76 base that way -- and the publication thresholds could
+        not filter what the boost had already pushed past them.
+
+        Counting per file bounded that, but accumulating the boost inside add()
+        left the total dependent on the order the files were read: with credit
+        limited to a few files, whichever few arrived first decided how much
+        credit there was, and their weights differ. The same repository walked
+        in a different order scored differently, which is not something a
+        deterministic analyzer is allowed to do. So the boost is computed here,
+        from the whole set: the best-attested file is the claim, and the next
+        few by weight are what agree with it.
+        """
+        weights = sorted(self.path_weights.values(), reverse=True)
+        corroborating = [
+            weight for weight in weights[1 : 1 + CONFIDENCE_MAX_CORROBORATING_FILES] if weight >= HIGH_PROVENANCE_WEIGHT
+        ]
+        boost = CONFIDENCE_REPEAT_BOOST * sum(corroborating)
+        return min(CONFIDENCE_CAP, self.base_confidence + boost)
 
     def note_version(self, spec: str | None) -> None:
         """Record a declared version, keeping exact pins apart from ranges."""
@@ -762,6 +234,10 @@ class Finding:
             "category": self.category,
             "confidence": round(self.confidence, 2),
             "maxSourceWeight": round(self.max_source_weight, 2),
+            # How many distinct files carry this finding. The evidence list is
+            # capped at MAX_EVIDENCE_PER_FINDING, so it cannot be counted from
+            # the payload, and _is_corroborated() needs the true figure.
+            "fileCount": len(self.path_weights),
             "reasons": sorted(self.reasons),
             "sourceClasses": sorted(self.source_classes),
             "evidence": self.evidence[:MAX_EVIDENCE_PER_FINDING],
@@ -922,6 +398,54 @@ def source_reading_rank(path: str) -> tuple[float, int, str]:
     return (-_source_weight(normalized), normalized.count("/"), normalized)
 
 
+def order_sources_for_reading(
+    items: list[Any],
+    path_of: Callable[[Any], str] = lambda item: item,
+    *,
+    budget: int = MAX_FILES,
+) -> list[Any]:
+    """Order candidates so the file budget cannot starve the context buckets.
+
+    Returns every candidate, reordered -- the caller still stops at MAX_FILES,
+    and still walks on past anything the size or decode checks reject, so this
+    changes which files are reached and nothing about how they are read.
+
+    The reserve is placed first rather than appended to the head of the
+    weight-ranked run. MAX_TOTAL_BYTES cuts a large repository before MAX_FILES
+    does, and a reserve that sits behind two megabytes of runtime source is a
+    reserve that large repositories never reach -- which is the case this exists
+    for. Ahead of it, the reserve costs the findings pool at most 20 slots of
+    120 and typically a few hundred kilobytes of the two-megabyte ceiling.
+    """
+    slots = min(CONTEXT_RESERVE_SLOTS, budget // CONTEXT_RESERVE_BUDGET_DIVISOR)
+    ranked = sorted(items, key=lambda item: source_reading_rank(path_of(item)))
+    if slots <= 0:
+        return ranked
+    by_class: dict[str, list[Any]] = {name: [] for name, _ in CONTEXT_RESERVE_QUOTAS}
+    for item in ranked:
+        bucket = by_class.get(_source_class(path_of(item)))
+        if bucket is not None:
+            bucket.append(item)
+    reserved: list[Any] = []
+    taken: dict[str, int] = {}
+    for name, quota in CONTEXT_RESERVE_QUOTAS:
+        chosen = by_class[name][: min(quota, slots)]
+        taken[name] = len(chosen)
+        reserved.extend(chosen)
+    # Spill: a repository with no CI should spend those slots on tests, not
+    # leave them unused, so make a second pass for whatever the quotas left.
+    for name, _quota in CONTEXT_RESERVE_QUOTAS:
+        spare = slots - len(reserved)
+        if spare <= 0:
+            break
+        reserved.extend(by_class[name][taken[name] : taken[name] + spare])
+    reserved = reserved[:slots]
+    if not reserved:
+        return ranked
+    held = {id(item) for item in reserved}
+    return reserved + [item for item in ranked if id(item) not in held]
+
+
 def _evidence(path: str, line_number: int, line: str, matched: str) -> dict[str, Any]:
     source_class = _source_class(path)
     return {
@@ -990,7 +514,7 @@ def _put(  # noqa: PLR0913 - explicit finding fields avoid opaque tuple packing 
     key = (kind, value)
     current = findings.get(key)
     if current is None:
-        current = Finding(value=value, label=label, kind=kind, category=category, confidence=0.0)
+        current = Finding(value=value, label=label, kind=kind, category=category)
         findings[key] = current
     current.add(confidence, reason, evidence)
     current.note_version(version)
@@ -1873,18 +1397,33 @@ def _local_python_import_roots(files: list[SourceFile]) -> set[str]:
     return roots
 
 
-def _project_from_host(host: str, sub: str, family: str) -> tuple[str, str, float]:
-    if host == "commons.wikimedia.org":
-        return "commonswiki", "Commons", 0.94
+def _project_from_host(host: str, sub: str, family: str) -> tuple[str, str, float] | None:
+    """Map a Wikimedia hostname to (database name, label, confidence), or None.
+
+    None means "this hostname is not a wiki", and it is the important return.
+    The fallthrough here used to be `host, host, 0.78` -- above every
+    publication threshold -- so gerrit.wikimedia.org, phabricator.wikimedia.org,
+    upload.wikimedia.org and toolsadmin.wikimedia.org were all published as
+    wikis a tool works on, under their raw hostnames.
+
+    Mapping every content family, rather than wikipedia alone, also fixes an
+    asymmetry that made the output look arbitrary: fr.wikipedia.org became
+    `frwiki` while fr.wiktionary.org stayed the literal string
+    "fr.wiktionary.org".
+    """
     if host in {"wikidata.org", "www.wikidata.org", "query.wikidata.org"}:
         return "wikidatawiki", "Wikidata", 0.94
-    if host == "meta.wikimedia.org":
-        return "metawiki", "Meta-Wiki", 0.94
     if host in {"mediawiki.org", "www.mediawiki.org"}:
         return "mediawikiwiki", "MediaWiki.org", 0.92
-    if family == "wikipedia" and sub and sub != "www":
-        return f"{sub}wiki", host, 0.9
-    return host, host, 0.78
+    if family == "wikimedia":
+        known = WIKIMEDIA_ORG_WIKIS.get(sub)
+        return (known[0], known[1], 0.94) if known else None
+    suffix = PROJECT_FAMILY_DB_SUFFIX.get(family)
+    if suffix is None or not sub or sub == "www" or sub in NON_WIKI_SUBDOMAINS:
+        return None
+    if not LANGUAGE_SUBDOMAIN_RE.fullmatch(sub):
+        return None
+    return f"{sub.replace('-', '_')}{suffix}", host, 0.9
 
 
 def _bounded_line(raw: str) -> str:
@@ -1947,7 +1486,10 @@ def _scan_endpoints(
 def _scan_projects(findings: dict[tuple[str, str], Finding], path: str, line_number: int, line: str) -> None:
     for match in PROJECT_DOMAIN_RE.finditer(line):
         host = match.group(0).lower()
-        value, label, confidence = _project_from_host(host, match.group("sub") or "", match.group("family").lower())
+        resolved = _project_from_host(host, (match.group("sub") or "").lower(), match.group("family").lower())
+        if resolved is None:
+            continue
+        value, label, confidence = resolved
         _put(
             findings,
             kind="projects",
@@ -2157,29 +1699,36 @@ def _serialized(findings: dict[tuple[str, str], Finding], kind: str) -> list[dic
     return [finding.payload() for finding in ranked[:MAX_FINDINGS_PER_BUCKET]]
 
 
-def _is_publishable_finding(item: dict[str, Any], min_confidence: float = EVOLVED_METADATA_MIN_CONFIDENCE) -> bool:
-    return (
-        float(item.get("confidence") or 0) >= min_confidence
-        and float(item.get("maxSourceWeight") or SOURCE_CLASS_WEIGHTS["unknown"]) >= SUGGESTION_MIN_SOURCE_WEIGHT
-    )
+def _is_corroborated(item: dict[str, Any]) -> bool:
+    """Whether one finding has enough support to leave the report.
+
+    Confidence alone was the only gate on the publication boundary, and
+    confidence is a property of how a rule fired rather than of how much of the
+    repository agrees. A rule misfiring on a common idiom produced findings that
+    cleared the threshold comfortably -- every one of the seven non-wikis this
+    analyzer used to publish sat above it.
+
+    Two ways to qualify. Either the finding is written in a file whose class
+    makes it a declaration about the tool -- a manifest, a lockfile, or the
+    tool's own runtime, frontend or config source -- in which case one sighting
+    is a statement and needs no second opinion. Or it appears in more than one
+    file, which is what agreement looks like for the softer classes where a
+    single mention may be prose, a comment or an example.
+
+    This gates the suggestion boundary only. The findings buckets keep
+    everything they found, with their evidence, and the assessments keep scoring
+    from the full set -- a caller reading the report still sees the single
+    mention, it just does not become a value on their catalogue record.
+    """
+    if float(item.get("maxSourceWeight") or 0) >= PUBLICATION_TRUSTED_SOURCE_WEIGHT:
+        return True
+    return int(item.get("fileCount") or 1) > 1
 
 
-def _publishable_rows(
+def _corroborated_rows(
     rows: list[dict[str, Any]], min_confidence: float = EVOLVED_METADATA_MIN_CONFIDENCE
 ) -> list[dict[str, Any]]:
-    return [row for row in rows if _is_publishable_finding(row, min_confidence)]
-
-
-def _has_category(rows: list[dict[str, Any]], category: str, min_confidence: float = 0.0) -> bool:
-    return any(row.get("category") == category and float(row.get("confidence") or 0) >= min_confidence for row in rows)
-
-
-def _has_write_access(rows: list[dict[str, Any]], min_confidence: float = 0.0) -> bool:
-    return any(
-        row.get("category") in {"administrator", "moderation", "write"}
-        and float(row.get("confidence") or 0) >= min_confidence
-        for row in rows
-    )
+    return [row for row in _publishable_rows(rows, min_confidence) if _is_corroborated(row)]
 
 
 def _tool_type_suggestion(
@@ -2254,11 +1803,6 @@ def _add_cross_file_warnings(findings: dict[tuple[str, str], Finding], report: d
             reason="Write actions were detected, but OAuth, bot-password, or token handling was not.",
             evidence=warning_evidence,
         )
-
-
-def _clean_context_string(value: object) -> str | None:
-    text = str(value or "").strip()
-    return text[:MAX_CONTEXT_STRING_CHARS] if text else None
 
 
 def _clean_context_list(value: object) -> list[str]:
@@ -2474,51 +2018,6 @@ def _repository_context_from_files(
     return context
 
 
-def _context_kinds(context: dict[str, Any], section: str) -> set[str]:
-    rows = context.get(section)
-    return {str(item.get("kind")) for item in rows if isinstance(item, dict)} if isinstance(rows, list) else set()
-
-
-def _declared_list(context: dict[str, Any], key: str) -> set[str]:
-    declared = context.get("declared")
-    value = declared.get(key) if isinstance(declared, dict) else []
-    return {str(item) for item in value} if isinstance(value, list) else set()
-
-
-def _category_counts(context: dict[str, Any]) -> dict[str, int]:
-    dependency_sources = context.get("dependencySources")
-    rows = dependency_sources.get("categories") if isinstance(dependency_sources, dict) else []
-    return {
-        str(row.get("category")): int(row.get("count") or 0)
-        for row in rows
-        if isinstance(row, dict) and row.get("category")
-    }
-
-
-def _parse_iso_datetime(value: object) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    if text.endswith("Z"):
-        text = f"{text[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
-def _int_context_value(value: object) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    try:
-        return int(str(value))
-    except (TypeError, ValueError):
-        return None
-
-
 def _last_commit_age_days(repository: dict[str, Any]) -> int | None:
     provided_age = _int_context_value(repository.get("lastCommitAgeDays"))
     if provided_age is not None:
@@ -2545,18 +2044,6 @@ def _activity_status(age_days: int | None, *, archived: bool = False) -> str:
     if age_days <= QUIET_REPOSITORY_DAYS:
         return "quiet"
     if age_days <= STALE_REPOSITORY_DAYS:
-        return "stale"
-    return "dormant"
-
-
-def _maintainer_status(age_days: int | None) -> str:
-    if age_days is None:
-        return "unknown"
-    if age_days <= ACTIVE_MAINTAINER_DAYS:
-        return "active"
-    if age_days <= QUIET_MAINTAINER_DAYS:
-        return "quiet"
-    if age_days <= STALE_MAINTAINER_DAYS:
         return "stale"
     return "dormant"
 
@@ -2596,810 +2083,18 @@ def _repository_maintenance_context(repository: object) -> dict[str, Any]:
     }
 
 
-def _maintainer_activity_context(maintainers: object, repository: object) -> dict[str, Any]:
-    if not isinstance(maintainers, dict) or not maintainers:
-        return {}
-    age_days = _int_context_value(maintainers.get("lastActivityAgeDays"))
-    if age_days is None:
-        last_activity = _parse_iso_datetime(maintainers.get("lastActivityAt"))
-        analyzed_at = _parse_iso_datetime(maintainers.get("analyzedAt"))
-        if analyzed_at is None and isinstance(repository, dict):
-            analyzed_at = _parse_iso_datetime(repository.get("analyzedAt"))
-        if last_activity is not None and analyzed_at is not None:
-            age_days = max(0, (analyzed_at - last_activity).days)
-    status = _maintainer_status(age_days)
-    maintainer_count = _int_context_value(maintainers.get("maintainerCount"))
-    active_count = _int_context_value(maintainers.get("activeMaintainerCount"))
-    recent_activity_count = _int_context_value(maintainers.get("recentActivityCount"))
-    signals: list[dict[str, Any]] = []
-    if age_days is not None:
-        signals.append({"kind": "last-maintainer-activity-age", "value": age_days, "unit": "days"})
-    if maintainer_count is not None:
-        signals.append({"kind": "maintainer-count", "value": maintainer_count})
-    if active_count is not None:
-        signals.append({"kind": "active-maintainer-count", "value": active_count})
-    if recent_activity_count is not None:
-        signals.append({"kind": "recent-maintainer-activity-count", "value": recent_activity_count})
-    source = _clean_context_string(maintainers.get("source"))
-    if source:
-        signals.append({"kind": "maintainer-activity-source", "value": source})
-    return {
-        "status": status,
-        "stale": status in {"stale", "dormant"},
-        "lastActivityAgeDays": age_days,
-        "maintainerCount": maintainer_count,
-        "activeMaintainerCount": active_count,
-        "recentActivityCount": recent_activity_count,
-        "signals": signals[:MAX_ASSESSMENT_SIGNALS],
-    }
-
-
-def _first_finding_evidence(report: dict[str, Any], bucket: str) -> dict[str, Any] | None:
-    rows = report.get(bucket)
-    for row in rows if isinstance(rows, list) else []:
-        evidence = row.get("evidence") if isinstance(row, dict) else []
-        if isinstance(evidence, list) and evidence:
-            return evidence[0]
-    return None
-
-
-def _first_context_evidence(context: dict[str, Any], section: str, kind: str | None = None) -> dict[str, Any] | None:
-    rows = context.get(section)
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict):
-            continue
-        if kind is None or row.get("kind") == kind:
-            return {
-                "path": row.get("path", ""),
-                "line": row.get("line", 0),
-                "match": row.get("match", ""),
-                "excerpt": row.get("kind", ""),
-            }
-    return None
-
-
-def _score_grade(score: int) -> str:
-    if score >= ASSESSMENT_STRONG_SCORE:
-        return "strong"
-    if score >= ASSESSMENT_GOOD_SCORE:
-        return "good"
-    if score >= ASSESSMENT_ATTENTION_SCORE:
-        return "needs-attention"
-    return "high-risk"
-
-
-def _bounded_score(value: int) -> int:
-    return max(0, min(100, value))
-
-
-def _assessment_signal(
-    status: str, label: str, detail: str = "", evidence: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    signal: dict[str, Any] = {"status": status, "label": label}
-    if detail:
-        signal["detail"] = detail
-    if evidence:
-        signal["evidence"] = evidence
-    return signal
-
-
-def _assessment(  # noqa: PLR0913, PLR0917 - assessment payload fields are clearer as explicit arguments.
-    key: str,
-    label: str,
-    score: int,
-    confidence: float,
-    summary: str,
-    signals: list[dict[str, Any]],
-    recommendations: list[str],
-) -> dict[str, Any]:
-    bounded = _bounded_score(score)
-    return {
-        "key": key,
-        "label": label,
-        "score": bounded,
-        "grade": _score_grade(bounded),
-        "confidence": round(max(0.1, min(0.99, confidence)), 2),
-        "summary": summary,
-        "signals": signals[:MAX_ASSESSMENT_SIGNALS],
-        "recommendations": recommendations[:MAX_ASSESSMENT_SIGNALS],
-    }
-
-
-def _metadata_completeness_assessment(report: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    documentation = _context_kinds(context, "documentation")
-    score = 20
-    signals: list[dict[str, Any]] = []
-    recommendations: list[str] = []
-    buckets = (
-        ("projects", "Projects detected", "Add target wiki/project metadata.", 15),
-        ("apis", "API usage detected", "Document which APIs the tool uses.", 15),
-        ("technology", "Technology detected", "Declare the tool technology stack.", 15),
-        ("dependencies", "Dependencies detected", "Declare key external libraries.", 15),
-    )
-    for bucket, label, recommendation, points in buckets:
-        has_bucket = bool(_publishable_rows(report.get(bucket, []), SCORING_MIN_CONFIDENCE))
-        score += points if has_bucket else 0
-        if has_bucket:
-            signals.append(_assessment_signal("positive", label, evidence=_first_finding_evidence(report, bucket)))
-        else:
-            signals.append(_assessment_signal("negative", recommendation))
-            recommendations.append(recommendation)
-    if "readme" in documentation:
-        score += 10
-        signals.append(
-            _assessment_signal(
-                "positive", "README present", evidence=_first_context_evidence(context, "documentation", "readme")
-            )
-        )
-    else:
-        recommendations.append("Add a README with purpose, setup, and usage.")
-    if "license" in documentation:
-        score += 10
-        signals.append(
-            _assessment_signal(
-                "positive",
-                "License file present",
-                evidence=_first_context_evidence(context, "documentation", "license"),
-            )
-        )
-    else:
-        recommendations.append("Add a license file or declare the license in Toolhub.")
-    return _assessment(
-        "metadata-completeness",
-        "Metadata completeness",
-        score,
-        0.72 + min(0.2, len(signals) * 0.02),
-        "How much useful Toolhub metadata can be derived from the submitted context.",
-        signals,
-        recommendations,
-    )
-
-
-def _permission_clarity_assessment(report: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    raw_access = report["accessRights"]
-    access = _publishable_rows(raw_access, SCORING_MIN_CONFIDENCE)
-    auth = _publishable_rows(report["authentication"], SCORING_MIN_CONFIDENCE)
-    scopes = {item["value"] for item in _publishable_rows(report["oauthScopes"], SCORING_MIN_CONFIDENCE)}
-    declared_scopes = _declared_list(context, "oauthScopes")
-    admin_access = _has_category(access, "administrator", SCORING_MIN_CONFIDENCE)
-    write_access = _has_write_access(access, SCORING_MIN_CONFIDENCE)
-    signals: list[dict[str, Any]] = []
-    recommendations: list[str] = []
-    score = 55
-    if not access:
-        if raw_access:
-            signals.append(_assessment_signal("neutral", "Only low-provenance access evidence found"))
-            recommendations.append("Confirm whether low-provenance access strings describe runtime behavior.")
-        else:
-            signals.append(_assessment_signal("neutral", "No MediaWiki access actions detected"))
-            recommendations.append("Confirm whether the tool is read-only or needs wiki permissions.")
-    elif write_access:
-        score = 65
-        signals.append(
-            _assessment_signal(
-                "neutral", "Write-capable actions detected", evidence=_first_finding_evidence(report, "accessRights")
-            )
-        )
-        if auth:
-            score += 15
-            signals.append(
-                _assessment_signal(
-                    "positive",
-                    "Authentication handling detected",
-                    evidence=_first_finding_evidence(report, "authentication"),
-                )
-            )
-        else:
-            score -= 25
-            signals.append(_assessment_signal("negative", "No authentication signal found for write actions"))
-            recommendations.append("Document OAuth, bot-password, or token handling for write actions.")
-        if scopes:
-            score += 10
-            signals.append(
-                _assessment_signal("positive", "OAuth scopes inferred from source", detail=", ".join(sorted(scopes)))
-            )
-        else:
-            recommendations.append("Declare the OAuth scopes required by this tool.")
-        if admin_access:
-            score -= 20
-            signals.append(_assessment_signal("negative", "Elevated wiki actions detected"))
-            recommendations.append("Separate administrator-level actions from normal user workflows.")
-    else:
-        score = 90
-        signals.append(
-            _assessment_signal(
-                "positive",
-                "Only read-oriented actions detected",
-                evidence=_first_finding_evidence(report, "accessRights"),
-            )
-        )
-    if declared_scopes:
-        score += 5
-        signals.append(
-            _assessment_signal("positive", "Declared OAuth scopes supplied", detail=", ".join(sorted(declared_scopes)))
-        )
-        missing = sorted(scopes - declared_scopes)
-        if missing:
-            score -= 15
-            signals.append(
-                _assessment_signal(
-                    "negative", "Inferred scopes missing from declared context", detail=", ".join(missing)
-                )
-            )
-            recommendations.append("Reconcile declared OAuth scopes with source-code usage.")
-    return _assessment(
-        "permission-clarity",
-        "Permission clarity",
-        score,
-        0.66 + min(0.25, len(access + auth + raw_access) * 0.03),
-        "How clearly the source explains required wiki access, OAuth scopes, and authentication.",
-        signals,
-        recommendations,
-    )
-
-
-def _dependency_health_assessment(report: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    categories = _category_counts(context)
-    has_manifest = bool(context.get("manifests"))
-    has_lockfile = bool(context.get("lockfiles"))
-    dependency_count = len(_publishable_rows(report["dependencies"], SCORING_MIN_CONFIDENCE))
-    signals: list[dict[str, Any]] = []
-    recommendations: list[str] = []
-    score = 40
-    if has_manifest:
-        score += 20
-        signals.append(
-            _assessment_signal(
-                "positive", "Dependency manifest present", evidence=_first_context_evidence(context, "manifests")
-            )
-        )
-    else:
-        recommendations.append("Add a package manifest so dependencies are declared explicitly.")
-    if dependency_count:
-        score += 15
-        signals.append(
-            _assessment_signal(
-                "positive",
-                "External dependencies detected",
-                detail=str(dependency_count),
-                evidence=_first_finding_evidence(report, "dependencies"),
-            )
-        )
-    else:
-        score -= 20
-        signals.append(_assessment_signal("negative", "No dependency evidence found"))
-    if has_lockfile or categories.get("locked", 0):
-        score += 15
-        signals.append(
-            _assessment_signal(
-                "positive",
-                "Lockfile or locked dependency evidence present",
-                evidence=_first_context_evidence(context, "lockfiles"),
-            )
-        )
-    else:
-        recommendations.append("Commit a lockfile or provide one in the analysis bundle for reproducibility checks.")
-    if categories.get("imported", 0) and not has_manifest:
-        score -= 10
-        signals.append(_assessment_signal("negative", "Dependencies inferred only from imports"))
-    return _assessment(
-        "dependency-health",
-        "Dependency health",
-        score,
-        0.58 + min(0.32, (len(categories) + int(has_manifest) + int(has_lockfile)) * 0.08),
-        "Whether dependency evidence is declared, reproducible, and separated from weak import inference.",
-        signals,
-        recommendations,
-    )
-
-
-def _security_review_assessment(report: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    warnings = _publishable_rows(report["warnings"], SCORING_MIN_CONFIDENCE)
-    warning_values = {item["value"] for item in warnings}
-    documentation = _context_kinds(context, "documentation")
-    score = 85
-    signals: list[dict[str, Any]] = []
-    recommendations: list[str] = []
-    if "credential-like-source" in warning_values:
-        score -= 35
-        signals.append(
-            _assessment_signal(
-                "negative",
-                "Credential-looking source was redacted",
-                evidence=_first_finding_evidence(report, "warnings"),
-            )
-        )
-        recommendations.append(
-            "Rotate any exposed credential-looking values and move secrets to runtime configuration."
-        )
-    if "administrator-actions" in warning_values:
-        score -= 20
-        signals.append(_assessment_signal("negative", "Administrator or suppressive actions need review"))
-        recommendations.append("Document why elevated wiki rights are necessary.")
-    if "write-without-auth-signal" in warning_values:
-        score -= 20
-        signals.append(_assessment_signal("negative", "Write action without authentication evidence"))
-        recommendations.append("Add explicit authentication/token handling or document why it is external.")
-    if report["authentication"]:
-        score += 5
-        signals.append(
-            _assessment_signal(
-                "positive", "Authentication signal detected", evidence=_first_finding_evidence(report, "authentication")
-            )
-        )
-    if "security" in documentation:
-        score += 5
-        signals.append(
-            _assessment_signal(
-                "positive",
-                "Security policy present",
-                evidence=_first_context_evidence(context, "documentation", "security"),
-            )
-        )
-    return _assessment(
-        "security-review",
-        "Security review",
-        score,
-        0.7 + min(0.2, len(report["warnings"]) * 0.04),
-        "Static risk signals that should be reviewed before publishing metadata suggestions.",
-        signals,
-        recommendations,
-    )
-
-
-def _maintenance_readiness_assessment(context: dict[str, Any]) -> dict[str, Any]:
-    documentation = _context_kinds(context, "documentation")
-    repository = context.get("repository") if isinstance(context.get("repository"), dict) else {}
-    score = 25
-    signals: list[dict[str, Any]] = []
-    recommendations: list[str] = []
-    if "readme" in documentation:
-        score += 20
-        signals.append(
-            _assessment_signal(
-                "positive", "README present", evidence=_first_context_evidence(context, "documentation", "readme")
-            )
-        )
-    else:
-        recommendations.append("Add a README with setup and maintainer guidance.")
-    if "license" in documentation:
-        score += 10
-        signals.append(_assessment_signal("positive", "License present"))
-    else:
-        recommendations.append("Add or declare a license.")
-    if context.get("tests"):
-        score += 15
-        signals.append(
-            _assessment_signal("positive", "Tests detected", evidence=_first_context_evidence(context, "tests"))
-        )
-    else:
-        recommendations.append("Add a small automated test suite or smoke test.")
-    if context.get("ci"):
-        score += 15
-        signals.append(
-            _assessment_signal("positive", "CI configuration detected", evidence=_first_context_evidence(context, "ci"))
-        )
-    else:
-        recommendations.append("Add CI to run lint/tests on changes.")
-    if documentation & {"changelog", "contributing", "security", "owners"}:
-        score += 10
-        signals.append(_assessment_signal("positive", "Maintainer/process documentation present"))
-    if repository:
-        score += 10
-        signals.append(_assessment_signal("positive", "Repository metadata supplied"))
-    return _assessment(
-        "maintenance-readiness",
-        "Maintenance readiness",
-        score,
-        0.6 + min(0.3, len(signals) * 0.05),
-        "Whether the repository has enough maintenance, docs, tests, and CI context for Toolhub reviewers.",
-        signals,
-        recommendations,
-    )
-
-
-def _activity_status_scoring(
-    context: dict[str, Any], status: str, age_days: int | None
-) -> tuple[int, list[dict[str, Any]], list[str]]:
-    """Score one repository activity status, with the guidance that fits it.
-
-    Archived costs the same as dormant by deliberate policy: read-only means no
-    fix will ever land, whatever the maintainer intended. That does conflate
-    "finished" and "moved to another forge" with "abandoned" -- recording a
-    successor is what separates them, and where one exists it replaces the
-    dead-end advice rather than the score.
-    """
-    if status == "archived":
-        return (
-            -35,
-            [_assessment_signal("negative", "Repository is archived (read-only)")],
-            [_lifecycle_recommendation(context, "Find a maintained alternative.")],
-        )
-    if status == "active":
-        return 30, [_assessment_signal("positive", "Recent repository activity", detail=f"{age_days} days")], []
-    if status == "quiet":
-        return (
-            10,
-            [_assessment_signal("neutral", "Repository activity is quiet", detail=f"{age_days} days")],
-            ["Confirm the repository still reflects the deployed tool."],
-        )
-    if status == "stale":
-        return (
-            -20,
-            [_assessment_signal("negative", "Repository has stale activity", detail=f"{age_days} days")],
-            ["Ask the maintainer to confirm ownership and deployment status."],
-        )
-    if status == "dormant":
-        return (
-            -35,
-            [_assessment_signal("negative", "Repository appears dormant", detail=f"{age_days} days")],
-            [_lifecycle_recommendation(context, "Flag the tool for maintainer outreach or archival review.")],
-        )
-    return (
-        0,
-        [_assessment_signal("neutral", "No last-commit age supplied")],
-        ["Provide last commit date or age for no-longer-maintained checks."],
-    )
-
-
-def _maintenance_activity_assessment(context: dict[str, Any]) -> dict[str, Any]:
-    maintenance = context.get("maintenance") if isinstance(context.get("maintenance"), dict) else {}
-    repository = context.get("repository") if isinstance(context.get("repository"), dict) else {}
-    status = str(maintenance.get("status") or "unknown")
-    age_days = _int_context_value(maintenance.get("lastCommitAgeDays"))
-    contributor_count = _int_context_value(maintenance.get("contributorCount"))
-    commit_count = _int_context_value(maintenance.get("commitCount"))
-    delta, signals, recommendations = _activity_status_scoring(context, status, age_days)
-    score = 50 + delta
-    if contributor_count is not None and contributor_count >= MULTIPLE_CONTRIBUTOR_MIN:
-        score += 10
-        signals.append(_assessment_signal("positive", "Multiple contributors detected", detail=str(contributor_count)))
-    elif contributor_count == 1:
-        score -= 10
-        signals.append(_assessment_signal("neutral", "Single-contributor repository", detail="1"))
-        recommendations.append("Consider adding secondary maintainer or ownership metadata.")
-    if commit_count is not None and commit_count < SMALL_COMMIT_HISTORY_THRESHOLD:
-        score -= 10
-        signals.append(_assessment_signal("neutral", "Very small commit history", detail=str(commit_count)))
-    if _replaced_by(context):
-        signals.append(_assessment_signal("positive", "Replacement tool recorded", detail=_replaced_by(context)))
-    if repository.get("dirty") is True:
-        signals.append(_assessment_signal("neutral", "Local checkout had uncommitted changes"))
-    return _assessment(
-        "maintenance-activity",
-        "Maintenance activity",
-        score,
-        0.56 + min(0.34, len(signals) * 0.08),
-        "Whether repository activity suggests the tool is actively maintained or needs outreach.",
-        signals,
-        recommendations,
-    )
-
-
-def _operational_readiness_assessment(report: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    declared = context.get("declared") if isinstance(context.get("declared"), dict) else {}
-    api_values = {item["value"] for item in report["apis"]}
-    score = 35
-    signals: list[dict[str, Any]] = []
-    recommendations: list[str] = []
-    if context.get("runtime"):
-        score += 20
-        signals.append(
-            _assessment_signal(
-                "positive",
-                "Runtime/deploy configuration detected",
-                evidence=_first_context_evidence(context, "runtime"),
-            )
-        )
-    else:
-        recommendations.append("Provide runtime or deployment configuration in the analysis context.")
-    if "toolforge" in api_values or "toolforge" in _context_kinds(context, "runtime"):
-        score += 20
-        signals.append(_assessment_signal("positive", "Toolforge context detected"))
-    if context.get("health") or declared.get("healthUrl"):
-        score += 15
-        signals.append(
-            _assessment_signal(
-                "positive", "Health-check signal present", evidence=_first_context_evidence(context, "health")
-            )
-        )
-    else:
-        recommendations.append("Expose or document a lightweight health endpoint for web services.")
-    if context.get("ci"):
-        score += 10
-        signals.append(_assessment_signal("positive", "CI can support deployment confidence"))
-    return _assessment(
-        "operational-readiness",
-        "Operational readiness",
-        score,
-        0.56 + min(0.34, len(signals) * 0.08),
-        "Whether the repository exposes enough runtime and deployment signals for operators.",
-        signals,
-        recommendations,
-    )
-
-
-def _frontend_accessibility_assessment(report: dict[str, Any], context: dict[str, Any]) -> dict[str, Any] | None:
-    technology_values = {item["value"] for item in _publishable_rows(report["technology"], SCORING_MIN_CONFIDENCE)}
-    has_frontend = bool(technology_values & {"JavaScript", "TypeScript", "React", "Vue", "MediaWiki JavaScript"})
-    if not has_frontend:
-        return None
-    dependency_values = {item["value"] for item in report["dependencies"]}
-    score = 45
-    signals: list[dict[str, Any]] = []
-    recommendations: list[str] = []
-    if context.get("accessibility"):
-        score += 20
-        signals.append(
-            _assessment_signal(
-                "positive",
-                "Accessibility markup or tests detected",
-                evidence=_first_context_evidence(context, "accessibility"),
-            )
-        )
-    else:
-        recommendations.append(
-            "Add visible accessibility markers such as labels, aria state, or keyboard handling tests."
-        )
-    if any("axe" in value for value in dependency_values):
-        score += 20
-        signals.append(_assessment_signal("positive", "Automated a11y tooling dependency detected"))
-    else:
-        recommendations.append("Add automated a11y checks for web-facing tools.")
-    if context.get("tests"):
-        score += 10
-        signals.append(_assessment_signal("positive", "Frontend-adjacent tests detected"))
-    return _assessment(
-        "frontend-accessibility",
-        "Frontend accessibility",
-        score,
-        0.54 + min(0.34, len(signals) * 0.1),
-        "Whether web-facing code includes deterministic accessibility evidence.",
-        signals,
-        recommendations,
-    )
-
-
-def _assessment_summary(assessments: list[dict[str, Any]]) -> dict[str, Any]:
-    scores = [int(item["score"]) for item in assessments]
-    return {
-        "assessmentCount": len(assessments),
-        "assessmentScore": round(sum(scores) / len(scores)) if scores else 0,
-    }
-
-
-def _assessment_index(assessments: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {str(item.get("key")): item for item in assessments}
-
-
-def _health_dimension(  # noqa: PLR0913 - public health dimension fields are intentionally explicit.
-    key: str,
-    label: str,
-    score: int | None,
-    weight: float,
-    summary: str,
-    *,
-    confidence: float,
-    status: str = "",
-    components: tuple[str, ...] = (),
-    applicable: bool = True,
-) -> dict[str, Any]:
-    bounded = _bounded_score(score) if score is not None else None
-    grade = _score_grade(bounded) if bounded is not None else ("unknown" if applicable else "not-applicable")
-    return {
-        "key": key,
-        "label": label,
-        "score": bounded,
-        "grade": grade,
-        "status": status or grade,
-        "weight": weight,
-        "confidence": round(max(0.1, min(0.99, confidence)), 2),
-        "applicable": applicable,
-        "includedInScore": bounded is not None and applicable,
-        "components": list(components),
-        "summary": summary,
-    }
-
-
-def _health_dimension_from_assessments(
-    index: dict[str, dict[str, Any]],
-    spec: tuple[str, str, tuple[str, ...], float, str],
-) -> dict[str, Any]:
-    key, label, assessment_keys, weight, summary = spec
-    rows = [index[item] for item in assessment_keys if item in index]
-    if not rows:
-        return _health_dimension(
-            key,
-            label,
-            None,
-            weight,
-            summary,
-            confidence=0.1,
-            components=assessment_keys,
-            applicable=key != "accessibility",
-        )
-    score = round(sum(int(item.get("score") or 0) for item in rows) / len(rows))
-    confidence = sum(float(item.get("confidence") or 0.1) for item in rows) / len(rows)
-    return _health_dimension(
-        key,
-        label,
-        score,
-        weight,
-        summary,
-        confidence=confidence,
-        components=assessment_keys,
-    )
-
-
-def _maintainer_activity_score(activity: dict[str, Any]) -> int | None:
-    status = str(activity.get("status") or "unknown")
-    if status == "unknown":
-        return None
-    score = {"active": 85, "quiet": 70, "stale": 40, "dormant": 20}.get(status, 50)
-    active_count = _int_context_value(activity.get("activeMaintainerCount"))
-    maintainer_count = _int_context_value(activity.get("maintainerCount"))
-    recent_activity_count = _int_context_value(activity.get("recentActivityCount"))
-    if active_count is not None:
-        if active_count >= MULTIPLE_CONTRIBUTOR_MIN:
-            score += 10
-        elif active_count == 0:
-            score -= 15
-    if maintainer_count is not None:
-        if maintainer_count >= MULTIPLE_CONTRIBUTOR_MIN:
-            score += 5
-        elif maintainer_count == 0:
-            score -= 25
-    if recent_activity_count is not None and recent_activity_count > 0:
-        score += 5
-    return _bounded_score(score)
-
-
-def _maintainer_activity_dimension(context: dict[str, Any]) -> dict[str, Any]:
-    activity = context.get("maintainerActivity") if isinstance(context.get("maintainerActivity"), dict) else {}
-    score = _maintainer_activity_score(activity)
-    status = str(activity.get("status") or "unknown")
-    detail = (
-        "Maintainer activity supplied by trusted context." if activity else "No maintainer activity context supplied."
-    )
-    return _health_dimension(
-        "maintainer-activity",
-        "Maintainer activity",
-        score,
-        MAINTAINER_DIMENSION_WEIGHT,
-        detail,
-        confidence=0.82 if activity else 0.25,
-        status=status,
-    )
-
-
-def _replaced_by(context: dict[str, Any]) -> str:
-    lifecycle = context.get("lifecycle") if isinstance(context.get("lifecycle"), dict) else {}
-    return str(lifecycle.get("replacedBy") or "").strip()
-
-
-def _lifecycle_recommendation(context: dict[str, Any], fallback: str) -> str:
-    """Name the successor when the maintainer recorded one.
-
-    Telling somebody to go find an alternative, or asking a maintainer to
-    confirm a tool they already retired, is wasted advice when the answer is
-    sitting in the catalogue.
-    """
-    replaced_by = _replaced_by(context)
-    return f"Use the recorded replacement: {replaced_by}" if replaced_by else fallback
-
-
-def _terminal_stewardship(context: dict[str, Any], source_status: str) -> str:
-    """Return the verdict no amount of maintainer activity can change, or "".
-
-    These three do not combine with maintainer status the way the rest of the
-    ladder does. A superseded tool stays superseded however busy its author is
-    elsewhere, and an archived repository will receive no further work either
-    way -- so pairing them with maintainer activity would only dilute them.
-    """
-    lifecycle = context.get("lifecycle") if isinstance(context.get("lifecycle"), dict) else {}
-    # A recorded successor is the most complete thing a maintainer can say: it
-    # answers "what should I use instead", which the inferred ladder below only
-    # gestures at. So it wins even over an archived repository.
-    if _replaced_by(context):
-        return "superseded"
-    if lifecycle.get("deprecated") is True:
-        return "deprecated"
-    if source_status == "archived":
-        return "archived"
-    return ""
-
-
-def _stewardship_status(context: dict[str, Any]) -> str:
-    source = context.get("maintenance") if isinstance(context.get("maintenance"), dict) else {}
-    maintainer = context.get("maintainerActivity") if isinstance(context.get("maintainerActivity"), dict) else {}
-    source_status = str(source.get("status") or "unknown")
-    maintainer_status = str(maintainer.get("status") or "unknown")
-    terminal = _terminal_stewardship(context, source_status)
-    if terminal:
-        return terminal
-    stale_source = source_status in {"stale", "dormant"}
-    active_maintainer = maintainer_status in {"active", "quiet"}
-    stale_maintainer = maintainer_status in {"stale", "dormant"}
-    if stale_source and active_maintainer:
-        return "source-stale-maintainer-active"
-    if stale_source and stale_maintainer:
-        return "at-risk"
-    if source_status in {"active", "quiet"} and stale_maintainer:
-        return "maintainer-outreach-needed"
-    if source_status == "active" and maintainer_status == "active":
-        return "healthy"
-    return "needs-context" if "unknown" in {source_status, maintainer_status} else "watch"
-
-
-def _health_core(assessments: list[dict[str, Any]], context: dict[str, Any]) -> dict[str, Any]:
-    index = _assessment_index(assessments)
-    dimensions = [_health_dimension_from_assessments(index, spec) for spec in HEALTH_DIMENSIONS]
-    dimensions.insert(2, _maintainer_activity_dimension(context))
-    score_weight = sum(float(item["weight"]) for item in dimensions if item["includedInScore"])
-    total_weight = sum(float(item["weight"]) for item in dimensions if item["applicable"])
-    weighted_score = sum(float(item["score"]) * float(item["weight"]) for item in dimensions if item["includedInScore"])
-    score = round(weighted_score / score_weight) if score_weight else 0
-    confidence = (score_weight / total_weight) if total_weight else 0.0
-    maintenance = context.get("maintenance") if isinstance(context.get("maintenance"), dict) else {}
-    maintainer = context.get("maintainerActivity") if isinstance(context.get("maintainerActivity"), dict) else {}
-    return {
-        "schemaVersion": 1,
-        "score": score,
-        "grade": _score_grade(score),
-        "confidence": round(confidence, 2),
-        "sourceMaintenanceStatus": str(maintenance.get("status") or "unknown"),
-        "maintainerActivityStatus": str(maintainer.get("status") or "unknown"),
-        "stewardshipStatus": _stewardship_status(context),
-        "replacedBy": _replaced_by(context),
-        "dimensions": dimensions,
-    }
-
-
-def _health_summary(health_core: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "healthScore": int(health_core.get("score") or 0),
-        "healthGrade": str(health_core.get("grade") or "unknown"),
-        "healthConfidence": float(health_core.get("confidence") or 0),
-        "maintenanceStatus": str(health_core.get("sourceMaintenanceStatus") or "unknown"),
-        "maintainerStatus": str(health_core.get("maintainerActivityStatus") or "unknown"),
-        "stewardshipStatus": str(health_core.get("stewardshipStatus") or "needs-context"),
-    }
-
-
-def _assessments(report: dict[str, Any], context: dict[str, Any]) -> list[dict[str, Any]]:
-    rows = [
-        _metadata_completeness_assessment(report, context),
-        _permission_clarity_assessment(report, context),
-        _dependency_health_assessment(report, context),
-        _security_review_assessment(report, context),
-        _maintenance_readiness_assessment(context),
-        _maintenance_activity_assessment(context),
-        _operational_readiness_assessment(report, context),
-    ]
-    frontend = _frontend_accessibility_assessment(report, context)
-    if frontend is not None:
-        rows.append(frontend)
-    return rows
-
-
 def _suggestions(report: dict[str, Any]) -> dict[str, Any]:
-    projects = [
-        item["value"] for item in report["projects"] if _is_publishable_finding(item, PROJECT_SUGGESTION_MIN_CONFIDENCE)
-    ]
-    technology = [
-        item["value"]
-        for item in report["technology"]
-        if _is_publishable_finding(item, TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE)
-    ]
-    apis = _publishable_rows(report["apis"])
-    technology_rows = _publishable_rows(report["technology"], TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE)
+    projects = [item["value"] for item in _corroborated_rows(report["projects"], PROJECT_SUGGESTION_MIN_CONFIDENCE)]
+    technology_rows = _corroborated_rows(report["technology"], TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE)
+    technology = [item["value"] for item in technology_rows]
+    apis = _corroborated_rows(report["apis"])
     wiki_page = report.get("wikiPage")
     wiki_kind = str(wiki_page.get("kind") or "") if isinstance(wiki_page, dict) else ""
     tool_type = _tool_type_suggestion(technology_rows, apis, str(report.get("sourceLabel") or ""), wiki_kind)
-    access_rights = _publishable_rows(report["accessRights"])
-    dependencies = _publishable_rows(report["dependencies"])
-    oauth_scopes = _publishable_rows(report["oauthScopes"])
-    warnings = _publishable_rows(report["warnings"])
+    access_rights = _corroborated_rows(report["accessRights"])
+    dependencies = _corroborated_rows(report["dependencies"])
+    oauth_scopes = _corroborated_rows(report["oauthScopes"])
+    warnings = _corroborated_rows(report["warnings"])
     toolinfo_patch: dict[str, Any] = {}
     if projects:
         toolinfo_patch["for_wikis"] = projects[:50]

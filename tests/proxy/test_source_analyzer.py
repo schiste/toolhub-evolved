@@ -10,7 +10,12 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import source_analyzer, wiki_sources  # noqa: E402
+from backend import (  # noqa: E402
+    source_analysis_assessments,
+    source_analysis_common,
+    source_analyzer,
+    wiki_sources,
+)
 from backend.source_analyzer import (  # noqa: E402
     MAX_FILE_BYTES,
     MAX_FILES,
@@ -348,7 +353,37 @@ def test_source_analyzer_handles_database_names_without_technology_suggestion():
     report = analyze_source_files([{"path": "README.md", "content": "Targets enwiki and commonswiki."}])
     assert {"enwiki", "commonswiki"} <= values(report, "projects")
     assert report["technology"] == []
-    assert report["suggestions"]["toolinfoPatch"] == {"for_wikis": ["commonswiki", "enwiki"]}
+    # Found, reported with its evidence -- but a single mention in prose is not
+    # enough to write onto someone's catalogue record. See _is_corroborated().
+    assert report["suggestions"]["toolinfoPatch"] == {}
+
+
+def test_a_wiki_named_once_in_prose_is_reported_but_not_suggested():
+    report = analyze_source_files([{"path": "README.md", "content": "Targets enwiki."}])
+
+    assert values(report, "projects") == {"enwiki"}
+    assert report["projects"][0]["fileCount"] == 1
+    assert report["suggestions"]["toolinfoPatch"] == {}
+
+
+def test_a_wiki_named_in_two_documents_is_corroborated_enough_to_suggest():
+    report = analyze_source_files(
+        [
+            {"path": "README.md", "content": "Targets enwiki."},
+            {"path": "docs/usage.md", "content": "Runs against enwiki."},
+        ]
+    )
+
+    assert report["projects"][0]["fileCount"] == 2
+    assert report["suggestions"]["toolinfoPatch"] == {"for_wikis": ["enwiki"]}
+
+
+def test_a_wiki_named_once_in_the_tools_own_source_needs_no_second_opinion():
+    report = analyze_source_files([{"path": "src/app.js", "content": "const wiki = 'enwiki';"}])
+
+    assert report["projects"][0]["fileCount"] == 1
+    assert report["projects"][0]["maxSourceWeight"] >= 0.85
+    assert report["suggestions"]["toolinfoPatch"]["for_wikis"] == ["enwiki"]
 
 
 def test_source_analyzer_ignores_dependency_and_build_paths():
@@ -482,7 +517,9 @@ def test_source_analyzer_avoids_cli_action_keywords_and_local_python_modules():
         ("meta.wikimedia.org", "meta", "wikimedia", ("metawiki", "Meta-Wiki", 0.94)),
         ("www.mediawiki.org", "www", "mediawiki", ("mediawikiwiki", "MediaWiki.org", 0.92)),
         ("en.wikipedia.org", "en", "wikipedia", ("enwiki", "en.wikipedia.org", 0.9)),
-        ("api.wikimedia.org", "api", "wikimedia", ("api.wikimedia.org", "api.wikimedia.org", 0.78)),
+        # An API host is not a wiki. This case previously pinned the old
+        # fallthrough, which published the raw hostname into for_wikis.
+        ("api.wikimedia.org", "api", "wikimedia", None),
     ],
 )
 def test_project_host_mapping(host, sub, family, expected):
@@ -566,14 +603,14 @@ def test_source_analyzer_utility_branches_are_stable():
     assert source_analyzer._test_kind("src/app.test.js") == "test-file"
     assert source_analyzer._lock_package_from_locator("./local@npm:1") is None
     assert source_analyzer._lock_package_from_locator("@scope/pkg@npm:^1") == "@scope/pkg"
-    assert source_analyzer._score_grade(40) == "high-risk"
+    assert source_analysis_assessments._score_grade(40) == "high-risk"
     assert source_analyzer._clean_context_value(True) is True
     assert source_analyzer._clean_context_value(5) == 5
     assert source_analyzer._clean_context_list("basic") == ["basic"]
     assert source_analyzer._normalize_repository_context(None) == {}
-    assert source_analyzer._context_kinds({"rows": [None]}, "rows") == set()
-    assert source_analyzer._declared_list({"declared": {"oauthScopes": "basic"}}, "oauthScopes") == set()
-    assert source_analyzer._category_counts(
+    assert source_analysis_common._context_kinds({"rows": [None]}, "rows") == set()
+    assert source_analysis_common._declared_list({"declared": {"oauthScopes": "basic"}}, "oauthScopes") == set()
+    assert source_analysis_common._category_counts(
         {"dependencySources": {"categories": [None, {"category": "imported", "count": "2"}]}}
     ) == {"imported": 2}
     assert source_analyzer._dependency_source_context({"dependencies": [{"value": "bad", "category": "runtime"}]}) == {
@@ -585,12 +622,12 @@ def test_source_analyzer_utility_branches_are_stable():
     assert source_analyzer._source_class("tests/unit/example.test.js") == "test"
     assert source_analyzer._source_class("package-lock.json") == "lockfile"
     assert source_analyzer._activity_status(800) == "dormant"
-    assert source_analyzer._first_finding_evidence({"rows": [{}, {"evidence": []}]}, "rows") is None
-    assert source_analyzer._first_context_evidence({"rows": [None, {"kind": "b", "path": "p"}]}, "rows", "a") is None
+    assert source_analysis_assessments._first_finding_evidence({"rows": [{}, {"evidence": []}]}, "rows") is None
+    assert source_analysis_assessments._first_context_evidence({"rows": [None, {"kind": "b", "path": "p"}]}, "rows", "a") is None
     stray_findings = {}
     source_analyzer._scan_lockfile_dependencies(stray_findings, source_analyzer.SourceFile("unknown.lock", ""))
     assert stray_findings == {}
-    clamped = source_analyzer._assessment(
+    clamped = source_analysis_assessments._assessment(
         "x",
         "X",
         -10,
@@ -601,7 +638,7 @@ def test_source_analyzer_utility_branches_are_stable():
     )
     assert clamped["score"] == 0
     assert clamped["confidence"] == 0.99
-    assert len(clamped["signals"]) == source_analyzer.MAX_ASSESSMENT_SIGNALS
+    assert len(clamped["signals"]) == source_analysis_common.MAX_ASSESSMENT_SIGNALS
     assert source_analyzer._clean_dependency_name("") is None
     assert source_analyzer._clean_dependency_name("x" * 121) is None
     assert source_analyzer._clean_dependency_name("https://example.org/pkg") is None
@@ -750,7 +787,7 @@ def test_source_class_covers_fixture_example_and_unknown_paths():
     assert source_analyzer._source_class("src/fixtures/data.json") == "fixture"
     assert source_analyzer._source_class("src/examples/demo.js") == "example"
     assert source_analyzer._source_class("data.csv") == "unknown"
-    assert source_analyzer._source_weight("data.csv") == source_analyzer.SOURCE_CLASS_WEIGHTS["unknown"]
+    assert source_analyzer._source_weight("data.csv") == source_analysis_common.SOURCE_CLASS_WEIGHTS["unknown"]
 
 
 def test_local_python_import_roots_skips_case_mismatched_python_suffix():
@@ -760,15 +797,15 @@ def test_local_python_import_roots_skips_case_mismatched_python_suffix():
 
 
 def test_parse_iso_datetime_handles_explicit_offsets_and_malformed_text():
-    parsed = source_analyzer._parse_iso_datetime("2026-07-30T12:00:00+00:00")
+    parsed = source_analysis_common._parse_iso_datetime("2026-07-30T12:00:00+00:00")
     assert parsed is not None
     assert parsed.tzinfo is not None
-    assert source_analyzer._parse_iso_datetime("not-a-date") is None
+    assert source_analysis_common._parse_iso_datetime("not-a-date") is None
 
 
 def test_int_context_value_rejects_booleans():
-    assert source_analyzer._int_context_value(True) is None
-    assert source_analyzer._int_context_value(False) is None
+    assert source_analysis_common._int_context_value(True) is None
+    assert source_analysis_common._int_context_value(False) is None
 
 
 def test_last_commit_age_days_uses_provided_age_when_present():
@@ -778,10 +815,10 @@ def test_last_commit_age_days_uses_provided_age_when_present():
 
 def test_activity_and_maintainer_status_cover_every_band():
     assert source_analyzer._activity_status(200) == "quiet"
-    assert source_analyzer._maintainer_status(None) == "unknown"
-    assert source_analyzer._maintainer_status(200) == "quiet"
-    assert source_analyzer._maintainer_status(500) == "stale"
-    assert source_analyzer._maintainer_status(800) == "dormant"
+    assert source_analysis_common._maintainer_status(None) == "unknown"
+    assert source_analysis_common._maintainer_status(200) == "quiet"
+    assert source_analysis_common._maintainer_status(500) == "stale"
+    assert source_analysis_common._maintainer_status(800) == "dormant"
 
 
 def test_repository_maintenance_context_flags_dirty_checkout():
@@ -790,7 +827,7 @@ def test_repository_maintenance_context_flags_dirty_checkout():
 
 
 def test_maintainer_activity_context_falls_back_to_repository_analyzed_at():
-    context = source_analyzer._maintainer_activity_context(
+    context = source_analysis_assessments._maintainer_activity_context(
         {"lastActivityAt": "2026-07-30T00:00:00Z"},
         {"analyzedAt": "2026-08-01T00:00:00Z"},
     )
@@ -798,7 +835,7 @@ def test_maintainer_activity_context_falls_back_to_repository_analyzed_at():
 
 
 def test_maintainer_activity_context_prefers_its_own_analyzed_at_over_repository():
-    context = source_analyzer._maintainer_activity_context(
+    context = source_analysis_assessments._maintainer_activity_context(
         {"lastActivityAt": "2026-07-30T00:00:00Z", "analyzedAt": "2026-08-01T00:00:00Z"},
         {"analyzedAt": "2026-09-01T00:00:00Z"},
     )
@@ -806,14 +843,14 @@ def test_maintainer_activity_context_prefers_its_own_analyzed_at_over_repository
 
 
 def test_maintainer_activity_context_leaves_age_unknown_without_any_dates():
-    context = source_analyzer._maintainer_activity_context({"source": "toolhub"}, {})
+    context = source_analysis_assessments._maintainer_activity_context({"source": "toolhub"}, {})
     assert context["lastActivityAgeDays"] is None
     assert context["status"] == "unknown"
     assert "last-maintainer-activity-age" not in {item["kind"] for item in context["signals"]}
 
 
 def test_maintainer_activity_context_handles_missing_counts():
-    context = source_analyzer._maintainer_activity_context({"lastActivityAgeDays": 10}, {})
+    context = source_analysis_assessments._maintainer_activity_context({"lastActivityAgeDays": 10}, {})
     signal_kinds = {item["kind"] for item in context["signals"]}
     assert context["maintainerCount"] is None
     assert context["activeMaintainerCount"] is None
@@ -831,7 +868,7 @@ def test_security_review_assessment_flags_admin_actions_and_unauthenticated_writ
         ],
         "authentication": [],
     }
-    result = source_analyzer._security_review_assessment(report, {})
+    result = source_analysis_assessments._security_review_assessment(report, {})
     labels = {signal["label"] for signal in result["signals"]}
     assert "Administrator or suppressive actions need review" in labels
     assert "Write action without authentication evidence" in labels
@@ -840,7 +877,7 @@ def test_security_review_assessment_flags_admin_actions_and_unauthenticated_writ
 
 
 def test_maintenance_activity_assessment_flags_quiet_status_and_dirty_checkout():
-    result = source_analyzer._maintenance_activity_assessment(
+    result = source_analysis_assessments._maintenance_activity_assessment(
         {
             "maintenance": {"status": "quiet", "lastCommitAgeDays": 200},
             "repository": {"dirty": True},
@@ -853,7 +890,7 @@ def test_maintenance_activity_assessment_flags_quiet_status_and_dirty_checkout()
 
 
 def test_maintenance_activity_assessment_flags_dormant_status():
-    result = source_analyzer._maintenance_activity_assessment(
+    result = source_analysis_assessments._maintenance_activity_assessment(
         {"maintenance": {"status": "dormant", "lastCommitAgeDays": 900}}
     )
     labels = {signal["label"] for signal in result["signals"]}
@@ -862,22 +899,22 @@ def test_maintenance_activity_assessment_flags_dormant_status():
 
 
 def test_maintainer_activity_score_covers_every_count_branch():
-    assert source_analyzer._maintainer_activity_score({"status": "quiet"}) == 70
-    assert source_analyzer._maintainer_activity_score({"status": "active", "activeMaintainerCount": 5}) == 95
-    assert source_analyzer._maintainer_activity_score({"status": "active", "activeMaintainerCount": 0}) == 70
-    assert source_analyzer._maintainer_activity_score({"status": "active", "maintainerCount": 0}) == 60
-    assert source_analyzer._maintainer_activity_score({"status": "active", "maintainerCount": 1}) == 85
+    assert source_analysis_assessments._maintainer_activity_score({"status": "quiet"}) == 70
+    assert source_analysis_assessments._maintainer_activity_score({"status": "active", "activeMaintainerCount": 5}) == 95
+    assert source_analysis_assessments._maintainer_activity_score({"status": "active", "activeMaintainerCount": 0}) == 70
+    assert source_analysis_assessments._maintainer_activity_score({"status": "active", "maintainerCount": 0}) == 60
+    assert source_analysis_assessments._maintainer_activity_score({"status": "active", "maintainerCount": 1}) == 85
 
 
 def test_stewardship_status_covers_at_risk_and_outreach_branches():
     assert (
-        source_analyzer._stewardship_status(
+        source_analysis_assessments._stewardship_status(
             {"maintenance": {"status": "stale"}, "maintainerActivity": {"status": "dormant"}}
         )
         == "at-risk"
     )
     assert (
-        source_analyzer._stewardship_status(
+        source_analysis_assessments._stewardship_status(
             {"maintenance": {"status": "active"}, "maintainerActivity": {"status": "stale"}}
         )
         == "maintainer-outreach-needed"
@@ -1057,7 +1094,7 @@ def test_a_url_at_the_line_budget_is_not_reported_half_read():
     # nowhere, and reads in a report as a service the app contacts.
     filler = "word " * 120
     content = f"{filler}https://avatars.githubusercontent.com/u/12345 trailing"
-    assert len(content) > source_analyzer.MAX_LINE_CHARS
+    assert len(content) > source_analysis_common.MAX_LINE_CHARS
     report = analyze_source_files([{"path": "README.md", "content": content}])
     assert all("githubuserc" not in item["value"] for item in report["endpoints"])
 
@@ -1068,7 +1105,7 @@ def test_a_line_with_no_token_boundary_is_still_read():
     # would blind it to them entirely.
     head = "x='" + "a" * 300 + "';fetch('https://api.acme-data.org/v1');"
     content = head + "b" * 400
-    assert len(head) < source_analyzer.MAX_LINE_CHARS < len(content)
+    assert len(head) < source_analysis_common.MAX_LINE_CHARS < len(content)
     assert " " not in content
     report = analyze_source_files([{"path": "src/app.js", "content": content}])
     assert [item["value"] for item in report["endpoints"]] == ["api.acme-data.org/v1"]
@@ -1110,7 +1147,7 @@ def test_the_reading_order_reads_a_windows_separator_as_a_path_separator():
 
 def bucket_finding(label, confidence, paths):
     row = source_analyzer.Finding(
-        value=label, label=label, kind="endpoints", category="api", confidence=confidence
+        value=label, label=label, kind="endpoints", category="api", base_confidence=confidence
     )
     row.evidence = [{"path": path} for path in paths]
     return row
@@ -1383,13 +1420,13 @@ def test_a_promoted_technology_keeps_the_category_its_kind_belongs_in():
 
 def test_only_evidence_somebody_wrote_down_can_promote_a_technology():
     lockfile_only = source_analyzer.Finding(
-        value="npm:react", label="react (npm)", kind="dependencies", category="locked", confidence=0.8
+        value="npm:react", label="react (npm)", kind="dependencies", category="locked", base_confidence=0.8
     )
     lockfile_only.add(0.8, "Locked npm dependency.", {"sourceClass": "lockfile"})
     assert source_analyzer._declared_evidence(lockfile_only) is None
 
     declared = source_analyzer.Finding(
-        value="npm:react", label="react (npm)", kind="dependencies", category="runtime", confidence=0.9
+        value="npm:react", label="react (npm)", kind="dependencies", category="runtime", base_confidence=0.9
     )
     declared.add(0.9, "Locked npm dependency.", {"sourceClass": "lockfile"})
     declared.add(0.9, "Declared npm runtime dependency.", {"sourceClass": "manifest", "path": "package.json"})
@@ -1436,3 +1473,212 @@ def test_a_jsx_component_is_worth_reading_as_much_as_the_js_file_beside_it():
     baseline = source_reading_rank("src/app.js")[0]
     for suffix in (".cjs", ".jsx", ".mjs"):
         assert source_reading_rank(f"src/app{suffix}")[0] == baseline, suffix
+
+
+# --- F2: for_wikis is a closed vocabulary -----------------------------------
+#
+# These pin values observed in a live run of the analyzer over this repository,
+# where 7 of 29 emitted "projects" were Python identifiers or regex artifacts.
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    ["target_wiki", "clean_wiki", "whole_wiki", "created_at_wiki", "touched_at_wiki", "enumerate_wiki"],
+)
+def test_underscore_identifiers_are_not_wikis(identifier):
+    """An underscore directly before the suffix marks an identifier, not a wiki."""
+    assert source_analysis_common.PROJECT_DB_RE.findall(identifier) == []
+
+
+@pytest.mark.parametrize("db_name", ["enwiki", "commonswiki", "zh_yuewiki", "be_x_oldwiki", "simplewiki"])
+def test_real_database_names_still_match(db_name):
+    """Underscores inside a language code are legitimate and must survive."""
+    assert source_analysis_common.PROJECT_DB_RE.findall(db_name) == [db_name]
+
+
+@pytest.mark.parametrize("word", ["interwiki", "dokuwiki", "xwiki", "mediawiki"])
+def test_wiki_vocabulary_words_are_not_database_names(word):
+    """These match the shape but name a concept or a competing engine."""
+    assert word in source_analysis_common.IGNORED_PROJECT_DB_NAMES
+
+
+def test_capitalised_prefix_does_not_leak_a_truncated_match():
+    """`MediaWiki:Gadget-*` used to yield the database name `ediawiki`."""
+    assert source_analysis_common.PROJECT_DB_RE.findall("# `MediaWiki:Gadget-LinkTransform`") == []
+
+
+@pytest.mark.parametrize(
+    "host,sub",
+    [
+        ("gerrit.wikimedia.org", "gerrit"),
+        ("phabricator.wikimedia.org", "phabricator"),
+        ("upload.wikimedia.org", "upload"),
+        ("toolsadmin.wikimedia.org", "toolsadmin"),
+    ],
+)
+def test_wikimedia_infrastructure_hosts_are_not_wikis(host, sub):
+    assert source_analyzer._project_from_host(host, sub, "wikimedia") is None
+
+
+def test_every_content_family_maps_to_a_database_name():
+    """fr.wikipedia.org became `frwiki` while fr.wiktionary.org stayed a hostname."""
+    assert source_analyzer._project_from_host("fr.wikipedia.org", "fr", "wikipedia")[0] == "frwiki"
+    assert source_analyzer._project_from_host("fr.wiktionary.org", "fr", "wiktionary")[0] == "frwiktionary"
+    assert source_analyzer._project_from_host("de.wikisource.org", "de", "wikisource")[0] == "dewikisource"
+
+
+def test_hyphenated_language_subdomain_becomes_an_underscored_database_name():
+    assert source_analyzer._project_from_host("zh-yue.wikipedia.org", "zh-yue", "wikipedia")[0] == "zh_yuewiki"
+
+
+def test_mobile_subdomain_does_not_become_the_wiki_m():
+    """`en.m.wikipedia.org` presents `m` as the subdomain."""
+    assert source_analyzer._project_from_host("en.m.wikipedia.org", "m", "wikipedia") is None
+
+
+# --- F1: the reading budget reserves slots for context -----------------------
+
+
+def _many_runtime_files(count=400):
+    return [f"src/module_{i:04d}.py" for i in range(count)]
+
+
+def test_reserve_reaches_context_past_a_full_budget_of_code():
+    """The defect: on a repo with >= MAX_FILES code files, no README is reachable."""
+    paths = [*_many_runtime_files(), "README.md", "LICENSE", ".github/workflows/ci.yml", "tests/test_a.py"]
+    head = source_analyzer.order_sources_for_reading(paths)[:MAX_FILES]
+    for expected in ("README.md", "LICENSE", ".github/workflows/ci.yml", "tests/test_a.py"):
+        assert expected in head, expected
+
+
+def test_plain_weight_ranking_would_have_missed_them():
+    """Pins the behaviour being corrected, so the fix cannot silently regress."""
+    paths = [*_many_runtime_files(), "README.md", ".github/workflows/ci.yml", "tests/test_a.py"]
+    head = sorted(paths, key=source_reading_rank)[:MAX_FILES]
+    assert "README.md" not in head
+    assert ".github/workflows/ci.yml" not in head
+
+
+def test_one_class_cannot_consume_the_whole_reserve():
+    """22 docs candidates used to take all 20 slots, starving ci/tests again."""
+    paths = [*_many_runtime_files(), *[f"docs/page_{i}.md" for i in range(40)], ".github/workflows/ci.yml", "tests/test_a.py"]
+    head = source_analyzer.order_sources_for_reading(paths)[:MAX_FILES]
+    assert ".github/workflows/ci.yml" in head
+    assert "tests/test_a.py" in head
+
+
+def test_unused_quota_spills_to_other_context_classes():
+    """A repository with no CI should spend those slots, not waste them."""
+    paths = [*_many_runtime_files(), *[f"tests/test_{i}.py" for i in range(30)]]
+    reserved = source_analyzer.order_sources_for_reading(paths)[: source_analysis_common.CONTEXT_RESERVE_SLOTS]
+    assert sum(1 for p in reserved if p.startswith("tests/")) > 6  # more than the bare test quota
+
+
+def test_reserve_never_drops_or_duplicates_a_candidate():
+    paths = [*_many_runtime_files(50), "README.md", "tests/test_a.py", ".github/workflows/ci.yml"]
+    ordered = source_analyzer.order_sources_for_reading(paths)
+    assert sorted(ordered) == sorted(paths)
+    assert len(ordered) == len(set(ordered))
+
+
+def test_ordering_accepts_a_path_extractor_for_tuple_candidates():
+    """repository_scan carries (oid, path) pairs through the same ordering."""
+    items = [("oid-a", "src/app.py"), ("oid-b", "README.md")]
+    ordered = source_analyzer.order_sources_for_reading(items, lambda entry: entry[1])
+    assert ordered[0] == ("oid-b", "README.md")
+
+
+def test_a_repository_with_no_context_files_is_ordered_by_weight_alone():
+    paths = _many_runtime_files(10)
+    assert source_analyzer.order_sources_for_reading(paths) == sorted(paths, key=source_reading_rank)
+
+
+def test_the_reserve_never_crowds_out_a_small_budget():
+    """At MAX_FILES=1 a 20-slot reserve would spend the only slot on a doc."""
+    paths = ["docs/guide.md", "src/client.py"]
+    assert source_analyzer.order_sources_for_reading(paths, budget=1) == ["src/client.py", "docs/guide.md"]
+
+
+def test_reserve_scales_with_the_budget_in_force():
+    assert source_analyzer.order_sources_for_reading(["README.md"], budget=6)[:1] == ["README.md"]
+    paths = [*_many_runtime_files(30), "README.md"]
+    assert "README.md" not in source_analyzer.order_sources_for_reading(paths, budget=5)[:5]
+
+
+# --- F3: corroboration is per distinct file, and bounded ---------------------
+
+
+def _ev(path, weight=1.0, source_class="runtime"):
+    return {"path": path, "line": 1, "match": "m", "excerpt": "e", "sourceClass": source_class, "sourceWeight": weight}
+
+
+def _finding():
+    return source_analyzer.Finding(value="v", label="v", kind="projects", category="wiki")
+
+
+def test_repetition_within_one_file_is_one_observation():
+    """Thirty hits in a single file used to add ~0.87 of confidence."""
+    single = _finding()
+    for line in range(30):
+        single.add(0.76, "r", {**_ev("src/app.py"), "line": line})
+    once = _finding()
+    once.add(0.76, "r", _ev("src/app.py"))
+    assert single.confidence == pytest.approx(once.confidence)
+
+
+def test_distinct_files_do_corroborate():
+    spread = _finding()
+    spread.add(0.76, "r", _ev("src/a.py"))
+    spread.add(0.76, "r", _ev("src/b.py"))
+    assert spread.confidence > 0.76
+
+
+def test_corroboration_is_bounded_by_the_file_count():
+    many = _finding()
+    for i in range(40):
+        many.add(0.76, "r", _ev(f"src/f{i}.py"))
+    ceiling = 0.76 + source_analysis_common.CONFIDENCE_MAX_CORROBORATING_FILES * source_analysis_common.CONFIDENCE_REPEAT_BOOST
+    assert many.confidence <= ceiling + 1e-9
+
+
+def test_low_provenance_files_never_corroborate():
+    fixtures = _finding()
+    for i in range(10):
+        fixtures.add(0.76, "r", _ev(f"tests/fixture_{i}.py", weight=0.15, source_class="fixture"))
+    assert fixtures.confidence < 0.76  # weighted down, and never boosted
+
+
+def test_a_repeated_false_positive_cannot_reach_certainty_on_volume():
+    """The shape of the clean_wiki failure: one idiom, many sightings."""
+    noisy = _finding()
+    for i in range(50):
+        noisy.add(0.76, "r", _ev(f"src/module_{i}.py"))
+    assert noisy.confidence < 0.9
+
+
+def test_a_trivial_repository_is_not_confidently_graded():
+    """One file containing print(1) used to be graded high-risk at 0.81."""
+    core = analyze_source_files([{"path": "main.py", "content": "print(1)"}])["healthCore"]
+
+    assert core["confidence"] < source_analysis_common.HEALTH_MIN_SCORING_CONFIDENCE
+    assert core["grade"] == "unknown"
+    # The measurement stays readable; only the verdict is withheld.
+    assert core["score"] > 0
+    assert core["dimensions"]
+
+
+def test_a_withheld_grade_still_reports_every_dimension_it_measured():
+    core = analyze_source_files([{"path": "main.py", "content": "print(1)"}])["healthCore"]
+
+    assert core["grade"] == "unknown"
+    scored = [item for item in core["dimensions"] if item["includedInScore"]]
+    assert len(scored) >= 4
+    assert all(item["score"] is not None for item in scored)
+
+
+def test_composite_confidence_follows_the_dimensions_rather_than_their_count():
+    """Coverage said 0.81 for a repository that knew almost nothing."""
+    core = analyze_source_files([{"path": "main.py", "content": "print(1)"}])["healthCore"]
+    scored = [item for item in core["dimensions"] if item["includedInScore"]]
+
+    assert core["confidence"] <= max(item["confidence"] for item in scored)

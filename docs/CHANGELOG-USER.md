@@ -1,11 +1,14 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-census-that-finishes -->
-<!-- Release title: The Census That Finishes -->
-<!-- Source range: 1e7b87b..cc8f66a (2 commits) -->
+<!-- Release id: evidence-before-verdict -->
+<!-- Release title: Evidence Before Verdict -->
+<!-- Source range: 1195ec6..d328dce (15 commits) -->
 
 # What's New for Users
 
-- English Wikipedia's user scripts are in the directory: 9,742 of them, 3,232 listed as active and 6,510 as archived. It is by far the largest collection of user scripts anywhere, and none of it appeared here before, because the hourly job that reads it ran out of memory at the same point every time and never got as far as writing anything down.
-- That is roughly four times as many user-script tools as the directory held yesterday, and it arrives from a census that had already read 154,963 English Wikipedia pages -- the reading was never the part that was failing.
-- A census run that is cut short now keeps the pages it had already read. The directory fills in steadily from wiki to wiki instead of throwing away an hour's work whenever a run does not reach the end.
+- The wikis listed on a tool are now wikis. The field was filled from anything that looked like a database name in the source, so it collected build targets, table names and configuration keys alongside real projects; it is now drawn from the list of wikis that actually exist, and a name that is not one of them is not offered.
+- A repository the directory cannot judge is now graded **Unknown** instead of being given a bad score. A repository holding a single trivial file used to come back "high-risk" with high confidence, which is a verdict on the evidence, not on the tool. When the measurements behind a score are too thin to support a grade, the grade is withheld and every dimension the analyzer did measure is still shown.
+- Suggested catalogue values need a second opinion before they are offered. A name mentioned once in a README is still reported in the analysis, but it is no longer put forward as something to write into a tool's record unless it also appears in a file the directory trusts on its own — a manifest, a lockfile, the tool's own source — or in a second file.
+- Documentation, tests and continuous-integration setup are read again. The analyzer reads a bounded number of files per repository, and repositories with many manifests were spending the whole budget before reaching anything else, so their documentation and testing readiness scored zero for lack of a file rather than for lack of the thing. A share of the budget is now held back for the parts that were being crowded out.
+- The same repository now produces the same numbers. Confidence was accumulated as files arrived, so the order the analyzer happened to read a repository in could change the reported confidence and the order of a tool's wikis. It is now derived from all the evidence at once, and repeating a claim ten times in one file no longer counts as ten corroborations — only distinct files count, up to three.
+- A Toolhub outage no longer reads as "this tool is on Toolhub". When the upstream catalogue failed to answer, the crawler recorded the same result as a successful answer of "no such tool", which is how a tool that exists gets treated as if it does not. Failure to reach Toolhub is now recorded as exactly that, and left for the next run.

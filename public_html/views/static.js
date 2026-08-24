@@ -429,7 +429,7 @@ function healthThresholdsTable() {
 				esc(t("static.healthScore.gradeName", "Grade")),
 				tWithElements(
 					"static.healthScore.gradeValue",
-					"Legendary ($1) >= 85; Great ($2) >= 70; Needs attention ($3) >= 50; Needs attention ($4) < 50; Unknown ($5) when no score exists.",
+					"Legendary ($1) >= 85; Great ($2) >= 70; Needs attention ($3) >= 50; Needs attention ($4) < 50; Unknown ($5) when no score exists, or when the scored dimensions were not confident enough to support a grade.",
 					{ html: code("strong") },
 					{ html: code("good") },
 					{ html: code("needs-attention") },

@@ -62,7 +62,7 @@ from backend.source_analyzer import (
     SourceAnalysisError,
     analyze_source_files,
     is_supported_source_path,
-    source_reading_rank,
+    order_sources_for_reading,
 )
 from backend.sync import REVIEW_APPROVED, SOURCE_REPOSITORY_SCAN, SYNC_ERROR, SYNC_EVOLVED_REAL, clean_error
 from backend.v1_common import build_local_tool_summary
@@ -344,14 +344,15 @@ def _parse_batch(stream: bytes) -> dict[str, bytes]:
 
 def _read_repository_tree(repo: Path) -> list[dict[str, str]]:
     """Select and read analyzable sources under the same caps as the local reader."""
-    candidates = sorted(
-        (
+    candidates = order_sources_for_reading(
+        [
             (oid, path)
             for oid, path in _tree_entries(repo)
             if not ({part.lower() for part in Path(path).parts} & IGNORED_SOURCE_DIRS)
             and is_supported_source_path(path)
-        ),
-        key=lambda entry: source_reading_rank(entry[1]),
+        ],
+        lambda entry: entry[1],
+        budget=MAX_FILES,
     )
     files: list[dict[str, str]] = []
     total = 0
@@ -872,6 +873,20 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
                 tool_name=tool_name,
                 source_label=url,
                 report=report,
+                # Approved on write, unlike the /v1/source-analysis/ lane, which
+                # stores REVIEW_OPEN. The split is about the trust basis of the
+                # *input*, not about who or what did the analysis -- both lanes
+                # run the same deterministic analyzer. That endpoint analyzes
+                # files supplied in the request body for a caller-supplied
+                # toolName, so a caller can choose the input and thereby choose
+                # the conclusions, about a tool that need not be theirs; that
+                # has to be reviewed before it can reach the public record.
+                # Here the input is a clone this job fetched itself, from an
+                # allowlisted host named on the tool's own record. Nothing a
+                # third party supplies chooses what is read, so there is no
+                # reviewer whose judgement would add anything a gate cannot.
+                # The gate that does apply is _suggestions()' corroboration
+                # requirement, which bounds what reaches toolinfoPatch.
                 review_status=REVIEW_APPROVED,
                 reviewed_at=utcnow(),
                 source=SOURCE_REPOSITORY_SCAN,

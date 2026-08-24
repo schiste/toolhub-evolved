@@ -32,6 +32,8 @@ _CALLER = outbound.Caller(
     scheme_error="only https toolinfo URLs are crawled",
 )
 HTTP_NOT_FOUND = 404
+HTTP_OK = 200
+HTTP_MULTIPLE_CHOICES = 300
 SIGNED_TOOLINFO_PROVIDER = SignedToolinfoProvider()
 
 # What the official Toolhub told us about a name, and how we report the outcome.
@@ -60,12 +62,22 @@ def upstream_state(session: requests.Session, name: str) -> str:
     ask". Only a confirmed miss may be ingested — that is what stops a Toolhub
     outage from making us shadow an upstream record — but the two non-miss cases
     are not equally healthy, so classify_upstream() reports them separately.
+
+    An outage does not only arrive as a RequestException. Toolhub answers 429
+    when it is rate-limiting us and 5xx when it is unwell, and both used to fall
+    through to UPSTREAM_PRESENT here — reporting "exists upstream on Toolhub"
+    about a name nobody managed to look up. Only a 2xx is a confirmed hit; every
+    other status is a failure to ask, which is what UPSTREAM_UNREACHABLE means.
     """
     try:
         resp = session.get(f"{UPSTREAM_TOOL}{name}/", headers={"User-Agent": UA}, timeout=TIMEOUT)
     except requests.RequestException:
         return UPSTREAM_UNREACHABLE
-    return UPSTREAM_ABSENT if resp.status_code == HTTP_NOT_FOUND else UPSTREAM_PRESENT
+    if resp.status_code == HTTP_NOT_FOUND:
+        return UPSTREAM_ABSENT
+    if HTTP_OK <= resp.status_code < HTTP_MULTIPLE_CHOICES:
+        return UPSTREAM_PRESENT
+    return UPSTREAM_UNREACHABLE
 
 
 def classify_upstream(state: str, name: str) -> tuple[str, str] | None:
@@ -76,13 +88,13 @@ def classify_upstream(state: str, name: str) -> tuple[str, str] | None:
     that should leave the run green, or BUCKET_ERROR for one that should fail the
     run and count toward the job guard's three-strike disable.
 
-    TODO(christophe): UPSTREAM_UNREACHABLE is the judgement call. Treating it as
-    BUCKET_SKIPPED keeps a Toolhub outage from disabling the crawler again, but
-    an extended outage then reads as a permanently green, permanently idle job.
-    Treating it as BUCKET_ERROR surfaces the outage loudly at the cost of the
-    same disable behaviour we are fixing here — bounded, since an outage is
-    transient where "exists upstream" was permanent. The interim default below
-    is the conservative one; change it if you want the outage to shout.
+    UPSTREAM_UNREACHABLE stays BUCKET_SKIPPED deliberately: routing it to
+    BUCKET_ERROR would restore the three-strike disable this bucket split was
+    introduced to stop. What made the old behaviour dangerous was not the green
+    verdict but that an outage was indistinguishable from a quiet run, so the
+    caller counts unreachable answers separately and reports them on the run
+    summary line. A green run that skipped everything for want of an upstream
+    now says so.
     """
     if state == UPSTREAM_ABSENT:
         return None
@@ -135,9 +147,12 @@ def _ingest_items(  # noqa: PLR0913, PLR0917 - signed-toolinfo evidence needs th
             if owner is not None:
                 SIGNED_TOOLINFO_PROVIDER.verify(s, owner, toolinfo=item, evidence_url=toolinfo_url)
                 affected_names.add(name)
-            verdict = classify_upstream(upstream_state(session, name), name)
+            state = upstream_state(session, name)
+            verdict = classify_upstream(state, name)
             if verdict is not None:
                 bucket, message = verdict
+                if state == UPSTREAM_UNREACHABLE:
+                    counts["unreachable"] += 1
                 (errors if bucket == BUCKET_ERROR else skipped).append(message)
                 continue
             existing = s.execute(
@@ -177,8 +192,20 @@ def _ingest_items(  # noqa: PLR0913, PLR0917 - signed-toolinfo evidence needs th
 
 def run_crawl() -> CrawlerRun:
     """One full crawl pass; records and returns a CrawlerRun row."""
+    run, _unreachable = run_crawl_with_counts()
+    return run
+
+
+def run_crawl_with_counts() -> tuple[CrawlerRun, int]:
+    """One full crawl pass, plus how many names went unanswered upstream.
+
+    The unreachable tally is not a CrawlerRun column — it needs no migration and
+    the individual messages are already durable in run.skipped. It is returned
+    here so the job summary can distinguish a run that had nothing to do from
+    one that could not ask.
+    """
     session = requests.Session()
-    counts = {"added": 0, "updated": 0}
+    counts = {"added": 0, "updated": 0, "unreachable": 0}
     errors: list[str] = []
     skipped: list[str] = []
     with db.session_scope() as s:
@@ -218,17 +245,17 @@ def run_crawl() -> CrawlerRun:
     )
     with db.session_scope() as s:
         s.add(run)
-    return run
+    return run, counts["unreachable"]
 
 
 def main() -> int:
     """Jobs-framework entrypoint: configure the DB, crawl, report."""
 
     def body() -> None:
-        run = run_crawl()
+        run, unreachable = run_crawl_with_counts()
         sys.stdout.write(
             f"crawl: {run.urls_count} urls, +{run.added} added, ~{run.updated} updated, "
-            f"{len(run.skipped)} skipped, {len(run.errors)} errors\n"
+            f"{len(run.skipped)} skipped ({unreachable} upstream unreachable), {len(run.errors)} errors\n"
         )
 
     # Per backend.job_contract: the sweep completed. Unreachable feeds are

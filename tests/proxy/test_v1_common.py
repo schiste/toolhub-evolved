@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 import backend.v1_common as v1c  # noqa: E402
-from backend import authz, db, security, source_analyzer, toolhub  # noqa: E402
+from backend import authz, db, security, source_analysis_common, source_analyzer, toolhub  # noqa: E402
 from backend.models import (  # noqa: E402
     ActivityRow,
     CrawlerUrl,
@@ -571,7 +571,7 @@ def test_source_repository_summary_covers_every_stored_key():
         "archived": False,
         "dirty": False,
     }
-    assert set(repository) == source_analyzer.REPOSITORY_CONTEXT_REPOSITORY_KEYS
+    assert set(repository) == source_analysis_common.REPOSITORY_CONTEXT_REPOSITORY_KEYS
     assert set(v1c.source_repository_summary({"repositoryContext": {"repository": repository}})) == set(repository)
 
 

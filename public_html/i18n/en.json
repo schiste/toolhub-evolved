@@ -1463,7 +1463,7 @@
 	"static.healthScore.filtersTitle": "4. Filters, thresholds, and rounding",
 	"static.healthScore.frontendAccessibilityRules": "Only created for JavaScript, TypeScript, React, Vue, or MediaWiki JavaScript tools. +20 for accessibility markup or tests; +20 for an axe dependency; +10 for tests.",
 	"static.healthScore.gradeName": "Grade",
-	"static.healthScore.gradeValue": "Legendary ($1) >= 85; Great ($2) >= 70; Needs attention ($3) >= 50; Needs attention ($4) < 50; Unknown ($5) when no score exists.",
+	"static.healthScore.gradeValue": "Legendary ($1) >= 85; Great ($2) >= 70; Needs attention ($3) >= 50; Needs attention ($4) < 50; Unknown ($5) when no score exists, or when the scored dimensions were not confident enough to support a grade.",
 	"static.healthScore.includedHeader": "Included when",
 	"static.healthScore.intro": "This page is the reproducibility spec for Evolved health scores. A user should be able to take the public summary JSON for a tool, apply the formulas below, and arrive at the same score shown in the interface.",
 	"static.healthScore.maintainabilityComponents": "Mean of $1 and $2.",
