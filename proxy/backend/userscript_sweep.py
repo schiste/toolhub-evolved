@@ -26,7 +26,7 @@ enough to be worth scheduling at all.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 from sqlalchemy import and_, func, or_, tuple_
 from sqlalchemy.exc import IntegrityError
@@ -36,6 +36,7 @@ from backend import userscript_census as census
 from backend import userscript_enumeration as enumeration
 from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage, utcnow
 from backend.userscript_directory import basename_of, owner_of_user_page
+from backend.wikimedia_delivery import ERROR_RESPONSE_TOO_LARGE
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -72,6 +73,33 @@ WATCH_WINDOWS: int = 48
 # How many failed batches are worth re-reading one title at a time before the
 # failure is treated as systemic rather than as one oversized batch.
 SPLIT_BUDGET: int = 5
+
+
+#: One content request answered as asked.
+READ_OK: Final = "ok"
+#: The client refused the answer for its size. On a batch this says the batch
+#: was too big; on a single title it says the page is, which is a fact about
+#: the wiki rather than about how this run grouped its requests.
+READ_TOO_LARGE: Final = "too-large"
+#: Anything else the request raised -- a transport blip, a refusal this module
+#: has no name for. Says nothing about size, and may well succeed next run.
+READ_FAILED: Final = "failed"
+
+
+class Read(NamedTuple):
+    """What one pass over a list of titles came back with.
+
+    `unreadable` and `oversized` are both pages this run does not have, and are
+    counted apart because only one of them is worth acting on. An unreadable
+    page is a failure that may not repeat; an oversized one cannot be fetched by
+    any request this client is willing to make, and will keep saying so every
+    run until the page shrinks.
+    """
+
+    pages: list[census.PageContent]
+    unreadable: int
+    oversized: int
+    lagged: bool
 
 
 class ReplicationLagged(Exception):  # noqa: N818 - a condition of the wiki, not an error of ours
@@ -112,6 +140,12 @@ EMPTY_COUNTS: dict[str, int] = {
     "written": 0,
     "skipped": 0,
     "unreadable": 0,
+    #: Pages no single request can carry: the client's response cap is smaller
+    #: than the page plus its JSON escaping. Split out of `unreadable` because
+    #: it is permanent and self-explanatory where that one is neither -- a
+    #: bot-maintained list on enwiki has been two megabytes for months, and a
+    #: counter that never reads zero is a counter nobody reads.
+    "oversized": 0,
     "resolved": 0,
     #: Set when the wiki refused a read for replication lag. A count elsewhere
     #: says what a run did; this says the run was cut short, which is the only
@@ -145,12 +179,16 @@ def _read_batch(
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
     batch: Sequence[str],
-) -> tuple[tuple[census.PageContent, ...], bool]:
+) -> tuple[tuple[census.PageContent, ...], str]:
     """Read one batch of titles, reporting failure rather than raising it.
 
     Except a lag refusal, which is raised: it is the one failure that says
     something about the wiki rather than about this batch, and the only correct
     answer to it is to stop asking.
+
+    The two other failures are told apart because the caller does different
+    things with them. Too-large is the only one halving can fix, and the only
+    one that means something when it happens to a single title.
     """
     try:
         payload = request(wiki, "GET", census.content_params(batch))
@@ -158,17 +196,23 @@ def _read_batch(
         # Anything else is one gap in the census, never a job failure. The code
         # is read off the exception rather than matched by type because the
         # client normalizes every API refusal into one class.
-        if getattr(error, "code", "") == census.MAXLAG_ERROR:
+        code = getattr(error, "code", "")
+        if code == census.MAXLAG_ERROR:
             raise ReplicationLagged(str(error)) from error
-        return ((), False)
-    return (census.read_pages(payload), True)
+        # Size is reported rather than inferred. Estimating it from the page
+        # would mean guessing how much JSON escaping adds, and guessing high
+        # drops a page the census could have read -- the client already knows
+        # the answer exactly, because it is the one that measured the response.
+        return ((), READ_TOO_LARGE if code == ERROR_RESPONSE_TOO_LARGE else READ_FAILED)
+    return (census.read_pages(payload), READ_OK)
 
 
 def read_titles(
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
     titles: Sequence[str],
-) -> tuple[list[census.PageContent], int, bool]:
+    known_oversized: set[str] | None = None,
+) -> Read:
     """Fetch and parse pages in API-sized batches, counting the titles left unread.
 
     A batch can fail for the batch's own sake: fifty user scripts can exceed the
@@ -186,58 +230,95 @@ def read_titles(
     into many times the requests. Past `SPLIT_BUDGET` failures the run stops
     splitting and simply records what it could not read; the next run asks again.
 
-    A lag refusal ends the read there and is reported as the third value. What
-    was already read is still returned, because it is already paid for and the
+    A lag refusal ends the read there and is reported on the result. What was
+    already read is still returned, because it is already paid for and the
     caller can still write it -- but the titles behind it were never asked for,
     and saying so is what stops the caller from recording them as covered.
+
+    `known_oversized` is the set of titles a single request has already failed
+    to carry, and this call adds to it. It is the caller's rather than this
+    call's because the pages worth remembering are the ones that come round
+    again: a watch reads its window in slices and can meet the same daily-edited
+    page in several of them, and without somewhere to write the verdict down it
+    pays the whole halving search for each one.
     """
+    known = known_oversized if known_oversized is not None else set()
     read: list[census.PageContent] = []
     unreadable = 0
+    oversized = 0
     budget = SPLIT_BUDGET
-    for batch in census.batched(titles):
+    # A page already proven too large gets its own request rather than a place
+    # in someone else's. It is still asked for -- a page can shrink, and a
+    # too-large answer to a batch is only ever evidence about that batch -- but
+    # asking alone is what stops one known-bad page from failing a batch of
+    # fifty and spending a split budget rediscovering which page it was.
+    solo = [title for title in titles if title in known]
+    grouped = [title for title in titles if title not in known]
+    for batch in (*census.batched(grouped), *((title,) for title in solo)):
         try:
-            pages, ok = _read_batch(request, wiki, batch)
-            if ok:
+            pages, status = _read_batch(request, wiki, batch)
+            if status == READ_OK:
                 read.extend(pages)
+                continue
+            if len(batch) <= 1:
+                if status == READ_TOO_LARGE:
+                    known.add(batch[0])
+                    oversized += 1
+                else:
+                    unreadable += 1
                 continue
             if budget <= 0:
                 unreadable += len(batch)
                 continue
             budget -= 1
-            found, lost = _read_halves(request, wiki, batch)
+            found, lost, big = _read_halves(request, wiki, batch, known)
         except ReplicationLagged:
-            return (read, unreadable, True)
+            return Read(read, unreadable, oversized, lagged=True)
         read.extend(found)
         unreadable += lost
-    return (read, unreadable, False)
+        oversized += big
+    return Read(read, unreadable, oversized, lagged=False)
 
 
 def _read_halves(
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
     batch: Sequence[str],
-) -> tuple[list[census.PageContent], int]:
+    known: set[str],
+) -> tuple[list[census.PageContent], int, int]:
     """Re-read a failed batch by halving it, returning what came back and what did not.
 
-    A single title that fails has nothing left to divide, and is the honestly
-    oversized -- or deleted, or otherwise unreadable -- page the split was
-    looking for. It is counted, not raised: per this module, a page that cannot
-    be read is an observation.
+    A single title that fails has nothing left to divide, and is the page the
+    split was looking for. Which kind of page it is, the client has already
+    said: a size refusal is the oversized one this search exists to find, and
+    anything else is an ordinary gap that may not be there next run. Counted
+    either way, never raised -- per this module, a page that cannot be read is
+    an observation.
+
+    Only ever called with two or more titles, so both halves hold at least one
+    and no request is made for an empty batch.
     """
-    if len(batch) <= 1:
-        return ([], len(batch))
     read: list[census.PageContent] = []
     unreadable = 0
+    oversized = 0
     middle = len(batch) // 2
     for half in (batch[:middle], batch[middle:]):
-        pages, ok = _read_batch(request, wiki, half)
-        if ok:
+        pages, status = _read_batch(request, wiki, half)
+        if status == READ_OK:
             read.extend(pages)
             continue
-        found, lost = _read_halves(request, wiki, half)
+        if len(half) <= 1:
+            if status == READ_TOO_LARGE:
+                known.add(half[0])
+                oversized += 1
+            else:
+                unreadable += 1
+            continue
+        found, lost, big = _read_halves(request, wiki, half, known)
         read.extend(found)
         unreadable += lost
-    return (read, unreadable)
+        oversized += big
+    return (read, unreadable, oversized)
 
 
 def _stored_state(session: Session, wiki: str, titles: Sequence[str]) -> dict[str, tuple[str, int]]:
@@ -395,6 +476,7 @@ def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map ar
     ranked: bool,
     rank_offset: int = 0,
     revisions: dict[str, str] | None = None,
+    known_oversized: set[str] | None = None,
 ) -> dict[str, int]:
     """Read the named pages and write the ones that changed, `INGEST_CHUNK` at a time.
 
@@ -416,8 +498,15 @@ def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map ar
     zero would tell the directory that the ten thousandth page ever created was
     the first -- so the rank recorded is the position in the whole enumeration,
     not the position in the batch.
+
+    `known_oversized` carries the titles no single request has been able to
+    carry, from one call to the next. Left out, one is kept for the length of
+    this call -- enough for a sweep, which meets each title once, and not enough
+    for a watch, which calls this once per window and can meet the same page in
+    several of them.
     """
     summary = dict(EMPTY_COUNTS, asked=len(titles))
+    known = known_oversized if known_oversized is not None else set()
     written: list[str] = []
     with db.session_scope() as session:
         # This wiki's own names, read once. Every title in `titles` came from
@@ -437,8 +526,9 @@ def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map ar
     ]
     summary["skipped"] = len(titles) - len(wanted)
     for chunk in _chunked(wanted, INGEST_CHUNK):
-        pages, unreadable, lagged = read_titles(request, wiki, chunk)
+        pages, unreadable, oversized, lagged = read_titles(request, wiki, chunk, known)
         summary["unreadable"] += unreadable
+        summary["oversized"] += oversized
         summary["fetched"] += len(pages)
         with db.session_scope() as session:
             # A fresh resolver each slice: the previous one belongs to a session
@@ -785,13 +875,21 @@ def watch(
     with db.session_scope() as session:
         cursor = _state(session, wiki).changes_cursor
     totals = dict(EMPTY_COUNTS)
+    # One memo for the whole run. A catching-up run reads days of changes, and
+    # the page worth remembering is exactly the one edited often enough to
+    # appear in several of its windows.
+    oversized_titles: set[str] = set()
     consumed = 0
     behind = 0
     following: dict[str, str] = {}
     for _window in range(max(1, windows)):
         payload = request(wiki, "GET", {**census.changes_params(cursor, limit), **following})
         titles = census.read_changes(payload)
-        summary = ingest(request, wiki, titles, ranked=False) if titles else dict(EMPTY_COUNTS)
+        summary = (
+            ingest(request, wiki, titles, ranked=False, known_oversized=oversized_titles)
+            if titles
+            else dict(EMPTY_COUNTS)
+        )
         totals = _accumulate(totals, summary)
         # Same rule as the sweep cursor: a window cut short by lag has not read
         # the changes it enumerated, and advancing over them would lose those

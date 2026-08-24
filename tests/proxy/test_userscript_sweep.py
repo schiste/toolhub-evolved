@@ -50,6 +50,17 @@ class Lagging(RuntimeError):
     code = census.MAXLAG_ERROR
 
 
+class TooLarge(RuntimeError):
+    """The client refusing an answer for its size, carrying the code it uses.
+
+    A separate class from `Boom` because the whole point is that the census can
+    tell them apart, and it tells them apart by the code -- so a fake that
+    raised one class for both would let the distinction pass untested.
+    """
+
+    code = sweeper.ERROR_RESPONSE_TOO_LARGE
+
+
 class FakeWiki:
     """An Action API that answers from a dict of pages, and can be made to fail."""
 
@@ -59,6 +70,7 @@ class FakeWiki:
         *,
         changes=None,
         unreadable=(),
+        too_large=(),
         page_size=None,
         lagged_after=None,
         namespace_name="User",
@@ -68,6 +80,11 @@ class FakeWiki:
         self.pages = dict(pages)
         self.changes = list(changes or [])
         self.unreadable = set(unreadable)
+        #: Titles the wiki answers for only when asked for alone -- and not even
+        #: then. Any request naming one is refused for size, which is what the
+        #: real client does: it measures the response, so a batch holding a
+        #: two-megabyte page is refused whatever else is in it.
+        self.too_large = set(too_large)
         self.page_size = page_size or census.SEARCH_PAGE_SIZE
         #: Content requests to answer before the wiki starts refusing for lag,
         #: so a test can put the refusal in the middle of a run rather than at
@@ -119,6 +136,8 @@ class FakeWiki:
         asked = params["titles"].split("|")
         if any(title in self.unreadable for title in asked):
             raise Boom(params["titles"])
+        if any(title in self.too_large for title in asked):
+            raise TooLarge(params["titles"])
         pages = []
         for title in asked:
             found = self.pages.get(title)
@@ -279,7 +298,7 @@ def test_discovery_order_is_the_order_the_search_index_gave():
 
 def test_titles_are_read_in_batches_and_missing_pages_are_skipped():
     wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
-    read, unreadable, _lagged = sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js", "User:Gone/x.js"])
+    read, unreadable, _big, _lagged = sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js", "User:Gone/x.js"])
     assert [found.title for found in read] == ["User:A/one.js"]
     assert unreadable == 0
 
@@ -289,7 +308,7 @@ def test_a_failed_batch_is_retried_one_title_at_a_time():
         {"User:A/one.js": page("var a = 1;"), "User:B/two.js": page("var b = 2;")},
         unreadable={"User:B/two.js"},
     )
-    read, unreadable, _lagged = sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js", "User:B/two.js"])
+    read, unreadable, _big, _lagged = sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js", "User:B/two.js"])
     # The whole batch failed on one page, and splitting rescued the other.
     assert [found.title for found in read] == ["User:A/one.js"]
     assert unreadable == 1
@@ -301,7 +320,7 @@ def test_a_fat_batch_is_halved_rather_than_taken_apart_title_by_title():
     # for the response cap costs a handful of extra requests, not one per title.
     titles = [f"User:U{index}/x.js" for index in range(8)]
     wiki = FakeWiki({title: page("var a = 1;") for title in titles}, unreadable={"User:U5/x.js"})
-    read, unreadable, _lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
+    read, unreadable, _big, _lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
     assert [found.title for found in read] == [title for title in titles if title != "User:U5/x.js"]
     assert unreadable == 1
     asked = [params["titles"].split("|") for _d, _m, params in wiki.requests]
@@ -309,6 +328,84 @@ def test_a_fat_batch_is_halved_rather_than_taken_apart_title_by_title():
     # side of the unreadable page was ever read alone: seven requests where
     # falling straight to single titles would have cost nine.
     assert sorted(len(batch) for batch in asked) == [1, 1, 2, 2, 4, 4, 8]
+
+
+# -- pages no request can carry -----------------------------------------
+
+
+def test_a_page_too_big_to_fetch_is_counted_apart_from_one_that_merely_failed():
+    # Both are pages this run does not have, and only one of them is worth
+    # looking at. A transport blip may well succeed next run; a page past the
+    # response cap will say the same thing every run until someone shrinks it,
+    # and counting the two together is what makes `unreadable` a number nobody
+    # reads.
+    titles = ["User:A/one.js", "User:Big/list.js", "User:C/three.js"]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles}, too_large={"User:Big/list.js"})
+    read, unreadable, oversized, _lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
+    assert [found.title for found in read] == ["User:A/one.js", "User:C/three.js"]
+    assert oversized == 1
+    assert unreadable == 0
+
+
+def test_a_transport_failure_is_still_unreadable_rather_than_oversized():
+    # The discrimination is the client's code, not the shape of the failure --
+    # so a refusal that carries no code must not be promoted into the permanent
+    # category just because it happened to a single title.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")}, unreadable={"User:A/one.js"})
+    read, unreadable, oversized, _lagged = sweeper.read_titles(wiki.request, FRWIKI, ["User:A/one.js"])
+    assert read == []
+    assert (unreadable, oversized) == (1, 0)
+
+
+def test_a_page_known_too_big_is_asked_for_alone_instead_of_failing_a_batch():
+    # The second meeting is the one that matters: without a memo the census
+    # pays the whole halving search again to rediscover a page it has already
+    # proven it cannot read.
+    titles = [f"User:U{index}/x.js" for index in range(8)]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles}, too_large={"User:U5/x.js"})
+    known: set[str] = set()
+
+    sweeper.read_titles(wiki.request, FRWIKI, titles, known)
+    first = len(wiki.requests)
+    assert known == {"User:U5/x.js"}
+
+    wiki.requests.clear()
+    read, unreadable, oversized, _lagged = sweeper.read_titles(wiki.request, FRWIKI, titles, known)
+    # Everything readable still arrives, and the verdict is still reported --
+    # the page is asked for, because a page can shrink and a memo that stopped
+    # asking could never find out.
+    assert [found.title for found in read] == [title for title in titles if title != "User:U5/x.js"]
+    assert (unreadable, oversized) == (0, 1)
+    asked = sorted(len(params["titles"].split("|")) for _d, _m, params in wiki.requests)
+    # The seven good pages in one request, the known-bad one in its own.
+    assert asked == [1, 7]
+    assert len(wiki.requests) < first
+
+
+def test_one_page_over_the_cap_does_not_spend_the_split_budget_twice_in_a_run():
+    # What the enwiki watch actually meets: a bot-maintained list past the
+    # response cap, edited daily, so a run catching up over several days finds
+    # it in more than one window.
+    fat = "User:NovemBot/userlist.js"
+    pages = {fat: page("var a = 1;"), "User:A/one.js": page("var b = 2;")}
+    wiki = FakeWiki(
+        pages,
+        changes=[
+            {"title": fat, "ns": 2, "timestamp": "2026-01-01T00:00:00Z"},
+            {"title": "User:A/one.js", "ns": 2, "timestamp": "2026-01-01T01:00:00Z"},
+            {"title": fat, "ns": 2, "timestamp": "2026-01-02T00:00:00Z"},
+        ],
+        too_large={fat},
+    )
+    summary = sweeper.watch(wiki.request, FRWIKI, limit=1)
+    # Seen in two windows, so counted twice -- the count is of reads that came
+    # back empty, and there were two of them.
+    assert summary["oversized"] == 2
+    assert summary["unreadable"] == 0
+    # But asked for alone the second time: every content request names one page,
+    # and none of them is the halving search running twice.
+    content = [params["titles"] for _d, _m, params in wiki.requests if "titles" in params]
+    assert all("|" not in asked for asked in content)
 
 
 def test_every_content_request_asks_the_wiki_to_refuse_it_when_replicas_are_behind():
@@ -323,7 +420,7 @@ def test_a_wiki_that_says_it_is_behind_is_not_asked_the_same_batch_in_halves():
     # for less traffic with about six times as many requests.
     titles = [f"User:U{index}/x.js" for index in range(census.CONTENT_BATCH * 2)]
     wiki = FakeWiki({title: page("var a = 1;") for title in titles}, lagged_after=1)
-    read, unreadable, lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
+    read, unreadable, _big, lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
     assert lagged is True
     # One batch answered, one refused, and nothing after it: no halving.
     assert wiki.content_requests == 2
@@ -409,7 +506,10 @@ def test_a_window_is_read_one_slice_at_a_time_however_large_it_is(monkeypatch):
     monkeypatch.setattr(
         sweeper,
         "read_titles",
-        lambda request, wiki_name, slice_: (asked.append(len(slice_)), real_read(request, wiki_name, slice_))[1],
+        lambda request, wiki_name, slice_, known=None: (
+            asked.append(len(slice_)),
+            real_read(request, wiki_name, slice_, known),
+        )[1],
     )
 
     summary = sweeper.ingest(wiki.request, FRWIKI, titles, ranked=True)
@@ -482,7 +582,7 @@ def test_a_watch_cut_short_by_lag_leaves_its_cursor_where_it_was():
 def test_splitting_stops_once_the_failures_look_systemic():
     titles = [f"User:U{index}/x.js" for index in range(census.CONTENT_BATCH * (sweeper.SPLIT_BUDGET + 2))]
     wiki = FakeWiki({title: page("var a = 1;") for title in titles}, unreadable=set(titles))
-    read, unreadable, _lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
+    read, unreadable, _big, _lagged = sweeper.read_titles(wiki.request, FRWIKI, titles)
     assert read == []
     assert unreadable == len(titles)
     # Five batches were split into single reads; the rest were written off whole.
@@ -1240,6 +1340,7 @@ SWEPT = {
     "written": 0,
     "skipped": 0,
     "unreadable": 0,
+    "oversized": 0,
     "lagged": 0,
     "collisions": 0,
     "source": "replica",
@@ -1256,6 +1357,7 @@ WATCHED = {
     "written": 0,
     "skipped": 0,
     "unreadable": 0,
+    "oversized": 0,
     "lagged": 0,
     "collisions": 0,
     "cursor": "2026-08-06T17:22:45Z",
@@ -1312,6 +1414,29 @@ def test_the_census_line_reports_collisions_only_when_there_were_some(monkeypatc
     )
     assert job.main() == 0
     assert "collisions" not in capsys.readouterr().out
+
+
+def test_the_census_line_reports_oversized_only_when_there_were_some(monkeypatch, capsys, _job_env):
+    # Same rule as `collisions`, for the same reason -- but with a sharper edge
+    # here, because this one has a standing cause: enwiki has a bot-maintained
+    # list that has been past the response cap for months. Printed every run it
+    # would read as an incident every run.
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")
+    monkeypatch.setattr(
+        job.userscript_sweep,
+        "run",
+        lambda _request, wiki, **_kwargs: dict(SWEPT, wiki=wiki, oversized=1),
+    )
+    assert job.main() == 0
+    assert "oversized=1" in capsys.readouterr().out
+
+    monkeypatch.setattr(
+        job.userscript_sweep,
+        "run",
+        lambda _request, wiki, **_kwargs: dict(SWEPT, wiki=wiki),
+    )
+    assert job.main() == 0
+    assert "oversized" not in capsys.readouterr().out
 
 
 def test_the_job_defaults_to_the_pilot_wikis_and_really_writes_rows(monkeypatch, capsys, _job_env):

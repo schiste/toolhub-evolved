@@ -105,12 +105,19 @@ def main() -> int:
             watch_windows=watch_windows,
         )
         collisions = summary["collisions"]
+        oversized = summary["oversized"]
         sys.stdout.write(
             "userscript-census: "
             f"wiki={summary['wiki']} mode={summary['mode']} "
             f"asked={summary['asked']} fetched={summary['fetched']} "
             f"written={summary['written']} skipped={summary['skipped']} "
             f"unreadable={summary['unreadable']}"
+            # Pages no request can carry, kept off `unreadable` so that one
+            # stays a number worth looking at. Printed only when it happens,
+            # and when it does it is not an incident: enwiki has one
+            # bot-maintained list that has been past the response cap for
+            # months and grows by a few hundred bytes a day.
+            f"{f' oversized={oversized}' if oversized else ''}"
             # Only when they happened. A field that is almost always 0 trains
             # the reader to skip the line it appears on. `collisions` counts
             # load edges the database folded onto another edge of the same page
