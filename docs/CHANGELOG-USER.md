@@ -2,8 +2,8 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: what-the-gadget-asks-for -->
 <!-- Release title: What the Gadget Asks For -->
-<!-- Source range: e61d34417..ad893c9cf (13 commits) -->
-<!-- 76581e671 fixes a deploy-time database lock that kept this release from reaching the site. -->
+<!-- Source range: e61d34417..89be25e66 (15 commits) -->
+<!-- 76581e671, ad893c9cf and 89be25e66 fix deploy-time database locks that kept this release from reaching the site. -->
 <!-- Nothing about it is visible to a reader, so it is described in the technical notes only. -->
 
 # What's New for Users
