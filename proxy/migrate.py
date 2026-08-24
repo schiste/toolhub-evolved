@@ -726,15 +726,19 @@ def _backfill_people_identity() -> int:
     touched += restated
     linked, links_deferred = _link_accounts_to_people()
     touched += linked
-    for deferred, subject in ((identifiers_deferred, "identifier rows"), (links_deferred, "account links")):
+    restated_records, records_deferred = _relink_account_owned_records()
+    touched += restated_records
+    for deferred, subject in (
+        (identifiers_deferred, "identifier rows"),
+        (links_deferred, "account links"),
+        (records_deferred, "claim and key owner rows"),
+    ):
         if deferred:
             # Loud, because the alternative reading of a quiet deploy is that
             # there was nothing to do. Convergence is left to the next one.
             sys.stderr.write(
                 f"migrate: left {deferred} {subject} to the next deploy; another writer held them\n",
             )
-    with db.session_scope() as s:
-        touched += _backfill_account_owned_records(s, list(s.execute(select(User).order_by(User.id)).scalars()))
     inspector = inspect(db.engine())
 
     def has_unique_column(table: str, column: str) -> bool:
@@ -792,36 +796,88 @@ def _ensure_person_slug_index() -> None:
             connection.exec_driver_sql("CREATE UNIQUE INDEX ux_people_public_slug ON people (public_slug)")
 
 
-def _backfill_account_owned_records(s, users: list[User]) -> int:  # noqa: ANN001 - SQLAlchemy session
-    """Move legacy claim/key ownership from mutable handles to account ids."""
+def _restate_account_owned_record(row, owners_by_id: dict, owners_by_handle: dict) -> int:  # noqa: ANN001 - ORM row
+    """Point one claim or key row at its account, and fill a claim's derived columns."""
+    owner = (
+        owners_by_id.get(row.user_id)
+        if row.user_id is not None
+        else owners_by_handle.get(row.toolhub_username.casefold())
+    )
     touched = 0
-    users_by_id = {user.id: user for user in users}
-    users_by_handle = {user.username.casefold(): user for user in users}
-    for model in (ToolAuthorClaim, ToolAuthorKey):
-        for row in s.execute(select(model).order_by(model.id)).scalars():
-            owner = (
-                users_by_id.get(row.user_id)
-                if row.user_id is not None
-                else users_by_handle.get(row.toolhub_username.casefold())
-            )
-            if owner is not None and (row.user_id != owner.id or row.toolhub_username != owner.username):
-                row.user_id = owner.id
-                row.toolhub_username = owner.username
-                touched += 1
-            if model is ToolAuthorClaim:
-                changed = False
-                expected_relationship = claim_relationship_for_method(row.verification_method)
-                if row.requested_relationship != expected_relationship:
-                    row.requested_relationship = expected_relationship
-                    changed = True
-                if row.created_at is None:
-                    row.created_at = row.checked_at or utcnow()
-                    changed = True
-                if row.updated_at is None:
-                    row.updated_at = row.checked_at or row.created_at
-                    changed = True
-                touched += int(changed)
+    if owner is not None and (row.user_id, row.toolhub_username) != owner:
+        row.user_id, row.toolhub_username = owner
+        touched += 1
+    if isinstance(row, ToolAuthorClaim):
+        changed = False
+        expected_relationship = claim_relationship_for_method(row.verification_method)
+        if row.requested_relationship != expected_relationship:
+            row.requested_relationship = expected_relationship
+            changed = True
+        if row.created_at is None:
+            row.created_at = row.checked_at or utcnow()
+            changed = True
+        if row.updated_at is None:
+            row.updated_at = row.checked_at or row.created_at
+            changed = True
+        touched += int(changed)
     return touched
+
+
+def _relink_account_owned_records() -> tuple[int, int]:
+    """Move legacy claim/key ownership onto account ids, chunk by chunk. Returns (touched, deferred).
+
+    The last pass in this migration still holding every row it touches in one
+    transaction. It writes `tool_author_claims.user_id` and `toolhub_username`,
+    and `maintainer-backfill` writes those same two columns every hour at :13
+    from `sync_author_claim_edges`, so a deploy that lands in that minute meets
+    a held row and errno 1205 aborts the whole migration -- after `git pull`
+    has already fast-forwarded the host, which is the failure mode the two
+    passes above were chunked to stop.
+
+    Accounts are read once into plain tuples rather than carried as ORM
+    instances: the rows are rewritten one chunk per session, and a `User`
+    loaded in an earlier session would be detached by the time a later chunk
+    read it. Only the id and username are ever used.
+    """
+    with db.session_scope() as s:
+        accounts = [(user.id, user.username) for user in s.execute(select(User).order_by(User.id)).scalars()]
+    owners_by_id = {user_id: (user_id, username) for user_id, username in accounts}
+    owners_by_handle = {username.casefold(): (user_id, username) for user_id, username in accounts}
+
+    touched = 0
+    deferred = 0
+    for model in (ToolAuthorClaim, ToolAuthorKey):
+        after = 0
+        while True:
+            with db.session_scope() as s:
+                ids = list(
+                    s.execute(
+                        select(model.id).where(model.id > after).order_by(model.id).limit(BACKFILL_CHUNK)
+                    ).scalars()
+                )
+            if not ids:
+                break
+            # Window fixed and cursor advanced before anything can raise, so a
+            # chunk this deploy cannot have is skipped rather than retried
+            # forever -- the rule `_link_accounts_to_people` follows.
+            window, after = (after, ids[-1]), ids[-1]
+            restated = 0
+            try:
+                with db.session_scope() as s:
+                    rows = s.execute(
+                        select(model).where(model.id > window[0], model.id <= window[1]).order_by(model.id)
+                    ).scalars()
+                    for row in rows:
+                        restated += _restate_account_owned_record(row, owners_by_id, owners_by_handle)
+            except OperationalError as error:
+                if not _is_lock_contention(error):
+                    raise
+                deferred += len(ids)
+                continue
+            # Counted only once the commit has survived: the refusal usually
+            # arrives after the session has already moved the rows in memory.
+            touched += restated
+    return (touched, deferred)
 
 
 def _legacy_role(source: str, method: str) -> str:

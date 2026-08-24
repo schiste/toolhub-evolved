@@ -853,6 +853,96 @@ def test_the_operator_is_told_which_accounts_were_left_behind(configured_db, mon
     assert "left 2 account links to the next deploy" in capsys.readouterr().err
 
 
+def unowned_claims(count):
+    """`count` author claims naming an account by handle without pointing at its id.
+
+    The shape `maintainer-backfill` also rewrites: it fills `user_id` and
+    `toolhub_username` from the handle every hour at :13, which is what the
+    migration can find held.
+    """
+    with db.session_scope() as s:
+        for index in range(count):
+            s.add(User(wm_sub=f"claimant-{index}", username=f"Claimant{index}"))
+        s.flush()
+        for index in range(count):
+            s.add(
+                ToolAuthorClaim(
+                    tool_name=f"tool-{index}",
+                    author_name=f"Claimant{index}",
+                    toolhub_username=f"Claimant{index}",
+                    user_id=None,
+                )
+            )
+
+
+def owned_claim_handles():
+    """The handles of the claims that now point at an account id."""
+    with db.session_scope() as s:
+        return sorted(
+            s.execute(select(ToolAuthorClaim.toolhub_username).where(ToolAuthorClaim.user_id.is_not(None))).scalars()
+        )
+
+
+def test_a_held_claim_chunk_leaves_the_rest_of_the_owner_rows_relinked(configured_db, monkeypatch):
+    # The last pass still holding every row it touched in one transaction. It
+    # writes the two columns `maintainer-backfill` writes, so a deploy landing
+    # in that job's minute met a held row and aborted the whole migration --
+    # after `git pull` had already fast-forwarded the host.
+    unowned_claims(6)
+    monkeypatch.setattr(migrate, "BACKFILL_CHUNK", 2)
+    restate = migrate._restate_account_owned_record
+    seen = []
+
+    def refuse_the_second_chunk(row, owners_by_id, owners_by_handle):
+        seen.append(row.toolhub_username)
+        if len(seen) == 3:
+            raise held_by_another_writer()
+        return restate(row, owners_by_id, owners_by_handle)
+
+    monkeypatch.setattr(migrate, "_restate_account_owned_record", refuse_the_second_chunk)
+    touched, deferred = migrate._relink_account_owned_records()
+
+    # The walk reached every claim despite the refusal in the middle of it...
+    assert seen == ["Claimant0", "Claimant1", "Claimant2", "Claimant4", "Claimant5"]
+    # ...and the chunk it could not have is reported as left behind.
+    assert deferred == 2
+    assert touched > 0
+    # Claims 2 and 3 shared the held chunk, so neither landed; the next deploy
+    # takes them.
+    assert owned_claim_handles() == ["Claimant0", "Claimant1", "Claimant4", "Claimant5"]
+
+
+def test_an_owner_row_already_pointed_at_its_account_is_not_rewritten(configured_db):
+    unowned_claims(2)
+    assert migrate._relink_account_owned_records()[1] == 0
+    assert owned_claim_handles() == ["Claimant0", "Claimant1"]
+    # Second pass over settled rows writes nothing, so a re-run cannot generate
+    # the contention this pass has to defer around.
+    assert migrate._relink_account_owned_records() == (0, 0)
+
+
+def test_an_owner_row_error_that_is_not_contention_still_fails_the_deploy(configured_db, monkeypatch):
+    unowned_claims(2)
+    monkeypatch.setattr(
+        migrate,
+        "_restate_account_owned_record",
+        lambda row, by_id, by_handle: (_ for _ in ()).throw(held_by_another_writer(errno=2013)),
+    )
+    with pytest.raises(migrate.OperationalError):
+        migrate._relink_account_owned_records()
+
+
+def test_the_operator_is_told_which_owner_rows_were_left_behind(configured_db, monkeypatch, capsys):
+    unowned_claims(2)
+    monkeypatch.setattr(
+        migrate,
+        "_restate_account_owned_record",
+        lambda row, by_id, by_handle: (_ for _ in ()).throw(held_by_another_writer()),
+    )
+    migrate._backfill_people_identity()
+    assert "left 2 claim and key owner rows to the next deploy" in capsys.readouterr().err
+
+
 def test_a_deadlock_victim_is_treated_as_contention_and_a_bare_error_is_not():
     assert migrate._is_lock_contention(held_by_another_writer(errno=1213))
     assert not migrate._is_lock_contention(migrate.OperationalError("SELECT 1", {}, RuntimeError()))
