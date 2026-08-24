@@ -46,7 +46,7 @@ test("the marker replaces every resolution, not just the ones with a fallback", 
 
 	assert.equal(tData("x.absent", "Known"), "[unknown i18n key x.absent]");
 	assert.equal(tWithElements("x.absent", "Known"), "[unknown i18n key x.absent]");
-	assert.equal(t("router.loadingToolhubData"), "[unknown i18n key router.loadingToolhubData]");
+	assert.equal(t("router.loadingPage"), "[unknown i18n key router.loadingPage]");
 });
 
 test("clearing the key set accepts any key again, which is how the app runs", () => {
@@ -69,8 +69,8 @@ test("t returns the English fallback when no catalog is installed", () => {
 });
 
 test("t has tiny boot-critical English fallbacks when a caller has no catalog fallback", () => {
-	assert.equal(BOOT_MESSAGES["router.loadingToolhubData"], "Loading the local catalog");
-	assert.equal(t("router.loadingToolhubData"), "Loading the local catalog");
+	assert.equal(BOOT_MESSAGES["router.loadingPage"], "Loading page");
+	assert.equal(t("router.loadingPage"), "Loading page");
 	assert.equal(t("x.unknown"), "x.unknown");
 });
 

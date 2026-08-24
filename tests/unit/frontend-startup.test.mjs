@@ -64,6 +64,23 @@ test("critical shell CSS hides deferred dialogs and stabilizes account chrome", 
 	assert.ok(html.indexOf("<style data-critical-css>") < html.indexOf('<div class="command-palette hidden"'));
 });
 
+test("the boot placeholder is a skeleton whose styles survive deferred CSS", () => {
+	const html = read("public_html/index.html");
+	const css = criticalCss(html);
+	const boot = html.slice(html.indexOf('<main id="view"'), html.indexOf("</main>"));
+	// Cold load paints before the design-system sheets arrive, so every class the
+	// boot skeleton uses has to be in the critical block or it renders as bare
+	// text on a blank page.
+	assert.match(boot, /route-loading--skeleton route-loading--page/);
+	assert.match(boot, /class="route-loading__label visually-hidden" data-i18n="router.loadingPage"/);
+	assert.doesNotMatch(boot, /class="spinner"/);
+	assert.match(css, /\.visually-hidden\s*{/);
+	assert.match(css, /\.skeleton\s*{/);
+	assert.match(css, /@keyframes skeleton-sheen/);
+	assert.match(css, /--color-skeleton-base:/);
+	assert.match(css, /prefers-reduced-motion: reduce/);
+});
+
 test("main.js activates deferred styles before the first route render", () => {
 	const main = read("public_html/main.js");
 	assert.match(main, /function activateDeferredStyles\(\)/);

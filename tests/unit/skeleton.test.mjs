@@ -64,14 +64,20 @@ test("routeSkeletonHTML chooses route-specific loading shapes", () => {
 	assert.match(routeSkeletonHTML("/audit-logs"), /Loading audit logs/);
 	assert.match(routeSkeletonHTML("/lists"), /skeleton-grid--list/);
 	assert.match(routeSkeletonHTML("/lists/42"), /skeleton-grid--tool/);
-	assert.equal(routeSkeletonHTML("/"), "");
-	assert.equal(routeSkeletonHTML("/api-docs"), "");
+	// Routes with no purpose-built shape fall back to the generic page skeleton
+	// rather than to a spinner, so no route ever renders a bare loading sentence.
+	assert.match(routeSkeletonHTML("/"), /route-loading--page/);
+	assert.match(routeSkeletonHTML("/api-docs"), /route-loading--page/);
+	assert.match(routeSkeletonHTML("/api-docs"), /skeleton-page__paragraph/);
 });
 
 test("route skeleton status text excludes hidden placeholder content", () => {
 	const html = routeSkeletonHTML("/search");
 	assert.match(html, /aria-hidden="true"/);
 	assert.equal(statusText(html), "Loading search results");
+	// The status is announced, never drawn: the shimmer is the visual signal.
+	document.body.innerHTML = html;
+	assert.ok(document.querySelector(".route-loading__label")?.classList.contains("visually-hidden"));
 });
 
 test("skeleton CSS is token-driven and disables shimmer for reduced motion", () => {

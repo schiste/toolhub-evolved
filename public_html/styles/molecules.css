@@ -593,6 +593,17 @@
 	height: var(--fs-body);
 }
 
+.skeleton-page__body {
+	display: grid;
+	gap: var(--space-3);
+	max-width: 760px;
+	margin-bottom: var(--space-5);
+}
+
+.skeleton-page__paragraph {
+	height: var(--fs-body);
+}
+
 .skeleton-section-head {
 	align-items: center;
 }

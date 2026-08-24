@@ -21,8 +21,8 @@ function classes(...parts) {
 }
 
 /**
- * Decorative placeholder line. Keep visible loading text outside skeleton
- * bodies so assistive tech gets one concise status instead of fake content.
+ * Decorative placeholder line. Keep loading text outside skeleton bodies so
+ * assistive tech gets one concise status instead of fake content.
  * @param {string} [className]
  * @returns {string}
  */
@@ -162,6 +162,31 @@ function listDetailSkeleton() {
 	${cardGridSkeleton("tool", 4)}`;
 }
 
+/**
+ * Fallback shape for routes without a purpose-built skeleton. It stays
+ * deliberately vague — a head, a little prose, a few cards — because it stands
+ * in for content we cannot predict, and a placeholder that promises the wrong
+ * layout is worse than one that promises very little.
+ * @returns {string}
+ */
+function pageSkeleton() {
+	return `${pageHeadSkeleton()}${pageBodySkeleton()}`;
+}
+
+/**
+ * The generic shape without its head, for pages that already show a real title
+ * and intro and only need the body stood in for.
+ * @returns {string}
+ */
+export function pageBodySkeleton() {
+	return `<div class="skeleton-page__body">
+		${skeletonLine("skeleton-page__paragraph skeleton--w-xl")}
+		${skeletonLine("skeleton-page__paragraph skeleton--w-lg")}
+		${skeletonLine("skeleton-page__paragraph skeleton--w-md")}
+	</div>
+	${cardGridSkeleton("tool", 3)}`;
+}
+
 function styleguideSkeleton() {
 	return `${pageHeadSkeleton()}
 	<div class="skeleton-styleguide">
@@ -209,7 +234,7 @@ function toolDetailSkeleton() {
 
 /**
  * @param {string | undefined} path
- * @returns {{ modifier: string; label: string; body: string } | null}
+ * @returns {{ modifier: string; label: string; body: string }}
  */
 function routeSkeleton(path = "") {
 	const seg = path.split("/").filter(Boolean);
@@ -299,7 +324,11 @@ function routeSkeleton(path = "") {
 			body: styleguideSkeleton()
 		};
 	}
-	return null;
+	return {
+		modifier: "page",
+		label: t("router.loadingPage", "Loading page"),
+		body: pageSkeleton()
+	};
 }
 
 /**
@@ -308,9 +337,8 @@ function routeSkeleton(path = "") {
  */
 export function routeSkeletonHTML(path) {
 	const skeleton = routeSkeleton(path);
-	if (!skeleton) return "";
 	return `<div class="container page route-loading route-loading--skeleton route-loading--${esc(skeleton.modifier)}" role="status" aria-live="polite" aria-atomic="true">
-		<span class="route-loading__label">${esc(skeleton.label)}</span>
+		<span class="route-loading__label visually-hidden">${esc(skeleton.label)}</span>
 		<div class="route-loading__body" aria-hidden="true">
 			${skeleton.body}
 		</div>

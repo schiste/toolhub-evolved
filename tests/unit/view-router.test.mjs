@@ -545,10 +545,16 @@ test("setActiveNav does not match a look-alike prefix and only marks the first m
 
 /* ---- render / commitView / errorHTML / loadingHTML -------------------- */
 
-test("loadingHTML renders route skeletons with a spinner fallback", () => {
-	assert.match(router.loadingHTML(), /Loading the local catalog/);
-	assert.match(router.loadingHTML(), /class="spinner"/);
-	assert.doesNotMatch(router.loadingHTML("/"), /skeleton-grid|hero--loading|route-loading--home/);
+test("loadingHTML renders a skeleton for every route and never a visible spinner", () => {
+	// No route drops to a spinner-and-sentence any more: unknown paths and the
+	// home page get the generic page skeleton, and the status text that stays
+	// for assistive tech is visually hidden.
+	assert.doesNotMatch(router.loadingHTML(), /class="spinner"/);
+	assert.match(router.loadingHTML(), /route-loading--page/);
+	assert.match(router.loadingHTML("/"), /route-loading--page/);
+	assert.match(router.loadingHTML("/api-docs"), /route-loading--page/);
+	assert.match(router.loadingHTML("/"), /class="route-loading__label visually-hidden"/);
+	assert.match(router.loadingHTML("/search"), /class="route-loading__label visually-hidden"/);
 	assert.match(router.loadingHTML("/search"), /route-loading--search/);
 	assert.match(router.loadingHTML("/search"), /skeleton-grid--tool/);
 	assert.match(router.loadingHTML("/tools/example"), /route-loading--tool/);

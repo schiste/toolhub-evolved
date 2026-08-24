@@ -77,7 +77,7 @@ test("pseudolocale transforms chrome fallbacks without transforming params", asy
 
 test("pseudolocale transforms boot messages without fetching a catalog", async () => {
 	const i18n = await loadI18n("en-x-pseudo");
-	assert.equal(i18n.t("router.loadingToolhubData"), "[Ŀǿåḓīƞĝ ŧħḗ ļǿçåļ çåŧåļǿĝ~~~~~~~~]");
+	assert.equal(i18n.t("router.loadingPage"), "[Ŀǿåḓīƞĝ ƥåĝḗ~~~~]");
 	localStorage.removeItem("toolhub-locale");
 });
 

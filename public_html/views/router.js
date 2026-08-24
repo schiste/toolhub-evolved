@@ -4,7 +4,7 @@ import { t, tWithElements } from "../lib/core/i18n.js";
 import { navigateTo, parseRoute } from "../lib/core/routing.js";
 import { serverSessionResolved, signedIn } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
-import { routeSkeletonHTML } from "../lib/molecules/skeleton.js";
+import { pageBodySkeleton, routeSkeletonHTML } from "../lib/molecules/skeleton.js";
 import { isStaticSlug } from "./static-routes.js";
 
 // Route modules are loaded on demand so first paint does not require every page's
@@ -195,13 +195,11 @@ export function setSignInFallback(fn) {
 export function authLoadingPage(title, lead) {
 	return {
 		title: `${title} - Toolhub`,
-		html: `<div class="container page route-loading route-loading--auth" role="status" aria-live="polite">
+		html: `<div class="container page route-loading route-loading--skeleton" role="status" aria-live="polite" aria-atomic="true">
 			<h1 class="page__title">${esc(title)}</h1>
 			${lead ? `<p class="page__intro">${esc(lead)}</p>` : ""}
-			<div class="route-loading__panel">
-				<span class="spinner" aria-hidden="true"></span>
-				<span class="route-loading__label">${t("router.loadingToolhubAccount", "Loading your Toolhub account")}</span>
-			</div>
+			<span class="route-loading__label visually-hidden">${t("router.loadingToolhubAccount", "Loading your Toolhub account")}</span>
+			<div class="route-loading__body" aria-hidden="true">${pageBodySkeleton()}</div>
 		</div>`
 	};
 }
@@ -397,14 +395,7 @@ export function setActiveNav() {
 export let lastPath = null;
 export let navSeq = 0;
 /** @param {string} [path] */
-export const loadingHTML = (path) =>
-	routeSkeletonHTML(path) ||
-	`<div class="container page route-loading" role="status" aria-live="polite">
-	<div class="route-loading__panel">
-		<span class="spinner" aria-hidden="true"></span>
-		<span class="route-loading__label">${t("router.loadingToolhubData", "Loading the local catalog")}</span>
-		</div>
-	</div>`;
+export const loadingHTML = (path) => routeSkeletonHTML(path);
 /** @param {string} href */
 function redirectTo(href) {
 	return {

@@ -103,6 +103,8 @@
 				--color-progressive-hover: #09437f;
 				--color-progressive-subtle: #e7f0fa;
 				--color-interactive-subtle: #dbe7ff;
+				--color-skeleton-base: var(--color-surface-muted);
+				--color-skeleton-sheen: rgb(255 255 255 / 0.72);
 				--font-sans:
 					system-ui, -apple-system, "Segoe UI", roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans",
 					"Geeza Pro", "Arial Hebrew", "Nirmala UI", "Kohinoor Devanagari", "Noto Sans Devanagari",
@@ -147,6 +149,7 @@
 				--color-progressive-hover: #a7d0ff;
 				--color-progressive-subtle: #172d46;
 				--color-interactive-subtle: #2b527e;
+				--color-skeleton-sheen: rgb(255 255 255 / 0.08);
 			}
 			:where(*, *::before, *::after) {
 				box-sizing: border-box;
@@ -446,10 +449,6 @@
 				color: var(--color-text-secondary);
 				font-weight: 600;
 			}
-			.route-loading--auth {
-				flex-direction: column;
-				align-items: flex-start;
-			}
 			.route-loading__panel {
 				display: inline-flex;
 				align-items: center;
@@ -458,6 +457,88 @@
 				padding: var(--space-4);
 				border: var(--border-base);
 				background: var(--color-surface);
+			}
+			.route-loading--skeleton {
+				display: block;
+				min-height: 28rem;
+				font-weight: 400;
+			}
+			.route-loading__body {
+				display: grid;
+				gap: var(--space-4);
+				min-width: 0;
+			}
+			.visually-hidden {
+				position: absolute;
+				width: 1px;
+				height: 1px;
+				margin: -1px;
+				overflow: hidden;
+				clip-path: inset(50%);
+				white-space: nowrap;
+			}
+			.skeleton {
+				position: relative;
+				display: block;
+				min-width: 0;
+				overflow: hidden;
+				background: var(--color-skeleton-base);
+				border-radius: var(--radius-sm);
+			}
+			.skeleton::after {
+				position: absolute;
+				inset: 0;
+				content: "";
+				background: linear-gradient(90deg, transparent, var(--color-skeleton-sheen), transparent);
+				animation: skeleton-sheen 1.2s ease-in-out infinite;
+				transform: translateX(-100%);
+			}
+			@keyframes skeleton-sheen {
+				to {
+					transform: translateX(100%);
+				}
+			}
+			.skeleton--line {
+				width: 100%;
+				height: 0.85em;
+			}
+			.skeleton--block {
+				width: 100%;
+				min-height: 168px;
+			}
+			.skeleton--w-md {
+				width: 52%;
+			}
+			.skeleton--w-lg {
+				width: 72%;
+			}
+			.skeleton--w-xl {
+				width: 92%;
+			}
+			.skeleton-page__head,
+			.skeleton-page__body {
+				display: grid;
+				gap: var(--space-3);
+				max-width: 760px;
+			}
+			.skeleton-page__title {
+				height: var(--fs-title);
+			}
+			.skeleton-page__intro,
+			.skeleton-page__paragraph {
+				height: var(--fs-body);
+			}
+			.skeleton-boot__cards {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+				gap: var(--space-4);
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.skeleton::after {
+					animation: none;
+					opacity: 0;
+					transform: none;
+				}
 			}
 			.boot-failure {
 				align-items: flex-start;
@@ -741,14 +822,35 @@
 			</div>
 		</header>
 
-		<!-- The router replaces this boot placeholder with the active view. -->
+		<!-- The router replaces this boot placeholder with the active view, or with
+		     the route's own skeleton if the view is still loading. This markup is
+		     route-agnostic (one document serves every path), so it mirrors the
+		     generic skeleton from lib/molecules/skeleton.js. Its styles have to
+		     live in the critical CSS above: the design-system sheets load
+		     deferred, and this paints before they arrive. -->
 		<main id="view" tabindex="-1" aria-live="polite" aria-busy="true">
-			<div class="container page route-loading" role="status" aria-live="polite">
-				<div class="route-loading__panel">
-					<span class="spinner" aria-hidden="true"></span>
-					<span class="route-loading__label" data-i18n="router.loadingToolhubData"
-						>Loading the local catalog</span
-					>
+			<div
+				class="container page route-loading route-loading--skeleton route-loading--page"
+				role="status"
+				aria-live="polite"
+				aria-atomic="true"
+			>
+				<span class="route-loading__label visually-hidden" data-i18n="router.loadingPage">Loading page</span>
+				<div class="route-loading__body" aria-hidden="true">
+					<div class="skeleton-page__head">
+						<span class="skeleton skeleton--line skeleton-page__title skeleton--w-lg"></span>
+						<span class="skeleton skeleton--line skeleton-page__intro skeleton--w-xl"></span>
+					</div>
+					<div class="skeleton-page__body">
+						<span class="skeleton skeleton--line skeleton-page__paragraph skeleton--w-xl"></span>
+						<span class="skeleton skeleton--line skeleton-page__paragraph skeleton--w-lg"></span>
+						<span class="skeleton skeleton--line skeleton-page__paragraph skeleton--w-md"></span>
+					</div>
+					<div class="skeleton-boot__cards">
+						<span class="skeleton skeleton--block"></span>
+						<span class="skeleton skeleton--block"></span>
+						<span class="skeleton skeleton--block"></span>
+					</div>
 				</div>
 			</div>
 		</main>
