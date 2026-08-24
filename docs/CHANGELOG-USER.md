@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: who-the-gadget-is-for -->
 <!-- Release title: Who the Gadget Is For -->
-<!-- Source range: e61d34417..910a955 (6 commits) -->
+<!-- Source range: e61d34417..359f05667 (4 commits) -->
 
 # What's New for Users
 
