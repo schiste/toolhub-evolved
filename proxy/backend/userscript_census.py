@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
+    from datetime import datetime
 
 # Content models worth a directory entry. CSS is enumerated because a page's
 # model is not its suffix: a .css page holding JavaScript is a script, and a
@@ -311,3 +312,31 @@ def read_changes(payload: object) -> tuple[str, ...]:
         seen.add(title)
         found.append(title)
     return tuple(found)
+
+
+def changes_continue(payload: object) -> dict[str, str]:
+    """Name the parameters that read the window after this one.
+
+    Empty when the feed is exhausted, which is the only reliable way to know a
+    watch has caught up: a short window means the wiki was quiet in that span,
+    not that there is nothing after it, and a full one says nothing either way.
+    Returned as the parameters to merge into the next request rather than as a
+    token, because MediaWiki hands back both `rccontinue` and the `continue`
+    field that names which module it belongs to, and sending one without the
+    other restarts the enumeration from the beginning.
+    """
+    following = payload.get("continue") if isinstance(payload, dict) else None
+    if not isinstance(following, dict):
+        return {}
+    return {str(key): str(value) for key, value in following.items()}
+
+
+def api_timestamp(moment: datetime) -> str:
+    """Render a moment the way the Action API spells timestamps.
+
+    The census stores cursors exactly as the wiki reported them, so a cursor
+    this codebase generates has to be indistinguishable from one that came back
+    in a feed -- both are compared as strings and handed straight back as
+    `rcstart`.
+    """
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")

@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 import backend  # noqa: E402
 from backend import db, userscript_census as census, userscript_sweep as sweeper  # noqa: E402
 from backend import userscripts, wiki_replica  # noqa: E402
-from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage  # noqa: E402
+from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage, utcnow  # noqa: E402
 
 FRWIKI = "fr.wikipedia.org"
 ENWIKI = "en.wikipedia.org"
@@ -92,7 +92,7 @@ class FakeWiki:
         if params.get("list") == "search":
             return self._search(params)
         if params.get("list") == "recentchanges":
-            return self._changes()
+            return self._changes(params)
         return self._content(params)
 
     # -- handlers -------------------------------------------------------
@@ -140,8 +140,21 @@ class FakeWiki:
             )
         return {"query": {"pages": pages}}
 
-    def _changes(self):
-        return {"query": {"recentchanges": self.changes}}
+    def _changes(self, params):
+        """Serve one window of the feed, and offer the next the way the API does.
+
+        `rcstart` is recorded rather than applied -- the tests that care about it
+        assert on `requests`, and filtering here would silently drop the fixture
+        timestamps the older tests were written around. The continuation is real,
+        because a watch that follows it is the thing being tested: `rccontinue`
+        carries the offset, and its absence is how the feed says it is exhausted.
+        """
+        start = int(params.get("rccontinue") or 0)
+        window = self.changes[start : start + int(params.get("rclimit") or len(self.changes))]
+        answer = {"query": {"recentchanges": window}}
+        if start + len(window) < len(self.changes):
+            answer["continue"] = {"rccontinue": str(start + len(window)), "continue": "-||"}
+        return answer
 
     def _siteinfo(self):
         # Shaped like the real answer: `canonical` is `User` on every wiki,
@@ -909,14 +922,17 @@ def test_a_sweep_records_what_it_learned_about_the_wiki():
         },
     )
     sweeper.sweep(wiki.request, FRWIKI)
-    assert state() == {
+    recorded = state()
+    # Stamped from the clock, so it is asserted for shape by the tests that own
+    # it rather than compared to a literal here.
+    assert recorded.pop("cursor") != ""
+    assert recorded == {
         "sweeps": 1,
         "pages": 3,
         "scripts": 1,
         "imports": 1,
         "complete": True,
         "totals": {"javascript": 2, "css": 1},
-        "cursor": "",
         "sweep_cursor": 0,
         "status": "idle",
     }
@@ -955,6 +971,10 @@ def test_a_watch_with_nothing_to_read_asks_for_no_content():
     before = len(wiki.requests)
     summary = sweeper.watch(wiki.request, FRWIKI)
     assert summary["asked"] == 0
+    assert summary["windows"] == 1
+    assert summary["behind"] == 0
+    # The window budget costs a caught-up wiki nothing: the feed offers no
+    # continuation, so the loop stops after the window it was always going to read.
     assert len(wiki.requests) == before + 1
 
 
@@ -989,6 +1009,110 @@ def test_the_cursor_is_the_newest_timestamp_the_window_held():
 )
 def test_a_feed_with_no_usable_timestamp_keeps_the_old_cursor(payload):
     assert sweeper.latest_timestamp(payload, "2024-01-01T00:00:00Z") == "2024-01-01T00:00:00Z"
+
+
+# -- catching up --------------------------------------------------------
+
+
+def test_a_completed_sweep_leaves_a_cursor_so_the_first_watch_does_not_start_a_month_back():
+    # Without one, `changes_params` sends no `rcstart`, and `rcdir=newer` starts
+    # the feed at the oldest row recent changes still keeps. A wiki fresh from a
+    # complete sweep began watching a month in the past, re-reading a month of
+    # edits to pages the sweep had just read. That is what put enwiki 30 days
+    # behind on 2026-08-24.
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    began = census.api_timestamp(utcnow())
+    sweeper.sweep(wiki.request, FRWIKI)
+    assert state()["cursor"] >= began
+    sweeper.watch(wiki.request, FRWIKI)
+    feeds = [params for _domain, _method, params in wiki.requests if params.get("list") == "recentchanges"]
+    assert feeds[-1]["rcstart"] >= began
+
+
+def test_the_cursor_a_sweep_leaves_is_where_the_pass_began_not_where_it_ended():
+    # A bounded sweep spans runs, and a page read in the first run can be edited
+    # before the last one ends. A cursor stamped when the pass finished would
+    # step straight over that edit, and a watch has no second pass to find it.
+    wiki = FakeWiki(THREE)
+    sweeper.run(wiki.request, FRWIKI, limit=1)
+    seeded = state()["cursor"]
+    assert seeded != ""
+    for _run in range(2):
+        sweeper.run(wiki.request, FRWIKI, limit=1)
+    assert state()["sweeps"] == 1
+    assert state()["cursor"] == seeded
+
+
+def behind_by(days):
+    """A wiki whose feed holds one changed script page per day."""
+    return FakeWiki(
+        {f"User:A/s{index}.js": page(f"var a = {index};") for index in range(days)},
+        changes=[
+            {"ns": 2, "title": f"User:A/s{index}.js", "timestamp": f"2026-01-{index + 1:02d}T00:00:00Z"}
+            for index in range(days)
+        ],
+    )
+
+
+def test_a_watch_that_is_behind_follows_the_feed_rather_than_reading_one_window():
+    # One window per run only converges while the wiki produces fewer changes
+    # per run than a window holds. enwiki's user namespace does not, so the
+    # census gained half an hour per hour and never caught up.
+    summary = sweeper.watch(behind_by(10).request, FRWIKI, limit=3)
+    assert summary["windows"] == 4
+    assert summary["behind"] == 0
+    assert summary["asked"] == 10
+    assert summary["cursor"] == "2026-01-10T00:00:00Z"
+
+
+def test_a_watch_that_runs_out_of_windows_says_it_is_still_behind():
+    # Every other count on the line reads the same as a quiet hour. Without this
+    # one, a census weeks behind and a wiki nobody edited are indistinguishable.
+    summary = sweeper.watch(behind_by(10).request, FRWIKI, limit=3, windows=2)
+    assert summary["windows"] == 2
+    assert summary["behind"] == 1
+    assert summary["asked"] == 6
+    assert summary["cursor"] == "2026-01-06T00:00:00Z"
+
+
+def test_the_run_after_a_budget_ran_out_resumes_from_the_cursor_rather_than_the_start():
+    wiki = behind_by(10)
+    sweeper.watch(wiki.request, FRWIKI, limit=3, windows=2)
+    sweeper.watch(wiki.request, FRWIKI, limit=3, windows=2)
+    feeds = [params for _domain, _method, params in wiki.requests if params.get("list") == "recentchanges"]
+    # A first window with nothing to resume from, then the feed's own
+    # continuation within the run, then the next run picking the cursor back up.
+    assert "rcstart" not in feeds[0]
+    assert feeds[1]["rccontinue"] == "3"
+    assert feeds[2]["rcstart"] == "2026-01-06T00:00:00Z"
+
+
+def test_a_watch_cut_short_by_lag_keeps_the_windows_it_already_finished():
+    # The windows before the refusal were read in full. Dropping them back to
+    # where the run started would re-read work that was done, which on a wiki
+    # spending every run catching up is the difference between converging and not.
+    wiki = FakeWiki(
+        {"User:A/one.js": page("var a = 1;"), "User:B/two.js": page("var b = 2;")},
+        changes=[
+            {"ns": 2, "title": "User:A/one.js", "timestamp": "2026-01-02T00:00:00Z"},
+            {"ns": 2, "title": "User:B/two.js", "timestamp": "2026-01-03T00:00:00Z"},
+        ],
+        lagged_after=1,
+    )
+    summary = sweeper.watch(wiki.request, FRWIKI, limit=1)
+    assert summary["lagged"] == 1
+    assert summary["windows"] == 1
+    assert summary["cursor"] == "2026-01-02T00:00:00Z"
+
+
+def test_one_refusal_is_one_lagged_flag_however_many_windows_a_run_read():
+    # `lagged` says the run was cut short. It is a fact about the run, not a
+    # tally, and summing it across windows would print a count of something
+    # there is only one of.
+    wiki = behind_by(4)
+    wiki.lagged_after = 2
+    summary = sweeper.watch(wiki.request, FRWIKI, limit=1)
+    assert summary["lagged"] == 1
 
 
 # -- choosing between the two -------------------------------------------
@@ -1135,6 +1259,8 @@ WATCHED = {
     "lagged": 0,
     "collisions": 0,
     "cursor": "2026-08-06T17:22:45Z",
+    "windows": 1,
+    "behind": 0,
 }
 
 
@@ -1155,7 +1281,12 @@ def test_the_job_sweeps_the_configured_wikis(monkeypatch, capsys, _job_env):
     )
     assert job.main() == 0
     assert [wiki for wiki, _kwargs in seen] == ["fr.wikipedia.org", "en.wikipedia.org"]
-    assert seen[0][1] == {"full": False, "limit": 0, "watch_limit": sweeper.WATCH_LIMIT}
+    assert seen[0][1] == {
+        "full": False,
+        "limit": 0,
+        "watch_limit": sweeper.WATCH_LIMIT,
+        "watch_windows": sweeper.WATCH_WINDOWS,
+    }
     out = capsys.readouterr().out
     assert "userscript-census: wiki=fr.wikipedia.org mode=sweep" in out
     assert "unreadable=0" in out
@@ -1206,7 +1337,7 @@ def test_a_full_run_is_asked_for_through_the_environment(monkeypatch, _job_env):
         or dict(SWEPT, wiki=wiki),
     )
     assert job.main() == 0
-    assert asked == [{"full": True, "limit": 40, "watch_limit": 80}]
+    assert asked == [{"full": True, "limit": 40, "watch_limit": 80, "watch_windows": sweeper.WATCH_WINDOWS}]
 
 
 @pytest.mark.parametrize(("raw", "expected"), [("", 500), ("nonsense", 500), ("-5", 500), ("0", 500), ("12", 12)])
@@ -1233,6 +1364,48 @@ def test_a_watch_reports_the_wiki_time_it_has_caught_up_to(monkeypatch, capsys, 
     out = capsys.readouterr().out
     assert "mode=watch" in out
     assert "cursor=2026-08-06T17:22:45Z" in out
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("", 48), ("nonsense", 48), ("-5", 48), ("0", 48), ("6", 6)])
+def test_an_unusable_window_budget_falls_back_to_the_default(monkeypatch, raw, expected, _job_env):
+    asked = []
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")  # one wiki: this is about the options, not the list
+    monkeypatch.setenv("USERSCRIPT_WATCH_WINDOWS", raw)
+    monkeypatch.setattr(
+        job.userscript_sweep,
+        "run",
+        lambda _request, wiki, **kwargs: asked.append(kwargs["watch_windows"]) or dict(WATCHED, wiki=wiki),
+    )
+    assert job.main() == 0
+    assert asked == [expected]
+
+
+def test_a_watch_says_how_many_windows_it_got_through(monkeypatch, capsys, _job_env):
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")
+    monkeypatch.setattr(
+        job.userscript_sweep,
+        "run",
+        lambda _request, wiki, **_kwargs: dict(WATCHED, wiki=wiki, windows=12),
+    )
+    assert job.main() == 0
+    out = capsys.readouterr().out
+    assert "windows=12" in out
+    # Not behind, so the line does not carry the field at all -- same rule as
+    # `collisions`: a field that reads 0 every run is one readers stop seeing.
+    assert "behind" not in out
+
+
+def test_a_watch_that_used_its_whole_budget_says_it_is_still_behind(monkeypatch, capsys, _job_env):
+    # The one number that separates a census weeks behind from a quiet hour once
+    # the cursor is close enough to look reasonable on its own.
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")
+    monkeypatch.setattr(
+        job.userscript_sweep,
+        "run",
+        lambda _request, wiki, **_kwargs: dict(WATCHED, wiki=wiki, windows=48, behind=1),
+    )
+    assert job.main() == 0
+    assert "windows=48 behind=1" in capsys.readouterr().out
 
 
 def test_a_watch_that_has_never_run_says_so_rather_than_printing_a_blank(monkeypatch, capsys, _job_env):

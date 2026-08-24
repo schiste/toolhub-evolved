@@ -8,7 +8,10 @@ to say so rather than stop quietly.
 """
 
 import sys
+from datetime import datetime
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
@@ -351,3 +354,28 @@ def test_a_replica_title_is_rebuilt_in_the_spelling_the_api_answers_with():
 
 def test_rebuilding_a_title_restores_spaces_everywhere_underscores_stood():
     assert census.full_title("User", "A_B/c_d.js") == "User:A B/c d.js"
+
+
+# -- following the recent-changes feed ----------------------------------
+
+
+def test_a_feed_with_more_behind_it_hands_back_what_to_send_next():
+    payload = {"query": {"recentchanges": []}, "continue": {"rccontinue": "20260125123456|9", "continue": "-||"}}
+    # Both fields, not just the token: MediaWiki uses `continue` to say which
+    # module `rccontinue` belongs to, and a request carrying one without the
+    # other starts the enumeration over from the beginning.
+    assert census.changes_continue(payload) == {"rccontinue": "20260125123456|9", "continue": "-||"}
+
+
+@pytest.mark.parametrize("payload", ["not a dict", {}, {"query": {}}, {"continue": "not a dict"}])
+def test_an_exhausted_feed_offers_nothing(payload):
+    # Absence is the only signal that a watch has caught up. A short window means
+    # the wiki was quiet in that span, and a full one says nothing either way.
+    assert census.changes_continue(payload) == {}
+
+
+def test_a_generated_timestamp_is_spelled_the_way_the_api_spells_one():
+    # Cursors are compared as strings and handed straight back as `rcstart`, so
+    # one this codebase stamps has to be indistinguishable from one a feed
+    # reported.
+    assert census.api_timestamp(datetime(2026, 8, 24, 15, 23, 45)) == "2026-08-24T15:23:45Z"

@@ -52,9 +52,22 @@ MAX_STORED_URL: int = 2000
 # the column width, so that a malformed argument truncates instead of failing
 # the page it was found on.
 MAX_STORED_MODULE: int = 255
-# One recent-changes window. Large enough that an hourly watch on a busy wiki
-# never truncates, small enough to stay one request.
+# One recent-changes window. 500 is the cap the API serves a client without
+# `apihighlimits`, so asking for more returns 500 and a warning.
 WATCH_LIMIT: int = 500
+
+# How many of those windows one run may consume before it stops and leaves the
+# rest for the next one. A watch that reads exactly one window per run only
+# stays current while the wiki produces fewer changes per run than a window
+# holds, and enwiki's user namespace does not: 500 changes is about ninety
+# minutes of it, so an hourly one-window watch gained half an hour per hour and
+# a census a month behind would have needed two months to climb out. Following
+# the feed within the run makes catching up something a run does, rather than
+# something the schedule has to outpace -- 48 windows is roughly three days of
+# enwiki, so an outage is paid off on the next run instead of over weeks.
+# A wiki that is already current still costs exactly one request: the loop
+# stops as soon as the feed says there is nothing after this window.
+WATCH_WINDOWS: int = 48
 
 # How many failed batches are worth re-reading one title at a time before the
 # failure is treated as systemic rather than as one oversized batch.
@@ -652,10 +665,27 @@ def sweep(request: Callable[[str, str, dict[str, Any]], Any], wiki: str, *, limi
     """
     with db.session_scope() as session:
         state = _state(session, wiki)
+        started = utcnow()
         state.status = "running"
-        state.last_started_at = utcnow()
+        state.last_started_at = started
         state.last_error = ""
         cursor = state.sweep_cursor
+        # A pass beginning here is about to read the whole wiki as of now, so
+        # the watch that follows it needs the changes made from now on and
+        # nothing older. Left unset, `changes_params` sends no `rcstart`, and
+        # `rcdir=newer` then starts the first watch at the oldest row recent
+        # changes still keeps -- a wiki fresh from a complete sweep began
+        # watching a month in the past, re-reading a month of edits to pages it
+        # had just read. Small wikis climbed out within a day and it looked
+        # like nothing; enwiki fills windows faster than a one-window watch
+        # empties them and could not climb out at all.
+        #
+        # Seeded when the pass starts rather than when it finishes because a
+        # bounded sweep spans runs: a page read in the first run can be edited
+        # before the last one ends, and a cursor set at the end would step over
+        # that edit for good.
+        if not cursor:
+            state.changes_cursor = census.api_timestamp(started)
     found = discover(request, wiki)
     start = _resume_from(cursor, found)
     window = found.titles[start : start + limit] if limit else found.titles[start:]
@@ -715,41 +745,84 @@ def latest_timestamp(payload: object, fallback: str) -> str:
     return max((stamp for stamp in stamps if stamp), default=fallback)
 
 
+def _accumulate(totals: dict[str, int], window: dict[str, int]) -> dict[str, int]:
+    """Fold one window's counts into the run's.
+
+    Everything a window reports is a tally and adds, except `lagged`, which says
+    the run was cut short. That is a fact about the run, not a quantity, and
+    summing it would print `lagged=3` for something there is only one of.
+    """
+    merged = {key: totals.get(key, 0) + window.get(key, 0) for key in EMPTY_COUNTS}
+    merged["lagged"] = max(totals.get("lagged", 0), window.get("lagged", 0))
+    return merged
+
+
 def watch(
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
     *,
     limit: int = WATCH_LIMIT,
+    windows: int = WATCH_WINDOWS,
 ) -> dict[str, Any]:
     """Bring a wiki up to date from the changes since the last run.
 
     The cursor advances only over changes this run actually read. A window that
-    was never read is a page the directory never learns changed, so a watch that
-    fails leaves the cursor where it was and the next run re-reads it.
+    was never read is a page the directory never learns changed, so a watch cut
+    short leaves the cursor at the last window it finished and the next run
+    resumes there.
+
+    `windows` is what lets a watch that has fallen behind catch up rather than
+    merely keep pace, and following the API's own continuation is what makes
+    that safe at the boundary. A window can end in the middle of a second;
+    re-asking with `rcstart` at that second re-reads the part of it already
+    read, and on a wiki busy enough to fill a window inside one second it would
+    never leave that second at all.
+
+    Running out of budget is reported rather than left to be inferred. A run
+    that used every window and was still being offered more has left the wiki
+    behind, and in every other count that looks exactly like a quiet hour.
     """
     with db.session_scope() as session:
         cursor = _state(session, wiki).changes_cursor
-    payload = request(wiki, "GET", census.changes_params(cursor, limit))
-    titles = census.read_changes(payload)
-    summary = ingest(request, wiki, titles, ranked=False) if titles else dict(EMPTY_COUNTS)
+    totals = dict(EMPTY_COUNTS)
+    consumed = 0
+    behind = 0
+    following: dict[str, str] = {}
+    for _window in range(max(1, windows)):
+        payload = request(wiki, "GET", {**census.changes_params(cursor, limit), **following})
+        titles = census.read_changes(payload)
+        summary = ingest(request, wiki, titles, ranked=False) if titles else dict(EMPTY_COUNTS)
+        totals = _accumulate(totals, summary)
+        # Same rule as the sweep cursor: a window cut short by lag has not read
+        # the changes it enumerated, and advancing over them would lose those
+        # edits for good -- a watch has no second pass to find them again. The
+        # windows before it were read in full, so the cursor keeps what they
+        # covered and only this one is left to be re-asked.
+        if summary["lagged"]:
+            break
+        consumed += 1
+        cursor = latest_timestamp(payload, cursor)
+        following = census.changes_continue(payload)
+        if not following:
+            break
+    else:
+        behind = 1
     with db.session_scope() as session:
         state = _record_totals(session, wiki)
-        # Same rule as the sweep cursor: a watch cut short by lag has not read
-        # the changes it enumerated, and advancing over them would lose the
-        # edits for good -- a watch has no second pass to find them again.
-        state.changes_cursor = cursor if summary["lagged"] else latest_timestamp(payload, cursor)
+        state.changes_cursor = cursor
         state.last_success_at = utcnow()
         cursor = state.changes_cursor
-    return {"wiki": wiki, "mode": "watch", "cursor": cursor, **summary}
+    return {"wiki": wiki, "mode": "watch", "cursor": cursor, "windows": consumed, "behind": behind, **totals}
 
 
-def run(
+def run(  # noqa: PLR0913 - the two bounds and the two budgets are one job's options, named once here
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,
     *,
     full: bool = False,
     limit: int = 0,
     watch_limit: int = WATCH_LIMIT,
+    watch_windows: int = WATCH_WINDOWS,
 ) -> dict[str, Any]:
     """Sweep or watch one wiki, whichever the wiki's own state calls for.
 
@@ -777,4 +850,4 @@ def run(
         outdated = enumeration.superseded(state.enumeration_source)
     if full or not swept or pending or outdated:
         return sweep(request, wiki, limit=limit)
-    return watch(request, wiki, limit=watch_limit)
+    return watch(request, wiki, limit=watch_limit, windows=watch_windows)

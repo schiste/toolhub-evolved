@@ -42,13 +42,22 @@ def _progress(summary: dict) -> str:
     resuming a month back reports five pages written and looks like a quiet hour,
     and the line said nothing to tell the two apart. `none` is a cursor that has
     never been set, which starts at the oldest row the wiki still keeps.
+
+    `windows` is how many recent-changes windows the run got through, and
+    `behind` says it stopped because it ran out of them rather than because it
+    reached the present. Together they are the difference between a cursor that
+    is close because the wiki is quiet and one that is close because the run
+    worked for it -- and, while a wiki is catching up, the only number that says
+    it still is.
     """
     if summary.get("mode") == "sweep":
         return (
             f" source={summary['source']} enumerated={summary['enumerated']} "
             f"sweep_cursor={summary['sweep_cursor']} complete={int(bool(summary['complete']))}"
         )
-    return f" cursor={summary['cursor'] or 'none'}"
+    return (
+        f" cursor={summary['cursor'] or 'none'} windows={summary['windows']}{' behind=1' if summary['behind'] else ''}"
+    )
 
 
 def _wikis() -> list[str]:
@@ -81,6 +90,9 @@ def main() -> int:
     full = os.environ.get("USERSCRIPT_SWEEP", "").strip().lower() in {"1", "true", "yes"}
     limit = _int_env("USERSCRIPT_LIMIT", 0)
     watch_limit = _int_env("USERSCRIPT_WATCH_LIMIT", userscript_sweep.WATCH_LIMIT) or userscript_sweep.WATCH_LIMIT
+    watch_windows = (
+        _int_env("USERSCRIPT_WATCH_WINDOWS", userscript_sweep.WATCH_WINDOWS) or userscript_sweep.WATCH_WINDOWS
+    )
 
     def cover(client: WikimediaClient, wiki: str) -> None:
         """Bring one wiki up to date and report what that took, in three lines."""
@@ -90,6 +102,7 @@ def main() -> int:
             full=full,
             limit=limit,
             watch_limit=watch_limit,
+            watch_windows=watch_windows,
         )
         collisions = summary["collisions"]
         sys.stdout.write(
