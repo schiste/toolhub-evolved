@@ -19,7 +19,7 @@ from urllib.parse import unquote, urlparse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend import db
+from backend import catalog_facets, db
 from backend.api_cache import DETAIL_FRESH_SECONDS, SEARCH_FRESH_SECONDS, STALE_IF_ERROR_SECONDS
 from backend.models import ApiCacheMeta, CanonicalToolCache, CatalogSnapshotStage, catalog_card_record, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL
@@ -558,16 +558,26 @@ def tools_by_name(names: list[str]) -> dict[str, dict[str, Any]]:
     return {row.tool_name: _payload(row) for row in rows}
 
 
-def search(query: str = "", *, limit: int = MAX_SEARCH_RESULTS) -> list[dict[str, Any]]:
+def search(query: str = "", *, limit: int = MAX_SEARCH_RESULTS, include_archived: bool = False) -> list[dict[str, Any]]:
     """Search cached canonical records locally with simple deterministic matching.
 
     Filtering and limiting happen in SQL. Reading the whole table to keep at
     most `limit` rows meant transferring every cached record's JSON — the full
     catalog — for a query that returns a page of results.
+
+    Archived tools are withheld by default, taken from `catalog_facets`'
+    definition of the default population rather than a second copy of it. This
+    browse path is what `cachedCanonicalTools` falls back to when the catalog
+    search request fails, and a fallback that widened the population would have
+    shown the reader a set the live page never offers: on meta alone the census
+    files 1,874 archived user scripts against 729 active ones, so an outage
+    would have answered a search with mostly tools nobody loads. Fetching by
+    name is unaffected -- asking for a row by name is asking for it on purpose.
     """
     term = str(query or "").strip().casefold()
     capped = max(1, min(MAX_SEARCH_RESULTS, int(limit or MAX_SEARCH_RESULTS)))
-    statement = select(CanonicalToolCache).order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
+    population = select(CanonicalToolCache) if include_archived else catalog_facets.default_population()
+    statement = population.order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
     if term:
         statement = statement.where(CanonicalToolCache.search_text.like(f"%{escape_like(term)}%", escape="\\"))
     with db.session_scope() as s:

@@ -928,7 +928,12 @@ export async function getToolsByName(names) {
 /**
  * Read structured canonical Toolhub records from Evolved's local database.
  * This is intentionally same-origin `/v1` data, not an upstream `/api` call.
- * @param {{ names?: string[], q?: string, limit?: number }} [options]
+ * Browsing withholds archived tools unless `includeArchived` says otherwise,
+ * matching what `/search/tools/` does — this is the fallback the search and home
+ * views use when that request fails, and a fallback with a wider population
+ * would answer an outage with tools the live page never lists. Fetching by
+ * `names` is unaffected: naming a row is asking for it on purpose.
+ * @param {{ names?: string[], q?: string, limit?: number, includeArchived?: boolean }} [options]
  * @returns {Promise<Tool[]>}
  */
 export async function cachedCanonicalTools(options = {}) {
@@ -936,6 +941,7 @@ export async function cachedCanonicalTools(options = {}) {
 	const names = (options.names || []).filter(Boolean);
 	if (names.length > 0) params.set("names", names.join(","));
 	if (options.q) params.set("q", options.q);
+	if (options.includeArchived) params.set("include_archived", "1");
 	params.set("limit", String(options.limit || names.length || 24));
 	const data = await backendGetJson(`/v1/canonical/tools/?${params.toString()}`);
 	const rows = Array.isArray(data?.results) ? data.results : [];

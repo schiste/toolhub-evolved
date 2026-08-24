@@ -483,9 +483,25 @@ test("search falls back to the last canonical generation when the local query fa
 	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
 
 	const result = await search.viewSearch();
-	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0], [{ q: "cite", limit: 21 }]);
+	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0], [{ q: "cite", limit: 21, includeArchived: false }]);
 	assert.ok(result.html.includes("showing the last published catalog generation"));
 	assert.ok(result.html.includes('data-tool="cached-cite"'));
+});
+
+test("the fallback honours the Status filter instead of widening past the live page", async () => {
+	// The fallback runs precisely when the reader cannot see that anything went
+	// wrong with their filters, so it has to ask for the same population the
+	// failed request asked for. Ticking Archived is the only thing that widens it.
+	setUrl("q=cite");
+	h.apiGet.mockRejectedValue(new Error("down"));
+	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
+	await search.viewSearch();
+	assert.equal(h.cachedCanonicalTools.mock.calls[0][0].includeArchived, false);
+
+	h.cachedCanonicalTools.mockClear();
+	setUrl("q=cite&status=archived");
+	await search.viewSearch();
+	assert.equal(h.cachedCanonicalTools.mock.calls[0][0].includeArchived, true);
 });
 
 test("search sort=complete orders by completeness with title tiebreak", async () => {

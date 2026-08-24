@@ -587,3 +587,46 @@ def test_a_bare_toolforge_prefix_restores_nothing_from_the_runtime_host():
     record = {"url": "https://xn--9s9h.toolforge.org/"}
 
     assert canonical_tools.verified_toolforge_project_names("toolforge-", record) == []
+
+
+def _seed_lifecycle_rows():
+    """One archived row and one active row, both matching the query "cite"."""
+    from datetime import UTC, datetime
+
+    from backend.models import CanonicalToolCache
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    with db.session_scope() as s:
+        for name, lifecycle in (("cite-live", "active"), ("cite-archived", "archived")):
+            s.add(
+                CanonicalToolCache(
+                    tool_name=name,
+                    record={"name": name, "title": f"Cite {lifecycle}", "_lifecycle": lifecycle},
+                    fetched_at=now,
+                    expires_at=now,
+                    stale_until=now,
+                    generation=1,
+                )
+            )
+
+
+def test_search_withholds_archived_tools_unless_asked():
+    # This browse path is the offline fallback behind `cachedCanonicalTools`.
+    # Before this filter existed it answered a failed catalog search with the
+    # archived rows `/search/tools/` withholds, so an outage silently undid the
+    # Status filter rather than degrading to the same population.
+    _seed_lifecycle_rows()
+
+    default_names = [row["toolName"] for row in canonical_tools.search("cite")]
+    widened_names = [row["toolName"] for row in canonical_tools.search("cite", include_archived=True)]
+
+    assert default_names == ["cite-live"]
+    assert sorted(widened_names) == ["cite-archived", "cite-live"]
+
+
+def test_search_by_name_still_returns_an_archived_row():
+    # Naming a row is asking for it on purpose, which is the whole reason the
+    # census keeps an archived row instead of dropping it.
+    _seed_lifecycle_rows()
+
+    assert list(canonical_tools.tools_by_name(["cite-archived"])) == ["cite-archived"]

@@ -196,7 +196,11 @@ export async function viewSearch() {
 					canonicalFallback: false
 				};
 			} catch (error) {
-				const cached = await cachedCanonicalTools({ q, limit: page * pageSize }).catch(() => []);
+				const cached = await cachedCanonicalTools({
+					q,
+					limit: page * pageSize,
+					includeArchived: statuses.has(STATUS_ARCHIVED)
+				}).catch(() => []);
 				const offset = (page - 1) * pageSize;
 				const cachedResults = cached.slice(offset, offset + pageSize);
 				if (cachedResults.length === 0) throw error;

@@ -67,7 +67,7 @@ def replica_status(*, record_count: int | None = None) -> dict[str, Any]:
     }
 
 
-def _include_archived(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
+def include_archived(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
     """Whether the reader has asked for archived tools as well as current ones.
 
     Off unless asked. The census files far more archived user scripts than live
@@ -79,7 +79,7 @@ def _include_archived(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or
 
 
 def _filtered_statement(params: Any) -> Select[tuple[CanonicalToolCache]]:  # noqa: ANN401
-    statement = select(CanonicalToolCache) if _include_archived(params) else catalog_facets.default_population()
+    statement = select(CanonicalToolCache) if include_archived(params) else catalog_facets.default_population()
     query = str(params.get("q") or "").strip().casefold()
     if query:
         statement = statement.where(CanonicalToolCache.search_text.like(f"%{escape_like(query)}%", escape="\\"))
@@ -109,7 +109,7 @@ def _has_catalog_filters(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict
     """
     if str(params.get("q") or "").strip():
         return True
-    if _include_archived(params):
+    if include_archived(params):
         return True
     return any(_values(params, f"{field}__term") for field in FACET_FIELDS)
 
