@@ -524,6 +524,48 @@ def backfill_read_projection(*, batch_size: int = 500) -> int:
                 filled += 1
 
 
+def backfill_status_flags(*, batch_size: int = 500) -> int:
+    """Derive `deprecated` and `experimental` for rows written before the columns.
+
+    No meta marker, unlike `backfill_read_projection`: the column is its own
+    cursor, because NULL is exactly "this row predates the column". That makes
+    the pass idempotent and resumable for free, and it cannot be marked complete
+    while rows are still unfilled -- which a marker written next to a partial
+    batch can be.
+
+    Reassigning `record` is what fills them. The `@validates` hook on that
+    attribute is the single definition of every derived column, so touching the
+    source is how a backfill stays honest; computing the flags here would be a
+    second definition to keep in step with the first.
+
+    Short batches, and a refused one stops the pass rather than the deploy. This
+    runs from `migrate.py`, where an uncaught error aborts after the host has
+    already pulled, and it walks the whole catalogue against a sync job that
+    writes the same table every few minutes. Stopping is safe precisely because
+    the cursor is the data: whatever is still NULL is picked up next deploy, and
+    the read path already treats NULL as "not flagged".
+    """
+    filled = 0
+    while True:
+        try:
+            with db.session_scope() as session:
+                rows = list(
+                    session.execute(
+                        select(CanonicalToolCache)
+                        .where(CanonicalToolCache.deprecated.is_(None))
+                        .order_by(CanonicalToolCache.tool_name)
+                        .limit(max(1, batch_size))
+                    ).scalars()
+                )
+                if not rows:
+                    return filled
+                for row in rows:
+                    row.record = row.record or {}
+                    filled += 1
+        except SQLAlchemyError:
+            return filled
+
+
 def _payload(row: CanonicalToolCache) -> dict[str, Any]:
     return {
         "toolName": row.tool_name,
@@ -558,7 +600,13 @@ def tools_by_name(names: list[str]) -> dict[str, dict[str, Any]]:
     return {row.tool_name: _payload(row) for row in rows}
 
 
-def search(query: str = "", *, limit: int = MAX_SEARCH_RESULTS, include_archived: bool = False) -> list[dict[str, Any]]:
+def search(
+    query: str = "",
+    *,
+    limit: int = MAX_SEARCH_RESULTS,
+    include_archived: bool = False,
+    statuses: frozenset[str] | None = None,
+) -> list[dict[str, Any]]:
     """Search cached canonical records locally with simple deterministic matching.
 
     Filtering and limiting happen in SQL. Reading the whole table to keep at
@@ -578,6 +626,9 @@ def search(query: str = "", *, limit: int = MAX_SEARCH_RESULTS, include_archived
     capped = max(1, min(MAX_SEARCH_RESULTS, int(limit or MAX_SEARCH_RESULTS)))
     population = select(CanonicalToolCache) if include_archived else catalog_facets.default_population()
     statement = population.order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
+    status = catalog_facets.status_predicate(catalog_facets.STATUS_VALUES if statuses is None else statuses)
+    if status is not None:
+        statement = statement.where(status)
     if term:
         statement = statement.where(CanonicalToolCache.search_text.like(f"%{escape_like(term)}%", escape="\\"))
     with db.session_scope() as s:

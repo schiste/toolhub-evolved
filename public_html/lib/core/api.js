@@ -932,8 +932,10 @@ export async function getToolsByName(names) {
  * matching what `/search/tools/` does — this is the fallback the search and home
  * views use when that request fails, and a fallback with a wider population
  * would answer an outage with tools the live page never lists. Fetching by
- * `names` is unaffected: naming a row is asking for it on purpose.
- * @param {{ names?: string[], q?: string, limit?: number, includeArchived?: boolean }} [options]
+ * `names` is unaffected: naming a row is asking for it on purpose. `statuses`
+ * carries the rest of the Status group the same way; null means the caller
+ * expressed no preference, which the API reads as every kind.
+ * @param {{ names?: string[], q?: string, limit?: number, includeArchived?: boolean, statuses?: string[] | null }} [options]
  * @returns {Promise<Tool[]>}
  */
 export async function cachedCanonicalTools(options = {}) {
@@ -942,6 +944,10 @@ export async function cachedCanonicalTools(options = {}) {
 	if (names.length > 0) params.set("names", names.join(","));
 	if (options.q) params.set("q", options.q);
 	if (options.includeArchived) params.set("include_archived", "1");
+	// Sent only when it narrows something, and by the same rule the live search
+	// uses: an absent `status` is every kind, and an empty one is none. The
+	// fallback answers the reader's filters or it answers a different question.
+	if (options.statuses) params.set("status", options.statuses.join(","));
 	params.set("limit", String(options.limit || names.length || 24));
 	const data = await backendGetJson(`/v1/canonical/tools/?${params.toString()}`);
 	const rows = Array.isArray(data?.results) ? data.results : [];

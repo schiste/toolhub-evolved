@@ -56,7 +56,7 @@ const S = {
 					<label for="facet-q" class="skip-label">Search within tools</label>
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="" />
 				</form>
-				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-client-status="deprecated" checked> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-client-status="experimental" checked> <span>Experimental</span></label><label class="facet"><input type="checkbox" data-client-status="archived"> <span>Archived</span></label></div>
+				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-status="active" checked> <span>Active</span></label><label class="facet"><input type="checkbox" data-status="deprecated" checked> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-status="experimental" checked> <span>Experimental</span></label><label class="facet"><input type="checkbox" data-status="archived"> <span>Archived</span></label></div>
 				<div data-facet-groups>
 					<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
 				</div>
@@ -146,7 +146,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 					<label for="facet-q" class="skip-label">Search within tools</label>
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="" />
 				</form>
-				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-client-status="deprecated" checked> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-client-status="experimental" checked> <span>Experimental</span></label><label class="facet"><input type="checkbox" data-client-status="archived"> <span>Archived</span></label></div>
+				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-status="active" checked> <span>Active</span></label><label class="facet"><input type="checkbox" data-status="deprecated" checked> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-status="experimental" checked> <span>Experimental</span></label><label class="facet"><input type="checkbox" data-status="archived"> <span>Archived</span></label></div>
 				<div data-facet-groups>
 					<p class="facet__empty">No filters available.</p>
 				</div>
@@ -174,7 +174,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 					<label for="facet-q" class="skip-label">Search within tools</label>
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="" />
 				</form>
-				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-client-status="deprecated" checked> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-client-status="experimental"> <span>Experimental</span></label><label class="facet"><input type="checkbox" data-client-status="archived"> <span>Archived</span></label></div>
+				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-status="active"> <span>Active</span></label><label class="facet"><input type="checkbox" data-status="deprecated" checked> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-status="experimental"> <span>Experimental</span></label><label class="facet"><input type="checkbox" data-status="archived"> <span>Archived</span></label></div>
 				<div data-facet-groups>
 					<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
 				</div>
@@ -182,7 +182,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			</aside>
 			<div class="browse__main">
 				<div class="browse__bar">
-					<span class="browse__count" aria-live="polite">Showing 2 on this page of 3 tools <span class="browse__count-note">filtered in your browser</span></span>
+					<span class="browse__count" aria-live="polite">Showing 1-2 of 2 tools</span>
 					<span class="browse__controls">
 						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="8">8 per page</option><option value="13">13 per page</option><option value="21">21 per page</option><option value="34">34 per page</option><option value="55">55 per page</option><option value="89">89 per page</option><option value="144">144 per page</option></select></label>
 						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
@@ -264,7 +264,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 					<label for="facet-q" class="skip-label">Search within tools</label>
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="" />
 				</form>
-				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-client-status="deprecated" checked> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-client-status="experimental"> <span>Experimental</span></label><label class="facet"><input type="checkbox" data-client-status="archived"> <span>Archived</span></label></div>
+				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-status="active"> <span>Active</span></label><label class="facet"><input type="checkbox" data-status="deprecated"> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-status="experimental"> <span>Experimental</span></label><label class="facet"><input type="checkbox" data-status="archived"> <span>Archived</span></label></div>
 				<div data-facet-groups>
 					<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
 				</div>
@@ -272,7 +272,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			</aside>
 			<div class="browse__main">
 				<div class="browse__bar">
-					<span class="browse__count" aria-live="polite">No visible tools on this page of 1 tool <span class="browse__count-note">filtered in your browser</span></span>
+					<span class="browse__count" aria-live="polite">0 tools</span>
 					<span class="browse__controls">
 						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="8">8 per page</option><option value="13">13 per page</option><option value="21">21 per page</option><option value="34">34 per page</option><option value="55">55 per page</option><option value="89">89 per page</option><option value="144">144 per page</option></select></label>
 						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
@@ -387,29 +387,28 @@ test("search ignores removed popularity sort and renders normal cards", async ()
 	assert.ok(!r.html.includes("tcard--popular"));
 });
 
-test("search status filter: unticking experimental hides only experimental", async () => {
+test("search status filter: the ticked kinds are named to the API, not applied here", async () => {
+	// The rows below are what the server returns for `status=deprecated`; the view
+	// renders them as given. Nothing is dropped after the response, which is why
+	// the count line under this snapshot is a plain range with no caveat.
 	setUrl("status=deprecated");
 	h.apiGet.mockResolvedValue({
-		results: [
-			rawTool("dep", { title: "Dep", deprecated: true }),
-			rawTool("exp", { title: "Exp", experimental: true }),
-			rawTool("plain", { title: "Plain" })
-		],
-		count: 3,
+		results: [rawTool("dep", { title: "Dep", deprecated: true }), rawTool("plain", { title: "Plain" })],
+		count: 2,
 		facets: FACETS
 	});
 	const r = await search.viewSearch();
+	assert.equal(paramsFor("/search/tools/").get("status"), "deprecated");
 	expect("status", r.html);
 });
 
-test("search status filter hides everything on this page", async () => {
-	setUrl("status=deprecated");
-	h.apiGet.mockResolvedValue({
-		results: [rawTool("exp", { title: "Exp", experimental: true })],
-		count: 1,
-		facets: FACETS
-	});
+test("search status filter: clearing every box asks for nothing and says so", async () => {
+	setUrl("status=");
+	h.apiGet.mockResolvedValue({ results: [], count: 0, facets: FACETS });
 	const r = await search.viewSearch();
+	// An empty `status` is a real answer and has to reach the API as one: dropping
+	// it would read as "absent", which the server takes for every kind.
+	assert.equal(paramsFor("/search/tools/").get("status"), "");
 	expect("status_none", r.html);
 });
 
@@ -483,7 +482,9 @@ test("search falls back to the last canonical generation when the local query fa
 	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
 
 	const result = await search.viewSearch();
-	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0], [{ q: "cite", limit: 21, includeArchived: false }]);
+	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0], [
+		{ q: "cite", limit: 21, includeArchived: false, statuses: null }
+	]);
 	assert.ok(result.html.includes("showing the last published catalog generation"));
 	assert.ok(result.html.includes('data-tool="cached-cite"'));
 });
@@ -502,6 +503,22 @@ test("the fallback honours the Status filter instead of widening past the live p
 	setUrl("q=cite&status=archived");
 	await search.viewSearch();
 	assert.equal(h.cachedCanonicalTools.mock.calls[0][0].includeArchived, true);
+});
+
+test("the fallback carries the other Status boxes too, and omits an untouched set", async () => {
+	// Same rule as the live request: null means "the caller never asked", which
+	// the API reads as every kind. Sending the default back would be harmless
+	// here but would put the two paths on different rules.
+	setUrl("q=cite");
+	h.apiGet.mockRejectedValue(new Error("down"));
+	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
+	await search.viewSearch();
+	assert.equal(h.cachedCanonicalTools.mock.calls[0][0].statuses, null);
+
+	h.cachedCanonicalTools.mockClear();
+	setUrl("q=cite&status=active");
+	await search.viewSearch();
+	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0][0].statuses, ["active"]);
 });
 
 test("search sort=complete orders by completeness with title tiebreak", async () => {
@@ -607,11 +624,11 @@ test("mount: unticking a status navigates with the remaining ones plus the facet
 	const facet = document.querySelector("input[type=checkbox][data-facet]");
 	facet.checked = true;
 	// Deprecated ships ticked, so removing it is what departs from the default.
-	document.querySelector('input[type=checkbox][data-client-status="deprecated"]').checked = false;
+	document.querySelector('input[type=checkbox][data-status="deprecated"]').checked = false;
 	document.querySelector(".facets").dispatchEvent(new Event("change", { bubbles: true }));
 	const url = h.navigateTo.mock.calls.at(-1)[0];
 	assert.ok(url.includes("tool_type=web+app"), url);
-	assert.ok(url.includes("status=experimental"), url);
+	assert.ok(url.includes("status=active%2Cexperimental"), url);
 	assert.ok(!url.includes("deprecated"), url);
 });
 
@@ -712,40 +729,13 @@ test("count: no results, total 1 → bare singular", async () => {
 	const r = await search.viewSearch();
 	assert.equal(countText(r.html), "1 tool");
 });
-test("count: status filter visible, total 1 → singular", async () => {
+test("count: a cleared status box narrows the total itself", async () => {
 	setUrl("status=deprecated");
 	h.apiGet.mockResolvedValue({ results: [rawTool("d", { title: "D", deprecated: true })], count: 1, facets: {} });
 	const r = await search.viewSearch();
-	assert.equal(
-		countText(r.html),
-		'Showing 1 on this page of 1 tool <span class="browse__count-note">filtered in your browser'
-	);
-});
-test("count: status filter none visible, total 1 → singular", async () => {
-	setUrl("status=deprecated");
-	h.apiGet.mockResolvedValue({
-		results: [rawTool("e", { title: "E", experimental: true })],
-		count: 1,
-		facets: {}
-	});
-	const r = await search.viewSearch();
-	assert.equal(
-		countText(r.html),
-		'No visible tools on this page of 1 tool <span class="browse__count-note">filtered in your browser'
-	);
-});
-test("count: status filter none visible, total 5 → plural", async () => {
-	setUrl("status=deprecated");
-	h.apiGet.mockResolvedValue({
-		results: [rawTool("e", { title: "E", experimental: true })],
-		count: 5,
-		facets: {}
-	});
-	const r = await search.viewSearch();
-	assert.equal(
-		countText(r.html),
-		'No visible tools on this page of 5 tools <span class="browse__count-note">filtered in your browser'
-	);
+	// The API counted the population it filtered, so the range covers all of it
+	// and there is no browser-side caveat left to print.
+	assert.equal(countText(r.html), "Showing 1-1 of 1 tool");
 });
 
 test("status values are trimmed before validation", async () => {
@@ -755,11 +745,10 @@ test("status values are trimmed before validation", async () => {
 		count: 2,
 		facets: {}
 	});
-	const r = await search.viewSearch();
-	// Trimmed → "deprecated" is the only ticked box, so experimental is dropped.
-	assert.ok(r.html.includes('class="browse__count-note">filtered in your browser'), "trimmed status filters");
-	assert.ok(!r.html.includes('data-tool="e"'), "experimental tool filtered out");
-	assert.ok(r.html.includes('data-tool="d"'), "deprecated tool kept");
+	await search.viewSearch();
+	// Trimmed → "deprecated" is the only ticked box, and it is what the API is asked
+	// for. Untrimmed it would match nothing and silently widen to every kind.
+	assert.equal(paramsFor("/search/tools/").get("status"), "deprecated");
 });
 
 test("mount: exp-on sort=complete keeps complete selected in #sort", async () => {
@@ -782,20 +771,20 @@ test("archived: excluded by default, and the box says so", async () => {
 	// would make every plain search look like a deliberate choice in the logs.
 	assert.equal(paramsFor("/search/tools/").get("include_archived"), null);
 	assert.ok(
-		r.html.includes('<input type="checkbox" data-client-status="archived"> <span>Archived</span>'),
+		r.html.includes('<input type="checkbox" data-status="archived"> <span>Archived</span>'),
 		"archived offered and unticked"
 	);
 });
 
 test("archived: ticking the box asks the API for them", async () => {
-	setUrl("status=deprecated,experimental,archived");
+	setUrl("status=active,deprecated,experimental,archived");
 	h.apiGet.mockResolvedValue({ results: [rawTool("a", { title: "A" })], count: 1, facets: {} });
 	const r = await search.viewSearch();
 	assert.equal(paramsFor("/search/tools/").get("include_archived"), "1");
 	// The sidebar counts have to describe the same population as the page, or the
 	// bucket totals promise results the list does not contain.
 	assert.equal(paramsFor("/search/facets/").get("include_archived"), "1");
-	assert.ok(r.html.includes('data-client-status="archived" checked'), "archived ticked");
+	assert.ok(r.html.includes('data-status="archived" checked'), "archived ticked");
 });
 
 test("archived: hiding them is done in SQL, so the counts stay exact", async () => {
@@ -809,37 +798,49 @@ test("archived: hiding them is done in SQL, so the counts stay exact", async () 
 
 test("status: an empty parameter is every box cleared, not the default", async () => {
 	setUrl("status=");
-	h.apiGet.mockResolvedValue({
-		results: [rawTool("d", { title: "D", deprecated: true }), rawTool("e", { title: "E", experimental: true })],
-		count: 2,
-		facets: {}
-	});
-	const r = await search.viewSearch();
-	assert.ok(!r.html.includes('data-tool="d"'), "deprecated dropped");
-	assert.ok(!r.html.includes('data-tool="e"'), "experimental dropped");
+	h.apiGet.mockResolvedValue({ results: [], count: 0, facets: {} });
+	await search.viewSearch();
+	assert.equal(paramsFor("/search/tools/").get("status"), "");
 	assert.equal(paramsFor("/search/tools/").get("include_archived"), null);
 });
 
 test("status: unknown tokens are discarded rather than trusted", async () => {
 	setUrl("status=deprecated,banana");
-	h.apiGet.mockResolvedValue({
-		results: [rawTool("d", { title: "D", deprecated: true }), rawTool("e", { title: "E", experimental: true })],
-		count: 2,
-		facets: {}
-	});
+	h.apiGet.mockResolvedValue({ results: [], count: 0, facets: {} });
+	await search.viewSearch();
+	assert.equal(paramsFor("/search/tools/").get("status"), "deprecated");
+});
+
+test("status: the untouched default is left out of the request entirely", async () => {
+	setUrl("");
+	h.apiGet.mockResolvedValue({ results: [], count: 0, facets: {} });
+	await search.viewSearch();
+	// Sending the full set back would narrow nothing while giving every plain
+	// search its own query string, past the prewarmed one the cache is keyed on.
+	assert.equal(paramsFor("/search/tools/").get("status"), null);
+	assert.equal(paramsFor("/search/facets/").get("status"), null);
+});
+
+test("status: Active is resolved by the API, never guessed from the row", async () => {
+	// There is no `active` flag in toolinfo. The box asks the server for the
+	// complement of the other three, so all the view can do is name it.
+	setUrl("status=active");
+	h.apiGet.mockResolvedValue({ results: [], count: 0, facets: {} });
 	const r = await search.viewSearch();
-	assert.ok(r.html.includes('data-tool="d"'), "deprecated kept");
-	assert.ok(!r.html.includes('data-tool="e"'), "experimental still dropped");
+	assert.equal(paramsFor("/search/tools/").get("status"), "active");
+	assert.equal(paramsFor("/search/facets/").get("status"), "active");
+	assert.ok(r.html.includes('data-status="active" checked'), "active ticked");
+	assert.ok(!r.html.includes('data-status="deprecated" checked'), "deprecated cleared");
 });
 
 test("mount: multiple statuses join with commas in the URL", async () => {
 	await mountSearch("");
-	// The two client boxes are ticked by default; adding Archived is what makes the
-	// set differ from the default and so what puts it in the URL at all.
-	document.querySelector('input[type=checkbox][data-client-status="archived"]').checked = true;
+	// The three kinds ship ticked; adding Archived is what makes the set differ from
+	// the default and so what puts it in the URL at all.
+	document.querySelector('input[type=checkbox][data-status="archived"]').checked = true;
 	document.querySelector(".facets").dispatchEvent(new Event("change", { bubbles: true }));
 	// URLSearchParams encodes the comma → %2C; the join("",) mutant would drop the separator entirely.
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/search?status=deprecated%2Cexperimental%2Carchived"]);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/search?status=active%2Cdeprecated%2Cexperimental%2Carchived"]);
 });
 
 test("mount: clicking the current page button does not add a page param", async () => {

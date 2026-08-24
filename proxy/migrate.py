@@ -137,6 +137,7 @@ def migrations() -> Iterator[MigrationResult]:
     yield MigrationResult("catalog read indexes", _ensure_catalog_read_indexes())
     yield MigrationResult("canonical search_text", canonical_tools.backfill_search_text())
     yield MigrationResult("canonical card and sort projection", canonical_tools.backfill_read_projection())
+    yield MigrationResult("canonical status flags", canonical_tools.backfill_status_flags())
     yield MigrationResult(
         "catalog projections",
         catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
@@ -690,13 +691,23 @@ def _link_accounts_to_people() -> tuple[int, int]:
                     wikimedia_owner = current_ids.get(
                         (people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, (user.wikimedia_global_user_id or "").casefold())
                     )
-                    if user.person_id == toolhub_owner and (
-                        not user.wikimedia_global_user_id or user.person_id == wikimedia_owner
+                    if (
+                        toolhub_owner is not None
+                        and user.person_id == toolhub_owner
+                        and (not user.wikimedia_global_user_id or user.person_id == wikimedia_owner)
                     ):
                         # Already pointed at the right person by both stable
                         # identifiers. Skipping is not only cheaper: linking
                         # would restamp identifier rows that need no change,
                         # which is exactly the contention this defers around.
+                        #
+                        # `toolhub_owner is not None` is what makes the test a
+                        # match rather than an absence. An account with no
+                        # identifier row has no owner to compare against, and
+                        # its `person_id` is NULL for the same reason -- so
+                        # without this the two NULLs agreed and the row the
+                        # backfill exists to repair was the one row it always
+                        # skipped.
                         continue
                     old_person_id = user.person_id
                     people_index.link_user(s, user)

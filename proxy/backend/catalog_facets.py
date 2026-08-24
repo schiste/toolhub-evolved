@@ -13,7 +13,7 @@ import json
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import and_, distinct, func, or_, select
 
 from backend import db, facet_names
 from backend.models import ApiCacheMeta, CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
@@ -29,6 +29,15 @@ DIRTY_KEY = "catalog:facets:dirty:v2"
 CACHE_VERSION = 2
 FACET_BUCKET_LIMIT = 50
 FACET_FIELDS = facet_names.CATALOG_PUBLIC_TO_STORAGE
+
+STATUS_DEPRECATED = "deprecated"
+STATUS_EXPERIMENTAL = "experimental"
+STATUS_ACTIVE = "active"
+# `archived` is deliberately not here. It is carried by `include_archived`,
+# which predates this parameter and is also read by the offline fallback in
+# `canonical_tools.search`; accepting it in both places would be two answers to
+# one question, and they would eventually disagree.
+STATUS_VALUES = frozenset({STATUS_DEPRECATED, STATUS_EXPERIMENTAL, STATUS_ACTIVE})
 
 
 def default_population() -> Select:
@@ -47,6 +56,58 @@ def default_population() -> Select:
     has judged badly.
     """
     return select(CanonicalToolCache).where(CanonicalToolCache.lifecycle != LIFECYCLE_ARCHIVED)
+
+
+def selected_statuses(params: Any) -> frozenset[str]:  # noqa: ANN401 - Flask MultiDict or mapping
+    """Return the status kinds this request accepts, as a set of ticked boxes.
+
+    An absent parameter is every kind, not none: a caller that has never heard
+    of this filter must keep seeing the whole population, and the search page
+    only puts `status` in the URL once the reader has changed something. An
+    empty string is a real answer -- every box cleared -- and stays distinct
+    from absent, which is why this tests for None rather than for a falsy value.
+    Unknown words are dropped rather than rejected, so a stale bookmark
+    degrades to a wider result set instead of an error page.
+    """
+    raw = params.get("status")
+    if raw is None:
+        return frozenset(STATUS_VALUES)
+    return frozenset(part.strip() for part in str(raw).split(",")) & STATUS_VALUES
+
+
+def status_predicate(statuses: frozenset[str]) -> Any | None:  # noqa: ANN401 - SQLAlchemy clause
+    """Match the rows the ticked Status boxes ask for, or None when they ask for all.
+
+    Inclusion rather than exclusion: a tool is shown when it belongs to at
+    least one ticked kind. The distinction is only visible on a tool carrying
+    both flags, and there inclusion is the reading that matches the label --
+    clearing Experimental while leaving Deprecated ticked still means "show me
+    the deprecated ones", and a deprecated-and-experimental tool is one of
+    them. Chaining an exclusion per cleared box would drop it from both.
+
+    `active` is the complement of the other three rather than a flag of its
+    own: nothing in toolinfo says "this tool is fine", only what is wrong with
+    it. Archived is named in that complement, and again as a term of its own,
+    because `include_archived` is the same tick as the Archived box: a row that
+    reaches this predicate archived was asked for, so it stays, while an
+    `active` blind to lifecycle would re-admit archived rows nobody ticked.
+    """
+    if statuses == STATUS_VALUES:
+        return None
+    terms = [CanonicalToolCache.lifecycle == LIFECYCLE_ARCHIVED]
+    if STATUS_DEPRECATED in statuses:
+        terms.append(CanonicalToolCache.deprecated.is_(True))
+    if STATUS_EXPERIMENTAL in statuses:
+        terms.append(CanonicalToolCache.experimental.is_(True))
+    if STATUS_ACTIVE in statuses:
+        terms.append(
+            and_(
+                CanonicalToolCache.deprecated.is_not(True),
+                CanonicalToolCache.experimental.is_not(True),
+                CanonicalToolCache.lifecycle != LIFECYCLE_ARCHIVED,
+            )
+        )
+    return or_(*terms)
 
 
 def _aggregate_rows(session: Session, filtered: Select) -> list[Any]:

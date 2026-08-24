@@ -544,7 +544,12 @@ def v1_canonical_tools() -> Response:
         rows_by_name = canonical_tools.tools_by_name(names)
         results = [rows_by_name[name] for name in names if name in rows_by_name]
     else:
-        results = canonical_tools.search(q, limit=limit, include_archived=catalog_read.include_archived(request.args))
+        results = canonical_tools.search(
+            q,
+            limit=limit,
+            include_archived=catalog_read.include_archived(request.args),
+            statuses=catalog_read.selected_statuses(request.args),
+        )
     return jsonify(
         {
             "count": len(results),

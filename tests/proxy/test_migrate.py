@@ -761,9 +761,10 @@ def test_the_operator_is_told_what_was_left_behind(configured_db, monkeypatch, c
 def unlinked_accounts(count):
     """`count` OAuth accounts whose people exist but which do not point at them yet.
 
-    The identifier row is what makes the account need linking. Without one the
-    pass skips the account: `person_id` is NULL, the lookup finds no owner, and
-    NULL == None reads as "already pointing at the right person".
+    The identifier row is here so the accounts are the ordinary shape: a person
+    already known under their Toolhub id, with the account not yet pointing at
+    it. An account with no identifier row at all links too -- see
+    `test_an_account_with_nothing_to_compare_against_is_linked_rather_than_skipped`.
     """
     with db.session_scope() as s:
         for index in range(count):
@@ -962,3 +963,28 @@ def test_run_once_reports_the_migrations_that_finished_before_one_failed(configu
             reported.append(result.name)
     assert "digest render MEDIUMTEXT" in reported
     assert "user-script loads resolved to pages" not in reported
+
+
+def test_an_account_with_nothing_to_compare_against_is_linked_rather_than_skipped(configured_db):
+    """The skip is a match on the owner, not an absence of one.
+
+    An account with no identifier row has no owner to compare against, and its
+    `person_id` is NULL for the same reason. Comparing the two without first
+    asking whether an owner exists made the two NULLs agree, and the pass read
+    "already linked" over the one row it exists to repair -- the only row it
+    could never fix. Unreachable through login, which sets `person_id`, so
+    nothing but this test says so.
+    """
+    with db.session_scope() as s:
+        s.add(User(wm_sub="991", username="Stranded"))
+
+    linked, deferred = migrate._link_accounts_to_people()
+
+    assert (linked, deferred) == (1, 0)
+    with db.session_scope() as s:
+        user = s.execute(select(User).where(User.wm_sub == "991")).scalars().one()
+        assert user.person_id is not None
+        owners = s.execute(
+            select(PersonIdentifier).where(PersonIdentifier.person_id == user.person_id)
+        ).scalars()
+        assert migrate.people_index.NS_TOOLHUB_USER_ID in {row.namespace for row in owners}

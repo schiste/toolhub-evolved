@@ -19,39 +19,31 @@ import { toolCard } from "../lib/organisms/tool-card.js";
 
 /*
  * Every box in the Status group reads the same way: ticked means "include these
- * in the results". Deprecated and Experimental start ticked, so leaving the
- * group alone matches the unfiltered catalogue; Archived starts cleared, which
- * is the whole point of the group existing.
+ * in the results". Active, Deprecated and Experimental start ticked, so leaving
+ * the group alone matches the unfiltered catalogue; Archived starts cleared,
+ * which is the whole point of the group existing.
  *
- * Archived is filtered in SQL (`include_archived`), the other two client-side,
- * and that asymmetry is deliberate rather than unfinished. A client-side filter
- * trims the page the API already counted and paged, so the pager and the result
- * count describe a larger set than the one displayed. That is survivable for a
- * box the reader ticks off deliberately and not for one that is off by default:
- * archived tools are a large share of the census, so every page and every count
- * would be wrong for every reader on arrival. Moving the other two into SQL
- * needs columns that do not exist yet -- #57/#58.
+ * Every box filters in SQL -- Archived through `include_archived`, the other
+ * three through `status`. That matters for more than tidiness: a filter applied
+ * in the browser trims rows out of a page the API has already counted and
+ * paged, so the total and the pager describe a larger set than the one on
+ * screen. Filtering server-side is what lets the count track every box.
+ *
+ * Active is the complement rather than a flag of its own, because toolinfo
+ * never asserts "this tool is fine". The server reads it as "not deprecated,
+ * not experimental, not archived" -- see STATUS_VALUES in catalog_facets.py.
  */
-const CLIENT_STATUS_FILTERS = [
-	{
-		value: "deprecated",
-		label: t("search.deprecated", "Deprecated"),
-		match: (/** @type {Tool} */ t) => t.deprecated
-	},
-	{
-		value: "experimental",
-		label: t("search.experimental", "Experimental"),
-		match: (/** @type {Tool} */ t) => t.experimental
-	}
-];
 const STATUS_ARCHIVED = "archived";
-const STATUS_FILTERS = [
-	...CLIENT_STATUS_FILTERS,
-	{ value: STATUS_ARCHIVED, label: t("search.archived", "Archived"), match: () => false }
+/** The kinds carried by `status`. Archived rides `include_archived` instead. */
+const STATUS_KINDS = [
+	{ value: "active", label: t("search.active", "Active") },
+	{ value: "deprecated", label: t("search.deprecated", "Deprecated") },
+	{ value: "experimental", label: t("search.experimental", "Experimental") }
 ];
-const CLIENT_STATUS_VALUES = new Set(STATUS_FILTERS.map((s) => s.value));
+const STATUS_FILTERS = [...STATUS_KINDS, { value: STATUS_ARCHIVED, label: t("search.archived", "Archived") }];
+const STATUS_VALUES = new Set(STATUS_FILTERS.map((s) => s.value));
 /** Ticked when the reader has expressed no preference. */
-const STATUS_DEFAULT = Object.freeze(CLIENT_STATUS_FILTERS.map((s) => s.value));
+const STATUS_DEFAULT = Object.freeze(STATUS_KINDS.map((s) => s.value));
 
 /**
  * The ticked Status boxes for this request.
@@ -69,7 +61,7 @@ function activeStatuses(value) {
 		value
 			.split(",")
 			.map((s) => s.trim())
-			.filter((s) => CLIENT_STATUS_VALUES.has(s))
+			.filter((s) => STATUS_VALUES.has(s))
 	);
 }
 
@@ -89,7 +81,7 @@ function sortFromOfficialOrdering(ordering, fallback) {
 function renderStatusFacetGroup(selectedStatuses) {
 	const rows = STATUS_FILTERS.map((s) => {
 		const checked = selectedStatuses.has(s.value) ? " checked" : "";
-		return `<label class="facet"><input type="checkbox" data-client-status="${s.value}"${checked}> <span>${esc(s.label)}</span></label>`;
+		return `<label class="facet"><input type="checkbox" data-status="${s.value}"${checked}> <span>${esc(s.label)}</span></label>`;
 	}).join("");
 	return `<div class="facet-group"><h2 class="facet-group__title">${t("search.status", "Status")}</h2>${rows}</div>`;
 }
@@ -168,6 +160,11 @@ export async function viewSearch() {
 	api.set("page_size", String(pageSize));
 	if (ordering) api.set("ordering", ordering);
 	if (statuses.has(STATUS_ARCHIVED)) api.set("include_archived", "1");
+	const statusKinds = STATUS_DEFAULT.filter((kind) => statuses.has(kind));
+	// Omitted while every kind is ticked: the API reads an absent `status` as
+	// "no objection to any of them", so an untouched search keeps the short
+	// query string the prewarmed cache is keyed on.
+	if (statusKinds.length !== STATUS_DEFAULT.length) api.set("status", statusKinds.join(","));
 	const selected = new Set();
 	for (const [k, v] of usp.entries()) {
 		if (k.endsWith("__term")) {
@@ -199,7 +196,8 @@ export async function viewSearch() {
 				const cached = await cachedCanonicalTools({
 					q,
 					limit: page * pageSize,
-					includeArchived: statuses.has(STATUS_ARCHIVED)
+					includeArchived: statuses.has(STATUS_ARCHIVED),
+					statuses: statusKinds.length === STATUS_DEFAULT.length ? null : statusKinds
 				}).catch(() => []);
 				const offset = (page - 1) * pageSize;
 				const cachedResults = cached.slice(offset, offset + pageSize);
@@ -224,15 +222,6 @@ export async function viewSearch() {
 		attachEvolvedSummaries(results),
 		attachEvolvedSummaries(local)
 	]);
-	// Clearing a box drops that kind; ticked means "no objection", so the default
-	// set constrains nothing and costs no filtering. Archived never reaches here --
-	// the API was told whether to send it. See CLIENT_STATUS_FILTERS on the split.
-	// Archived is excluded in SQL, so it is absent from this test on purpose: hiding
-	// it leaves the count and the pager honest and must not raise the caveat below.
-	const clientFiltering = CLIENT_STATUS_FILTERS.some((s) => !statuses.has(s.value));
-	for (const status of CLIENT_STATUS_FILTERS) {
-		if (!statuses.has(status.value)) results = results.filter((tool) => !status.match(tool));
-	}
 	if (sort === "complete") {
 		results.sort((a, b) => completeness(b).filled - completeness(a).filled || a.title.localeCompare(b.title));
 	}
@@ -247,20 +236,8 @@ export async function viewSearch() {
 	// Stryker disable next-line ConditionalExpression,EqualityOperator: firstResult/lastResult are only read in the results.length>0 branch of countHTML, where this guard is already true, so the empty-case value is never observed — equivalent.
 	const firstResult = results.length > 0 ? (page - 1) * pageSize + 1 : 0;
 	const lastResult = firstResult + results.length - 1;
-	const countHTML = clientFiltering
-		? results.length > 0
-			? t(
-					"search.showingOnPage",
-					"Showing $1 on this page of $2",
-					esc(fmt(results.length)),
-					esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
-				)
-			: t(
-					"search.noVisibleOnPage",
-					"No visible tools on this page of $1",
-					esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
-				)
-		: results.length > 0
+	const countHTML =
+		results.length > 0
 			? t(
 					"search.showingRange",
 					"Showing $1-$2 of $3",
@@ -269,8 +246,9 @@ export async function viewSearch() {
 					esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
 				)
 			: esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total));
+	// Every filter is applied in SQL, so `total` counts exactly what is on screen
+	// and there is nothing left to caveat but the offline fallback.
 	const countNotes = [
-		clientFiltering ? t("search.filteredInBrowser", "filtered in your browser") : "",
 		canonicalFallback ? t("search.cachedCanonicalData", "showing the last published catalog generation") : ""
 	].filter(Boolean);
 	const countNoteHTML = countNotes.map((note) => ` <span class="browse__count-note">${esc(note)}</span>`).join("");
@@ -351,8 +329,8 @@ export async function viewSearch() {
 					/** @type {HTMLInputElement} */ (c).value
 				)
 			);
-			const ticked = $$(".facets input[type=checkbox][data-client-status]:checked").map(
-				(c) => /** @type {string} */ (c.getAttribute("data-client-status"))
+			const ticked = $$(".facets input[type=checkbox][data-status]:checked").map(
+				(c) => /** @type {string} */ (c.getAttribute("data-status"))
 			);
 			// Omitted while it matches the default so an untouched search keeps a bare
 			// URL; once it differs it is written in full, empty included, because an

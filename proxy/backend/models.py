@@ -364,6 +364,16 @@ class CanonicalToolCache(Base):
     # Nothing filters on this alone yet; when something does, the index is its
     # own deliberate DDL step.
     lifecycle: Mapped[str] = mapped_column(String(16), default="")
+    # The two toolinfo status flags, denormalized for the same reason lifecycle
+    # is: the Status facet has to filter and count on them in SQL, and reading
+    # them out of `record` would mean loading every row into Python to find out
+    # how many match. Nullable, and NULL means "not derived yet" -- that is the
+    # cursor `backfill_status_flags` walks, and the reason these are not
+    # `NOT NULL DEFAULT 0` like `generation`: a false-by-default column is
+    # indistinguishable from a tool that really is not deprecated, so a partial
+    # backfill would look finished and quietly count too few.
+    deprecated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    experimental: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     stale_until: Mapped[datetime] = mapped_column(DateTime, index=True)
@@ -388,6 +398,12 @@ class CanonicalToolCache(Base):
         self.modified_at_sort = catalog_modified_at(source)
         lifecycle = source.get("_lifecycle")
         self.lifecycle = lifecycle if lifecycle in LIFECYCLE_VALUES else LIFECYCLE_UNKNOWN
+        # `bool()` rather than the raw value: toolinfo carries these as JSON
+        # booleans, but a record assembled from a wiki scan or an older
+        # generation can hold null or a string, and a non-boolean reaching a
+        # BOOLEAN column is a dialect-dependent write rather than an error.
+        self.deprecated = bool(source.get("deprecated"))
+        self.experimental = bool(source.get("experimental"))
         return record
 
 

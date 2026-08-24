@@ -195,6 +195,11 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # column did: nothing had measured whether anybody used them, and
             # saying so is what the empty value means.
             "lifecycle": "VARCHAR(16) NOT NULL DEFAULT ''",
+            # NULL, not 0: an un-backfilled row must be distinguishable from a
+            # tool that is genuinely not deprecated, or the Status counts go
+            # quietly wrong instead of visibly unfinished.
+            "deprecated": "BOOLEAN NULL",
+            "experimental": "BOOLEAN NULL",
         },
         "toolforge_account_projection": {
             "developer_username": "VARCHAR(255) NOT NULL DEFAULT ''",

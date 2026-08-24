@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 
 from backend import activity_privacy, api_cache, catalog_facets, db, list_revisions, paging
 from backend.canonical_tools import escape_like
+from backend.catalog_facets import STATUS_VALUES, selected_statuses, status_predicate
 from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
 
 if TYPE_CHECKING:
@@ -92,6 +93,9 @@ def _filtered_statement(params: Any) -> Select[tuple[CanonicalToolCache]]:  # no
             CatalogFacetValue.value.in_(selected),
         )
         statement = statement.where(CanonicalToolCache.tool_name.in_(matching))
+    status = status_predicate(selected_statuses(params))
+    if status is not None:
+        statement = statement.where(status)
     return statement
 
 
@@ -110,6 +114,8 @@ def _has_catalog_filters(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict
     if str(params.get("q") or "").strip():
         return True
     if include_archived(params):
+        return True
+    if selected_statuses(params) != STATUS_VALUES:
         return True
     return any(_values(params, f"{field}__term") for field in FACET_FIELDS)
 

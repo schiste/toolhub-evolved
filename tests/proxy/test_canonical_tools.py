@@ -630,3 +630,118 @@ def test_search_by_name_still_returns_an_archived_row():
     _seed_lifecycle_rows()
 
     assert list(canonical_tools.tools_by_name(["cite-archived"])) == ["cite-archived"]
+
+
+def _upsert(name: str, **flags: bool) -> None:
+    canonical_tools.upsert_records(
+        [{"name": name, "title": name.title(), **flags}],
+        source_url="https://toolhub.wikimedia.org/api/tools/?page=1",
+    )
+
+
+def test_the_status_flags_are_derived_from_the_record_rather_than_stored_twice():
+    """One definition per derived column, and it lives on the validator."""
+    from backend.models import CanonicalToolCache  # noqa: PLC0415
+
+    _upsert("dep", deprecated=True)
+    _upsert("plain")
+
+    with db.session_scope() as session:
+        assert session.get(CanonicalToolCache, "dep").deprecated is True
+        assert session.get(CanonicalToolCache, "dep").experimental is False
+        assert session.get(CanonicalToolCache, "plain").deprecated is False
+
+
+def test_a_missing_flag_reads_false_rather_than_unknown():
+    """Toolinfo omits the flags far more often than it sets them to false."""
+    from backend.models import CanonicalToolCache  # noqa: PLC0415
+
+    canonical_tools.upsert_records(
+        [{"name": "bare", "title": "Bare"}], source_url="https://toolhub.wikimedia.org/api/tools/bare/"
+    )
+
+    with db.session_scope() as session:
+        assert session.get(CanonicalToolCache, "bare").deprecated is False
+
+
+def test_backfill_status_flags_fills_the_rows_that_predate_the_columns_and_stops():
+    """NULL is the cursor, so the pass is idempotent without a completion marker.
+
+    A marker written next to a partial batch can claim done while rows are
+    still unfilled; a column that is its own cursor cannot.
+    """
+    from backend.models import CanonicalToolCache  # noqa: PLC0415
+
+    _upsert("dep", deprecated=True)
+    _upsert("exp", experimental=True)
+    _upsert("plain")
+    with db.session_scope() as session:
+        for name in ("dep", "exp", "plain"):
+            row = session.get(CanonicalToolCache, name)
+            row.deprecated = None
+            row.experimental = None
+
+    # One row per batch, so the loop has to come back for the rest rather than
+    # reporting the first batch as the whole catalogue.
+    assert canonical_tools.backfill_status_flags(batch_size=1) == 3
+    assert canonical_tools.backfill_status_flags() == 0
+
+    with db.session_scope() as session:
+        assert session.get(CanonicalToolCache, "dep").deprecated is True
+        assert session.get(CanonicalToolCache, "exp").experimental is True
+        assert session.get(CanonicalToolCache, "plain").deprecated is False
+
+
+def test_backfill_status_flags_leaves_a_row_it_already_derived_alone():
+    """A filled row is not re-derived, so a redeploy costs one empty query."""
+    _upsert("dep", deprecated=True)
+
+    assert canonical_tools.backfill_status_flags() == 0
+
+
+def test_the_offline_fallback_answers_the_same_status_filter_as_the_live_search():
+    """A degraded page must not quietly widen the set the reader asked for.
+
+    This path runs when the catalog request failed, which is exactly when the
+    reader cannot tell that anything did. Ignoring `status` here would answer a
+    filtered search with unfiltered results under a caption about cached data.
+    """
+    from backend import catalog_facets  # noqa: PLC0415
+
+    _upsert("dep", deprecated=True)
+    _upsert("plain")
+
+    everything = canonical_tools.search("")
+    active_only = canonical_tools.search("", statuses=frozenset({catalog_facets.STATUS_ACTIVE}))
+
+    assert sorted(row["toolName"] for row in everything) == ["dep", "plain"]
+    assert [row["toolName"] for row in active_only] == ["plain"]
+
+
+def test_the_offline_fallback_treats_an_absent_status_as_every_kind():
+    """`None` is "the caller never asked", which must not read as "nothing"."""
+    _upsert("dep", deprecated=True)
+
+    assert len(canonical_tools.search("", statuses=None)) == 1
+    assert canonical_tools.search("", statuses=frozenset()) == []
+
+
+def test_backfill_status_flags_stops_at_a_refused_batch_instead_of_the_deploy():
+    """It runs from `migrate.py`, after the host has already pulled.
+
+    A refusal there aborts the deploy half-applied. Stopping costs nothing
+    because the cursor is the data: the rows still NULL are picked up next
+    deploy, and the read path already treats NULL as "not flagged".
+    """
+
+    @contextlib.contextmanager
+    def _raise_session_scope():
+        raise SQLAlchemyError("held by the sync job")
+        yield  # pragma: no cover - unreachable, contextmanager requires a yield
+
+    _upsert("dep", deprecated=True)
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(pytest.MonkeyPatch.context()).setattr(
+            canonical_tools.db, "session_scope", _raise_session_scope
+        )
+        assert canonical_tools.backfill_status_flags() == 0
