@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: evidence-before-verdict -->
 <!-- Release title: Evidence Before Verdict -->
-<!-- Source range: 1195ec6..d328dce (15 commits) -->
+<!-- Source range: 1195ec6..c55797b (18 commits) -->
 
 # What's New for Users
 
@@ -12,3 +12,4 @@
 - Documentation, tests and continuous-integration setup are read again. The analyzer reads a bounded number of files per repository, and repositories with many manifests were spending the whole budget before reaching anything else, so their documentation and testing readiness scored zero for lack of a file rather than for lack of the thing. A share of the budget is now held back for the parts that were being crowded out.
 - The same repository now produces the same numbers. Confidence was accumulated as files arrived, so the order the analyzer happened to read a repository in could change the reported confidence and the order of a tool's wikis. It is now derived from all the evidence at once, and repeating a claim ten times in one file no longer counts as ten corroborations — only distinct files count, up to three.
 - A Toolhub outage no longer reads as "this tool is on Toolhub". When the upstream catalogue failed to answer, the crawler recorded the same result as a successful answer of "no such tool", which is how a tool that exists gets treated as if it does not. Failure to reach Toolhub is now recorded as exactly that, and left for the next run.
+- The user-script census now says how many load edges it dropped. A page that names the same script twice under two spellings the database reads as one produces a row the database refuses, and until now that refusal left no trace: the run reported a number of edges without saying that it was short. The count is in the run's log, so a wiki whose demand looks thin can be told apart from a wiki whose edges were quietly discarded.

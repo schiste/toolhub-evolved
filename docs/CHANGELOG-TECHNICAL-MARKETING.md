@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: evidence-before-verdict -->
 <!-- Release title: Evidence Before Verdict -->
-<!-- Source range: 1195ec6..d328dce (15 commits) -->
+<!-- Source range: 1195ec6..c55797b (18 commits) -->
 
 # Technical Release Notes
 
@@ -14,3 +14,4 @@
 - The toolinfo crawler distinguishes absent from unreachable. An upstream request that fails now records an explicit unreachable state rather than collapsing into the same result as a successful 404, which is what made a Toolhub outage look like a catalogue in which our tools do not exist.
 - `test_source_analyzer_corpus.py` runs the analyzer over this repository's own `git ls-files` and asserts invariants rather than values: evidence paths are a subset of what was supplied, `fileCount` is at least the number of distinct evidence paths, `maxSourceWeight` bounds the per-evidence weights, grade and band agree including the withheld branch, composite confidence never exceeds the strongest dimension, and two runs over a shuffled file list agree exactly. The order-dependence above was found by that last assertion, not by review.
 - `source_analyzer.py` is split along seams it already had: `source_analysis_common.py` (constants and the eleven helpers shared by both lanes) and `source_analysis_assessments.py` (the eight assessments, seven health dimensions and stewardship). The move was verified by comparing the AST of every top-level definition before and after — nothing lost, added or changed in body. The scanning rules were left where they are: unlike the two extracted blocks, they interleave with the rest of the module rather than sitting contiguously, so extracting them would have been a scatter-gather rather than a move.
+- `userscript_sweep._replace_imports()` returns the number of rows the database refused as duplicates of another edge on the same page, `store_page()` passes it up, and `ingest()` accumulates it into the new `collisions` key of `EMPTY_COUNTS`. The bulk insert is still attempted first and still falls back to per-row inserts on failure -- one page's spelling is not a reason to fail a wiki -- but the fallback now counts what it drops instead of discarding it silently. It has to be observed rather than predicted: which titles collide is decided by the database's collation, not by this codebase.
