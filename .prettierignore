@@ -10,6 +10,13 @@ htmlcov/
 # Local, git-ignored editor/agent state. Not ours to format, and it is rewritten
 # outside the repo's control — checking it fails the pre-push hook at random.
 .claude/
+# Exact generated Aethyme policy must remain byte-for-byte deploy output.
+AGENTS.md
+CLAUDE.md
+.aethyme/generated/
+.codex/skills/aethyme/
+.codex/skills/repo-act/
+.codex/skills/repo-onboarding/
 .stryker-tmp/
 reports/
 pyproject.toml

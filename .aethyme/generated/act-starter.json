@@ -1,0 +1,55 @@
+{
+  "schema_version": "aethyme-act-starter-v1",
+  "repo": {
+    "name": "migrate-toolhub-evolved-to-official-aeth",
+    "kind": "repository"
+  },
+  "recommended_mode": "repo-act",
+  "starter_checklists": {
+    "debugging": [
+      "Load repo-onboarding first if the repository or area is unfamiliar.",
+      "Run Aethyme Explore on the user task before broad manual search.",
+      "Verify answer candidates before concluding when trust_policy is not answer-safe.",
+      "Identify the nearest fast test or validation command before editing.",
+      "Inspect caution zones before changing generated or vendored areas."
+    ],
+    "change_validation": [
+      "Run the fastest relevant test command first.",
+      "Check likely entrypoints and impacted callers before finishing.",
+      "Re-run lint/build only after the focused validation passes.",
+      "Document any override-based maintainer note that affected the change plan."
+    ]
+  },
+  "commands": {
+    "fast_test": "npm run test:unit",
+    "full_test": "npm run test:e2e",
+    "lint": "npm run lint",
+    "build": null,
+    "dev": null
+  },
+  "entrypoints": [
+    {
+      "path": "tests",
+      "kind": "directory",
+      "role": "test",
+      "reason": "conventional test root",
+      "confidence": "medium"
+    }
+  ],
+  "primary_entrypoints": {
+    "test": {
+      "path": "tests",
+      "kind": "directory",
+      "role": "test",
+      "reason": "conventional test root",
+      "confidence": "medium"
+    }
+  },
+  "caution_zones": [],
+  "telemetry": {
+    "derived_from": ".aethyme/generated/onboarding.json",
+    "entrypoint_count": 1,
+    "primary_entrypoint_count": 1,
+    "caution_zone_count": 0
+  }
+}

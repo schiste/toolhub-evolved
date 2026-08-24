@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Native Rust thin client for `aethyme explore` — the canonical hot path.
+#
+# This wrapper is the convenience entry point for in-repo skill consumers.
+# The `aethyme` binary detects an engine daemon and routes to the native
+# Rust `aethyme-engine-cli explore` for sub-second warm latency. If no
+# daemon is running, it falls back to the Python daemon / subprocess
+# transparently.
+#
+# Replaced the soft-retired Python `python -m src.cli explore` wrapper
+# on 2026-05-08 (task #59 — Python explore hard-deleted).
+#
+# The installed router is resolved through PATH; deployment never embeds a
+# source-checkout path.
+set -euo pipefail
+
+REPO="${PWD}"
+
+# Best-effort telemetry via the native router.
+if command -v aethyme >/dev/null 2>&1 && [[ -d "$REPO" ]]; then
+    aethyme repo record-wrapper-invocation \
+        "$REPO" \
+        --wrapper aethyme-explore \
+        --detail source=wrapper \
+        >/dev/null 2>&1 || true
+fi
+
+exec aethyme explore "$@"

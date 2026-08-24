@@ -16,6 +16,20 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
+    aethyme-policy:
+        name: Aethyme deployment
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - name: Install Aethyme binary pair
+              run: brew install schiste/tap/aethyme
+            - name: Verify paired binaries
+              run: |
+                  aethyme --version
+                  aethyme-engine-cli --version
+            - name: Verify repository policy
+              run: aethyme deploy verify --repo .
+
     js:
         name: JS quality
         runs-on: ubuntu-latest

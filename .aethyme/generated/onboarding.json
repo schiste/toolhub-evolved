@@ -1,0 +1,178 @@
+{
+  "schema_version": "aethyme-onboarding-v1",
+  "repo": {
+    "name": "migrate-toolhub-evolved-to-official-aeth",
+    "root": ".",
+    "kind": "repository",
+    "languages": [
+      "python",
+      "javascript"
+    ],
+    "package_manager": "npm",
+    "manifests": [
+      "package.json",
+      "pyproject.toml"
+    ]
+  },
+  "commands": [
+    {
+      "kind": "install",
+      "command": "npm install",
+      "source": "package.json",
+      "confidence": "high"
+    },
+    {
+      "kind": "install",
+      "command": "python -m pip install -e .",
+      "source": "pyproject.toml",
+      "confidence": "medium"
+    },
+    {
+      "kind": "fast_test",
+      "command": "npm run test:unit",
+      "source": "package.json:scripts.test:unit",
+      "confidence": "high"
+    },
+    {
+      "kind": "fast_test",
+      "command": "pytest",
+      "source": "pyproject.toml",
+      "confidence": "medium"
+    },
+    {
+      "kind": "full_test",
+      "command": "npm run test:e2e",
+      "source": "package.json:scripts.test:e2e",
+      "confidence": "high"
+    },
+    {
+      "kind": "lint",
+      "command": "npm run lint",
+      "source": "package.json:scripts.lint",
+      "confidence": "high"
+    },
+    {
+      "kind": "lint",
+      "command": "ruff check .",
+      "source": "pyproject.toml",
+      "confidence": "medium"
+    }
+  ],
+  "primary_commands": {
+    "install": "npm install",
+    "fast_test": "npm run test:unit",
+    "full_test": "npm run test:e2e",
+    "lint": "npm run lint"
+  },
+  "areas": [
+    {
+      "path": ".github",
+      "role": "automation",
+      "reason": "automation and CI configuration",
+      "confidence": "high"
+    },
+    {
+      "path": "docs",
+      "role": "docs",
+      "reason": "documentation area",
+      "confidence": "high"
+    },
+    {
+      "path": "tests",
+      "role": "tests",
+      "reason": "conventional test directory",
+      "confidence": "high"
+    },
+    {
+      "path": "tools",
+      "role": "tooling",
+      "reason": "developer tooling or scripts",
+      "confidence": "high"
+    }
+  ],
+  "entrypoints": [
+    {
+      "path": "tests",
+      "kind": "directory",
+      "role": "test",
+      "reason": "conventional test root",
+      "confidence": "medium"
+    }
+  ],
+  "primary_entrypoints": {
+    "test": {
+      "path": "tests",
+      "kind": "directory",
+      "role": "test",
+      "reason": "conventional test root",
+      "confidence": "medium"
+    }
+  },
+  "caution_zones": [],
+  "navigation_recipes": [
+    {
+      "purpose": "Broad repository orientation for a user request",
+      "command": "aethyme explore --repo \"$PWD\" --request \"<task>\" --format answer-json"
+    },
+    {
+      "purpose": "Quick deterministic repo summary",
+      "command": "aethyme repo inspect \"$PWD\" --mode brief --json-output"
+    },
+    {
+      "purpose": "Trace likely impact before editing",
+      "command": "aethyme graph callers \"$PWD\" \"<symbol-or-file>\" --json-output"
+    }
+  ],
+  "summon": {
+    "description": "Use when starting work in an unfamiliar repository, when the task asks for repo overview, setup, architecture, entrypoints, test commands, or where to begin. Skip for narrow file-scoped edits once the relevant paths are already known.",
+    "recommended_when": [
+      "first task in repo",
+      "repo overview",
+      "setup or run instructions",
+      "architecture or entrypoints",
+      "where should I start",
+      "broad debugging or feature-localization request"
+    ],
+    "skip_when": [
+      "known file-scoped edit",
+      "follow-up inside already identified area",
+      "task already localized to concrete files"
+    ],
+    "task_signals": [
+      "unfamiliar repository",
+      "broad task with no path named",
+      "user asks how the repo is organized"
+    ]
+  },
+  "freshness": {
+    "generated_at": "2026-08-24T08:37:53+00:00",
+    "snapshot_key": "0acdf131d581bf902bcf2240ea2c561514ff467554f4dd9c3bb54d5b3e5ccf60",
+    "commit": "27f81c66f7bb98287b77a5efea90e0d4e55df131",
+    "repo_dirty": true,
+    "file_count": 548,
+    "generator": "deterministic"
+  },
+  "telemetry": {
+    "sections": [
+      "repo",
+      "commands",
+      "areas",
+      "entrypoints",
+      "caution_zones",
+      "navigation_recipes",
+      "summon",
+      "freshness"
+    ],
+    "counts": {
+      "commands": 7,
+      "areas": 4,
+      "entrypoints": 1,
+      "caution_zones": 0,
+      "navigation_recipes": 3,
+      "notes": 0
+    },
+    "overrides_applied": false,
+    "override_source": null,
+    "override_invalid": false
+  }
+}
