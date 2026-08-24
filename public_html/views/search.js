@@ -18,6 +18,21 @@ import { toolCard } from "../lib/organisms/tool-card.js";
 
 export const PAGE_SIZE_OPTIONS = [12, 24, 48];
 export const DEFAULT_PAGE_SIZE = 24;
+/*
+ * Every box in the Status group reads the same way: ticked means "include these
+ * in the results". Deprecated and Experimental start ticked, so leaving the
+ * group alone matches the unfiltered catalogue; Archived starts cleared, which
+ * is the whole point of the group existing.
+ *
+ * Archived is filtered in SQL (`include_archived`), the other two client-side,
+ * and that asymmetry is deliberate rather than unfinished. A client-side filter
+ * trims the page the API already counted and paged, so the pager and the result
+ * count describe a larger set than the one displayed. That is survivable for a
+ * box the reader ticks off deliberately and not for one that is off by default:
+ * archived tools are a large share of the census, so every page and every count
+ * would be wrong for every reader on arrival. Moving the other two into SQL
+ * needs columns that do not exist yet -- #57/#58.
+ */
 const CLIENT_STATUS_FILTERS = [
 	{
 		value: "deprecated",
@@ -30,7 +45,14 @@ const CLIENT_STATUS_FILTERS = [
 		match: (/** @type {Tool} */ t) => t.experimental
 	}
 ];
-const CLIENT_STATUS_VALUES = new Set(CLIENT_STATUS_FILTERS.map((s) => s.value));
+const STATUS_ARCHIVED = "archived";
+const STATUS_FILTERS = [
+	...CLIENT_STATUS_FILTERS,
+	{ value: STATUS_ARCHIVED, label: t("search.archived", "Archived"), match: () => false }
+];
+const CLIENT_STATUS_VALUES = new Set(STATUS_FILTERS.map((s) => s.value));
+/** Ticked when the reader has expressed no preference. */
+const STATUS_DEFAULT = Object.freeze(CLIENT_STATUS_FILTERS.map((s) => s.value));
 
 /** @param {string | null} value */
 function activePageSize(value) {
@@ -39,11 +61,20 @@ function activePageSize(value) {
 	return PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE;
 }
 
-/** @param {string | null} value */
-function activeClientStatuses(value) {
+/**
+ * The ticked Status boxes for this request.
+ *
+ * An absent parameter is the default set, not the empty set: the URL carries a
+ * `status` only once the reader has changed something, so a bare `/search` and
+ * a shared link that kept the defaults have to agree. `?status=` with nothing
+ * after it is a real answer -- every box cleared -- and stays distinct from
+ * absent, which is why this reads null rather than falsy.
+ * @param {string | null} value
+ */
+function activeStatuses(value) {
+	if (value === null) return new Set(STATUS_DEFAULT);
 	return new Set(
-		// Stryker disable next-line StringLiteral: when value is null the fallback string is split/filtered; "" and any sentinel both produce no valid status tokens — equivalent.
-		String(value || "")
+		value
 			.split(",")
 			.map((s) => s.trim())
 			.filter((s) => CLIENT_STATUS_VALUES.has(s))
@@ -64,7 +95,7 @@ function sortFromOfficialOrdering(ordering, fallback) {
 
 /** @param {Set<string>} selectedStatuses */
 function renderStatusFacetGroup(selectedStatuses) {
-	const rows = CLIENT_STATUS_FILTERS.map((s) => {
+	const rows = STATUS_FILTERS.map((s) => {
 		const checked = selectedStatuses.has(s.value) ? " checked" : "";
 		return `<label class="facet"><input type="checkbox" data-client-status="${s.value}"${checked}> <span>${esc(s.label)}</span></label>`;
 	}).join("");
@@ -136,7 +167,7 @@ export async function viewSearch() {
 	const page = Math.max(1, Number.parseInt(usp.get("page") ?? "", 10) || 1);
 	const pageSize = activePageSize(usp.get("page_size"));
 	const { sort, ordering, defaultSort } = resolveSort(usp);
-	const clientStatuses = activeClientStatuses(usp.get("status"));
+	const statuses = activeStatuses(usp.get("status"));
 
 	// Live API params: q, paging, ordering + every *__term facet filter from the URL.
 	const api = new URLSearchParams();
@@ -144,6 +175,7 @@ export async function viewSearch() {
 	api.set("page", String(page));
 	api.set("page_size", String(pageSize));
 	if (ordering) api.set("ordering", ordering);
+	if (statuses.has(STATUS_ARCHIVED)) api.set("include_archived", "1");
 	const selected = new Set();
 	for (const [k, v] of usp.entries()) {
 		if (k.endsWith("__term")) {
@@ -196,9 +228,14 @@ export async function viewSearch() {
 		attachEvolvedSummaries(results),
 		attachEvolvedSummaries(local)
 	]);
-	// Client-side prototype until backend status faceting + result counts exist (#57/#58).
-	if (clientStatuses.size > 0) {
-		results = results.filter((t) => CLIENT_STATUS_FILTERS.some((s) => clientStatuses.has(s.value) && s.match(t)));
+	// Clearing a box drops that kind; ticked means "no objection", so the default
+	// set constrains nothing and costs no filtering. Archived never reaches here --
+	// the API was told whether to send it. See CLIENT_STATUS_FILTERS on the split.
+	// Archived is excluded in SQL, so it is absent from this test on purpose: hiding
+	// it leaves the count and the pager honest and must not raise the caveat below.
+	const clientFiltering = CLIENT_STATUS_FILTERS.some((s) => !statuses.has(s.value));
+	for (const status of CLIENT_STATUS_FILTERS) {
+		if (!statuses.has(status.value)) results = results.filter((tool) => !status.match(tool));
 	}
 	if (sort === "complete") {
 		results.sort((a, b) => completeness(b).filled - completeness(a).filled || a.title.localeCompare(b.title));
@@ -209,36 +246,35 @@ export async function viewSearch() {
 	/** @param {any} facets */
 	const renderFacets = (facets) => FACET_GROUPS.map((g) => renderFacetGroup(g, facets, selected)).join("");
 	const facetHTML = initialFacetData ? renderFacets(initialFacetData.facets || {}) : "";
-	const statusFacetHTML = renderStatusFacetGroup(clientStatuses);
+	const statusFacetHTML = renderStatusFacetGroup(statuses);
 	const pagerHTML = renderPager(page, pages);
 	// Stryker disable next-line ConditionalExpression,EqualityOperator: firstResult/lastResult are only read in the results.length>0 branch of countHTML, where this guard is already true, so the empty-case value is never observed — equivalent.
 	const firstResult = results.length > 0 ? (page - 1) * pageSize + 1 : 0;
 	const lastResult = firstResult + results.length - 1;
-	const countHTML =
-		clientStatuses.size > 0
-			? results.length > 0
-				? t(
-						"search.showingOnPage",
-						"Showing $1 on this page of $2",
-						esc(fmt(results.length)),
-						esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
-					)
-				: t(
-						"search.noVisibleOnPage",
-						"No visible tools on this page of $1",
-						esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
-					)
-			: results.length > 0
-				? t(
-						"search.showingRange",
-						"Showing $1-$2 of $3",
-						esc(fmt(firstResult)),
-						esc(fmt(lastResult)),
-						esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
-					)
-				: esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total));
+	const countHTML = clientFiltering
+		? results.length > 0
+			? t(
+					"search.showingOnPage",
+					"Showing $1 on this page of $2",
+					esc(fmt(results.length)),
+					esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
+				)
+			: t(
+					"search.noVisibleOnPage",
+					"No visible tools on this page of $1",
+					esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
+				)
+		: results.length > 0
+			? t(
+					"search.showingRange",
+					"Showing $1-$2 of $3",
+					esc(fmt(firstResult)),
+					esc(fmt(lastResult)),
+					esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
+				)
+			: esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total));
 	const countNotes = [
-		clientStatuses.size > 0 ? t("search.filteredInBrowser", "filtered in your browser") : "",
+		clientFiltering ? t("search.filteredInBrowser", "filtered in your browser") : "",
 		canonicalFallback ? t("search.cachedCanonicalData", "showing the last published catalog generation") : ""
 	].filter(Boolean);
 	const countNoteHTML = countNotes.map((note) => ` <span class="browse__count-note">${esc(note)}</span>`).join("");
@@ -319,10 +355,15 @@ export async function viewSearch() {
 					/** @type {HTMLInputElement} */ (c).value
 				)
 			);
-			const statuses = $$(".facets input[type=checkbox][data-client-status]:checked").map((c) =>
-				c.getAttribute("data-client-status")
+			const ticked = $$(".facets input[type=checkbox][data-client-status]:checked").map(
+				(c) => /** @type {string} */ (c.getAttribute("data-client-status"))
 			);
-			if (statuses.length > 0) u.set("status", statuses.join(","));
+			// Omitted while it matches the default so an untouched search keeps a bare
+			// URL; once it differs it is written in full, empty included, because an
+			// absent parameter means "the defaults" rather than "nothing ticked".
+			const isDefault =
+				ticked.length === STATUS_DEFAULT.length && STATUS_DEFAULT.every((s) => ticked.includes(s));
+			if (!isDefault) u.set("status", ticked.join(","));
 			const sv = /** @type {HTMLInputElement} */ ($input("#sort")).value;
 			if (sv && sv !== defaultSort) u.set("sort", sv);
 			const psv = activePageSize(/** @type {HTMLInputElement} */ ($input("#page-size")).value);

@@ -17,17 +17,36 @@ from sqlalchemy import distinct, func, select
 
 from backend import db, facet_names
 from backend.models import ApiCacheMeta, CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
+from backend.sync import LIFECYCLE_ARCHIVED
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from sqlalchemy.sql import Select
 
 STATE_KEY = "official_catalog"
-CACHE_KEY = "catalog:facets:v1"
-DIRTY_KEY = "catalog:facets:dirty:v1"
-CACHE_VERSION = 1
+CACHE_KEY = "catalog:facets:v2"
+DIRTY_KEY = "catalog:facets:dirty:v2"
+CACHE_VERSION = 2
 FACET_BUCKET_LIMIT = 50
 FACET_FIELDS = facet_names.CATALOG_PUBLIC_TO_STORAGE
+
+
+def default_population() -> Select:
+    """Rows the catalog shows to a reader who has not asked for more.
+
+    Archived tools are catalogued but not offered: the user-script census files
+    a script nobody but its author loads as `archived` rather than dropping it,
+    so the row exists precisely so that it can be found on purpose. Excluding it
+    here rather than at each call site keeps one definition of "the default
+    view", which is what makes the cached global aggregate below comparable with
+    the result page it labels.
+
+    `lifecycle` is `NOT NULL DEFAULT ''` (`backend.db._schema_additions`), so
+    rows predating the column read as unknown and stay visible; only an explicit
+    `archived` is withheld. A tool the census has never judged is not a tool it
+    has judged badly.
+    """
+    return select(CanonicalToolCache).where(CanonicalToolCache.lifecycle != LIFECYCLE_ARCHIVED)
 
 
 def _aggregate_rows(session: Session, filtered: Select) -> list[Any]:
@@ -110,7 +129,7 @@ def rebuild_global_payload(*, force: bool = False) -> int:
             existing = session.get(ApiCacheMeta, CACHE_KEY)
             if not force and dirty is None and existing is not None:
                 return 0
-            facets = dynamic_payload(session, select(CanonicalToolCache))
+            facets = dynamic_payload(session, default_population())
             state = session.get(ToolCatalogSyncState, STATE_KEY)
             wrapper = {
                 "version": CACHE_VERSION,

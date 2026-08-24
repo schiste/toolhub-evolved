@@ -1153,6 +1153,7 @@
 	"savemenu.noListsYet": "TODO: document this message.",
 	"savemenu.saveToAList": "TODO: document this message.",
 	"savemenu.untitledList": "TODO: document this message.",
+	"search.archived": "Label for the search Status filter that includes tools the user-script census recorded as archived, meaning nobody but the author is known to load them. Cleared by default. Not the same as {{msg-mw|search.deprecated}}, which is a maintainer's own declaration.",
 	"search.browseTools": "TODO: document this message.",
 	"search.cachedCanonicalData": "TODO: document this message.",
 	"search.clearFilters": "TODO: document this message.",

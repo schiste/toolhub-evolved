@@ -67,8 +67,19 @@ def replica_status(*, record_count: int | None = None) -> dict[str, Any]:
     }
 
 
+def _include_archived(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
+    """Whether the reader has asked for archived tools as well as current ones.
+
+    Off unless asked. The census files far more archived user scripts than live
+    ones -- meta alone last reported 1,874 archived against 729 active -- so a
+    default that included them would bury the tools somebody is looking for
+    under the ones nobody loads.
+    """
+    return str(params.get("include_archived", "")).strip().casefold() in {"1", "true", "yes"}
+
+
 def _filtered_statement(params: Any) -> Select[tuple[CanonicalToolCache]]:  # noqa: ANN401
-    statement = select(CanonicalToolCache)
+    statement = select(CanonicalToolCache) if _include_archived(params) else catalog_facets.default_population()
     query = str(params.get("q") or "").strip().casefold()
     if query:
         statement = statement.where(CanonicalToolCache.search_text.like(f"%{escape_like(query)}%", escape="\\"))
@@ -89,7 +100,16 @@ def _facet_payload(session: Any, filtered: Any) -> dict[str, Any]:  # noqa: ANN4
 
 
 def _has_catalog_filters(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
+    """Whether this request departs from the population the global cache counts.
+
+    The cached aggregate is built over `default_population()`, so asking for
+    archived tools widens the result set past what that cache describes and the
+    facets have to be counted for real. Reporting `False` here would serve
+    bucket counts for a different set of tools than the page lists.
+    """
     if str(params.get("q") or "").strip():
+        return True
+    if _include_archived(params):
         return True
     return any(_values(params, f"{field}__term") for field in FACET_FIELDS)
 

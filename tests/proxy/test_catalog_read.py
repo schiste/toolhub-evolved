@@ -225,3 +225,98 @@ def test_facet_cache_rejects_invalid_envelopes_and_caps_buckets(monkeypatch):
 
     monkeypatch.setattr(db, "advisory_lock", locked_out)
     assert catalog_facets.rebuild_global_payload() == 0
+
+
+def _archive(name: str, *, title: str) -> None:
+    """Catalogue one tool the census judged archived, the way the projection does."""
+    canonical_tools.upsert_records(
+        [{"name": name, "title": title, "description": "Nobody but the author loads it", "_lifecycle": "archived"}],
+        source_url="https://meta.wikimedia.org/",
+    )
+    with db.session_scope() as session:
+        session.add(CatalogFacetValue(tool_name=name, field="tool_type", value="web-app", label="web-app"))
+
+
+def test_archived_tools_are_catalogued_but_withheld_from_the_default_search():
+    _archive("gamma", title="Gamma script")
+
+    default = catalog_read.search_payload({"page_size": "50"})
+    asked = catalog_read.search_payload({"page_size": "50", "include_archived": "1"})
+
+    # Withheld from the listing, not dropped from the catalogue: the row is still
+    # there to be found on purpose, which is the reason the census files it.
+    assert "gamma" not in [row["name"] for row in default["results"]]
+    assert default["count"] == 2
+    assert "gamma" in [row["name"] for row in asked["results"]]
+    assert asked["count"] == 3
+
+
+def test_a_tool_the_census_never_judged_stays_visible():
+    """Unknown is not archived.
+
+    `_lifecycle` is written by the user-script projection alone, so every tool
+    from official Toolhub carries the empty default. A filter that kept only
+    `active` would empty the catalogue rather than tidy it.
+    """
+    with db.session_scope() as session:
+        assert session.get(CanonicalToolCache, "alpha").lifecycle == ""
+
+    names = [row["name"] for row in catalog_read.search_payload({"page_size": "50"})["results"]]
+
+    assert names == ["alpha", "beta"]
+
+
+def test_default_facet_counts_describe_the_default_population():
+    """The cached aggregate and the result page have to count the same tools."""
+    _archive("gamma", title="Gamma script")
+    assert catalog_facets.rebuild_global_payload(force=True) > 0
+
+    payload = catalog_read.search_payload({"page_size": "50"})
+
+    # gamma also carries tool_type web-app; counting it here would advertise two
+    # web-apps in the sidebar and then list one.
+    assert payload["facets"]["_filter_tool_type"]["tool_type"]["buckets"] == [
+        {"key": "bot", "doc_count": 1},
+        {"key": "web-app", "doc_count": 1},
+    ]
+
+
+def test_asking_for_archived_recounts_facets_instead_of_serving_the_cache(monkeypatch):
+    _archive("gamma", title="Gamma script")
+    assert catalog_facets.rebuild_global_payload(force=True) > 0
+    seen: list[bool] = []
+    original = catalog_read._facet_payload
+    monkeypatch.setattr(
+        catalog_read, "_facet_payload", lambda *args: (seen.append(True), original(*args))[1]
+    )
+
+    payload = catalog_read.search_payload({"page_size": "50", "include_archived": "1"})
+
+    assert seen, "widening the population past the cache must recount"
+    assert payload["facets"]["_filter_tool_type"]["tool_type"]["buckets"] == [
+        {"key": "web-app", "doc_count": 2},
+        {"key": "bot", "doc_count": 1},
+    ]
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "TRUE", "Yes"])
+def test_include_archived_accepts_the_truthy_spellings(value):
+    _archive("gamma", title="Gamma script")
+
+    payload = catalog_read.search_payload({"page_size": "50", "include_archived": value})
+
+    assert payload["count"] == 3
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "no", "banana"])
+def test_include_archived_withholds_on_anything_else(value):
+    """An unparseable value withholds rather than widens.
+
+    The permissive direction of this flag is the one that buries live tools, so
+    a typo or a stale client resolves to the conservative reading.
+    """
+    _archive("gamma", title="Gamma script")
+
+    payload = catalog_read.search_payload({"page_size": "50", "include_archived": value})
+
+    assert payload["count"] == 2
