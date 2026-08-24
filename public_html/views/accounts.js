@@ -7,9 +7,8 @@ import { avatar } from "../lib/atoms/avatar.js";
 import { icon } from "../lib/atoms/icon.js";
 import { renderPager } from "../lib/molecules/pager.js";
 import { communityHeader } from "./community.js";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from "../lib/core/paging.js";
 
-const ACCOUNT_PAGE_SIZES = [12, 24, 48, 96];
-const DEFAULT_ACCOUNT_PAGE_SIZE = 24;
 const ACCOUNT_ORDERINGS = new Set(["name", "recent"]);
 
 /** @param {string | null} value @param {number} fallback */
@@ -20,14 +19,14 @@ function positiveInteger(value, fallback) {
 
 /** @param {URLSearchParams} [params] */
 export function accountDirectoryState(params = new URLSearchParams(globalThis.location?.search || "")) {
-	const requestedSize = positiveInteger(params.get("page_size"), DEFAULT_ACCOUNT_PAGE_SIZE);
+	const requestedSize = positiveInteger(params.get("page_size"), DEFAULT_PAGE_SIZE);
 	const ordering = String(params.get("ordering") || "name");
 	return {
 		q: String(params.get("q") || "")
 			.trim()
 			.slice(0, 255),
 		page: positiveInteger(params.get("page"), 1),
-		pageSize: ACCOUNT_PAGE_SIZES.includes(requestedSize) ? requestedSize : DEFAULT_ACCOUNT_PAGE_SIZE,
+		pageSize: PAGE_SIZE_OPTIONS.includes(requestedSize) ? requestedSize : DEFAULT_PAGE_SIZE,
 		group: String(params.get("group") || "")
 			.trim()
 			.slice(0, 255),
@@ -45,7 +44,7 @@ export function accountDirectoryHref(state, changes = {}) {
 	if (next.q) params.set("q", next.q);
 	if (next.group) params.set("group", next.group);
 	if (next.ordering !== "name") params.set("ordering", next.ordering);
-	if (next.pageSize !== DEFAULT_ACCOUNT_PAGE_SIZE) params.set("page_size", String(next.pageSize));
+	if (next.pageSize !== DEFAULT_PAGE_SIZE) params.set("page_size", String(next.pageSize));
 	if (next.page > 1) params.set("page", String(next.page));
 	if (next.accountId) params.set("account", next.accountId);
 	return `/people${params.size > 0 ? `?${params}` : ""}`;
@@ -113,7 +112,7 @@ function accountForm(state) {
 	]
 		.map(([value, label]) => option(value, state.ordering, label))
 		.join("");
-	const sizes = ACCOUNT_PAGE_SIZES.map((size) =>
+	const sizes = PAGE_SIZE_OPTIONS.map((size) =>
 		option(String(size), String(state.pageSize), t("accounts.perPage", "$1 per page", size))
 	).join("");
 	return `<form class="people-directory account-directory__form" data-account-search role="search">
@@ -211,11 +210,11 @@ export async function viewAccounts(options = {}) {
 						ordering: ACCOUNT_ORDERINGS.has(String(data.get("ordering") || ""))
 							? String(data.get("ordering"))
 							: "name",
-						pageSize: ACCOUNT_PAGE_SIZES.includes(
-							positiveInteger(String(data.get("page_size") || ""), DEFAULT_ACCOUNT_PAGE_SIZE)
+						pageSize: PAGE_SIZE_OPTIONS.includes(
+							positiveInteger(String(data.get("page_size") || ""), DEFAULT_PAGE_SIZE)
 						)
-							? positiveInteger(String(data.get("page_size") || ""), DEFAULT_ACCOUNT_PAGE_SIZE)
-							: DEFAULT_ACCOUNT_PAGE_SIZE,
+							? positiveInteger(String(data.get("page_size") || ""), DEFAULT_PAGE_SIZE)
+							: DEFAULT_PAGE_SIZE,
 						page: 1,
 						accountId: ""
 					}),

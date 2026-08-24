@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 
 from flask import Blueprint, Response, jsonify, request
 
-from backend import account_directory, db, security, v1
+from backend import account_directory, db, paging, security, v1
 from backend import v1_common as common
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_int
 
@@ -52,7 +52,7 @@ def v1_accounts() -> Response:
         return common.bad("unsupported ordering")
     try:
         page = _positive_arg("page", 1)
-        page_size = _positive_arg("page_size", 24, maximum=100)
+        page_size = _positive_arg("page_size", 24, maximum=paging.MAX_PAGE_SIZE)
     except InvalidAccountQueryError as exc:
         return common.bad(str(exc))
     with db.session_scope() as s:

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import case, func, or_, select
 
-from backend import people_index
+from backend import paging, people_index
 from backend.models import Person, PersonIdentifier, ToolhubAccountProjection, ToolhubAccountSyncState
 
 if TYPE_CHECKING:
@@ -167,7 +167,7 @@ def search_accounts(s: Session, query: AccountDirectoryQuery) -> dict[str, Any]:
             ToolhubAccountProjection.groups_search.like(f"%\n{_like_literal(clean_group)}\n%", escape="\\")
         )
     total = int(s.scalar(select(func.count()).select_from(statement.order_by(None).subquery())) or 0)
-    page_size = max(1, min(query.page_size, 100))
+    page_size = max(1, min(query.page_size, paging.MAX_PAGE_SIZE))
     page_count = max(1, (total + page_size - 1) // page_size)
     page = min(max(1, query.page), page_count)
     name_order = (ToolhubAccountProjection.normalized_username, ToolhubAccountProjection.toolhub_user_id)

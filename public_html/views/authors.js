@@ -16,9 +16,8 @@ import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { renderPager } from "../lib/molecules/pager.js";
 import { communityHeader } from "./community.js";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from "../lib/core/paging.js";
 
-const PEOPLE_PAGE_SIZES = [12, 24, 48];
-const DEFAULT_PEOPLE_PAGE_SIZE = 24;
 const PEOPLE_ROLES = new Set(["author", "maintainer"]);
 const PEOPLE_VERIFICATIONS = new Set(["verified", "unverified"]);
 const PEOPLE_ACTIVITIES = new Set(["active", "quiet", "unknown"]);
@@ -533,14 +532,14 @@ function positiveInteger(value, fallback) {
 
 /** @param {URLSearchParams} [params] */
 export function peopleDirectoryState(params = new URLSearchParams(globalThis.location?.search || "")) {
-	const requestedSize = positiveInteger(params.get("page_size"), DEFAULT_PEOPLE_PAGE_SIZE);
+	const requestedSize = positiveInteger(params.get("page_size"), DEFAULT_PAGE_SIZE);
 	const legacyView = String(params.get("view") || "");
 	return {
 		q: String(params.get("q") || "")
 			.trim()
 			.slice(0, 255),
 		page: positiveInteger(params.get("page"), 1),
-		pageSize: PEOPLE_PAGE_SIZES.includes(requestedSize) ? requestedSize : DEFAULT_PEOPLE_PAGE_SIZE,
+		pageSize: PAGE_SIZE_OPTIONS.includes(requestedSize) ? requestedSize : DEFAULT_PAGE_SIZE,
 		role: choice(params.get("role"), PEOPLE_ROLES),
 		verification: choice(params.get("verification"), PEOPLE_VERIFICATIONS),
 		activity: choice(params.get("activity"), PEOPLE_ACTIVITIES),
@@ -565,7 +564,7 @@ function peopleDirectoryHref(state) {
 	if (state.project) params.set("project", state.project);
 	if (state.ordering !== "relevance") params.set("ordering", state.ordering);
 	if (state.contributor) params.set("contributor", "observed");
-	if (state.pageSize !== DEFAULT_PEOPLE_PAGE_SIZE) params.set("page_size", String(state.pageSize));
+	if (state.pageSize !== DEFAULT_PAGE_SIZE) params.set("page_size", String(state.pageSize));
 	if (state.page > 1) params.set("page", String(state.page));
 	if (state.accountId) params.set("account", state.accountId);
 	return `/people${params.size > 0 ? `?${params}` : ""}`;
@@ -760,7 +759,7 @@ function directoryResultControls(state) {
 	]
 		.map(([value, label]) => option(value, state.ordering, label))
 		.join("");
-	const pageSizeOptions = PEOPLE_PAGE_SIZES.map((size) =>
+	const pageSizeOptions = PAGE_SIZE_OPTIONS.map((size) =>
 		option(String(size), String(state.pageSize), t("authors.peoplePerPage", "$1 per page", size))
 	).join("");
 	return `<span class="browse__controls">
@@ -818,7 +817,7 @@ export async function viewPeople() {
 					peopleDirectoryHref({
 						q: String(data.get("q") || "").trim(),
 						page: 1,
-						pageSize: positiveInteger(pageSize?.value || "", DEFAULT_PEOPLE_PAGE_SIZE),
+						pageSize: positiveInteger(pageSize?.value || "", DEFAULT_PAGE_SIZE),
 						role: choice(String(data.get("role") || ""), PEOPLE_ROLES),
 						verification: choice(String(data.get("verification") || ""), PEOPLE_VERIFICATIONS),
 						activity: choice(String(data.get("activity") || ""), PEOPLE_ACTIVITIES),

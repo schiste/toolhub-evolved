@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { beforeEach, test, vi } from "vitest";
+import { DEFAULT_PAGE_SIZE } from "../../public_html/lib/core/paging.js";
 import { accountDirectoryHref, accountDirectoryState, viewAccounts } from "../../public_html/views/accounts.js";
 
 const h = vi.hoisted(() => ({ backendGetJson: vi.fn() }));
@@ -37,14 +38,14 @@ beforeEach(() => {
 test("accountDirectoryState validates a shareable filter and detail state", () => {
 	assert.deepEqual(
 		accountDirectoryState(
-			new URLSearchParams("view=accounts&q=Magnus&page=3&page_size=48&group=admin&ordering=recent&account=42")
+			new URLSearchParams("view=accounts&q=Magnus&page=3&page_size=55&group=admin&ordering=recent&account=42")
 		),
-		{ q: "Magnus", page: 3, pageSize: 48, group: "admin", ordering: "recent", accountId: "42" }
+		{ q: "Magnus", page: 3, pageSize: 55, group: "admin", ordering: "recent", accountId: "42" }
 	);
 	assert.deepEqual(accountDirectoryState(new URLSearchParams("page=0&page_size=500&ordering=random")), {
 		q: "",
 		page: 1,
-		pageSize: 24,
+		pageSize: 21,
 		group: "",
 		ordering: "name",
 		accountId: ""
@@ -94,6 +95,12 @@ test("unchanged account filters neither navigate nor leave the results busy", as
 	const view = await viewAccounts();
 	document.body.innerHTML = view.html;
 	view.mount();
+	// happy-dom (20.10.6) mis-parses `selected` past the second <option>: the
+	// select reports options[1] instead. The view marks 21 (index 2) selected, so
+	// the control has to be pointed at the state's size by hand. Real browsers
+	// honour the attribute, which is why this only surfaced when the default
+	// stopped being the second option in the list.
+	/** @type {any} */ (document.querySelector("select[name=page_size]")).value = String(DEFAULT_PAGE_SIZE);
 	let navigations = 0;
 	const countNavigation = () => {
 		navigations += 1;
@@ -170,13 +177,13 @@ test("stale completed projections remain browsable with an explicit warning", as
 });
 
 test("accountDirectoryHref retains account filters while adding and removing detail state", () => {
-	const state = { q: "Ada", page: 2, pageSize: 48, group: "admin", ordering: "recent", accountId: "" };
+	const state = { q: "Ada", page: 2, pageSize: 55, group: "admin", ordering: "recent", accountId: "" };
 	assert.equal(
 		accountDirectoryHref(state, { accountId: "42" }),
-		"/people?q=Ada&group=admin&ordering=recent&page_size=48&page=2&account=42"
+		"/people?q=Ada&group=admin&ordering=recent&page_size=55&page=2&account=42"
 	);
 	assert.equal(
 		accountDirectoryHref(state, { accountId: "", page: 1 }),
-		"/people?q=Ada&group=admin&ordering=recent&page_size=48"
+		"/people?q=Ada&group=admin&ordering=recent&page_size=55"
 	);
 });

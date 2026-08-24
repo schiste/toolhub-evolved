@@ -692,7 +692,7 @@ test("viewMembers renders the unified directory and replaces the legacy URL", as
 	});
 	const view = await viewMembers();
 	assert.equal(view.title, "Community directory — Toolhub");
-	assert.deepEqual(api.backendGetJson.mock.calls[0], ["/v1/community/?page_size=24&ordering=relevance"]);
+	assert.deepEqual(api.backendGetJson.mock.calls[0], ["/v1/community/?page_size=21&ordering=relevance"]);
 	assert.match(view.html, /Community directory/);
 	assert.match(view.html, /Search people, usernames, and tools in one place/);
 	view.mount();

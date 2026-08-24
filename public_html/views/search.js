@@ -10,14 +10,13 @@ import {
 	normalizeTool
 } from "../lib/core/api.js";
 import { navigateTo } from "../lib/core/routing.js";
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, resolvePageSize } from "../lib/core/paging.js";
 import { attachEndorsements, attachEvolvedSummaries, completeness, rankFitsFirst } from "../lib/core/signals.js";
 import { button } from "../lib/atoms/button.js";
 import { FACET_GROUPS, renderFacetGroup } from "../lib/molecules/facet-group.js";
 import { renderPager } from "../lib/molecules/pager.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 
-export const PAGE_SIZE_OPTIONS = [12, 24, 48];
-export const DEFAULT_PAGE_SIZE = 24;
 /*
  * Every box in the Status group reads the same way: ticked means "include these
  * in the results". Deprecated and Experimental start ticked, so leaving the
@@ -53,13 +52,6 @@ const STATUS_FILTERS = [
 const CLIENT_STATUS_VALUES = new Set(STATUS_FILTERS.map((s) => s.value));
 /** Ticked when the reader has expressed no preference. */
 const STATUS_DEFAULT = Object.freeze(CLIENT_STATUS_FILTERS.map((s) => s.value));
-
-/** @param {string | null} value */
-function activePageSize(value) {
-	// Stryker disable next-line StringLiteral: when value is null the fallback is parsed by Number.parseInt; "" and any non-numeric sentinel both yield NaN (→ default page size) — equivalent.
-	const parsed = Number.parseInt(value ?? "", 10);
-	return PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE;
-}
 
 /**
  * The ticked Status boxes for this request.
@@ -165,7 +157,7 @@ export async function viewSearch() {
 	const q = usp.get("q") || "";
 	// Stryker disable next-line StringLiteral: when the page param is absent the fallback is parsed; "" and any sentinel both yield NaN (→ page 1) — equivalent.
 	const page = Math.max(1, Number.parseInt(usp.get("page") ?? "", 10) || 1);
-	const pageSize = activePageSize(usp.get("page_size"));
+	const pageSize = resolvePageSize(usp.get("page_size"));
 	const { sort, ordering, defaultSort } = resolveSort(usp);
 	const statuses = activeStatuses(usp.get("status"));
 
@@ -366,7 +358,7 @@ export async function viewSearch() {
 			if (!isDefault) u.set("status", ticked.join(","));
 			const sv = /** @type {HTMLInputElement} */ ($input("#sort")).value;
 			if (sv && sv !== defaultSort) u.set("sort", sv);
-			const psv = activePageSize(/** @type {HTMLInputElement} */ ($input("#page-size")).value);
+			const psv = resolvePageSize(/** @type {HTMLInputElement} */ ($input("#page-size")).value);
 			if (psv !== DEFAULT_PAGE_SIZE) u.set("page_size", String(psv));
 			if (extra.page && extra.page > 1) u.set("page", String(extra.page));
 			navigateTo(`/search${u.toString() ? `?${u.toString()}` : ""}`);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { beforeEach, test, vi } from "vitest";
+import { DEFAULT_PAGE_SIZE } from "../../public_html/lib/core/paging.js";
 // toolsByAuthor hits the network (paginate → apiGet), so it is fixture-driven here.
 // authorProfileUrl, grid, toolCard, and the dom/i18n helpers stay real so the rendered
 // HTML — and the `(t) => toolCard(t)` mapper arrow — is exercised end to end.
@@ -493,14 +494,14 @@ test("viewPeople unifies resolved people, official accounts, tools, and unresolv
 test("peopleDirectoryState validates and restores shareable URL state", () => {
 	const state = peopleDirectoryState(
 		new URLSearchParams(
-			"q=Magnus+Manske&page=3&page_size=48&role=maintainer&verification=verified&activity=active&project=wikidata.org&ordering=name&contributor=observed"
+			"q=Magnus+Manske&page=3&page_size=55&role=maintainer&verification=verified&activity=active&project=wikidata.org&ordering=name&contributor=observed"
 		)
 	);
 
 	assert.deepEqual(state, {
 		q: "Magnus Manske",
 		page: 3,
-		pageSize: 48,
+		pageSize: 55,
 		role: "maintainer",
 		verification: "verified",
 		activity: "active",
@@ -512,7 +513,7 @@ test("peopleDirectoryState validates and restores shareable URL state", () => {
 	assert.deepEqual(peopleDirectoryState(new URLSearchParams("page=0&page_size=999&role=admin&ordering=random")), {
 		q: "",
 		page: 1,
-		pageSize: 24,
+		pageSize: 21,
 		role: "",
 		verification: "",
 		activity: "",
@@ -527,9 +528,9 @@ test("viewPeople hydrates filters from the URL and sends the complete API query"
 	window.history.replaceState(
 		{},
 		"",
-		"/people?q=Magnus+Manske&page=2&page_size=48&role=maintainer&verification=verified&activity=active&project=wikidata.org&ordering=name"
+		"/people?q=Magnus+Manske&page=2&page_size=55&role=maintainer&verification=verified&activity=active&project=wikidata.org&ordering=name"
 	);
-	h.backendGetJson.mockResolvedValueOnce({ count: 0, page: 2, pageSize: 48, pageCount: 1, results: [] });
+	h.backendGetJson.mockResolvedValueOnce({ count: 0, page: 2, pageSize: 55, pageCount: 1, results: [] });
 
 	const view = await viewPeople();
 
@@ -572,6 +573,12 @@ test("people search submission is stable when the form already represents the cu
 	const view = await viewPeople();
 	document.body.innerHTML = view.html;
 	view.mount();
+	// happy-dom (20.10.6) mis-parses `selected` past the second <option>: the
+	// select reports options[1] instead. The view marks 21 (index 2) selected, so
+	// the control has to be pointed at the state's size by hand. Real browsers
+	// honour the attribute, which is why this only surfaced when the default
+	// stopped being the second option in the list.
+	/** @type {any} */ (document.querySelector("#people-page-size")).value = String(DEFAULT_PAGE_SIZE);
 	let navigations = 0;
 	const countNavigation = () => {
 		navigations += 1;

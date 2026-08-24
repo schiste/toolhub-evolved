@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
-from backend import account_directory, people_index
+from backend import account_directory, paging, people_index
 from backend.models import CanonicalToolCache, Person, ToolPersonRelationship, ToolRelationshipEvidence
 
 if TYPE_CHECKING:
@@ -385,7 +385,7 @@ def _person_item(person: dict[str, Any], bases: set[str], accounts: list[dict[st
 def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]:
     """Compose one ranked directory without merging identities on display names."""
     query = _clean(search.query)
-    page_size = max(1, min(search.page_size, 100))
+    page_size = max(1, min(search.page_size, paging.MAX_PAGE_SIZE))
     page = max(1, search.page)
     if not query:
         people = people_index.search_people_directory(

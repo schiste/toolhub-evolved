@@ -13,6 +13,7 @@ from flask import Blueprint, Response, jsonify, request
 
 from backend import (
     db,
+    paging,
     people_index,
     security,
     v1,
@@ -99,8 +100,8 @@ def v1_people() -> Response:
         return common.bad("project must be 255 characters or fewer")
     try:
         page = _positive_arg("page", 1)
-        legacy_size = _positive_arg("limit", 24, maximum=100)
-        page_size = _positive_arg("page_size", legacy_size, maximum=100)
+        legacy_size = _positive_arg("limit", 24, maximum=paging.MAX_PAGE_SIZE)
+        page_size = _positive_arg("page_size", legacy_size, maximum=paging.MAX_PAGE_SIZE)
         role = _choice_arg("role", set(people_index.PUBLIC_ROLES))
         verification = _choice_arg("verification", PEOPLE_VERIFICATION_FILTERS)
         activity = _choice_arg("activity", PEOPLE_ACTIVITY_FILTERS)

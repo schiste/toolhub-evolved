@@ -61,10 +61,13 @@ def test_hot_endpoint_urls_cover_spa_entrypoints_and_search_terms(monkeypatch):
     assert "https://toolhub.example/api/schema/" in urls
     assert "https://toolhub.example/api/lists/?page_size=30" in urls
     assert "https://toolhub.example/api/lists/?featured=true&page_size=6" in urls
+    # Two first pages: 21 is the search view's default (public_html/lib/core/paging.js),
+    # 24 is the fixed size the home strip asks for. Different callers, both hot.
+    assert "https://toolhub.example/api/search/tools/?page=1&page_size=21" in urls
     assert "https://toolhub.example/api/search/tools/?page=1&page_size=24" in urls
     assert "https://toolhub.example/api/search/tools/?ordering=-modified_date&page_size=5" in urls
-    assert "https://toolhub.example/api/search/tools/?q=wikidata&page=1&page_size=24" in urls
-    assert "https://toolhub.example/api/search/tools/?q=commons&page=1&page_size=24" in urls
+    assert "https://toolhub.example/api/search/tools/?q=wikidata&page=1&page_size=21" in urls
+    assert "https://toolhub.example/api/search/tools/?q=commons&page=1&page_size=21" in urls
     assert len(urls) == len(set(urls))
 
 

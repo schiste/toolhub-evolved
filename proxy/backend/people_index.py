@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from sqlalchemy import and_, case, func, or_, select
 
-from backend import people_policy
+from backend import paging, people_policy
 from backend.models import (
     ActivityRow,
     CanonicalToolCache,
@@ -1680,7 +1680,7 @@ def search_unresolved_attributions(
         statement = statement.where(UnresolvedAttributionEvidence.tool_name == clean_tool)
     total = int(s.scalar(select(func.count()).select_from(statement.order_by(None).subquery())) or 0)
     safe_page = max(1, search.page)
-    safe_page_size = max(1, min(search.page_size, 100))
+    safe_page_size = max(1, min(search.page_size, paging.MAX_PAGE_SIZE))
     rows = list(s.execute(statement.offset((safe_page - 1) * safe_page_size).limit(safe_page_size)).all())
     relationship_breakdown = _unresolved_relationship_breakdown(
         s,
@@ -2577,7 +2577,7 @@ def search_people_directory(  # noqa: C901, PLR0915 - explicit query/ranking/fil
         order = (*relationship_order, *activity_order, identity_rank.desc(), *name_order)
 
     safe_page = max(1, search.page)
-    safe_page_size = max(1, min(search.page_size, 100))
+    safe_page_size = max(1, min(search.page_size, paging.MAX_PAGE_SIZE))
     people = list(
         s.execute(statement.order_by(*order).offset((safe_page - 1) * safe_page_size).limit(safe_page_size)).scalars()
     )

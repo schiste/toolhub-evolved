@@ -89,6 +89,9 @@ def hot_endpoints() -> tuple[HotEndpoint, ...]:
         HotEndpoint("/api/schema/"),
         HotEndpoint("/api/lists/", (("page_size", "30"),)),
         HotEndpoint("/api/lists/", (("featured", "true"), ("page_size", "6"))),
+        # 21 is the search page's default (paging.js); 24 is the fixed size the home
+        # page asks for. Different surfaces, so both stay hot.
+        HotEndpoint("/api/search/tools/", (("page", "1"), ("page_size", "21"))),
         HotEndpoint("/api/search/tools/", (("page", "1"), ("page_size", "24"))),
         HotEndpoint("/api/search/tools/", (("ordering", "-modified_date"), ("page_size", "5"))),
     ]
@@ -96,7 +99,7 @@ def hot_endpoints() -> tuple[HotEndpoint, ...]:
     # collection and answers arbitrary UI pagination without upstream I/O.
     endpoints.extend(HotEndpoint("/api/lists/", (("page_size", "50"), ("page", str(page)))) for page in range(1, 5))
     endpoints.extend(
-        HotEndpoint("/api/search/tools/", (("q", query), ("page", "1"), ("page_size", "24")))
+        HotEndpoint("/api/search/tools/", (("q", query), ("page", "1"), ("page_size", "21")))
         for query in configured_search_queries()
     )
 

@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 
 from sqlalchemy import func, select
 
-from backend import activity_privacy, api_cache, catalog_facets, db, list_revisions
+from backend import activity_privacy, api_cache, catalog_facets, db, list_revisions, paging
 from backend.canonical_tools import escape_like
 from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from sqlalchemy.sql import Select
 
 STATE_KEY = "official_catalog"
-MAX_PAGE_SIZE = 100
+MAX_PAGE_SIZE = paging.MAX_PAGE_SIZE
 DEFAULT_PAGE_SIZE = 20
 FACET_FIELDS = catalog_facets.FACET_FIELDS
 

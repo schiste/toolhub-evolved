@@ -66,7 +66,7 @@ const S = {
 				<div class="browse__bar">
 					<span class="browse__count" aria-live="polite">Showing 1-2 of 2 tools</span>
 					<span class="browse__controls">
-						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="12">12 per page</option><option value="24">24 per page</option><option value="48">48 per page</option></select></label>
+						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="8">8 per page</option><option value="13">13 per page</option><option value="21">21 per page</option><option value="34">34 per page</option><option value="55">55 per page</option><option value="89">89 per page</option><option value="144">144 per page</option></select></label>
 						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
 					</span>
 				</div>
@@ -156,7 +156,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 				<div class="browse__bar">
 					<span class="browse__count" aria-live="polite">0 tools</span>
 					<span class="browse__controls">
-						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="12">12 per page</option><option value="24">24 per page</option><option value="48">48 per page</option></select></label>
+						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="8">8 per page</option><option value="13">13 per page</option><option value="21">21 per page</option><option value="34">34 per page</option><option value="55">55 per page</option><option value="89">89 per page</option><option value="144">144 per page</option></select></label>
 						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
 					</span>
 				</div>
@@ -184,7 +184,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 				<div class="browse__bar">
 					<span class="browse__count" aria-live="polite">Showing 2 on this page of 3 tools <span class="browse__count-note">filtered in your browser</span></span>
 					<span class="browse__controls">
-						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="12">12 per page</option><option value="24">24 per page</option><option value="48">48 per page</option></select></label>
+						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="8">8 per page</option><option value="13">13 per page</option><option value="21">21 per page</option><option value="34">34 per page</option><option value="55">55 per page</option><option value="89">89 per page</option><option value="144">144 per page</option></select></label>
 						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
 					</span>
 				</div>
@@ -274,7 +274,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 				<div class="browse__bar">
 					<span class="browse__count" aria-live="polite">No visible tools on this page of 1 tool <span class="browse__count-note">filtered in your browser</span></span>
 					<span class="browse__controls">
-						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="12">12 per page</option><option value="24">24 per page</option><option value="48">48 per page</option></select></label>
+						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="8">8 per page</option><option value="13">13 per page</option><option value="21">21 per page</option><option value="34">34 per page</option><option value="55">55 per page</option><option value="89">89 per page</option><option value="144">144 per page</option></select></label>
 						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
 					</span>
 				</div>
@@ -370,7 +370,7 @@ test("search default (no query, populated results)", async () => {
 });
 
 test("search ignores removed popularity sort and renders normal cards", async () => {
-	setUrl("q=maps&sort=views&page=2&page_size=12");
+	setUrl("q=maps&sort=views&page=2&page_size=13");
 	h.apiGet.mockResolvedValue({
 		results: [
 			rawTool("alpha", { title: "Alpha", keywords: ["maps"] }),
@@ -483,7 +483,7 @@ test("search falls back to the last canonical generation when the local query fa
 	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
 
 	const result = await search.viewSearch();
-	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0], [{ q: "cite", limit: 24 }]);
+	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0], [{ q: "cite", limit: 21 }]);
 	assert.ok(result.html.includes("showing the last published catalog generation"));
 	assert.ok(result.html.includes('data-tool="cached-cite"'));
 });
@@ -540,7 +540,7 @@ test("page_size invalid falls back to default", async () => {
 	const r = await search.viewSearch();
 	document.body.innerHTML = r.html;
 	r.mount();
-	assert.equal(document.querySelector("#page-size").value, "24");
+	assert.equal(document.querySelector("#page-size").value, "21");
 });
 
 /* ---- mount() behaviours ---- */
@@ -574,9 +574,9 @@ test("mount: default sort is omitted from the URL", async () => {
 test("mount: page-size change adds page_size unless default", async () => {
 	await mountSearch("");
 	const ps = document.querySelector("#page-size");
-	ps.value = "48";
+	ps.value = "55";
 	ps.dispatchEvent(new Event("change", { bubbles: true }));
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/search?page_size=48"]);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/search?page_size=55"]);
 });
 
 test("mount: facet-q submit sets q", async () => {
@@ -633,30 +633,30 @@ async function apiParamsFor(qs) {
 }
 
 test("api params: default (no query) → relevance default with no ordering", async () => {
-	assert.equal(await apiParamsFor(""), "page=1&page_size=24&include_facets=false&view=card");
+	assert.equal(await apiParamsFor(""), "page=1&page_size=21&include_facets=false&view=card");
 });
 test("api params: q + sort=name + paging", async () => {
 	assert.equal(
-		await apiParamsFor("q=maps&sort=name&page=3&page_size=12"),
-		"q=maps&page=3&page_size=12&ordering=name&include_facets=false&view=card"
+		await apiParamsFor("q=maps&sort=name&page=3&page_size=13"),
+		"q=maps&page=3&page_size=13&ordering=name&include_facets=false&view=card"
 	);
 });
 test("api params: sort=complete → no ordering param", async () => {
-	assert.equal(await apiParamsFor("sort=complete"), "page=1&page_size=24&include_facets=false&view=card");
+	assert.equal(await apiParamsFor("sort=complete"), "page=1&page_size=21&include_facets=false&view=card");
 });
 test("api params: sort=recent stays allowed (ordering kept)", async () => {
 	assert.equal(
 		await apiParamsFor("sort=recent"),
-		"page=1&page_size=24&ordering=-modified_date&include_facets=false&view=card"
+		"page=1&page_size=21&ordering=-modified_date&include_facets=false&view=card"
 	);
 });
 test("api params: sort=name stays allowed (ordering=name)", async () => {
-	assert.equal(await apiParamsFor("sort=name"), "page=1&page_size=24&ordering=name&include_facets=false&view=card");
+	assert.equal(await apiParamsFor("sort=name"), "page=1&page_size=21&ordering=name&include_facets=false&view=card");
 });
 test("api params: only *__term filters are forwarded (others dropped)", async () => {
 	assert.equal(
 		await apiParamsFor("audiences__term=editor&extra=x"),
-		"page=1&page_size=24&audiences__term=editor&include_facets=false&view=card"
+		"page=1&page_size=21&audiences__term=editor&include_facets=false&view=card"
 	);
 });
 
