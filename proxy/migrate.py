@@ -643,6 +643,75 @@ def _normalize_identifier_vocabulary() -> tuple[int, int]:
         changed += restated
 
 
+def _link_accounts_to_people() -> tuple[int, int]:
+    """Point each OAuth account at its person, chunk by chunk. Returns (linked, deferred).
+
+    This pass writes `person_identifiers` too: `link_user` refreshes every
+    identifier it resolves, so it meets the same minute-by-minute writers that
+    `_normalize_identifier_vocabulary` was taught to defer to. It was refused in
+    a place nothing was catching, though. `ensure_person` upserts one namespace
+    after another, and the SELECT opening each upsert flushes the rows the
+    previous one dirtied -- so the refusal surfaces out of a read, several
+    frames from the assignment that earned it, and the traceback says
+    "Query-invoked autoflush" rather than naming an UPDATE. It is still errno
+    1205, and one held row still aborted the whole deploy after `git pull` had
+    already fast-forwarded the host.
+
+    Chunking is what makes deferring cheap: a chunk another writer holds is
+    dropped, and the accounts before and after it still link on this deploy.
+    """
+    linked = 0
+    deferred = 0
+    after = 0
+    while True:
+        with db.session_scope() as s:
+            ids = list(
+                s.execute(select(User.id).where(User.id > after).order_by(User.id).limit(BACKFILL_CHUNK)).scalars()
+            )
+        if not ids:
+            return (linked, deferred)
+        # Window fixed and cursor advanced before anything can raise, so a chunk
+        # this deploy cannot have is skipped rather than retried forever.
+        window, after = (after, ids[-1]), ids[-1]
+        relinked = 0
+        try:
+            with db.session_scope() as s:
+                current_ids = {
+                    (row.namespace, row.normalized_value): row.person_id
+                    for row in s.execute(
+                        select(PersonIdentifier).where(PersonIdentifier.is_current.is_(True))
+                    ).scalars()
+                }
+                users = s.execute(
+                    select(User).where(User.id > window[0], User.id <= window[1]).order_by(User.id)
+                ).scalars()
+                for user in users:
+                    toolhub_owner = current_ids.get((people_index.NS_TOOLHUB_USER_ID, user.wm_sub.casefold()))
+                    wikimedia_owner = current_ids.get(
+                        (people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, (user.wikimedia_global_user_id or "").casefold())
+                    )
+                    if user.person_id == toolhub_owner and (
+                        not user.wikimedia_global_user_id or user.person_id == wikimedia_owner
+                    ):
+                        # Already pointed at the right person by both stable
+                        # identifiers. Skipping is not only cheaper: linking
+                        # would restamp identifier rows that need no change,
+                        # which is exactly the contention this defers around.
+                        continue
+                    old_person_id = user.person_id
+                    people_index.link_user(s, user)
+                    relinked += int(old_person_id != user.person_id)
+        except OperationalError as error:
+            if not _is_lock_contention(error):
+                raise
+            deferred += len(ids)
+            continue
+        # Counted only once the commit has survived, for the same reason the
+        # identifier pass counts late: the refusal usually arrives after the
+        # session has already moved the rows in memory.
+        linked += relinked
+
+
 def _backfill_people_identity() -> int:
     """Assign opaque IDs and slugs, classify identifiers, and link accounts."""
     touched = 0
@@ -653,33 +722,19 @@ def _backfill_people_identity() -> int:
                 touched += 1
         s.flush()
         touched += _backfill_person_slugs(s)
-    restated, deferred = _normalize_identifier_vocabulary()
+    restated, identifiers_deferred = _normalize_identifier_vocabulary()
     touched += restated
-    if deferred:
-        # Loud, because the alternative reading of a quiet deploy is that there
-        # was nothing to do. Convergence is left to the next one.
-        sys.stderr.write(
-            f"migrate: left {deferred} identifier rows to the next deploy; another writer held them\n",
-        )
-    with db.session_scope() as s:
-        users = list(s.execute(select(User).order_by(User.id)).scalars())
-        current_ids = {
-            (row.namespace, row.normalized_value): row.person_id
-            for row in s.execute(select(PersonIdentifier).where(PersonIdentifier.is_current.is_(True))).scalars()
-        }
-        for user in users:
-            toolhub_owner = current_ids.get((people_index.NS_TOOLHUB_USER_ID, user.wm_sub.casefold()))
-            wikimedia_owner = current_ids.get(
-                (people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, (user.wikimedia_global_user_id or "").casefold())
+    linked, links_deferred = _link_accounts_to_people()
+    touched += linked
+    for deferred, subject in ((identifiers_deferred, "identifier rows"), (links_deferred, "account links")):
+        if deferred:
+            # Loud, because the alternative reading of a quiet deploy is that
+            # there was nothing to do. Convergence is left to the next one.
+            sys.stderr.write(
+                f"migrate: left {deferred} {subject} to the next deploy; another writer held them\n",
             )
-            if user.person_id == toolhub_owner and (
-                not user.wikimedia_global_user_id or user.person_id == wikimedia_owner
-            ):
-                continue
-            old_person_id = user.person_id
-            people_index.link_user(s, user)
-            touched += int(old_person_id != user.person_id)
-        touched += _backfill_account_owned_records(s, users)
+    with db.session_scope() as s:
+        touched += _backfill_account_owned_records(s, list(s.execute(select(User).order_by(User.id)).scalars()))
     inspector = inspect(db.engine())
 
     def has_unique_column(table: str, column: str) -> bool:

@@ -758,6 +758,101 @@ def test_the_operator_is_told_what_was_left_behind(configured_db, monkeypatch, c
     assert "left 2 identifier rows to the next deploy" in capsys.readouterr().err
 
 
+def unlinked_accounts(count):
+    """`count` OAuth accounts whose people exist but which do not point at them yet.
+
+    The identifier row is what makes the account need linking. Without one the
+    pass skips the account: `person_id` is NULL, the lookup finds no owner, and
+    NULL == None reads as "already pointing at the right person".
+    """
+    with db.session_scope() as s:
+        for index in range(count):
+            person = Person(canonical_key=f"account-{index}", display_name=f"Account{index}")
+            s.add(person)
+            s.flush()
+            s.add(User(wm_sub=str(index), username=f"Account{index}"))
+            s.add(
+                PersonIdentifier(
+                    person_id=person.id,
+                    namespace=migrate.people_index.NS_TOOLHUB_USER_ID,
+                    value=str(index),
+                    normalized_value=str(index),
+                    identifier_kind=migrate.people_index.IDENTIFIER_STABLE,
+                    is_current=True,
+                )
+            )
+
+
+def test_a_held_account_chunk_leaves_the_rest_of_the_accounts_linked(configured_db, monkeypatch, capsys):
+    # The second regression, and the one the identifier fix did not cover:
+    # linking rewrites identifier rows too, so it meets the same writers -- but
+    # the refusal arrives out of `ensure_person`'s next SELECT via autoflush,
+    # where nothing was catching it, and killed the deploy outright.
+    unlinked_accounts(6)
+    monkeypatch.setattr(migrate, "BACKFILL_CHUNK", 2)
+    link = migrate.people_index.link_user
+    seen = []
+
+    def refuse_the_second_chunk(s, user):
+        seen.append(user.wm_sub)
+        if len(seen) == 3:
+            raise held_by_another_writer()
+        return link(s, user)
+
+    monkeypatch.setattr(migrate.people_index, "link_user", refuse_the_second_chunk)
+    linked, deferred = migrate._link_accounts_to_people()
+
+    # The walk reached every account despite the refusal in the middle of it...
+    assert seen == ["0", "1", "2", "4", "5"]
+    # ...and the chunk it could not have is reported as left behind rather than
+    # counted among the accounts it linked.
+    assert (linked, deferred) == (4, 2)
+    with db.session_scope() as s:
+        linked_subs = sorted(
+            s.execute(select(User.wm_sub).where(User.person_id.is_not(None))).scalars(),
+        )
+    # Accounts 2 and 3 shared the held chunk, so neither landed; the next deploy
+    # takes them.
+    assert linked_subs == ["0", "1", "4", "5"]
+
+
+def test_an_account_already_pointed_at_its_person_is_not_restamped(configured_db, monkeypatch):
+    # Restamping an identifier that needs no change is what generates the write
+    # traffic this whole pass has to defer around, so the skip is load-bearing
+    # rather than an optimization.
+    unlinked_accounts(2)
+    assert migrate._link_accounts_to_people() == (2, 0)
+
+    monkeypatch.setattr(
+        migrate.people_index,
+        "link_user",
+        lambda s, user: pytest.fail(f"relinked {user.wm_sub}, which was already linked"),
+    )
+    assert migrate._link_accounts_to_people() == (0, 0)
+
+
+def test_an_account_error_that_is_not_contention_still_fails_the_deploy(configured_db, monkeypatch):
+    unlinked_accounts(2)
+    monkeypatch.setattr(
+        migrate.people_index,
+        "link_user",
+        lambda s, user: (_ for _ in ()).throw(held_by_another_writer(errno=2013)),
+    )
+    with pytest.raises(migrate.OperationalError):
+        migrate._link_accounts_to_people()
+
+
+def test_the_operator_is_told_which_accounts_were_left_behind(configured_db, monkeypatch, capsys):
+    unlinked_accounts(2)
+    monkeypatch.setattr(
+        migrate.people_index,
+        "link_user",
+        lambda s, user: (_ for _ in ()).throw(held_by_another_writer()),
+    )
+    migrate._backfill_people_identity()
+    assert "left 2 account links to the next deploy" in capsys.readouterr().err
+
+
 def test_a_deadlock_victim_is_treated_as_contention_and_a_bare_error_is_not():
     assert migrate._is_lock_contention(held_by_another_writer(errno=1213))
     assert not migrate._is_lock_contention(migrate.OperationalError("SELECT 1", {}, RuntimeError()))
