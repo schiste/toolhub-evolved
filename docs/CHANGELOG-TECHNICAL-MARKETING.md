@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: permissions-in-plain-sight -->
 <!-- Release title: Permissions in Plain Sight -->
-<!-- Source range: c55797b..12cb782d3 (3 commits) -->
+<!-- Source range: c55797b..e61d34417 (3 commits) -->
 
 # Technical Release Notes
 
