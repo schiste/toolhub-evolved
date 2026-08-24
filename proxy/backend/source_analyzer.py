@@ -32,6 +32,7 @@ from backend.source_analysis_common import (
     ANALYSIS_TOOLING_RE,
     API_RULES,
     AUTH_RULES,
+    BROWSER_PERMISSION_RULES,
     CI_FILE_KINDS,
     CONFIDENCE_CAP,
     CONFIDENCE_MAX_CORROBORATING_FILES,
@@ -49,6 +50,9 @@ from backend.source_analysis_common import (
     ENDPOINT_TRUSTED_SOURCE_WEIGHT,
     EVOLVED_METADATA_MIN_CONFIDENCE,
     EXACT_VERSION_RE,
+    EXTENSION_ALL_HOSTS,
+    EXTENSION_HOST_MATCH_RE,
+    EXTENSION_MANIFEST_RE,
     FRONTEND_SOURCE_EXTENSIONS,
     GEM_LOCK_RE,
     GEM_LOCK_VERSION_RE,
@@ -117,7 +121,11 @@ from backend.source_analysis_common import (
     TECHNOLOGY_PACKAGES,
     TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE,
     UNVERSIONED_SPECS,
+    USER_SCRIPT_DIRECTIVE_LABELS,
+    USER_SCRIPT_DIRECTIVE_RE,
     USER_SCRIPT_SUFFIX,
+    WEB_EXTENSION_PERMISSION_RE,
+    WEB_EXTENSION_PERMISSIONS,
     WIKI_KIND_TOOL_TYPE,
     WIKIMEDIA_ORG_WIKIS,
     YARN_LOCK_RE,
@@ -1524,6 +1532,7 @@ def _scan_rules(  # noqa: PLR0913 - scan context plus rule table is clearer as n
     rules: tuple[tuple[str, str, re.Pattern[str], float, str], ...],
     *,
     kind: str,
+    category: str = "detected",
 ) -> None:
     for value, label, pattern, confidence, reason in rules:
         match = pattern.search(line)
@@ -1533,7 +1542,7 @@ def _scan_rules(  # noqa: PLR0913 - scan context plus rule table is clearer as n
                 kind=kind,
                 value=value,
                 label=label,
-                category="detected",
+                category=category,
                 confidence=confidence,
                 reason=reason,
                 evidence=_evidence(path, line_number, line, match.group(0)),
@@ -1637,6 +1646,91 @@ def _scan_oauth_scopes(findings: dict[tuple[str, str], Finding], path: str, line
                 reason="OAuth scope string detected.",
                 evidence=_evidence(path, line_number, line, scope),
             )
+
+
+def _is_extension_manifest(source_file: SourceFile) -> bool:
+    """Report whether a file is a WebExtension manifest.
+
+    Three different files are called manifest.json -- a WebExtension manifest, a
+    web app manifest, and whatever a project chose to name that way -- and only
+    the first holds permissions. `manifest_version` is required in it and absent
+    from the others, which is why the name alone is not enough: a web app
+    manifest carrying `"display": "standalone"` would otherwise be read for
+    permission strings it does not have.
+    """
+    if source_file.path.rsplit("/", 1)[-1].casefold() != "manifest.json":
+        return False
+    return bool(EXTENSION_MANIFEST_RE.search(source_file.content))
+
+
+def _scan_browser_permissions(
+    findings: dict[tuple[str, str], Finding],
+    path: str,
+    line_number: int,
+    line: str,
+    *,
+    extension_manifest: bool,
+) -> None:
+    """Collect what the code asks the reader's browser for.
+
+    Separate from `accessRights` and `oauthScopes`, which are about what a tool
+    asks the *wiki* for. A gadget granted `editpage` has the community's answer
+    to a question the community asked; a gadget calling `getUserMedia` has an
+    answer only the individual reader can give, and gets asked for it at the
+    moment the gadget runs. Both belong in a report about permissions, and
+    folding them together would put a wiki right and a camera prompt under one
+    heading where neither reads correctly.
+
+    The manifest family is gated on the file, because its evidence is bare
+    strings: `"tabs"` means a permission inside a WebExtension manifest and
+    means nothing anywhere else.
+    """
+    _scan_rules(
+        findings, path, line_number, line, BROWSER_PERMISSION_RULES, kind="browserPermissions", category="web-api"
+    )
+    directive = USER_SCRIPT_DIRECTIVE_RE.match(line)
+    if directive:
+        name, requested = directive.group(1), directive.group(2)
+        # `@grant none` is the directive that asks for nothing. Recording it as
+        # a permission would invert what the script said about itself.
+        if requested.casefold() != "none":
+            label, confidence, reason = USER_SCRIPT_DIRECTIVE_LABELS[name]
+            _put(
+                findings,
+                kind="browserPermissions",
+                value=f"{name}:{requested}",
+                label=f"{label}: {requested}",
+                category="user-script",
+                confidence=confidence,
+                reason=reason,
+                evidence=_evidence(path, line_number, line, directive.group(0).strip()),
+            )
+    if not extension_manifest:
+        return
+    for name in WEB_EXTENSION_PERMISSION_RE.findall(line):
+        label, confidence = WEB_EXTENSION_PERMISSIONS[name]
+        _put(
+            findings,
+            kind="browserPermissions",
+            value=f"extension:{name}",
+            label=label,
+            category="extension",
+            confidence=confidence,
+            reason=f"WebExtension manifest declares the {name} permission.",
+            evidence=_evidence(path, line_number, line, name),
+        )
+    for host in EXTENSION_HOST_MATCH_RE.findall(line):
+        every_site = host in EXTENSION_ALL_HOSTS
+        _put(
+            findings,
+            kind="browserPermissions",
+            value=f"host:{host}",
+            label="Runs on every site" if every_site else f"Runs on {host}",
+            category="extension",
+            confidence=0.9 if every_site else 0.8,
+            reason="WebExtension manifest declares a host match pattern.",
+            evidence=_evidence(path, line_number, line, host),
+        )
 
 
 def _scan_warnings(findings: dict[tuple[str, str], Finding], path: str, line_number: int, line: str) -> None:
@@ -2163,6 +2257,7 @@ def analyze_source_files(
         # file, and that decision is per file rather than per line.
         wants_endpoints = source_class != "lockfile"
         endpoints_need_a_call = SOURCE_CLASS_WEIGHTS[source_class] < ENDPOINT_TRUSTED_SOURCE_WEIGHT
+        extension_manifest = _is_extension_manifest(source_file)
         for line_number, raw_line in enumerate(source_file.content.splitlines() or [""], start=1):
             line = _bounded_line(raw_line)
             if wants_endpoints:
@@ -2174,6 +2269,9 @@ def analyze_source_files(
             _scan_import_dependencies(findings, source_file.path, line_number, line, local_python_roots)
             _scan_actions(findings, source_file.path, line_number, line)
             _scan_oauth_scopes(findings, source_file.path, line_number, line)
+            _scan_browser_permissions(
+                findings, source_file.path, line_number, line, extension_manifest=extension_manifest
+            )
             _scan_warnings(findings, source_file.path, line_number, line)
     _reconcile_technology_packages(findings)
     report: dict[str, Any] = {
@@ -2190,6 +2288,7 @@ def analyze_source_files(
         "dependencies": _serialized(findings, "dependencies"),
         "endpoints": _serialized(findings, "endpoints"),
         "oauthScopes": _serialized(findings, "oauthScopes"),
+        "browserPermissions": _serialized(findings, "browserPermissions"),
         "technology": _serialized(findings, "technology"),
         "warnings": _serialized(findings, "warnings"),
     }
@@ -2211,6 +2310,7 @@ def analyze_source_files(
         # reviewer is actually looking for.
         "externalEndpointCount": _external_endpoint_count(report["endpoints"]),
         "oauthScopeCount": len(report["oauthScopes"]),
+        "browserPermissionCount": len(report["browserPermissions"]),
         "technologyCount": len(report["technology"]),
         "warningCount": len(report["warnings"]),
         "writeActionsDetected": _has_write_access(report["accessRights"], SCORING_MIN_CONFIDENCE),

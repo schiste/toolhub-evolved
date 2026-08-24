@@ -135,3 +135,34 @@ def test_legacy_deployment_rows_are_retired(tmp_path, monkeypatch):
     staged = deployment.staged_history(history_path)
 
     assert [item["releaseId"] for item in staged] == ["directory"]
+
+
+def test_check_reports_the_rule_and_writes_nothing(tmp_path, monkeypatch, capsys):
+    too_many = "\n".join(f"- item {index}" for index in range(9))
+    monkeypatch.setattr(deployment, "marketing_notes", lambda: {"user": too_many, "technical": too_many})
+    monkeypatch.setattr(deployment, "release_metadata", release_metadata)
+
+    with pytest.raises(SystemExit) as failure:
+        deployment.check()
+
+    assert failure.value.code == 1
+    assert "3 to 8 bundled entries" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_check_accepts_the_notes_this_repository_ships(capsys):
+    """The files a push would carry must satisfy the rules deploy.sh applies."""
+    deployment.check()
+
+    assert "within the bullet cap" in capsys.readouterr().out
+
+
+def test_pre_push_runs_the_check_unconditionally():
+    hook = (ROOT / ".githooks/pre-push").read_text(encoding="utf-8")
+    invocation = "python3 tools/record_deployment.py --check"
+
+    assert invocation in hook
+    # Indented lines belong to the changelog-provider branch, which is skipped
+    # when a raw MCP provider is configured -- exactly the push that shipped the
+    # nine-bullet file.
+    assert any(line == invocation for line in hook.splitlines())

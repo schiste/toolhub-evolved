@@ -1682,3 +1682,109 @@ def test_composite_confidence_follows_the_dimensions_rather_than_their_count():
     scored = [item for item in core["dimensions"] if item["includedInScore"]]
 
     assert core["confidence"] <= max(item["confidence"] for item in scored)
+
+
+MANIFEST = json.dumps(
+    {
+        "manifest_version": 3,
+        "name": "Example",
+        "permissions": ["tabs", "storage", "webRequest"],
+        "host_permissions": ["<all_urls>"],
+        "content_scripts": [{"matches": ["https://*.wikipedia.org/*"]}],
+        "homepage_url": "https://example.org/tool",
+        "storage": {"managed_schema": "schema.json"},
+    },
+    indent=1,
+)
+
+
+def test_browser_permissions_are_collected_from_the_three_places_they_are_declared():
+    report = analyze_source_files(
+        [
+            {"path": "manifest.json", "content": MANIFEST},
+            {
+                "path": "src/copy.user.js",
+                "content": "\n".join(
+                    [
+                        "// ==UserScript==",
+                        "// @grant GM_setValue",
+                        "// @connect example.org",
+                        "// ==/UserScript==",
+                        "navigator.clipboard.writeText(text);",
+                        "Notification.requestPermission();",
+                    ]
+                ),
+            },
+        ]
+    )
+
+    found = values(report, "browserPermissions")
+    assert {"extension:tabs", "extension:webRequest", "host:<all_urls>"} <= found
+    assert {"grant:GM_setValue", "connect:example.org"} <= found
+    assert {"clipboard-write", "notifications"} <= found
+    assert report["summary"]["browserPermissionCount"] == len(report["browserPermissions"])
+    categories = {item["value"]: item["category"] for item in report["browserPermissions"]}
+    assert categories["extension:tabs"] == "extension"
+    assert categories["grant:GM_setValue"] == "user-script"
+    assert categories["clipboard-write"] == "web-api"
+
+
+def test_an_extension_manifest_yields_neither_its_own_keys_nor_its_plain_addresses():
+    report = analyze_source_files([{"path": "manifest.json", "content": MANIFEST}])
+
+    found = values(report, "browserPermissions")
+    # "storage" is declared once as a permission and once as the section that
+    # configures it; the section is not a second grant.
+    assert "extension:storage" in found
+    assert "host:https://example.org/tool" not in found
+    assert not any(value.startswith("host:") and "*" not in value and value != "host:<all_urls>" for value in found)
+
+
+def test_a_manifest_that_is_not_a_web_extension_declares_no_permissions():
+    """A web app manifest carries the same filename and none of the meaning."""
+    report = analyze_source_files(
+        [
+            {
+                "path": "public/manifest.json",
+                "content": json.dumps({"name": "Tool", "display": "standalone", "scope": "/", "icons": []}),
+            }
+        ]
+    )
+
+    assert report["browserPermissions"] == []
+
+
+def test_a_feature_test_is_not_a_permission_request_and_grant_none_is_not_a_grant():
+    report = analyze_source_files(
+        [
+            {
+                "path": "src/probe.js",
+                "content": "\n".join(
+                    [
+                        "// @grant none",
+                        "if (navigator.clipboard && navigator.geolocation) { report('supported'); }",
+                    ]
+                ),
+            }
+        ]
+    )
+
+    assert report["browserPermissions"] == []
+
+
+def test_browser_permissions_are_reported_under_permission_clarity_without_moving_the_score():
+    files = [{"path": "src/app.js", "content": "mw.Api();"}]
+    plain = analyze_source_files(files)
+    with_permissions = analyze_source_files(
+        [*files, {"path": "src/notify.js", "content": "Notification.requestPermission();"}]
+    )
+
+    def clarity(report):
+        return next(item for item in report["assessments"] if item["key"] == "permission-clarity")
+
+    signal = next(
+        item for item in clarity(with_permissions)["signals"] if item["label"].startswith("Browser permissions")
+    )
+    assert signal["status"] == "neutral"
+    assert "Show desktop notifications" in signal["detail"]
+    assert clarity(with_permissions)["score"] == clarity(plain)["score"]

@@ -47,6 +47,7 @@ const FINDING_GROUPS = [
 	["dependencies", () => t("sourceAnalysis.dependencies", "Dependencies")],
 	["endpoints", () => t("sourceAnalysis.endpoints", "Endpoints")],
 	["oauthScopes", () => t("sourceAnalysis.oauthScopes", "OAuth scopes")],
+	["browserPermissions", () => t("sourceAnalysis.browserPermissions", "Browser permissions")],
 	["technology", () => t("sourceAnalysis.technology", "Technology")],
 	["warnings", () => t("sourceAnalysis.warnings", "Warnings")]
 ];

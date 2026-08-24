@@ -56,3 +56,12 @@ else
 	echo "marketing changelog: not regenerated (no raw MCP provider; configure Chau7 or TOOLHUB_CHANGELOG_LLM_COMMAND)"
 	python3 tools/check_changelog_freshness.py
 fi
+
+# Unconditional, and separate from the freshness check above. Freshness asks
+# whether the notes describe this push; this asks whether the deploy can read
+# them at all -- both files declaring one Release id and title, and 3 to 8
+# bullets per audience. deploy.sh applies exactly these rules, but only after
+# `git pull` has already moved the host, so a nine-bullet technical file failed
+# a release with the tool serving the old build out of the new checkout. The
+# rule has one definition; this runs it early rather than restating it.
+python3 tools/record_deployment.py --check

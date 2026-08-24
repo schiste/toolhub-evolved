@@ -1243,6 +1243,7 @@
 	"sourceAnalysis.assessments": "Assessments",
 	"sourceAnalysis.assessmentScore": "Assessment",
 	"sourceAnalysis.authentication": "Authentication",
+	"sourceAnalysis.browserPermissions": "Browser permissions",
 	"sourceAnalysis.contextBranch": "Branch",
 	"sourceAnalysis.contextCi": "CI",
 	"sourceAnalysis.contextCommit": "Commit",

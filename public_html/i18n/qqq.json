@@ -1243,6 +1243,7 @@
 	"sourceAnalysis.assessments": "TODO: document this message.",
 	"sourceAnalysis.assessmentScore": "TODO: document this message.",
 	"sourceAnalysis.authentication": "TODO: document this message.",
+	"sourceAnalysis.browserPermissions": "Heading over the list of browser capabilities the analyzed source asks the reader for -- extension manifest permissions, runtime prompts such as the clipboard or notifications, and user-script grants. Distinct from sourceAnalysis.oauthScopes, which is what the tool asks the wiki for.",
 	"sourceAnalysis.contextBranch": "TODO: document this message.",
 	"sourceAnalysis.contextCi": "TODO: document this message.",
 	"sourceAnalysis.contextCommit": "TODO: document this message.",

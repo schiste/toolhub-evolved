@@ -45,6 +45,7 @@ FINDING_BUCKETS = (
     "dependencies",
     "endpoints",
     "oauthScopes",
+    "browserPermissions",
     "technology",
     "warnings",
 )

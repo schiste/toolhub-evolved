@@ -138,6 +138,14 @@ function sourceReport() {
 				}
 			],
 			oauthScopes: [],
+			browserPermissions: [
+				{
+					value: "clipboard-write",
+					label: "Write to the clipboard",
+					category: "web-api",
+					confidence: 0.76
+				}
+			],
 			technology: [{ value: "JavaScript", label: "JavaScript", category: "language", confidence: 0.64 }],
 			warnings: [],
 			suggestions: {
@@ -198,6 +206,8 @@ test("source analysis workspace loads saved reports and copies the suggested pat
 	// reach: the address it calls, and how many of them nobody here operates.
 	assert.ok(document.body.innerHTML.includes("commons.wikimedia.org /w/api.php (action=upload)"));
 	assert.ok(document.body.innerHTML.includes("Third-party endpoints"));
+	assert.ok(document.body.innerHTML.includes("Browser permissions"));
+	assert.ok(document.body.innerHTML.includes("Write to the clipboard"));
 
 	document.querySelector("[data-source-analysis-copy]").click();
 	await tick();

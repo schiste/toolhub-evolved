@@ -8,6 +8,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -137,14 +138,40 @@ def record(public_output: Path, history_path: Path) -> None:
     promote(public_output, history_path)
 
 
+def check() -> None:
+    """Run every notes rule this module enforces, writing nothing.
+
+    The rules below are what deploy.sh discovers, and it discovers them after
+    the host has already fast-forwarded: a nine-bullet technical file aborted a
+    release between `git pull` and the dist build, leaving the tool serving the
+    previous build from the new checkout. Nothing here is new -- it is the same
+    three calls `staged_history` makes -- so that a push can fail on the rule
+    instead of a deployment failing on it.
+    """
+    try:
+        notes = marketing_notes()
+        release_metadata()
+        validate_marketing(notes)
+    except RuntimeError as error:
+        # A traceback here would point at this module, but the fix is always in
+        # the two notes files, so report the rule and where to apply it.
+        print(f"release manifest: {error}", file=sys.stderr)
+        print(f"edit {', '.join(sorted(path.name for path in MARKETING_FILES.values()))} and push again", file=sys.stderr)
+        raise SystemExit(1) from None
+    print("release manifest: notes parse, declare one release, and are within the bullet cap")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--public-output", type=Path, default=DEFAULT_PUBLIC_OUTPUT)
     parser.add_argument("--history", type=Path, default=DEFAULT_HISTORY)
+    parser.add_argument("--check", action="store_true", help="validate the checked-in notes and write nothing")
     parser.add_argument("--prepare", action="store_true", help="write a candidate manifest without updating history")
     parser.add_argument("--promote", type=Path, help="promote a prepared manifest after a successful smoke check")
     args = parser.parse_args()
-    if args.promote:
+    if args.check:
+        check()
+    elif args.promote:
         promote(args.promote, args.history)
     elif args.prepare:
         prepare(args.public_output, args.history)

@@ -197,6 +197,37 @@ def _metadata_completeness_assessment(report: dict[str, Any], context: dict[str,
     )
 
 
+#: How many permission labels one signal names before it stops listing them. A
+#: browser-extension manifest routinely declares a dozen, and a signal line that
+#: reproduced all of them would push the rest of the assessment off the panel.
+MAX_LISTED_BROWSER_PERMISSIONS = 8
+
+
+def _browser_permission_signals(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Name what the source asks the reader's browser for, without scoring it.
+
+    This belongs under permission clarity -- it is the other half of what a
+    reviewer agrees to, next to the wiki rights and OAuth scopes above -- but it
+    is deliberately not in the score. Those bands were set against wiki
+    permissions alone, and moving a published grade because a new detector
+    started firing would restate every catalogued tool's health as though the
+    tool had changed. Whether it should also move the number is a question for a
+    calibration that has this detector's output to look at.
+    """
+    rows = _publishable_rows(report["browserPermissions"], SCORING_MIN_CONFIDENCE)
+    if not rows:
+        return []
+    labels = sorted({str(row["label"]) for row in rows})[:MAX_LISTED_BROWSER_PERMISSIONS]
+    return [
+        _assessment_signal(
+            "neutral",
+            "Browser permissions requested by the source",
+            detail=", ".join(labels),
+            evidence=_first_finding_evidence(report, "browserPermissions"),
+        )
+    ]
+
+
 def _permission_clarity_assessment(report: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     raw_access = report["accessRights"]
     access = _publishable_rows(raw_access, SCORING_MIN_CONFIDENCE)
@@ -269,6 +300,7 @@ def _permission_clarity_assessment(report: dict[str, Any], context: dict[str, An
                 )
             )
             recommendations.append("Reconcile declared OAuth scopes with source-code usage.")
+    signals.extend(_browser_permission_signals(report))
     return _assessment(
         "permission-clarity",
         "Permission clarity",

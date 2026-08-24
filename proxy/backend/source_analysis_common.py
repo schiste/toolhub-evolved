@@ -686,6 +686,225 @@ AUTH_RULES = (
     ),
 )
 
+# Capabilities the browser will not hand over silently. A wiki gadget and a
+# Toolforge web app run in the reader's browser, so what they ask the browser
+# for is part of what a reviewer is agreeing to install, and until now nothing
+# in the report said so: `accessRights` and `oauthScopes` describe what a tool
+# asks the *wiki* for, which is a different question with a different answer.
+#
+# Three families, kept as three tables because they are found in three places
+# and mean three slightly different things: a runtime call that raises a browser
+# prompt, a string a WebExtension must declare before anyone can install it, and
+# a metadata directive a user-script manager reads before it runs a line.
+#
+# Measured on en.wikipedia, over the 90,016 pages in the User and MediaWiki
+# namespaces whose title ends in `.js`: navigator.clipboard appears on 110,
+# Notification.requestPermission on 19, `// @grant` on 307 and `// @connect` on
+# 444, while getUserMedia appears on none. The rare ones are kept anyway --
+# their cost is a table row, and a gadget that turns on the camera is exactly
+# the finding this bucket exists to surface -- but the ordering is why the
+# clipboard and notification rules are the ones written most carefully.
+
+#: Runtime calls that ask the person using the tool, not the wiki. Each pattern
+#: requires the call, not the object: `navigator.clipboard` alone is a feature
+#: test, and a tool that checks whether an API exists has not used it.
+BROWSER_PERMISSION_RULES: tuple[tuple[str, str, re.Pattern[str], float, str], ...] = (
+    (
+        "clipboard-read",
+        "Read the clipboard",
+        re.compile(r"\bnavigator\.clipboard\.read(?:Text)?\s*\("),
+        0.86,
+        "Clipboard read call detected; the browser prompts for this.",
+    ),
+    (
+        "clipboard-write",
+        "Write to the clipboard",
+        re.compile(r"\bnavigator\.clipboard\.write(?:Text)?\s*\("),
+        0.8,
+        "Clipboard write call detected.",
+    ),
+    (
+        "notifications",
+        "Show desktop notifications",
+        re.compile(r"\bNotification\.requestPermission\s*\(|\bnew\s+Notification\s*\("),
+        0.86,
+        "Desktop notification request detected.",
+    ),
+    (
+        "geolocation",
+        "Read the device location",
+        re.compile(r"\bnavigator\.geolocation\.(?:getCurrentPosition|watchPosition)\s*\("),
+        0.9,
+        "Geolocation request detected.",
+    ),
+    (
+        "camera-microphone",
+        "Use the camera or microphone",
+        re.compile(r"\bnavigator\.mediaDevices\.getUserMedia\s*\(|\bnavigator\.getUserMedia\s*\("),
+        0.9,
+        "Camera or microphone capture request detected.",
+    ),
+    (
+        "screen-capture",
+        "Capture the screen",
+        re.compile(r"\bnavigator\.mediaDevices\.getDisplayMedia\s*\("),
+        0.9,
+        "Screen capture request detected.",
+    ),
+    (
+        "persistent-storage",
+        "Keep storage the browser would otherwise evict",
+        re.compile(r"\bnavigator\.storage\.persist\s*\("),
+        0.82,
+        "Persistent storage request detected.",
+    ),
+    (
+        "storage-access",
+        "Read its own cookies inside another site's page",
+        re.compile(r"\bdocument\.requestStorageAccess\s*\("),
+        0.82,
+        "Storage Access API request detected.",
+    ),
+    (
+        "midi",
+        "Use MIDI devices",
+        re.compile(r"\bnavigator\.requestMIDIAccess\s*\("),
+        0.86,
+        "MIDI device request detected.",
+    ),
+    (
+        "bluetooth",
+        "Use Bluetooth devices",
+        re.compile(r"\bnavigator\.bluetooth\.requestDevice\s*\("),
+        0.88,
+        "Bluetooth device request detected.",
+    ),
+    (
+        "usb",
+        "Use USB devices",
+        re.compile(r"\bnavigator\.usb\.requestDevice\s*\("),
+        0.88,
+        "USB device request detected.",
+    ),
+    (
+        "serial",
+        "Use serial ports",
+        re.compile(r"\bnavigator\.serial\.requestPort\s*\("),
+        0.88,
+        "Serial port request detected.",
+    ),
+    (
+        "hid",
+        "Use human-interface devices",
+        re.compile(r"\bnavigator\.hid\.requestDevice\s*\("),
+        0.88,
+        "HID device request detected.",
+    ),
+    (
+        "file-system",
+        "Read or write files the reader picks",
+        re.compile(r"\b(?:showOpenFilePicker|showSaveFilePicker|showDirectoryPicker)\s*\("),
+        0.86,
+        "File System Access request detected.",
+    ),
+    (
+        "screen-wake-lock",
+        "Keep the screen awake",
+        re.compile(r"\bnavigator\.wakeLock\.request\s*\("),
+        0.8,
+        "Screen wake lock request detected.",
+    ),
+    (
+        "push",
+        "Receive push messages",
+        re.compile(r"\bpushManager\.subscribe\s*\("),
+        0.84,
+        "Push subscription request detected.",
+    ),
+    (
+        "credentials",
+        "Read stored credentials or passkeys",
+        re.compile(r"\bnavigator\.credentials\.(?:get|create)\s*\("),
+        0.84,
+        "Credential Management request detected.",
+    ),
+    (
+        "cross-origin-request",
+        "Make requests the page's origin policy would refuse",
+        re.compile(r"\bGM[._]xmlhttpRequest\b", re.IGNORECASE),
+        0.84,
+        "User-script cross-origin request helper detected.",
+    ),
+)
+
+#: The strings a WebExtension declares, from the Chrome and Firefox permission
+#: lists. Only the ones that carry a real capability are here: `alarms` and
+#: `contextMenus` are declared the same way and grant nothing worth reporting,
+#: and listing them would bury the four or five that matter under twenty that
+#: do not.
+WEB_EXTENSION_PERMISSIONS = {
+    "bookmarks": ("Read and change bookmarks", 0.86),
+    "browsingData": ("Clear browsing data", 0.86),
+    "clipboardRead": ("Read the clipboard", 0.88),
+    "clipboardWrite": ("Write to the clipboard", 0.82),
+    "contentSettings": ("Change per-site browser settings", 0.86),
+    "cookies": ("Read and set cookies", 0.88),
+    "debugger": ("Attach the browser debugger", 0.92),
+    "downloads": ("Manage downloads", 0.84),
+    "geolocation": ("Read the device location", 0.9),
+    "history": ("Read and change browsing history", 0.88),
+    "management": ("Manage other extensions", 0.9),
+    "nativeMessaging": ("Talk to a program installed on the computer", 0.92),
+    "notifications": ("Show desktop notifications", 0.8),
+    "pageCapture": ("Capture page contents", 0.86),
+    "privacy": ("Change privacy settings", 0.88),
+    "proxy": ("Route traffic through a proxy", 0.9),
+    "scripting": ("Inject scripts into pages", 0.88),
+    "storage": ("Store data in the browser", 0.72),
+    "tabCapture": ("Capture tab audio and video", 0.88),
+    "tabs": ("Read tab titles and addresses", 0.82),
+    "topSites": ("Read the most-visited sites", 0.84),
+    "webNavigation": ("Watch navigation between pages", 0.86),
+    "webRequest": ("Observe and modify network requests", 0.9),
+    "webRequestBlocking": ("Block network requests", 0.9),
+}
+
+#: A WebExtension manifest, and not a Progressive Web App manifest or a package
+#: of the same name: `manifest_version` is required in the first and absent from
+#: both others, so it is what separates them. Read over the whole file rather
+#: than per line, because the permission array and this key are rarely adjacent.
+EXTENSION_MANIFEST_RE = re.compile(r'"manifest_version"\s*:')
+
+#: An address a manifest asks to run on. `<all_urls>` and `*://*/*` are the two
+#: spellings of "every site the reader visits", and both are worth naming as
+#: themselves rather than folded into a count.
+#: The asterisk is required. Without it this matches `"homepage_url"`'s value
+#: and every other address in the manifest, none of which is a permission; a
+#: match pattern that grants nothing beyond one exact page is not what a
+#: reviewer needs told either way.
+EXTENSION_HOST_MATCH_RE = re.compile(r'"(<all_urls>|[a-z*]{1,10}://[^"\s]{0,60}\*[^"\s]{0,60})"')
+
+#: One alternation rather than 24 searches per line. The lookahead drops a key
+#: of the same name: in a manifest `"storage"` is a permission and
+#: `"storage":` is the section that configures it.
+WEB_EXTENSION_PERMISSION_RE = re.compile(r'"(' + "|".join(sorted(WEB_EXTENSION_PERMISSIONS)) + r')"\s*(?!:)')
+
+#: Every site the reader visits, in the two spellings a manifest uses for it.
+EXTENSION_ALL_HOSTS = frozenset({"<all_urls>", "*://*/*"})
+
+#: `// @grant GM_setValue`, `// @connect example.org`, `// @match https://*/*`.
+#: Anchored to the line start because these are only directives inside the
+#: metadata block; the same words appear in prose and in JSDoc mid-line.
+USER_SCRIPT_DIRECTIVE_RE = re.compile(r"^\s*//\s*@(grant|connect|match|include)\s+(\S{1,120})\s*$")
+
+USER_SCRIPT_DIRECTIVE_LABELS = {
+    "grant": ("Privileged user-script API", 0.9, "Declared in a user-script @grant directive."),
+    "connect": ("Cross-origin host the script may call", 0.88, "Declared in a user-script @connect directive."),
+    "match": ("Site the script runs on", 0.76, "Declared in a user-script @match directive."),
+    "include": ("Site the script runs on", 0.7, "Declared in a user-script @include directive."),
+}
+
+
 KNOWN_OAUTH_SCOPES = {
     "basic": ("Basic identity", 0.7),
     "blockusers": ("Block users", 0.9),
