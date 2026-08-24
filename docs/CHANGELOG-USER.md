@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-shape-of-waiting -->
 <!-- Release title: The Shape of Waiting -->
-<!-- Source range: 29cd20433..4fcc9b163 (3 commits) -->
+<!-- Source range: 29cd20433..a9f935f08 (4 commits) -->
 
 # What's New for Users
 
@@ -10,3 +10,4 @@
 - The first moment of a cold visit is included. Opening the site from scratch used to show a bare line of text on an empty page for the fraction of a second before the layout arrived, because the styling had not loaded yet — the one moment where a spinner is least useful and most noticeable. That opening frame is now the same outlined placeholder as everywhere else, complete before anything else has loaded, so a first visit begins with the shape of a page instead of a stray sentence.
 - The three pages that still spelled it out have stopped. The tool map, the background workers report, and the statistics ledger each announced their own wait in writing, inside a page that had already drawn its heading. Each now stands in the shape of what it is fetching — the grid of worker cards, the ledger figures and their charts, the map area at the exact size the map will be — and the map in particular no longer doubles in height the instant it finishes, which used to shift everything under it down the page.
 - Screen readers still hear what is happening. The announcement each page makes while it loads has not been removed, only taken off the screen: it is still read aloud, still says which part of the site is on its way, and now describes a placeholder that is explicitly skipped rather than a page of decorative shapes read out as content.
+- English Wikipedia user scripts are current again. The directory follows each wiki by reading its list of recent changes, and for the largest wiki it had fallen about a month behind: a script created or renamed on English Wikipedia in late July was still not reflected here in late August, and the gap was widening rather than closing, because each hourly check could read less of that wiki's activity than the wiki produced in the same hour. A check now keeps reading until it has caught up rather than stopping after a fixed amount, so the backlog clears itself over the following few hours and new and edited scripts appear within the hour from then on. The smaller wikis were never far enough behind for it to show, and are unchanged.
