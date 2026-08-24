@@ -105,6 +105,12 @@ EMPTY_COUNTS: dict[str, int] = {
     #: thing that makes the other counts an incomplete answer rather than a
     #: small one.
     "lagged": 0,
+    #: Import edges the database refused as duplicates of another edge on the
+    #: same page. Counted rather than raised, because one page's spelling is not
+    #: a reason to fail a wiki -- but counted, because the drop is otherwise
+    #: invisible and the collation decides how many there are, so this codebase
+    #: cannot predict the number and has to observe it.
+    "collisions": 0,
 }
 
 
@@ -256,12 +262,15 @@ def _next_rank(session: Session, wiki: str) -> int:
     return int(highest or 0) + 1
 
 
-def _replace_imports(session: Session, wiki: str, analysis: userscripts.ScriptPage) -> None:
+def _replace_imports(session: Session, wiki: str, analysis: userscripts.ScriptPage) -> int:
     """Make the stored loads for one page exactly the loads it now makes.
 
     Replaced rather than merged. An import removed from a page is no longer
     demand, and a row left behind would keep voting for a script whose only
     reader stopped loading it.
+
+    Returns the number of rows the database refused as duplicates of another row
+    in the same page -- normally zero, and never a reason to fail.
     """
     session.query(UserScriptImport).filter(
         UserScriptImport.wiki == wiki,
@@ -295,9 +304,8 @@ def _replace_imports(session: Session, wiki: str, analysis: userscripts.ScriptPa
     # time, and the row that loses is dropped rather than raised -- one page's
     # spelling is not a reason to fail the wiki, per this module's contract.
     if _insert_all(session, rows):
-        return
-    for row in rows:
-        _insert_all(session, [row])
+        return 0
+    return sum(1 for row in rows if not _insert_all(session, [row]))
 
 
 def _insert_all(session: Session, rows: Sequence[dict[str, Any]]) -> bool:
@@ -324,8 +332,11 @@ def store_page(
     page: census.PageContent,
     rank: int | None,
     prefixes: userscripts.Prefixes = userscripts.no_prefixes,
-) -> None:
+) -> int:
     """Write one observed page, its analysis, and the loads it makes.
+
+    Returns how many of that page's loads the database refused as duplicates of
+    each other, which is the caller's only way to see that it happened.
 
     `prefixes` resolves any wiki's title prefixes, not just this one's. A load
     edge names its target wiki, and reading that target's title needs the
@@ -360,7 +371,7 @@ def store_page(
     row.last_checked_at = utcnow()
     row.deleted_at = None
     session.flush()
-    _replace_imports(session, wiki, analysis)
+    return _replace_imports(session, wiki, analysis)
 
 
 def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map are all one caller's context
@@ -429,7 +440,7 @@ def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map ar
                 if _settled(title, stored, ranks, {title: page.revision}):
                     summary["skipped"] += 1
                     continue
-                store_page(session, wiki, page, rank, prefixes)
+                summary["collisions"] += store_page(session, wiki, page, rank, prefixes)
                 written.append(title)
                 summary["written"] += 1
         # Explicit, because the name outlives the loop body and what it holds is

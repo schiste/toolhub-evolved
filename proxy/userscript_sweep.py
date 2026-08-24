@@ -91,15 +91,21 @@ def main() -> int:
             limit=limit,
             watch_limit=watch_limit,
         )
+        collisions = summary["collisions"]
         sys.stdout.write(
             "userscript-census: "
             f"wiki={summary['wiki']} mode={summary['mode']} "
             f"asked={summary['asked']} fetched={summary['fetched']} "
             f"written={summary['written']} skipped={summary['skipped']} "
             f"unreadable={summary['unreadable']}"
-            # Only when it happened. A field that is almost always 0 trains the
-            # reader to skip the line it appears on.
+            # Only when they happened. A field that is almost always 0 trains
+            # the reader to skip the line it appears on. `collisions` counts
+            # load edges the database folded onto another edge of the same page
+            # and this run therefore dropped -- expected to be zero, and worth a
+            # look when it is not, because it means some page spells one target
+            # two ways and only the collation knows they are one.
             f"{' lagged=1' if summary['lagged'] else ''}"
+            f"{f' collisions={collisions}' if collisions else ''}"
             f"{_progress(summary)}\n",
         )
         stamped = userscript_creation_dates.backfill([wiki])

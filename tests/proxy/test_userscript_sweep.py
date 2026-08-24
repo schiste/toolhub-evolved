@@ -363,6 +363,23 @@ def test_a_wiki_that_will_not_say_what_it_calls_its_namespace_is_swept_anyway():
     assert stored("User:A/one.js") is not None
 
 
+def test_a_run_carries_every_page_collision_up_into_its_summary(monkeypatch):
+    # The count has to survive two hops -- `_replace_imports` to `store_page` to
+    # the run's summary -- and the collation that produces one cannot be
+    # reproduced on SQLite, which compares bytes. So the collision is injected
+    # and what is asserted is the carrying, which is the part that breaks.
+    monkeypatch.setattr(sweeper, "_replace_imports", lambda *_args: 2)
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;"), "User:B/two.js": page("var b = 2;")})
+    summary = sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js", "User:B/two.js"], ranked=True)
+    assert summary["written"] == 2
+    assert summary["collisions"] == 4
+
+
+def test_a_run_with_nothing_to_drop_reports_no_collisions():
+    wiki = FakeWiki({"User:A/one.js": page("var a = 1;")})
+    assert sweeper.ingest(wiki.request, FRWIKI, ["User:A/one.js"], ranked=True)["collisions"] == 0
+
+
 # --- holding one slice at a time ---
 
 
@@ -1100,6 +1117,7 @@ SWEPT = {
     "skipped": 0,
     "unreadable": 0,
     "lagged": 0,
+    "collisions": 0,
     "source": "replica",
     "enumerated": 0,
     "sweep_cursor": 0,
@@ -1115,6 +1133,7 @@ WATCHED = {
     "skipped": 0,
     "unreadable": 0,
     "lagged": 0,
+    "collisions": 0,
     "cursor": "2026-08-06T17:22:45Z",
 }
 
@@ -1140,6 +1159,28 @@ def test_the_job_sweeps_the_configured_wikis(monkeypatch, capsys, _job_env):
     out = capsys.readouterr().out
     assert "userscript-census: wiki=fr.wikipedia.org mode=sweep" in out
     assert "unreadable=0" in out
+
+
+def test_the_census_line_reports_collisions_only_when_there_were_some(monkeypatch, capsys, _job_env):
+    # Nonzero is the whole reason the field exists, and zero is the reason it is
+    # not always printed: a field that reads 0 on every line of every run is a
+    # field readers stop seeing, including on the run where it finally is not 0.
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")
+    monkeypatch.setattr(
+        job.userscript_sweep,
+        "run",
+        lambda _request, wiki, **_kwargs: dict(SWEPT, wiki=wiki, written=2, collisions=3),
+    )
+    assert job.main() == 0
+    assert "collisions=3" in capsys.readouterr().out
+
+    monkeypatch.setattr(
+        job.userscript_sweep,
+        "run",
+        lambda _request, wiki, **_kwargs: dict(SWEPT, wiki=wiki, written=2),
+    )
+    assert job.main() == 0
+    assert "collisions" not in capsys.readouterr().out
 
 
 def test_the_job_defaults_to_the_pilot_wikis_and_really_writes_rows(monkeypatch, capsys, _job_env):
@@ -1248,7 +1289,7 @@ def test_two_loads_the_database_calls_one_do_not_fail_the_page():
         imports=(twice, twice),
     )
     with db.session_scope() as session:
-        sweeper._replace_imports(session, FRWIKI, analysis)
+        dropped = sweeper._replace_imports(session, FRWIKI, analysis)
     with db.session_scope() as session:
         stored = session.query(UserScriptImport).filter(UserScriptImport.wiki == FRWIKI).all()
     # One row, no exception -- and in particular the page's other work is not
@@ -1256,6 +1297,28 @@ def test_two_loads_the_database_calls_one_do_not_fail_the_page():
     assert [(row.source_title, row.target_title) for row in stored] == [
         ("User:A/global.js", "MediaWiki:Gadget-x.js"),
     ]
+    # And the drop is reported. Letting the database decide what a duplicate is
+    # means this codebase cannot know how many there were without asking, so the
+    # one thing it must not do is fold them away in silence.
+    assert dropped == 1
+
+
+def test_a_page_whose_loads_all_survive_reports_no_collisions():
+    imports = tuple(
+        userscripts.ScriptImport(
+            verb="mw.loader.load",
+            argument=f"//ar.wikipedia.org/{name}",
+            wiki="ar.wikipedia.org",
+            title=f"MediaWiki:Gadget-{name}.js",
+            url=f"//ar.wikipedia.org/{name}",
+        )
+        for name in ("a", "b")
+    )
+    analysis = userscripts.ScriptPage(
+        title="User:A/global.js", role="loader", fingerprint="f", sketch="", imports=imports
+    )
+    with db.session_scope() as session:
+        assert sweeper._replace_imports(session, FRWIKI, analysis) == 0
 
 
 def test_a_page_loading_several_modules_stores_one_row_each():
