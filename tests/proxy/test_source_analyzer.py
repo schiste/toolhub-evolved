@@ -623,7 +623,10 @@ def test_source_analyzer_utility_branches_are_stable():
     assert source_analyzer._source_class("package-lock.json") == "lockfile"
     assert source_analyzer._activity_status(800) == "dormant"
     assert source_analysis_assessments._first_finding_evidence({"rows": [{}, {"evidence": []}]}, "rows") is None
-    assert source_analysis_assessments._first_context_evidence({"rows": [None, {"kind": "b", "path": "p"}]}, "rows", "a") is None
+    assert (
+        source_analysis_assessments._first_context_evidence({"rows": [None, {"kind": "b", "path": "p"}]}, "rows", "a")
+        is None
+    )
     stray_findings = {}
     source_analyzer._scan_lockfile_dependencies(stray_findings, source_analyzer.SourceFile("unknown.lock", ""))
     assert stray_findings == {}
@@ -900,8 +903,12 @@ def test_maintenance_activity_assessment_flags_dormant_status():
 
 def test_maintainer_activity_score_covers_every_count_branch():
     assert source_analysis_assessments._maintainer_activity_score({"status": "quiet"}) == 70
-    assert source_analysis_assessments._maintainer_activity_score({"status": "active", "activeMaintainerCount": 5}) == 95
-    assert source_analysis_assessments._maintainer_activity_score({"status": "active", "activeMaintainerCount": 0}) == 70
+    assert (
+        source_analysis_assessments._maintainer_activity_score({"status": "active", "activeMaintainerCount": 5}) == 95
+    )
+    assert (
+        source_analysis_assessments._maintainer_activity_score({"status": "active", "activeMaintainerCount": 0}) == 70
+    )
     assert source_analysis_assessments._maintainer_activity_score({"status": "active", "maintainerCount": 0}) == 60
     assert source_analysis_assessments._maintainer_activity_score({"status": "active", "maintainerCount": 1}) == 85
 
@@ -1287,18 +1294,14 @@ def test_every_lockfile_reports_the_release_it_resolved():
 
 
 def test_a_yarn_entry_without_a_version_line_does_not_borrow_the_next_entrys():
-    report = analyze_source_files(
-        [{"path": "yarn.lock", "content": 'silent@^1:\nlodash@^4:\n  version "4.17.21"\n'}]
-    )
+    report = analyze_source_files([{"path": "yarn.lock", "content": 'silent@^1:\nlodash@^4:\n  version "4.17.21"\n'}])
     rows = rows_by_value(report, "dependencies")
     assert "version" not in rows["npm:silent"]
     assert rows["npm:lodash"]["version"] == "4.17.21"
 
 
 def test_a_gemfile_option_that_is_not_a_version_is_not_read_as_one():
-    report = analyze_source_files(
-        [{"path": "Gemfile", "content": 'gem "rails", "~> 7.0"\ngem "puma", group: "dev"\n'}]
-    )
+    report = analyze_source_files([{"path": "Gemfile", "content": 'gem "rails", "~> 7.0"\ngem "puma", group: "dev"\n'}])
     rows = rows_by_value(report, "dependencies")
     assert rows["rubygems:rails"]["versionSpecs"] == ["~> 7.0"]
     assert "versionSpecs" not in rows["rubygems:puma"]
@@ -1561,7 +1564,12 @@ def test_plain_weight_ranking_would_have_missed_them():
 
 def test_one_class_cannot_consume_the_whole_reserve():
     """22 docs candidates used to take all 20 slots, starving ci/tests again."""
-    paths = [*_many_runtime_files(), *[f"docs/page_{i}.md" for i in range(40)], ".github/workflows/ci.yml", "tests/test_a.py"]
+    paths = [
+        *_many_runtime_files(),
+        *[f"docs/page_{i}.md" for i in range(40)],
+        ".github/workflows/ci.yml",
+        "tests/test_a.py",
+    ]
     head = source_analyzer.order_sources_for_reading(paths)[:MAX_FILES]
     assert ".github/workflows/ci.yml" in head
     assert "tests/test_a.py" in head
@@ -1637,7 +1645,10 @@ def test_corroboration_is_bounded_by_the_file_count():
     many = _finding()
     for i in range(40):
         many.add(0.76, "r", _ev(f"src/f{i}.py"))
-    ceiling = 0.76 + source_analysis_common.CONFIDENCE_MAX_CORROBORATING_FILES * source_analysis_common.CONFIDENCE_REPEAT_BOOST
+    ceiling = (
+        0.76
+        + source_analysis_common.CONFIDENCE_MAX_CORROBORATING_FILES * source_analysis_common.CONFIDENCE_REPEAT_BOOST
+    )
     assert many.confidence <= ceiling + 1e-9
 
 
@@ -1788,3 +1799,130 @@ def test_browser_permissions_are_reported_under_permission_clarity_without_movin
     assert signal["status"] == "neutral"
     assert "Show desktop notifications" in signal["detail"]
     assert clarity(with_permissions)["score"] == clarity(plain)["score"]
+
+
+# Real lines, copied from the definition pages they were measured on rather than
+# written to suit the parser: en.wikipedia's Twinkle and a Wikidata gadget with
+# two rights and a default flag. A rule tested only on examples its author wrote
+# agrees with its author by construction.
+GADGETS_DEFINITION = """== Editing ==
+* Twinkle[ResourceLoader|dependencies=mediawiki.util|rights=rollback,minoredit]|Twinkle.js|Twinkle.css
+* watchlist[ResourceLoader|default|rights=viewmywatchlist]|watchlist.js
+* retired[ResourceLoader|hidden]|retired.js
+"""
+
+
+def _gadget_report(filename: str, *, kind: str = wiki_sources.KIND_GADGET):
+    declaration = wiki_sources.gadget_declaration(GADGETS_DEFINITION, filename)
+    page = wiki_sources.WikiSource(domain="en.wikipedia.org", title=f"MediaWiki:Gadget-{filename}", kind=kind)
+    return source_analyzer.analyze_source_files(
+        [{"path": f"MediaWiki:Gadget-{filename}", "content": "var x = 1;\n"}],
+        wiki_page=page,
+        gadget_declaration=declaration,
+    )
+
+
+def test_gadget_declaration_keeps_the_line_it_was_found_on() -> None:
+    declaration = wiki_sources.gadget_declaration(GADGETS_DEFINITION, "Twinkle.js")
+    assert declaration is not None
+    assert declaration.line_number == 2
+    assert "rights=rollback,minoredit" in declaration.line
+    assert declaration.entry.values("rights") == ("rollback", "minoredit")
+    assert wiki_sources.gadget_declaration(GADGETS_DEFINITION, "absent.js") is None
+
+
+def test_declared_rights_become_access_rights_with_definition_evidence() -> None:
+    report = _gadget_report("Twinkle.js")
+    rows = {row["value"]: row for row in report["accessRights"]}
+    assert {"rollback", "minor-edit"} <= set(rows)
+    evidence = rows["rollback"]["evidence"][0]
+    assert evidence["path"] == "MediaWiki:Gadgets-definition"
+    assert evidence["line"] == 2
+    assert evidence["sourceClass"] == "manifest"
+    assert "rollback right" in rows["rollback"]["reasons"][0]
+
+
+def test_a_declared_right_alone_does_not_claim_the_tool_writes() -> None:
+    # `rights=` says who the gadget is served to, not what it does. Only code
+    # that was read may settle writeActionsDetected, so a restriction reported
+    # on its own stays outside the write categories and leaves the flag alone.
+    report = _gadget_report("Twinkle.js")
+    assert report["summary"]["writeActionsDetected"] is False
+    categories = {row["value"]: row["category"] for row in report["accessRights"]}
+    assert categories["rollback"] == "restricted"
+    assert categories["minor-edit"] == "restricted"
+
+
+def test_an_observed_call_keeps_its_category_over_a_declaration() -> None:
+    # Twinkle declares `rollback` and `minoredit`; this copy is also seen calling
+    # rollback. The observed call is read first and settles that right's
+    # category, while the right only declared stays a restriction.
+    declaration = wiki_sources.gadget_declaration(GADGETS_DEFINITION, "Twinkle.js")
+    page = wiki_sources.WikiSource(
+        domain="en.wikipedia.org", title="MediaWiki:Gadget-Twinkle.js", kind=wiki_sources.KIND_GADGET
+    )
+    report = source_analyzer.analyze_source_files(
+        [{"path": "MediaWiki:Gadget-Twinkle.js", "content": 'api.post({action: "rollback"});\n'}],
+        wiki_page=page,
+        gadget_declaration=declaration,
+    )
+    rows = {row["value"]: row for row in report["accessRights"]}
+    assert rows["rollback"]["category"] == "moderation"
+    assert rows["minor-edit"]["category"] == "restricted"
+    assert len(rows["rollback"]["evidence"]) == 2
+    assert report["summary"]["writeActionsDetected"] is True
+
+
+def test_default_is_reported_as_reach_and_not_as_a_right() -> None:
+    report = _gadget_report("watchlist.js")
+    assert report["wikiPage"]["gadgetDefault"] is True
+    assert "default" not in {row["value"] for row in report["accessRights"]}
+    signals = [
+        signal
+        for assessment in report["assessments"]
+        if assessment["key"] == "permission-clarity"
+        for signal in assessment["signals"]
+    ]
+    assert any(signal["label"] == "Enabled for all users by default" for signal in signals)
+
+
+def test_an_opt_in_gadget_says_so_rather_than_saying_nothing() -> None:
+    report = _gadget_report("Twinkle.js")
+    assert report["wikiPage"]["gadgetDefault"] is False
+    signals = [
+        signal
+        for assessment in report["assessments"]
+        if assessment["key"] == "permission-clarity"
+        for signal in assessment["signals"]
+    ]
+    assert not any(signal["label"] == "Enabled for all users by default" for signal in signals)
+
+
+def test_a_clone_has_no_gadget_row_at_all() -> None:
+    report = source_analyzer.analyze_source_files([{"path": "src/app.js", "content": "var x = 1;\n"}])
+    assert report["wikiPage"] == {}
+    assert "gadgetDefault" not in report["wikiPage"]
+
+
+def test_an_unmeasured_right_is_reported_rather_than_dropped() -> None:
+    definition = "* tool[ResourceLoader|rights=abusefilter-modify]|tool.js\n"
+    declaration = wiki_sources.gadget_declaration(definition, "tool.js")
+    page = wiki_sources.WikiSource(
+        domain="en.wikipedia.org", title="MediaWiki:Gadget-tool.js", kind=wiki_sources.KIND_GADGET
+    )
+    report = source_analyzer.analyze_source_files(
+        [{"path": "MediaWiki:Gadget-tool.js", "content": "var x = 1;\n"}],
+        wiki_page=page,
+        gadget_declaration=declaration,
+    )
+    rows = {row["value"]: row for row in report["accessRights"]}
+    assert rows["abusefilter-modify"]["label"] == "abusefilter-modify"
+    assert rows["abusefilter-modify"]["category"] == "restricted"
+
+
+def test_the_definition_page_is_trusted_like_a_manifest() -> None:
+    assert source_analyzer._source_class("MediaWiki:Gadgets-definition") == "manifest"
+    # One sighting on it is a statement, so a declared right reaches published
+    # metadata without needing a second file to agree.
+    report = _gadget_report("Twinkle.js")
+    assert "rollback" in report["suggestions"]["evolvedMetadata"]["access_rights"]

@@ -346,6 +346,35 @@ def gadget_entries(definition: str) -> tuple[GadgetEntry, ...]:
     return tuple(found)
 
 
+@dataclass(frozen=True)
+class GadgetDeclaration:
+    """One gadget's definition line, kept with where on the page it was found.
+
+    The line number and the text travel with the entry because a caller that
+    reports on the declaration has to cite it, and `MediaWiki:Gadgets-definition`
+    is a page a maintainer can open at that line. An entry alone would force
+    every such caller to search the page again for the line it came from.
+    """
+
+    entry: GadgetEntry
+    line_number: int
+    line: str
+
+
+def gadget_declaration(definition: str, filename: str) -> GadgetDeclaration | None:
+    """Return the definition line that registers `filename`, or None if none does.
+
+    One pass answers both questions callers ask of this page -- which files the
+    gadget consists of, and what the wiki declared about it -- so neither has to
+    read the page a second time.
+    """
+    for number, line in enumerate(definition.splitlines(), start=1):
+        entry = _definition_entry(line)
+        if entry is not None and filename in entry.pages:
+            return GadgetDeclaration(entry=entry, line_number=number, line=line)
+    return None
+
+
 def gadget_pages(definition: str, filename: str) -> tuple[str, ...]:
     """Return every page of the gadget that `filename` belongs to.
 
@@ -354,11 +383,8 @@ def gadget_pages(definition: str, filename: str) -> tuple[str, ...]:
     unregistered `MediaWiki:Gadget-*` page is a leftover or a work in progress,
     and inventing a set for it would be a guess.
     """
-    for line in definition.splitlines():
-        entry = _definition_entry(line)
-        if entry is not None and filename in entry.pages:
-            return gadget_titles(entry)
-    return ()
+    declaration = gadget_declaration(definition, filename)
+    return gadget_titles(declaration.entry) if declaration else ()
 
 
 def gadget_titles(entry: GadgetEntry) -> tuple[str, ...]:

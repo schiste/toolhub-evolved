@@ -905,6 +905,78 @@ USER_SCRIPT_DIRECTIVE_LABELS = {
 }
 
 
+#: The page every wiki registers its gadgets on. Named here because it is not a
+#: file with an extension and so is recognised by title alone. Two spellings
+#: because they serve different readers: the lowercase one is what path matching
+#: compares against, the titled one is what a maintainer opens.
+GADGET_DEFINITION_PAGE = "mediawiki:gadgets-definition"
+GADGET_DEFINITION_PAGE_TITLE = "MediaWiki:Gadgets-definition"
+
+#: The two definition options this analyzer reads. `rights` limits who the
+#: gadget is served to; `default` turns it on for everyone who is not excluded.
+#: Both are declarations by the wiki, not inferences from code.
+GADGET_RIGHTS_OPTION = "rights"
+GADGET_DEFAULT_OPTION = "default"
+
+#: What `rights=` may name, mapped onto the same value slugs the inferred rights
+#: in ACTION_RIGHTS use, so a gadget that declares `rollback` and also calls
+#: `action=rollback` produces one finding carrying both pieces of evidence
+#: rather than two rows for one right. The label travels with the slug because
+#: a raw MediaWiki right reads as jargon to anyone outside the wiki.
+#:
+#: No category column, and that absence is the point: every one of these is
+#: reported under GADGET_DECLARED_RIGHT_CATEGORY, because the definition line
+#: states who is served, not what the code does. A right the gadget was also
+#: seen exercising is categorized by that sighting instead.
+#:
+#: Measured rather than imagined: across the definition pages of en.wikipedia
+#: (113 gadgets), commons (142), de.wikipedia (62), fr.wikipedia (95) and
+#: wikidata (76) -- 488 entries -- 69 declare `rights=`, and between them they
+#: name exactly the twenty-one rights below. `edit` (18) and `upload`/`delete`
+#: (8 each) carry most of the traffic; the long tail is one or two sightings
+#: each. Unmeasured rights are not dropped -- see `_gadget_right_row` -- so
+#: this table is a labelling aid, not a filter.
+GADGET_RIGHT_VOCABULARY: dict[str, tuple[str, str]] = {
+    "autoconfirmed": ("autoconfirmed", "Autoconfirmed users only"),
+    "autopatrol": ("autopatrol", "Have edits auto-patrolled"),
+    "block": ("block", "Block users"),
+    "browsearchive": ("browse-archive", "Search deleted pages"),
+    "createpage": ("create-page", "Create pages"),
+    "delete": ("delete", "Delete pages"),
+    "edit": ("edit", "Edit pages"),
+    "extendedconfirmed": ("extendedconfirmed", "Extended-confirmed users only"),
+    "import": ("import", "Import pages"),
+    "item-merge": ("wikibase-item-merge", "Merge Wikibase items"),
+    "item-redirect": ("wikibase-item-redirect", "Create Wikibase item redirects"),
+    "markbotedits": ("mark-bot-edits", "Mark edits as bot edits"),
+    "minoredit": ("minor-edit", "Mark edits as minor"),
+    "move": ("move", "Move pages"),
+    "patrol": ("patrol", "Patrol edits"),
+    "rollback": ("rollback", "Rollback edits"),
+    "sendemail": ("send-email", "Send email to users"),
+    "templateeditor": ("template-editor", "Edit protected templates"),
+    "undelete": ("undelete", "Undelete pages"),
+    "upload": ("upload", "Upload files"),
+    "viewmywatchlist": ("view-watchlist", "Read your watchlist"),
+}
+
+#: The category every declared right is reported under. `rights=` says who the
+#: gadget is served to, which is not the same claim as "this tool performs that
+#: action" -- the wiki gates a rollback gadget on that right because the gadget
+#: rolls back, but the line itself only states the gate. Keeping the
+#: whole vocabulary outside the write set leaves `writeActionsDetected`, and the
+#: unauthenticated-write penalty it drives, to be settled by code that was
+#: actually read. A right the table does not label is still a right the wiki
+#: declared, so it is reported here under its own name rather than discarded:
+#: five wikis are not every wiki, and a gadget limited to a right this analyzer
+#: has never seen is exactly the one a reader most needs told about.
+GADGET_DECLARED_RIGHT_CATEGORY = "restricted"
+
+#: A declared right sits just under the confidence an observed `action=` call
+#: earns (0.94): the wiki's own registry is a strong statement, but a sighting
+#: in the code it describes is a stronger one.
+GADGET_DECLARED_RIGHT_CONFIDENCE = 0.9
+
 KNOWN_OAUTH_SCOPES = {
     "basic": ("Basic identity", 0.7),
     "blockusers": ("Block users", 0.9),

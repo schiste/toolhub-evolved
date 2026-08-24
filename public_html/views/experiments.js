@@ -279,7 +279,7 @@ export const EXPERIMENTS = [
 				name: t("experiments.sourceAnalysisName", "Source code analysis"),
 				what: t(
 					"experiments.sourceAnalysisWhat",
-					"Extract project, API, access-right, dependency, repository-context, OAuth-scope, technology, assessment, and warning signals from maintainer-submitted source bundles."
+					"Extract project, API, access-right, authentication, dependency, endpoint, OAuth-scope, browser-permission, technology, assessment, and warning signals from maintainer-submitted source bundles."
 				),
 				current: t(
 					"experiments.sourceAnalysisCurrent",
@@ -472,6 +472,21 @@ export const EXPERIMENTS = [
 	{
 		group: t("experiments.groupSignals", "Evolved-only signals — real Evolved data only"),
 		items: [
+			{
+				name: t("experiments.repositoryAnalysisName", "Repository and on-wiki source analysis"),
+				what: t(
+					"experiments.repositoryAnalysisWhat",
+					"Read a tool's own code where it lives, whether that is a git forge or the wiki pages a gadget or user script is served from, and publish what it does as catalog signals."
+				),
+				current: t(
+					"experiments.repositoryAnalysisCurrent",
+					"A scheduled worker shallow-clones permitted forges or fetches a gadget's registered pages, reads the MediaWiki:Gadgets-definition line that declares who the gadget is served to and whether it is on by default, and surfaces corroborated findings under a repository-analysis provenance label."
+				),
+				need: t(
+					"experiments.repositoryAnalysisNeed",
+					"Repository analysis state table, host allow-list and clone budget, MediaWiki page-set resolution, host metadata APIs, and catalog projection provenance"
+				)
+			},
 			{
 				name: t("experiments.popularityName", "Popularity"),
 				what: t("experiments.popularityWhat", "View counts and a popularity ranking."),

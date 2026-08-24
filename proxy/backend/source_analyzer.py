@@ -54,6 +54,13 @@ from backend.source_analysis_common import (
     EXTENSION_HOST_MATCH_RE,
     EXTENSION_MANIFEST_RE,
     FRONTEND_SOURCE_EXTENSIONS,
+    GADGET_DECLARED_RIGHT_CATEGORY,
+    GADGET_DECLARED_RIGHT_CONFIDENCE,
+    GADGET_DEFAULT_OPTION,
+    GADGET_DEFINITION_PAGE,
+    GADGET_DEFINITION_PAGE_TITLE,
+    GADGET_RIGHT_VOCABULARY,
+    GADGET_RIGHTS_OPTION,
     GEM_LOCK_RE,
     GEM_LOCK_VERSION_RE,
     GEM_RE,
@@ -327,6 +334,14 @@ def _is_example_path(path: str) -> bool:
 
 def _source_class_from_named_file(path: str, name: str) -> str | None:
     if _manifest_kind(path):
+        return "manifest"
+    if name == GADGET_DEFINITION_PAGE:
+        # The gadget registry is a manifest in the sense that matters here: it
+        # is the wiki's own declaration of what a gadget consists of and who it
+        # is served to, so one sighting on it is a statement and needs no
+        # corroboration. Matched by name rather than added to
+        # MANIFEST_FILE_KINDS, whose values select a dependency parser -- this
+        # page declares no packages and must reach none of them.
         return "manifest"
     if name in LOCKFILE_KINDS:
         return "lockfile"
@@ -1630,6 +1645,53 @@ def _scan_actions(findings: dict[tuple[str, str], Finding], path: str, line_numb
             )
 
 
+def _gadget_right_row(right: str) -> tuple[str, str]:
+    """Return the value and label to report one declared right under.
+
+    An unmeasured right keeps its own name rather than being dropped. The five
+    definition pages this vocabulary was built from are not every wiki, and a
+    gadget limited to a right never seen before is the one a reader most needs
+    told about -- reporting it unlabelled is a smaller error than silence.
+    """
+    return GADGET_RIGHT_VOCABULARY.get(right, (right, right))
+
+
+def _scan_gadget_declaration(
+    findings: dict[tuple[str, str], Finding],
+    declaration: wiki_sources.GadgetDeclaration,
+) -> None:
+    """Record what `MediaWiki:Gadgets-definition` declares about this gadget.
+
+    Read after the source files rather than before them, and deliberately. A
+    right that code was also seen exercising keeps the category that observation
+    gave it -- `_put` sets a category once, on the first sighting -- so an
+    `action=rollback` call still reads as moderation rather than being relabelled
+    as a restriction by a line that only says who the gadget is served to.
+
+    `default` is not a right and is not reported as one. It says the gadget is
+    switched on for everyone rather than opted into, which is a statement about
+    reach; it travels on the wikiPage row and as a neutral signal, where it can
+    inform a reader without being scored as a permission.
+    """
+    entry = declaration.entry
+    evidence_line = declaration.line
+    for raw in entry.values(GADGET_RIGHTS_OPTION):
+        right = raw.strip().lower()
+        if not right:
+            continue
+        value, label = _gadget_right_row(right)
+        _put(
+            findings,
+            kind="accessRights",
+            value=value,
+            label=label,
+            category=GADGET_DECLARED_RIGHT_CATEGORY,
+            confidence=GADGET_DECLARED_RIGHT_CONFIDENCE,
+            reason=f"MediaWiki:Gadgets-definition serves this gadget only to users with the {right} right.",
+            evidence=_evidence(GADGET_DEFINITION_PAGE_TITLE, declaration.line_number, evidence_line, right),
+        )
+
+
 def _scan_oauth_scopes(findings: dict[tuple[str, str], Finding], path: str, line_number: int, line: str) -> None:
     if not SCOPE_LINE_RE.search(line):
         return
@@ -2215,19 +2277,34 @@ def _suggestions(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _wiki_page_row(page: wiki_sources.WikiSource | None) -> dict[str, str]:
-    """Render the resolved source page for the report, or {} when there is none."""
+def _wiki_page_row(
+    page: wiki_sources.WikiSource | None,
+    declaration: wiki_sources.GadgetDeclaration | None = None,
+) -> dict[str, object]:
+    """Render the resolved source page for the report, or {} when there is none.
+
+    `gadgetDefault` rides here rather than in a findings bucket because it is
+    not a permission: it says the gadget is on for everyone who has not turned
+    it off, which changes how much every other finding matters without being one
+    itself. Absent rather than false when no definition line was read, so
+    "not measured" and "declared opt-in" stay distinguishable.
+    """
     if page is None:
         return {}
-    return {"domain": page.domain, "title": page.title, "kind": page.kind}
+    row: dict[str, object] = {"domain": page.domain, "title": page.title, "kind": page.kind}
+    if declaration is not None:
+        row["gadgetDefault"] = declaration.entry.has(GADGET_DEFAULT_OPTION)
+    return row
 
 
-def analyze_source_files(
+def analyze_source_files(  # noqa: PLR0913 - each argument is a separate thing the caller knows;
+    # bundling them into one object would make every call site build a record to pass through.
     files: object,
     *,
     tool_name: str | None = None,
     source_label: str | None = None,
     wiki_page: wiki_sources.WikiSource | None = None,
+    gadget_declaration: wiki_sources.GadgetDeclaration | None = None,
     repository_context: object = None,
 ) -> dict[str, Any]:
     """Analyze source files and return metadata suggestions with evidence.
@@ -2236,6 +2313,11 @@ def analyze_source_files(
     one thing: whether a `MediaWiki:Gadget-*` page was found in the definition
     page. Callers that did not fetch one omit it, and get no gadget suggestion
     rather than one taken from the title.
+
+    `gadget_declaration` is the definition line that registered it, when there
+    was one. It is passed rather than re-derived because acquisition is the only
+    step that reads the definition page, and asking for it again here would be a
+    second fetch of a document already in hand.
     """
     # The wider ceiling is keyed on wiki_page rather than on a caller-supplied
     # limit so it cannot be asked for: only _acquire_wiki sets it, and the HTTP
@@ -2273,13 +2355,15 @@ def analyze_source_files(
                 findings, source_file.path, line_number, line, extension_manifest=extension_manifest
             )
             _scan_warnings(findings, source_file.path, line_number, line)
+    if gadget_declaration is not None:
+        _scan_gadget_declaration(findings, gadget_declaration)
     _reconcile_technology_packages(findings)
     report: dict[str, Any] = {
         "toolName": tool_name or "",
         "sourceLabel": source_label or "",
         # Recorded, not just consumed: the type suggestion below turns on it,
         # and a stored report should show what that decision was made from.
-        "wikiPage": _wiki_page_row(wiki_page),
+        "wikiPage": _wiki_page_row(wiki_page, gadget_declaration),
         "filesAnalyzed": len(normalized),
         "projects": _serialized(findings, "projects"),
         "apis": _serialized(findings, "apis"),

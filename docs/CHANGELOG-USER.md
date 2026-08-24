@@ -1,12 +1,13 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: permissions-in-plain-sight -->
-<!-- Release title: Permissions in Plain Sight -->
-<!-- Source range: c55797b..e61d34417 (3 commits) -->
+<!-- Release id: who-the-gadget-is-for -->
+<!-- Release title: Who the Gadget Is For -->
+<!-- Source range: e61d34417..910a955 (6 commits) -->
 
 # What's New for Users
 
-- Source analysis now says what a tool asks **your browser** for. Until now the report covered what a tool asks the wiki for — the pages it edits, the OAuth scopes it needs — and said nothing about the clipboard, notifications, your location, the camera or the microphone. Those are permissions only you can grant, at the moment the tool runs, and they are now listed under Browser permissions with the line of code that asks for each one.
-- Gadgets and user scripts are covered by the same list. A user script declares what it may reach with `@grant` and `@connect`, and a browser extension declares it in its manifest; both are now read and reported the same way as a call made in ordinary code, so the list reads the same whether a tool lives in a repository or on a wiki page.
-- No tool's health grade moved because of this. The new list is shown beside the permission findings rather than folded into the score: the grades were calibrated against wiki permissions alone, and changing a published grade because the directory started looking at something new would report a change in the tool that did not happen.
-- A release with malformed notes now stops before anything is deployed. The rule that the notes must be readable was only checked once the deployment was already under way, so a bad file could stop a release with the tool left serving its previous build. It is now checked before the change is pushed at all.
+- A gadget's report now says who the wiki actually serves it to. Every wiki keeps one page listing its gadgets, and a line there can restrict a gadget to administrators, to users who can revert edits, to anyone who can upload files. That restriction was sitting in plain text the whole time and the report ignored it. It is now listed among the tool's access rights, quoting the line and its number so you can open the page and check.
+- The report also says when a gadget is on for everyone. Most gadgets are opt-in — you tick a box in your preferences. Some are switched on by default, which means every reader of that wiki runs them without ever choosing to. That is worth knowing about a piece of code, and it is now shown alongside the permission findings.
+- Being restricted to a right is not treated as proof that the tool uses it. A wiki gates a rollback gadget on rollback because the gadget rolls back, but the line itself only says who is served. So a restriction on its own does not mark a tool as making changes, and does not move its health grade; only code the analysis actually read does that.
+- Search no longer buries current tools under archived ones. Archived tools now sit behind a Status filter instead of being mixed into every result — on Meta alone the census counts 1,874 archived user scripts against 729 live ones, so the default was hiding what people were looking for. Tick Archived when you want them back.
+- The feature status page had fallen behind what source analysis does. It listed the signals the analysis extracted when it first shipped and never mentioned browser permissions, endpoints, or the fact that gadgets and user scripts are read straight off the wiki they live on. It now describes both, and automatic repository analysis has an entry of its own.

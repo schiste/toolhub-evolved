@@ -9,7 +9,7 @@ test("viewExperiments() renders the hybrid-feature showcase copy and title", () 
 	const actual = experiments.viewExperiments();
 	assert.equal(actual.title, EXPECTED_TITLE);
 	// Pin the computed feature total derived from the reduce() over every group.
-	assert.ok(actual.html.includes("The 44 features below describe Toolhub Evolved's hybrid model"));
+	assert.ok(actual.html.includes("The 45 features below describe Toolhub Evolved's hybrid model"));
 	assert.ok(actual.html.includes("the local Toolhub replica serves public reads"));
 	assert.ok(actual.html.includes("local overlays cover drafts, fallback data, and Evolved-owned data"));
 	assert.ok(actual.html.includes("Current behavior"));
@@ -64,7 +64,7 @@ test("EXPERIMENTS is the source array with the expected feature counts", () => {
 	);
 	assert.deepEqual(
 		experiments.EXPERIMENTS.map((g) => g.items.length),
-		[11, 10, 10, 7, 6]
+		[11, 10, 10, 8, 6]
 	);
 });
 

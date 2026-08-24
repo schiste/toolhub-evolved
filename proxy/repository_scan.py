@@ -403,6 +403,10 @@ class _Source:
     #: or None for a clone. Carried because acquisition is the only step that
     #: reads the gadget definition, and the type suggestion depends on it.
     wiki_page: wiki_sources.WikiSource | None = None
+    #: The definition line that registered this gadget, for the same reason and
+    #: from the same fetch: the analyzer reports the rights and the default flag
+    #: it declares, and re-deriving them there would mean reading the page twice.
+    gadget_declaration: wiki_sources.GadgetDeclaration | None = None
 
 
 def _wiki_query(session: requests.Session, url: str) -> Any:  # noqa: ANN401 - one decoded API payload
@@ -420,7 +424,9 @@ def _wiki_query(session: requests.Session, url: str) -> Any:  # noqa: ANN401 - o
     return payload
 
 
-def _wiki_revisions(source: wiki_sources.WikiSource) -> tuple[tuple[wiki_api.Revision, ...], wiki_sources.WikiSource]:
+def _wiki_revisions(
+    source: wiki_sources.WikiSource,
+) -> tuple[tuple[wiki_api.Revision, ...], wiki_sources.WikiSource, wiki_sources.GadgetDeclaration | None]:
     """Fetch every page one wiki-hosted tool consists of, in one request or two.
 
     A user script costs one: the prefix search that finds its subpages is a
@@ -436,16 +442,17 @@ def _wiki_revisions(source: wiki_sources.WikiSource) -> tuple[tuple[wiki_api.Rev
     with requests.Session() as session:
         if source.kind in wiki_sources.GADGET_KINDS:
             definition = wiki_api.definition_text(_wiki_query(session, wiki_api.definition_url(source.domain)))
+            declaration = wiki_sources.gadget_declaration(definition, source.filename)
             source, titles = wiki_sources.registered_gadget(source, definition)
             found = wiki_api.revisions(_wiki_query(session, wiki_api.pages_url(source.domain, titles)))
-            return found, source
+            return found, source, declaration
         query = wiki_api.subpages_url(source.domain, source.namespace_id, source.prefix)
         found = wiki_api.revisions(_wiki_query(session, query))
     # The prefix search is broader than the script -- it also returns the same
     # author's next tool -- so what it fetched still has to be filtered down to
     # the pages that actually belong to this one.
     kept = set(wiki_sources.subpage_titles(source, [revision.title for revision in found]))
-    return tuple(revision for revision in found if revision.title in kept), source
+    return tuple(revision for revision in found if revision.title in kept), source, None
 
 
 #: A line this long was not typed by a person. Measured over the largest pages
@@ -529,7 +536,7 @@ def _wiki_context(found: tuple[wiki_api.Revision, ...]) -> dict[str, Any]:
 
 def _acquire_wiki(source: wiki_sources.WikiSource) -> _Source:
     """Read one wiki-hosted tool: its pages, their text, and a head over the set."""
-    found, resolved = _wiki_revisions(source)
+    found, resolved, declaration = _wiki_revisions(source)
     if not found:
         message = "wiki page set holds no readable revision"
         raise RepositoryScanError(message)
@@ -551,6 +558,7 @@ def _acquire_wiki(source: wiki_sources.WikiSource) -> _Source:
         files=files,
         context=_wiki_context(found),
         wiki_page=resolved,
+        gadget_declaration=declaration,
     )
 
 
@@ -861,6 +869,7 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
             tool_name=tool_name,
             source_label=url,
             wiki_page=acquired.wiki_page,
+            gadget_declaration=acquired.gadget_declaration,
             repository_context=_report_context(
                 acquired.context, url=url, provider=provider, commit_sha=head, record=record
             ),

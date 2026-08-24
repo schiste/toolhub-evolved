@@ -228,6 +228,31 @@ def _browser_permission_signals(report: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _gadget_reach_signals(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Say whether the wiki serves this gadget to everyone by default.
+
+    Reach, not permission, which is why it reads the wikiPage row rather than a
+    findings bucket and adds nothing to the score. It belongs beside the rights
+    above because it is what decides how much they matter: the same declared
+    right is a different proposition on a gadget a few hundred people opted into
+    than on one every reader loads without choosing to.
+
+    Silent when no definition line was read. A gadget that declares no `default`
+    is opt-in, and saying so on every user script and every clone would be noise
+    rather than a finding.
+    """
+    page = report.get("wikiPage")
+    if not isinstance(page, dict) or not page.get("gadgetDefault"):
+        return []
+    return [
+        _assessment_signal(
+            "neutral",
+            "Enabled for all users by default",
+            detail="MediaWiki:Gadgets-definition declares this gadget default, so readers load it without opting in.",
+        )
+    ]
+
+
 def _permission_clarity_assessment(report: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     raw_access = report["accessRights"]
     access = _publishable_rows(raw_access, SCORING_MIN_CONFIDENCE)
@@ -301,6 +326,7 @@ def _permission_clarity_assessment(report: dict[str, Any], context: dict[str, An
             )
             recommendations.append("Reconcile declared OAuth scopes with source-code usage.")
     signals.extend(_browser_permission_signals(report))
+    signals.extend(_gadget_reach_signals(report))
     return _assessment(
         "permission-clarity",
         "Permission clarity",
