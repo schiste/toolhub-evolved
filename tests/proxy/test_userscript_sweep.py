@@ -363,6 +363,56 @@ def test_a_wiki_that_will_not_say_what_it_calls_its_namespace_is_swept_anyway():
     assert stored("User:A/one.js") is not None
 
 
+# --- holding one slice at a time ---
+
+
+def test_a_window_is_read_one_slice_at_a_time_however_large_it_is(monkeypatch):
+    # The invariant enwiki broke. A run reading its whole window before writing
+    # any of it held twenty thousand page bodies at once and was killed for it,
+    # leaving no traceback -- so what is asserted here is the shape of the reads,
+    # not the memory, because the memory is only ever observable as a dead pod.
+    titles = [f"User:U{index:03d}/x.js" for index in range(census.CONTENT_BATCH * 4)]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles})
+    monkeypatch.setattr(sweeper, "INGEST_CHUNK", census.CONTENT_BATCH)
+    asked = []
+    real_read = sweeper.read_titles
+    monkeypatch.setattr(
+        sweeper,
+        "read_titles",
+        lambda request, wiki_name, slice_: (asked.append(len(slice_)), real_read(request, wiki_name, slice_))[1],
+    )
+
+    summary = sweeper.ingest(wiki.request, FRWIKI, titles, ranked=True)
+
+    assert max(asked) <= sweeper.INGEST_CHUNK
+    # Sliced, and still the whole window: bounding the hold must not bound the run.
+    assert summary["written"] == len(titles)
+    assert summary["fetched"] == len(titles)
+
+
+def test_a_run_killed_part_way_keeps_the_pages_it_already_wrote(monkeypatch):
+    # A memory limit kills the process outright. Nothing catches that and
+    # nothing commits on the way out, so the only writes that survive are the
+    # ones a slice already committed -- which is the second half of why the
+    # window is sliced at all.
+    titles = [f"User:U{index:03d}/x.js" for index in range(census.CONTENT_BATCH * 4)]
+    wiki = FakeWiki({title: page("var a = 1;") for title in titles})
+    monkeypatch.setattr(sweeper, "INGEST_CHUNK", census.CONTENT_BATCH)
+    real_request = wiki.request
+
+    def killed(domain, method, params):
+        if wiki.content_requests >= 2:
+            raise KeyboardInterrupt("the container ran out of memory")
+        return real_request(domain, method, params)
+
+    with pytest.raises(KeyboardInterrupt):
+        sweeper.ingest(killed, FRWIKI, titles, ranked=True)
+
+    assert stored("User:U000/x.js") is not None
+    with db.session_scope() as session:
+        assert session.query(UserScriptPage).count() == census.CONTENT_BATCH * 2
+
+
 def test_pages_read_before_the_refusal_are_still_written():
     titles = [f"User:U{index}/x.js" for index in range(census.CONTENT_BATCH * 2)]
     wiki = FakeWiki({title: page("var a = 1;") for title in titles}, lagged_after=1)

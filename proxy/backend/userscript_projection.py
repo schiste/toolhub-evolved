@@ -94,26 +94,38 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
     A page is offered with the creation date the wiki reports, and falls back to
     discovery order only where `backend.userscript_creation_dates` has not been
     able to supply one.
+
+    Named columns rather than whole rows, because the widest column on the table
+    is the one a `Candidate` never carries. Selecting the page objects brought
+    every stored body along for the walk: on enwiki that is tens of thousands of
+    scripts held in memory so that their titles could be read off them, and it is
+    what put this job over a container limit that kills without a traceback. The
+    fold compares fingerprints and sketches, both already distilled from the body
+    by the census, so the body itself has no reader here.
     """
-    rows = (
-        session.query(UserScriptPage)
-        .filter(
-            UserScriptPage.wiki == wiki,
-            UserScriptPage.role == userscripts.ROLE_SCRIPT,
-            UserScriptPage.deleted_at.is_(None),
-        )
-        .all()
+    rows = session.query(
+        UserScriptPage.title,
+        UserScriptPage.owner,
+        UserScriptPage.basename,
+        UserScriptPage.created_at_wiki,
+        UserScriptPage.discovery_rank,
+        UserScriptPage.fingerprint,
+        UserScriptPage.sketch,
+    ).filter(
+        UserScriptPage.wiki == wiki,
+        UserScriptPage.role == userscripts.ROLE_SCRIPT,
+        UserScriptPage.deleted_at.is_(None),
     )
     return [
         directory.Candidate(
-            title=row.title,
-            owner=row.owner,
-            basename=row.basename,
-            created=row.created_at_wiki or _sort_key(row.discovery_rank),
-            fingerprint=row.fingerprint,
-            sketch=row.sketch,
+            title=title,
+            owner=owner,
+            basename=basename,
+            created=created_at_wiki or _sort_key(discovery_rank),
+            fingerprint=fingerprint,
+            sketch=sketch,
         )
-        for row in rows
+        for title, owner, basename, created_at_wiki, discovery_rank, fingerprint, sketch in rows
     ]
 
 
@@ -267,6 +279,21 @@ def project(wiki: str) -> dict[str, Any]:
     the same rows. It reads no wiki and makes no request, so it is cheap enough
     to run at the end of every sweep and keep the directory from ever describing
     a corpus that has moved on.
+
+    **Read, think, write -- in three phases, with no database connection held
+    across the thinking.** The collapse is pure Python over what was already
+    read, and on a large wiki it is minutes of it. A connection left open and
+    silent for that long is one the server is entitled to close, and it does:
+    the run then died on the first query of the write, having spent the whole
+    collapse for nothing. Splitting the phases costs one extra connection
+    checkout and makes the write's connection as young as the write.
+
+    Three transactions rather than one is not a loss of atomicity that mattered:
+    the projection has always been a rebuild of derived rows from a corpus that
+    the sweep is concurrently changing underneath it, so it was never a
+    consistent snapshot of anything. What it must be is *repeatable*, and it is
+    -- a failed write leaves the previous directory standing and the next run
+    recomputes from scratch.
     """
     with db.session_scope() as session:
         # Demand is counted by identity, so the edges have to carry one before
@@ -276,9 +303,11 @@ def project(wiki: str) -> dict[str, Any]:
         repaired = sweep.resolve_pending(session, wiki)
         pages = candidates(session, wiki)
         loads = demand(session, wiki)
-        origins = directory.collapse(pages, loads)
-        scores = {origin.original.title: score for origin, score in directory.rank_by_demand(origins, loads)}
-        counts = _write(session, wiki, directory.by_tier(origins, loads), scores, utcnow())
+    origins = directory.collapse(pages, loads)
+    scores = {origin.original.title: score for origin, score in directory.rank_by_demand(origins, loads)}
+    tiers = directory.by_tier(origins, loads)
+    with db.session_scope() as session:
+        counts = _write(session, wiki, tiers, scores, utcnow())
     return {
         "wiki": wiki,
         "candidates": len(pages),

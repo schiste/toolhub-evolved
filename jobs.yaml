@@ -415,7 +415,28 @@
   # matters is most likely to already exist under a different name. Its 155,575
   # pages are why USERSCRIPT_LIMIT exists: its first sweep runs for about 8
   # hourly runs, then the wiki falls through to watching like the other two.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org USERSCRIPT_LIMIT=20000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
+  #
+  # `python -u` because this job is killed rather than ended. Buffered stdout is
+  # flushed when the process exits; a process that is SIGKILLed by a memory
+  # limit never gets there, so every line the run had printed since its last
+  # 8KB flush dies with it. That is not a small loss on a job whose whole
+  # progress record is its own log: the enwiki failures below were invisible
+  # for as long as they were because the log looked like a run that had never
+  # reached the step, when it was a run whose account of reaching it was still
+  # in a buffer. Unbuffered, the last line printed is the last line that ran.
+  #
+  # 2Gi rather than the cluster's 512Mi default, which is what was killing this.
+  # Measured on the enwiki corpus at 56,206 candidates: the projection peaked at
+  # 806MB before the fold was taught not to carry page bodies, and at 354MB
+  # after -- and 512Mi sits between those two numbers, which is exactly why the
+  # scheduled runs died silently while a probe with room to breathe got far
+  # enough to report the real error. 85MB of the 354 is interpreter and imports;
+  # the rest scales with the number of candidates, so enwiki's full 155,575
+  # pages project to roughly 800MB and 1Gi would put us back where we started
+  # within a few months of corpus growth. If enwiki outgrows 2Gi, the fix is to
+  # fold in slices the way the ingest already does, not another doubling.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org USERSCRIPT_LIMIT=20000 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
   image: python3.13
   schedule: "23 * * * *"
+  mem: 2Gi
   emails: onfailure

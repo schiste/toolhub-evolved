@@ -78,6 +78,21 @@ class ReplicationLagged(Exception):  # noqa: N818 - a condition of the wiki, not
 # to plan; MySQL's max_allowed_packet, not correctness, is what this respects.
 RESOLVE_CHUNK: int = 500
 
+# How many titles one ingest holds in memory at a time. `USERSCRIPT_LIMIT`
+# bounds how much of a wiki a run covers, which is a question about request
+# budget; this bounds what that costs to hold, which is a question about the
+# container. They were the same number until enwiki proved they are not: a run
+# reading its whole 20,000-title window before writing any of it held every one
+# of those page bodies at once, and was killed for it by a memory limit that
+# leaves no traceback behind. Reading and writing a slice at a time makes the
+# peak a property of this constant instead of the window.
+#
+# It also makes progress durable. One transaction over a whole window is lost
+# entirely when the run dies; a window written in slices keeps what it already
+# wrote, and the pages it re-reads next run are settled by revision before a
+# request is spent on them.
+INGEST_CHUNK: int = 500
+
 EMPTY_COUNTS: dict[str, int] = {
     "asked": 0,
     "fetched": 0,
@@ -357,7 +372,11 @@ def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map ar
     rank_offset: int = 0,
     revisions: dict[str, str] | None = None,
 ) -> dict[str, int]:
-    """Read the named pages and write the ones that changed.
+    """Read the named pages and write the ones that changed, `INGEST_CHUNK` at a time.
+
+    The slicing is what keeps a large window affordable: a run holds one slice
+    of page bodies rather than the whole window, and commits each slice as it
+    goes, so what a killed run already wrote survives it.
 
     `revisions` is what the caller already knows about the wiki's current
     revision ids, before a single page has been asked for. The replica road
@@ -393,23 +412,36 @@ def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map ar
         if not _settled(userscripts.canonical_title(title, spellings=local), stored, ranks, ahead)
     ]
     summary["skipped"] = len(titles) - len(wanted)
-    pages, summary["unreadable"], lagged = read_titles(request, wiki, wanted)
-    summary["lagged"] = int(lagged)
-    summary["fetched"] = len(pages)
+    for chunk in _chunked(wanted, INGEST_CHUNK):
+        pages, unreadable, lagged = read_titles(request, wiki, chunk)
+        summary["unreadable"] += unreadable
+        summary["fetched"] += len(pages)
+        with db.session_scope() as session:
+            # A fresh resolver each slice: the previous one belongs to a session
+            # that has closed. Its memo saves queries rather than requests --
+            # the two clocks on the stored row are what keep a wiki's siteinfo
+            # to one request -- so rebuilding it per slice costs a handful of
+            # reads, not traffic.
+            prefixes = wiki_prefixes.resolver(session, request)
+            for page in pages:
+                title = userscripts.canonical_title(page.title, spellings=local)
+                rank = ranks.get(title)
+                if _settled(title, stored, ranks, {title: page.revision}):
+                    summary["skipped"] += 1
+                    continue
+                store_page(session, wiki, page, rank, prefixes)
+                written.append(title)
+                summary["written"] += 1
+        # Explicit, because the name outlives the loop body and what it holds is
+        # the whole point of the slicing.
+        del pages
+        if lagged:
+            # The wiki asked us to stop. The slices behind this one were never
+            # requested, and the caller holds its cursor over them rather than
+            # recording them as covered.
+            summary["lagged"] = 1
+            break
     with db.session_scope() as session:
-        # A fresh resolver: the one above belongs to a session that has closed.
-        # Its memo is what keeps a sweep to one siteinfo request per wiki it
-        # meets, however many thousands of edges name that wiki.
-        prefixes = wiki_prefixes.resolver(session, request)
-        for page in pages:
-            title = userscripts.canonical_title(page.title, spellings=local)
-            rank = ranks.get(title)
-            if _settled(title, stored, ranks, {title: page.revision}):
-                summary["skipped"] += 1
-                continue
-            store_page(session, wiki, page, rank, prefixes)
-            written.append(title)
-            summary["written"] += 1
         summary["resolved"] = resolve_targets(session, wiki, written)
     return summary
 

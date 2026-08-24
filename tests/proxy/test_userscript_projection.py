@@ -2,9 +2,11 @@
 
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from flask import Flask
+from sqlalchemy import event
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
@@ -496,3 +498,61 @@ def test_a_load_pointing_outside_the_census_never_becomes_repair_work():
     loads("User:Bbb/common.js", "User:Ccc/elsewhere.js")
     assert projection.project(FRWIKI)["repaired"] == 0
     assert projection.project(FRWIKI)["repaired"] == 0
+
+
+def test_the_corpus_is_read_without_its_bodies():
+    # What made this job unaffordable on enwiki. `Candidate` carries a
+    # fingerprint and a sketch, both distilled from the body at census time, so
+    # a projection that also drags the bodies along is paying tens of thousands
+    # of script sources to read titles off them -- and paying it in a container
+    # that kills without a traceback when it runs out. Asserted as the shape of
+    # the query, because the memory is only ever observable as a dead pod.
+    page("User:Aaa/tool.js", body="var a = 1;")
+    statements = []
+    listener = lambda conn, cursor, statement, *rest: statements.append(statement)  # noqa: E731, ARG005
+    event.listen(db.engine(), "before_cursor_execute", listener)
+    try:
+        with db.session_scope() as session:
+            found = projection.candidates(session, FRWIKI)
+    finally:
+        event.remove(db.engine(), "before_cursor_execute", listener)
+
+    assert [candidate.title for candidate in found] == ["User:Aaa/tool.js"]
+    assert not [statement for statement in statements if "user_script_pages.body" in statement]
+
+
+def test_no_connection_is_held_while_the_corpus_is_folded():
+    # The collapse is pure Python and, on a wiki this size, minutes of it. A
+    # connection left open and silent through that is one the server closes --
+    # which it did, and the run then died on the first query of the write with
+    # the whole fold already spent. So the fold happens between transactions,
+    # and this counts checkouts to say so.
+    page("User:Aaa/tool.js")
+    page("User:Bbb/tool.js")
+    held = []
+
+    def checkout(*_):
+        held.append(1)
+
+    def checkin(*_):
+        held.pop()
+
+    real_collapse = directory.collapse
+    during = []
+
+    def watched(*args, **kwargs):
+        during.append(len(held))
+        return real_collapse(*args, **kwargs)
+
+    event.listen(db.engine(), "checkout", checkout)
+    event.listen(db.engine(), "checkin", checkin)
+    try:
+        with mock.patch.object(directory, "collapse", watched):
+            summary = projection.project(FRWIKI)
+    finally:
+        event.remove(db.engine(), "checkout", checkout)
+        event.remove(db.engine(), "checkin", checkin)
+
+    assert during == [0]
+    # Released, and still a whole projection: the phases must not cost the result.
+    assert summary["originals"] == 2
