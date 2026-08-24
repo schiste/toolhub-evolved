@@ -1265,6 +1265,7 @@
 	"sourceAnalysis.copied": "TODO: document this message.",
 	"sourceAnalysis.copyPatch": "TODO: document this message.",
 	"sourceAnalysis.copyUnavailable": "TODO: document this message.",
+	"sourceAnalysis.declaredRestriction": "Badge on a source-analysis finding whose category is 'restricted': the wiki serves the tool only to users holding that right, rather than the tool having been seen using it.",
 	"sourceAnalysis.dependencies": "TODO: document this message.",
 	"sourceAnalysis.endpoints": "Heading for the list of network addresses the analysed source calls, each shown as host, path and where it applies the API action.",
 	"sourceAnalysis.evidence": "TODO: document this message.",

@@ -1809,6 +1809,8 @@ GADGETS_DEFINITION = """== Editing ==
 * Twinkle[ResourceLoader|dependencies=mediawiki.util|rights=rollback,minoredit]|Twinkle.js|Twinkle.css
 * watchlist[ResourceLoader|default|rights=viewmywatchlist]|watchlist.js
 * retired[ResourceLoader|hidden]|retired.js
+* sitenotice[ResourceLoader|default]|sitenotice.js
+* base[ResourceLoader|default|hidden]|base.js
 """
 
 
@@ -1853,6 +1855,31 @@ def test_a_declared_right_alone_does_not_claim_the_tool_writes() -> None:
     assert categories["minor-edit"] == "restricted"
 
 
+def _permission_clarity(report):
+    return next(item for item in report["assessments"] if item["key"] == "permission-clarity")
+
+
+def test_a_declared_restriction_is_not_read_as_evidence_of_being_read_only() -> None:
+    # Twinkle is gated on rollback and minoredit and this copy calls neither.
+    # Before the restricted category had a consumer, that landed in the
+    # read-only branch and scored 90 -- a gadget the wiki gates on rollback
+    # reported as safer than one whose code was actually read.
+    assessment = _permission_clarity(_gadget_report("Twinkle.js"))
+    labels = [signal["label"] for signal in assessment["signals"]]
+    assert "Served only to users holding declared rights" in labels
+    assert "Only read-oriented actions detected" not in labels
+    assert assessment["score"] == 70
+
+
+def test_a_tool_with_no_declared_restriction_still_reaches_the_read_only_branch() -> None:
+    report = source_analyzer.analyze_source_files(
+        [{"path": "app.js", "content": 'api.get({action: "query", prop: "revisions"});\n'}]
+    )
+    labels = [signal["label"] for signal in _permission_clarity(report)["signals"]]
+    assert "Only read-oriented actions detected" in labels
+    assert "Served only to users holding declared rights" not in labels
+
+
 def test_an_observed_call_keeps_its_category_over_a_declaration() -> None:
     # Twinkle declares `rollback` and `minoredit`; this copy is also seen calling
     # rollback. The observed call is read first and settles that right's
@@ -1873,35 +1900,292 @@ def test_an_observed_call_keeps_its_category_over_a_declaration() -> None:
     assert report["summary"]["writeActionsDetected"] is True
 
 
-def test_default_is_reported_as_reach_and_not_as_a_right() -> None:
-    report = _gadget_report("watchlist.js")
-    assert report["wikiPage"]["gadgetDefault"] is True
-    assert "default" not in {row["value"] for row in report["accessRights"]}
-    signals = [
+# Real lines again, from two of the fifteen definition pages the vocabulary was
+# re-measured against. MassProtect gates on `protect` and CheckUserHelper on
+# `checkuser` -- the first was missing from the twenty-one-right table read off
+# five wikis, the second is missing from the thirty-eight-right table read off
+# twenty, which is what makes it the case that still exercises the fallback.
+WIDER_DEFINITION = """== Administration ==
+* MassProtect[ResourceLoader|rights=protect|dependencies=mediawiki.util,mediawiki.api]|MassProtect.js
+* CheckUserHelper[ResourceLoader|rights=checkuser]|CheckUserHelper.js
+"""
+
+
+def _wider_gadget_report(filename: str, content: str = "var x = 1;\n"):
+    declaration = wiki_sources.gadget_declaration(WIDER_DEFINITION, filename)
+    assert declaration is not None
+    page = wiki_sources.WikiSource(
+        domain="ja.wikipedia.org", title=f"MediaWiki:Gadget-{filename}", kind=wiki_sources.KIND_GADGET
+    )
+    return source_analyzer.analyze_source_files(
+        [{"path": f"MediaWiki:Gadget-{filename}", "content": content}],
+        wiki_page=page,
+        gadget_declaration=declaration,
+    )
+
+
+def test_a_right_the_first_measurement_missed_now_labels_and_merges() -> None:
+    # `protect` was absent from the table until the definition pages were read
+    # again, so this gadget's gate rendered as the bare string "protect" and
+    # could not merge with the call below -- two rows for one right, one of them
+    # jargon. The merge is the point of aligning the slug with ACTION_RIGHTS.
+    report = _wider_gadget_report("MassProtect.js", 'api.post({action: "protect"});\n')
+    rows = {row["value"]: row for row in report["accessRights"]}
+    assert rows["protect"]["label"] == "Protect pages"
+    assert len(rows["protect"]["evidence"]) == 2
+    assert rows["protect"]["category"] == "administrator"
+
+
+def test_a_right_outside_the_vocabulary_is_reported_under_its_own_name() -> None:
+    assert "checkuser" not in source_analysis_common.GADGET_RIGHT_VOCABULARY
+    report = _wider_gadget_report("CheckUserHelper.js")
+    rows = {row["value"]: row for row in report["accessRights"]}
+    assert rows["checkuser"]["label"] == "checkuser"
+    assert rows["checkuser"]["category"] == "restricted"
+    # Reported, and reported as undescribed. The raw name on its own reads as a
+    # label the analyzer produced rather than one it never had.
+    assert "no description for that right" in rows["checkuser"]["reasons"][0]
+    assert rows["checkuser"]["confidence"] == pytest.approx(source_analysis_common.GADGET_DECLARED_RIGHT_CONFIDENCE)
+
+
+def test_a_described_right_says_nothing_about_missing_descriptions() -> None:
+    reasons = {row["value"]: row["reasons"][0] for row in _gadget_report("Twinkle.js")["accessRights"]}
+    assert "no description" not in reasons["rollback"]
+    assert "no description" not in reasons["minor-edit"]
+
+
+def test_the_report_records_the_share_of_declared_rights_it_could_describe() -> None:
+    # The drift measurement. GADGET_RIGHT_VOCABULARY is a reading of pages other
+    # people edit, and nothing re-reads them; this ratio is what says when it
+    # has fallen behind, rather than the table quietly going stale.
+    described = _gadget_report("Twinkle.js")
+    assert described["wikiPage"]["gadgetRights"] == ["rollback", "minoredit"]
+    assert described["wikiPage"]["gadgetUnknownRights"] == []
+    assert described["summary"]["declaredRightCount"] == 2
+    assert described["summary"]["unknownDeclaredRightCount"] == 0
+
+    undescribed = _wider_gadget_report("CheckUserHelper.js")
+    assert undescribed["wikiPage"]["gadgetUnknownRights"] == ["checkuser"]
+    assert undescribed["summary"]["declaredRightCount"] == 1
+    assert undescribed["summary"]["unknownDeclaredRightCount"] == 1
+
+
+def test_a_tool_with_no_definition_line_declares_no_rights_to_count() -> None:
+    # Zero out of zero, not one out of zero: a repository that is not a gadget
+    # must not push the rate around.
+    summary = source_analyzer.analyze_source_files([{"path": "app.js", "content": "var x = 1;\n"}])["summary"]
+    assert summary["declaredRightCount"] == 0
+    assert summary["unknownDeclaredRightCount"] == 0
+
+
+REACH_LABELS = {label for label, _detail in source_analysis_assessments.GADGET_REACH_CASES.values()}
+
+
+def _reach_signals(report) -> list[dict]:
+    """Return only the reach signals, so a test asserting one is not fooled by another."""
+    return [
         signal
         for assessment in report["assessments"]
         if assessment["key"] == "permission-clarity"
         for signal in assessment["signals"]
+        if signal["label"] in REACH_LABELS
     ]
-    assert any(signal["label"] == "Enabled for all users by default" for signal in signals)
+
+
+EXTENSION_MANIFEST = json.dumps(
+    {
+        "manifest_version": 3,
+        "permissions": ["tabs", "cookies", "history", "storage", "scripting", "webRequest"],
+        "host_permissions": ["<all_urls>"],
+    }
+)
+
+
+def _browser_permissions(report):
+    return next((item for item in report["assessments"] if item["key"] == "browser-permissions"), None)
+
+
+def _browser_dimension(report):
+    return next(item for item in report["healthCore"]["dimensions"] if item["key"] == "browser-permissions")
+
+
+def test_a_tool_that_asks_the_browser_for_nothing_is_not_graded_on_it() -> None:
+    # None rather than a perfect score: "asked for nothing" and "does not run in
+    # a browser" are the same absence here, and a backend script handed a top
+    # mark would be told it passed a test it never sat.
+    report = source_analyzer.analyze_source_files([{"path": "app.py", "content": "print(1)\n"}])
+    assert _browser_permissions(report) is None
+    dimension = _browser_dimension(report)
+    assert dimension["applicable"] is False
+    assert dimension["includedInScore"] is False
+
+
+def test_a_device_permission_outscores_nothing_it_is_bundled_with() -> None:
+    report = source_analyzer.analyze_source_files(
+        [{"path": "MediaWiki:Gadget-cam.js", "content": "navigator.mediaDevices.getUserMedia({video: true});\n"}]
+    )
+    assessment = _browser_permissions(report)
+    assert assessment is not None
+    assert assessment["score"] == 45
+    assert [signal["label"] for signal in assessment["signals"]] == ["Reaches hardware, files, or stored credentials"]
+
+
+def test_a_permission_that_stays_in_the_page_is_scored_as_such() -> None:
+    report = source_analyzer.analyze_source_files(
+        [{"path": "MediaWiki:Gadget-copy.js", "content": "navigator.clipboard.writeText(x);\n"}]
+    )
+    assessment = _browser_permissions(report)
+    assert assessment is not None
+    assert assessment["score"] == 85
+    assert assessment["signals"][0]["status"] == "positive"
+
+
+def test_breadth_and_every_site_access_both_cost_the_extension_something() -> None:
+    report = source_analyzer.analyze_source_files([{"path": "manifest.json", "content": EXTENSION_MANIFEST}])
+    assessment = _browser_permissions(report)
+    assert assessment is not None
+    # 65 for reaching other sites, -15 for seven separate requests, -15 for
+    # every-site access.
+    assert assessment["score"] == 35
+    labels = [signal["label"] for signal in assessment["signals"]]
+    assert "Asks to run on every site the reader visits" in labels
+    assert "A long list of separate permissions" in labels
+
+
+def test_the_browser_dimension_leaves_a_tool_without_permissions_where_it_was() -> None:
+    # The dimension must be absent, not zero: an added dimension that scored the
+    # absence would restate every catalogued tool's health without the tool
+    # having changed.
+    files = [{"path": "src/bot.py", "content": 'requests.post(url, data={"action": "edit"})\n'}]
+    report = source_analyzer.analyze_source_files(files)
+    applicable = {item["key"] for item in report["healthCore"]["dimensions"] if item["applicable"]}
+    assert "browser-permissions" not in applicable
+    # Confidence divides by the applicable weight, so a dimension that was
+    # merely absent rather than inapplicable would move it for every such tool.
+    assert sum(
+        float(item["weight"]) for item in report["healthCore"]["dimensions"] if item["applicable"]
+    ) == pytest.approx(6.25)
+
+
+STYLESHEET = """@import url("https://fonts.googleapis.com/css2?family=Lato");
+.box { background: url(https://cdn.example.org/bg.png) no-repeat; }
+@font-face { src: url(//fonts.gstatic.com/s/lato/v1.woff2) format("woff2"); }
+.logo { background: url(//upload.wikimedia.org/wikipedia/commons/a/b.svg); }
+.local { background: url(/w/images/x.png); }
+"""
+
+
+def _stylesheet_warning(report):
+    rows = [row for row in report["warnings"] if row["value"] == "stylesheet-third-party-request"]
+    return rows[0] if rows else None
+
+
+def test_a_stylesheet_names_the_third_party_hosts_it_fetches_from() -> None:
+    # `url()` to an image and a protocol-relative webfont are exactly what the
+    # endpoint bucket's static-asset filter removes, which is why they are
+    # reported here instead of being lost between the two.
+    report = source_analyzer.analyze_source_files([{"path": "MediaWiki:Gadget-Foo.css", "content": STYLESHEET}])
+    row = _stylesheet_warning(report)
+    assert row is not None
+    assert row["category"] == "privacy"
+    hosts = {evidence["match"] for evidence in row["evidence"]}
+    assert hosts == {"fonts.googleapis.com", "cdn.example.org", "fonts.gstatic.com"}
+
+
+def test_a_stylesheet_stays_quiet_about_wikimedia_and_relative_addresses() -> None:
+    css = ".logo { background: url(//upload.wikimedia.org/a.svg); }\n.x { background: url(/w/i.png); }\n"
+    report = source_analyzer.analyze_source_files([{"path": "MediaWiki:Gadget-Foo.css", "content": css}])
+    assert _stylesheet_warning(report) is None
+
+
+def test_only_stylesheets_are_read_as_stylesheets() -> None:
+    # The same text inside a script is a string, not a request the browser makes.
+    report = source_analyzer.analyze_source_files(
+        [{"path": "app.js", "content": 'var s = "url(https://cdn.example.org/a.png)";\n'}]
+    )
+    assert _stylesheet_warning(report) is None
+
+
+def test_declared_modules_become_dependencies_in_their_own_ecosystem() -> None:
+    # A gadget has no package.json, so `dependencies=` is its whole manifest.
+    report = _gadget_report("Twinkle.js")
+    rows = {row["value"]: row for row in report["dependencies"]}
+    assert "resourceloader:mediawiki.util" in rows
+    row = rows["resourceloader:mediawiki.util"]
+    assert row["label"] == "mediawiki.util (resourceloader)"
+    assert row["category"] == "runtime"
+    assert row["evidence"][0]["path"] == "MediaWiki:Gadgets-definition"
+
+
+def test_a_gadget_that_declares_no_modules_gets_no_dependency_rows() -> None:
+    report = _gadget_report("retired.js")
+    assert [row for row in report["dependencies"] if row["value"].startswith("resourceloader:")] == []
+
+
+def test_the_action_api_module_is_read_as_the_action_api() -> None:
+    # `mediawiki.api` is the ResourceLoader spelling of the client the npm and
+    # pypi rules already recognise, so it must reach the same apis finding
+    # rather than stopping at being a dependency name.
+    definition = "* tool[ResourceLoader|dependencies=mediawiki.api,mediawiki.util]|tool.js\n"
+    declaration = wiki_sources.gadget_declaration(definition, "tool.js")
+    page = wiki_sources.WikiSource(
+        domain="en.wikipedia.org", title="MediaWiki:Gadget-tool.js", kind=wiki_sources.KIND_GADGET
+    )
+    report = source_analyzer.analyze_source_files(
+        [{"path": "MediaWiki:Gadget-tool.js", "content": "var x = 1;\n"}],
+        wiki_page=page,
+        gadget_declaration=declaration,
+    )
+    assert "mediawiki-action-api" in {row["value"] for row in report["apis"]}
+
+
+def test_default_is_reported_as_reach_and_not_as_a_right() -> None:
+    report = _gadget_report("sitenotice.js")
+    assert report["wikiPage"]["gadgetDefault"] is True
+    assert report["wikiPage"]["gadgetScope"] == []
+    assert "default" not in {row["value"] for row in report["accessRights"]}
+    assert [signal["label"] for signal in _reach_signals(report)] == ["Enabled for all users by default"]
+
+
+def test_a_scoped_default_does_not_claim_the_whole_wiki() -> None:
+    # watchlist is `default|rights=viewmywatchlist`. Of the 85 `default` entries
+    # measured across five wikis only 16 are unqualified, so treating every
+    # `default` as "all readers" would overstate the majority of them.
+    report = _gadget_report("watchlist.js")
+    assert report["wikiPage"]["gadgetScope"] == ["rights"]
+    signal = _reach_signals(report)[0]
+    assert signal["label"] == "Enabled by default for part of the wiki"
+    assert "limits it by user right" in signal["detail"]
+
+
+def test_default_and_hidden_together_say_the_reader_cannot_refuse_it() -> None:
+    report = _gadget_report("base.js")
+    assert report["wikiPage"]["gadgetDefault"] is True
+    assert report["wikiPage"]["gadgetHidden"] is True
+    signal = _reach_signals(report)[0]
+    assert signal["label"] == "Always on and not listed in preferences"
+    assert "none of them can turn it off" in signal["detail"]
+
+
+def test_hidden_alone_reports_that_nobody_can_switch_it_on() -> None:
+    report = _gadget_report("retired.js")
+    assert report["wikiPage"]["gadgetDefault"] is False
+    assert report["wikiPage"]["gadgetHidden"] is True
+    assert [signal["label"] for signal in _reach_signals(report)] == ["Not listed in gadget preferences"]
 
 
 def test_an_opt_in_gadget_says_so_rather_than_saying_nothing() -> None:
     report = _gadget_report("Twinkle.js")
     assert report["wikiPage"]["gadgetDefault"] is False
-    signals = [
-        signal
-        for assessment in report["assessments"]
-        if assessment["key"] == "permission-clarity"
-        for signal in assessment["signals"]
-    ]
-    assert not any(signal["label"] == "Enabled for all users by default" for signal in signals)
+    assert report["wikiPage"]["gadgetHidden"] is False
+    assert _reach_signals(report) == []
 
 
 def test_a_clone_has_no_gadget_row_at_all() -> None:
     report = source_analyzer.analyze_source_files([{"path": "src/app.js", "content": "var x = 1;\n"}])
     assert report["wikiPage"] == {}
     assert "gadgetDefault" not in report["wikiPage"]
+    assert "gadgetHidden" not in report["wikiPage"]
 
 
 def test_an_unmeasured_right_is_reported_rather_than_dropped() -> None:

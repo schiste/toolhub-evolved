@@ -404,6 +404,13 @@ HEALTH_DIMENSIONS = (
         0.6,
         "Accessibility evidence for web-facing tools.",
     ),
+    (
+        "browser-permissions",
+        "Browser permissions",
+        ("browser-permissions",),
+        0.7,
+        "What the source asks the reader's own browser for.",
+    ),
 )
 MAINTAINER_DIMENSION_WEIGHT = 1.2
 
@@ -869,6 +876,115 @@ WEB_EXTENSION_PERMISSIONS = {
     "webRequestBlocking": ("Block network requests", 0.9),
 }
 
+#: How far past its own page each permission reaches. Three tiers, and the line
+#: between them is a property of the capability rather than a feeling about it:
+#: `device` touches hardware, the filesystem, or stored credentials -- things
+#: that outlive the browser session and belong to the person, not the page.
+#: `browser` reaches other pages, other sites, or the traffic between them, so
+#: the tool learns things the reader never showed it. `page` is everything left:
+#: capabilities that need a prompt but stop at the tab the tool runs in.
+#:
+#: A first calibration, and worth saying so. The three tiers were drawn from
+#: what each API grants as documented, not from a measurement of how these
+#: permissions are used in practice -- there was no such measurement to draw on,
+#: because until this bucket existed nothing recorded them. What is measured is
+#: how often they appear at all: over en.wikipedia's 90,016 User and MediaWiki
+#: `.js` pages, `// @connect` on 444, `// @grant` on 307, navigator.clipboard on
+#: 110, Notification.requestPermission on 19, getUserMedia on none.
+BROWSER_PERMISSION_DEVICE = frozenset(
+    {
+        "bluetooth",
+        "camera-microphone",
+        "credentials",
+        "extension:nativeMessaging",
+        "file-system",
+        "geolocation",
+        "extension:geolocation",
+        "hid",
+        "midi",
+        "screen-capture",
+        "serial",
+        "usb",
+    }
+)
+
+BROWSER_PERMISSION_BROWSER = frozenset(
+    {
+        "cross-origin-request",
+        "extension:bookmarks",
+        "extension:browsingData",
+        "extension:contentSettings",
+        "extension:cookies",
+        "extension:debugger",
+        "extension:downloads",
+        "extension:history",
+        "extension:management",
+        "extension:pageCapture",
+        "extension:privacy",
+        "extension:proxy",
+        "extension:scripting",
+        "extension:tabCapture",
+        "extension:tabs",
+        "extension:topSites",
+        "extension:webNavigation",
+        "extension:webRequest",
+        "extension:webRequestBlocking",
+        "storage-access",
+    }
+)
+
+BROWSER_PERMISSION_REACH_DEVICE = "device"
+BROWSER_PERMISSION_REACH_BROWSER = "browser"
+BROWSER_PERMISSION_REACH_PAGE = "page"
+
+#: The user-script grants that reach past the page. `GM_xmlhttpRequest` is the
+#: cross-origin helper -- the whole reason a script asks for it is to call a
+#: host the page's origin policy would refuse -- and `GM_cookie` reads cookies
+#: the script did not set. Every other grant stores values, adds menu commands,
+#: or reaches the page's own window, which is where the script already is.
+USER_SCRIPT_BROWSER_GRANTS = frozenset({"gm_cookie", "gm_xmlhttprequest", "gm.cookie", "gm.xmlhttprequest"})
+
+#: Every site the reader visits, in the spellings a manifest and a user-script
+#: `@match` use for it. The finding values carry the prefix the scanner gave
+#: them, so both forms are listed rather than the bare pattern.
+BROWSER_PERMISSION_EVERY_SITE = frozenset(
+    {
+        "host:<all_urls>",
+        "host:*://*/*",
+        "match:*://*/*",
+        "match:<all_urls>",
+        "match:http://*/*",
+        "match:https://*/*",
+        "include:*",
+    }
+)
+
+
+def browser_permission_reach(value: str) -> str:
+    """Report how far past its own page one browser-permission finding reaches.
+
+    Keyed on the finding value rather than its category, because the category
+    says where the permission was found -- a runtime call, a manifest, a
+    user-script directive -- and three sources can name the same capability.
+    Anything the tiers do not name is `page`: the conservative direction for a
+    default here is the low one, because a capability nobody thought to classify
+    is more likely to be a new prompt than a new way to read the reader's disk,
+    and a default of `device` would put every unclassified string at the top of
+    a report about what to worry about.
+    """
+    if value in BROWSER_PERMISSION_DEVICE:
+        return BROWSER_PERMISSION_REACH_DEVICE
+    if value in BROWSER_PERMISSION_BROWSER or value in BROWSER_PERMISSION_EVERY_SITE:
+        return BROWSER_PERMISSION_REACH_BROWSER
+    prefix, _colon, rest = value.partition(":")
+    if prefix == "grant" and rest.casefold() in USER_SCRIPT_BROWSER_GRANTS:
+        return BROWSER_PERMISSION_REACH_BROWSER
+    if prefix == "connect":
+        # A host the script is allowed to call from a page it does not own.
+        return BROWSER_PERMISSION_REACH_BROWSER
+    return BROWSER_PERMISSION_REACH_PAGE
+
+
 #: A WebExtension manifest, and not a Progressive Web App manifest or a package
 #: of the same name: `manifest_version` is required in the first and absent from
 #: both others, so it is what separates them. Read over the whole file rather
@@ -905,6 +1021,31 @@ USER_SCRIPT_DIRECTIVE_LABELS = {
 }
 
 
+#: The suffix that marks a file as a stylesheet, and what to look for once it
+#: is one. `.css` has always been inside SOURCE_SUFFIXES, so gadget stylesheets
+#: were fetched and counted against the file and byte budget, but nothing read
+#: them for what only a stylesheet does: name an address the reader's browser
+#: fetches without any script running.
+#:
+#: The endpoint scanner sees a line of CSS, but `STATIC_ASSET_RE` drops
+#: anything ending in an image or font extension, and that filter is right --
+#: it exists because interface icons were fifteen of twenty-four findings on
+#: one tool. So the same URLs that filter removes from "what does this tool
+#: talk to" are recorded here instead, where the question is different: a
+#: background image or a webfont on somebody else's host sends every reader's
+#: address and browser to that host on every page view, with no request the
+#: reader made and no script to audit.
+CSS_SUFFIX = ".css"
+
+#: `@import url("...")`, `@import "..."`, `url(...)` and the `src:` inside an
+#: `@font-face` all resolve through the same `url()` or `@import` opening, so
+#: one pattern covers them. Protocol-relative `//host/path` is included because
+#: it is the older spelling of the same request and still common in gadget CSS.
+CSS_REMOTE_REF_RE = re.compile(
+    r"(?:@import\s+(?:url\(\s*)?|url\(\s*)[\'\"]?\s*((?:https?:)?//[^\'\")\s]{1,300})",
+    re.IGNORECASE,
+)
+
 #: The page every wiki registers its gadgets on. Named here because it is not a
 #: file with an extension and so is recognised by title alone. Two spellings
 #: because they serve different readers: the lowercase one is what path matching
@@ -912,11 +1053,68 @@ USER_SCRIPT_DIRECTIVE_LABELS = {
 GADGET_DEFINITION_PAGE = "mediawiki:gadgets-definition"
 GADGET_DEFINITION_PAGE_TITLE = "MediaWiki:Gadgets-definition"
 
-#: The two definition options this analyzer reads. `rights` limits who the
-#: gadget is served to; `default` turns it on for everyone who is not excluded.
-#: Both are declarations by the wiki, not inferences from code.
+#: The definition options this analyzer reads. `rights` limits who the gadget is
+#: served to; `default` turns it on for everyone who is not excluded; `hidden`
+#: keeps it out of the gadget preferences list, so nobody can switch it on or
+#: off there. All three are declarations by the wiki, not inferences from code.
+#:
+#: `hidden` is the other half of `default` and was measured with it: across the
+#: same five definition pages, 99 of 487 entries declare `hidden` and 85 declare
+#: `default`. Declared together -- 25 entries -- they say the gadget runs for
+#: every reader it covers and none of them can turn it off, which is the
+#: strongest reach a gadget can have; `hidden` on its own, the largest group at
+#: 74, usually marks a module another gadget pulls in as a peer.
 GADGET_RIGHTS_OPTION = "rights"
 GADGET_DEFAULT_OPTION = "default"
+GADGET_HIDDEN_OPTION = "hidden"
+
+#: The options that narrow where a `default` gadget actually loads, mapped to
+#: the words a reader outside the wiki would use for them. Reading `default`
+#: without these overstates every scoped gadget: `default|namespaces=0` runs on
+#: article pages and nowhere else, and `default|rights=sysop` is on by default
+#: for administrators, neither of which is "every reader loads this".
+#:
+#: Reading `default` alone is wrong far more often than it is right: of those 85
+#: `default` entries only 16 are unqualified, while 44 carry one or more of the
+#: options below and 25 are also `hidden`. Across all 487 entries the limits
+#: run actions 102, skins 82, namespaces 78, rights 69, categories 19,
+#: contentModels 4.
+#:
+#: Keys are spelled as MediaWiki spells them, because the definition parser
+#: transcribes option names rather than normalizing them, and `contentModels`
+#: is the one that is not lowercase. `rights` is a limit here as well as a
+#: findings source: `default|rights=sysop` is on by default for administrators,
+#: which is a smaller audience than "every reader" by several orders.
+GADGET_SCOPE_OPTIONS: dict[str, str] = {
+    "actions": "page action",
+    "categories": "page category",
+    "contentModels": "content model",
+    "namespaces": "namespace",
+    "rights": "user right",
+    "skins": "skin",
+}
+
+#: The option naming the ResourceLoader modules a gadget loads before its own
+#: code runs, and the ecosystem those modules are reported under. A gadget has
+#: no package.json, so this line is the only dependency manifest it has: across
+#: the five definition pages 235 of 487 entries declare it, naming 71 distinct
+#: modules in 518 declarations. Left unread, every on-wiki tool in the catalogue
+#: had an empty dependency list by construction rather than by fact.
+#:
+#: `resourceloader` rather than `mediawiki` as the ecosystem name because it is
+#: the registry the names resolve in, the way `npm` names a registry and not a
+#: language, and because gadget dependencies must not collide with the pypi and
+#: npm MediaWiki clients that already carry those names.
+GADGET_DEPENDENCIES_OPTION = "dependencies"
+GADGET_MODULE_ECOSYSTEM = "resourceloader"
+
+#: Runtime, not build: ResourceLoader resolves these when the reader's browser
+#: loads the page, so every one of them is code that actually ships. The
+#: confidence matches a declared Python requirement (0.94) because it is the
+#: same kind of statement -- a manifest naming what must be present -- read from
+#: the wiki's own registry rather than inferred from source.
+GADGET_MODULE_CATEGORY = "runtime"
+GADGET_MODULE_CONFIDENCE = 0.94
 
 #: What `rights=` may name, mapped onto the same value slugs the inferred rights
 #: in ACTION_RIGHTS use, so a gadget that declares `rollback` and also calls
@@ -929,31 +1127,67 @@ GADGET_DEFAULT_OPTION = "default"
 #: states who is served, not what the code does. A right the gadget was also
 #: seen exercising is categorized by that sighting instead.
 #:
-#: Measured rather than imagined: across the definition pages of en.wikipedia
-#: (113 gadgets), commons (142), de.wikipedia (62), fr.wikipedia (95) and
-#: wikidata (76) -- 488 entries -- 69 declare `rights=`, and between them they
-#: name exactly the twenty-one rights below. `edit` (18) and `upload`/`delete`
-#: (8 each) carry most of the traffic; the long tail is one or two sightings
-#: each. Unmeasured rights are not dropped -- see `_gadget_right_row` -- so
-#: this table is a labelling aid, not a filter.
+#: Measured rather than imagined, and re-measured after the first reading proved
+#: too narrow. The first pass read five definition pages -- en.wikipedia (113
+#: gadgets), commons (142), de.wikipedia (62), fr.wikipedia (95), wikidata (76)
+#: -- where 69 of 488 entries declare `rights=` and name exactly twenty-one
+#: distinct rights. Reading fifteen more pages -- the es, ru, ja, it, pl, pt,
+#: zh, nl, sv, ar, fa and he Wikipedia editions, plus meta, en.wikisource and
+#: en.wiktionary, 1576 entries and 189 declarations -- found 36 declarations
+#: naming seventeen further
+#: rights, none of which the first table had. Five wikis were 19% short.
+#:
+#: The additions are not exotic. `protect`, `review` and `deleterevision` are
+#: ordinary moderation, and they were missing only because the wikis that had
+#: been read happen to gate those gadgets differently. That is the shape of the
+#: error a single reading produces: not a strange long tail, but common rights
+#: absent by accident of which pages were open.
+#:
+#: `edit` (18) and `upload`/`delete` (8 each) still carry most of the traffic;
+#: the long tail is one or two sightings each. Unmeasured rights are not dropped
+#: -- see `_gadget_right_row` -- so this table is a labelling aid, not a filter.
+#:
+#: A measurement taken once decays without saying so, and this one describes
+#: pages other people edit. Every report now carries `declaredRightCount` and
+#: `unknownDeclaredRightCount`, so the share of declared rights this table
+#: cannot describe is a query rather than a re-reading of five wikis: while it
+#: stays at zero the twenty-one below are still the whole story, and the first
+#: run that reports otherwise names the rights to add.
 GADGET_RIGHT_VOCABULARY: dict[str, tuple[str, str]] = {
     "autoconfirmed": ("autoconfirmed", "Autoconfirmed users only"),
     "autopatrol": ("autopatrol", "Have edits auto-patrolled"),
+    "autoreview": ("autoreview", "Have edits auto-reviewed"),
     "block": ("block", "Block users"),
+    "bot": ("bot", "Bot accounts only"),
     "browsearchive": ("browse-archive", "Search deleted pages"),
+    "centralauth-rename": ("global-account-rename", "Rename global accounts"),
+    "centralauth-suppress": ("global-account-suppress", "Suppress global accounts"),
     "createpage": ("create-page", "Create pages"),
     "delete": ("delete", "Delete pages"),
+    "deletedhistory": ("deleted-history", "Read deleted page history"),
+    "deletedtext": ("deleted-text", "Read deleted page text"),
+    "deleterevision": ("revision-delete", "Delete or suppress revision data"),
     "edit": ("edit", "Edit pages"),
+    "editeditorprotected": ("edit-editor-protected", "Edit editor-protected pages"),
+    "editinterface": ("edit-interface", "Edit the site interface"),
+    "editmyuserjs": ("edit-my-user-js", "Edit your own JavaScript"),
+    "editprotected": ("edit-protected", "Edit protected pages"),
     "extendedconfirmed": ("extendedconfirmed", "Extended-confirmed users only"),
     "import": ("import", "Import pages"),
+    "ipinfo-view-full": ("view-ip-information", "View full IP information"),
     "item-merge": ("wikibase-item-merge", "Merge Wikibase items"),
     "item-redirect": ("wikibase-item-redirect", "Create Wikibase item redirects"),
     "markbotedits": ("mark-bot-edits", "Mark edits as bot edits"),
     "minoredit": ("minor-edit", "Mark edits as minor"),
     "move": ("move", "Move pages"),
+    "override-antispoof": ("override-username-check", "Override the username similarity check"),
     "patrol": ("patrol", "Patrol edits"),
+    "protect": ("protect", "Protect pages"),
+    "read": ("read", "Read pages"),
+    "review": ("review", "Review pending changes"),
     "rollback": ("rollback", "Rollback edits"),
     "sendemail": ("send-email", "Send email to users"),
+    "suppressredirect": ("suppress-redirect", "Move pages without leaving a redirect"),
     "templateeditor": ("template-editor", "Edit protected templates"),
     "undelete": ("undelete", "Undelete pages"),
     "upload": ("upload", "Upload files"),

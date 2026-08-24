@@ -1885,3 +1885,21 @@ def test_a_successful_scan_puts_a_long_backoff_back_to_zero(monkeypatch):
         assert row.status == "analyzed"
         assert row.attempts == 0
         assert row.next_attempt_at is None
+
+
+def test_a_right_the_analyzer_cannot_describe_is_named_in_the_run_log(capsys):
+    # Not an outcome and not a fault of the tool: the gate is stored either way.
+    # It is the analyzer's right vocabulary that is out of date, and a run is
+    # the only place a maintainer would notice without being told to look.
+    repository_scan._report_unknown_rights(
+        "check-user-helper", {"wikiPage": {"gadgetUnknownRights": ["checkuser", "oversight"]}}
+    )
+    err = capsys.readouterr().err
+    assert "check-user-helper" in err
+    assert "checkuser, oversight" in err
+
+
+def test_a_run_stays_quiet_when_every_declared_right_is_described(capsys):
+    for report in ({"wikiPage": {"gadgetUnknownRights": []}}, {"wikiPage": {}}, {}):
+        repository_scan._report_unknown_rights("tool", report)
+    assert capsys.readouterr().err == ""

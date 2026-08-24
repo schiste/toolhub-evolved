@@ -139,6 +139,20 @@ function evidenceList(rows) {
 	</details>`;
 }
 
+// `restricted` is the one finding category that does not describe the code. It
+// says the wiki serves this tool only to users holding the right, which is a
+// different claim from having seen the tool use it, and until this badge existed
+// the two rendered as the same row. The colour rules in organisms.css cannot
+// carry the distinction on their own: a reader who does not see colour, or who
+// sees one finding out of context, gets nothing from a border.
+/** @param {string} category */
+function categoryBadge(category) {
+	if (category !== "restricted") return "";
+	return `<span class="sync-badge sync-badge--local-draft">${esc(
+		t("sourceAnalysis.declaredRestriction", "Declared restriction")
+	)}</span>`;
+}
+
 /** @param {any} item */
 function findingItem(item) {
 	const category = String(item.category || "detected");
@@ -148,6 +162,7 @@ function findingItem(item) {
 		<div class="source-analysis__finding-head">
 			<strong>${esc(item.label || item.value)}</strong>
 			<span>
+				${categoryBadge(category)}
 				${sourceClasses ? `<span class="sync-badge sync-badge--local-draft">${esc(sourceClasses)}</span>` : ""}
 				<span class="sync-badge sync-badge--official">${confidence(item.confidence)}</span>
 			</span>

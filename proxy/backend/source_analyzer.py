@@ -42,6 +42,8 @@ from backend.source_analysis_common import (
     CONTEXT_RESERVE_QUOTAS,
     CONTEXT_RESERVE_SLOTS,
     CREDENTIAL_RE,
+    CSS_REMOTE_REF_RE,
+    CSS_SUFFIX,
     DECLARED_DEPENDENCY_SOURCE_CLASSES,
     DECLARED_TECHNOLOGY_CONFIDENCE,
     DOCUMENTATION_FILE_KINDS,
@@ -59,8 +61,14 @@ from backend.source_analysis_common import (
     GADGET_DEFAULT_OPTION,
     GADGET_DEFINITION_PAGE,
     GADGET_DEFINITION_PAGE_TITLE,
+    GADGET_DEPENDENCIES_OPTION,
+    GADGET_HIDDEN_OPTION,
+    GADGET_MODULE_CATEGORY,
+    GADGET_MODULE_CONFIDENCE,
+    GADGET_MODULE_ECOSYSTEM,
     GADGET_RIGHT_VOCABULARY,
     GADGET_RIGHTS_OPTION,
+    GADGET_SCOPE_OPTIONS,
     GEM_LOCK_RE,
     GEM_LOCK_VERSION_RE,
     GEM_RE,
@@ -644,6 +652,10 @@ def _scan_dependency_api_signals(
     mediawiki_clients = {
         "mediawiki-api",
         "mediawiki",
+        # The ResourceLoader spelling. It is the Action API client 61 of the 487
+        # measured gadgets pull in, and the exact-name test above would miss it
+        # -- no gadget depends on a module called plainly `mediawiki`.
+        "mediawiki.api",
         "mw-api",
         "mwclient",
         "pywikibot",
@@ -1645,15 +1657,24 @@ def _scan_actions(findings: dict[tuple[str, str], Finding], path: str, line_numb
             )
 
 
-def _gadget_right_row(right: str) -> tuple[str, str]:
-    """Return the value and label to report one declared right under.
+def _gadget_right_row(right: str) -> tuple[str, str, bool]:
+    """Return the value, label, and whether the vocabulary describes this right.
 
     An unmeasured right keeps its own name rather than being dropped. The five
     definition pages this vocabulary was built from are not every wiki, and a
     gadget limited to a right never seen before is the one a reader most needs
-    told about -- reporting it unlabelled is a smaller error than silence.
+    told about -- reporting it under its raw name is a smaller error than
+    silence.
+
+    The third value exists because that fallback used to be invisible. A right
+    the table describes and a right it has never seen produced findings of the
+    same shape, so the only difference a reader saw was that one label read as
+    jargon; and nothing counted how often it happened. Both halves are fixed
+    from this flag: the finding says plainly that the analyzer cannot describe
+    the right, and the report records the rate -- see `_wiki_page_row`.
     """
-    return GADGET_RIGHT_VOCABULARY.get(right, (right, right))
+    row = GADGET_RIGHT_VOCABULARY.get(right)
+    return (*row, True) if row is not None else (right, right, False)
 
 
 def _scan_gadget_declaration(
@@ -1668,18 +1689,47 @@ def _scan_gadget_declaration(
     `action=rollback` call still reads as moderation rather than being relabelled
     as a restriction by a line that only says who the gadget is served to.
 
-    `default` is not a right and is not reported as one. It says the gadget is
-    switched on for everyone rather than opted into, which is a statement about
-    reach; it travels on the wikiPage row and as a neutral signal, where it can
-    inform a reader without being scored as a permission.
+    `dependencies=` is the only dependency manifest a gadget has -- there is no
+    package.json on a wiki page -- so its modules are reported as dependencies
+    in their own `resourceloader` ecosystem. They route through `_put_dependency`
+    rather than straight to `_put` so a module that names an API client is read
+    as one by the same rule that reads npm and pypi clients, instead of by a
+    second copy of that rule that could drift from it.
+
+    `default`, `hidden` and the scope options are not rights and are not
+    reported as ones. They say how far the gadget reaches -- who gets it without
+    asking, who can refuse it, and where it loads -- which changes how much
+    every right here matters without being a right itself. They travel on the
+    wikiPage row and as a neutral signal, where they can inform a reader without
+    being scored as permissions.
     """
     entry = declaration.entry
     evidence_line = declaration.line
+    for raw in entry.values(GADGET_DEPENDENCIES_OPTION):
+        module = raw.strip()
+        if not module:
+            continue
+        _put_dependency(
+            findings,
+            ecosystem=GADGET_MODULE_ECOSYSTEM,
+            name=module,
+            category=GADGET_MODULE_CATEGORY,
+            confidence=GADGET_MODULE_CONFIDENCE,
+            reason="MediaWiki:Gadgets-definition loads this ResourceLoader module before the gadget runs.",
+            evidence=_evidence(GADGET_DEFINITION_PAGE_TITLE, declaration.line_number, evidence_line, module),
+        )
     for raw in entry.values(GADGET_RIGHTS_OPTION):
         right = raw.strip().lower()
         if not right:
             continue
-        value, label = _gadget_right_row(right)
+        value, label, described = _gadget_right_row(right)
+        reason = f"MediaWiki:Gadgets-definition serves this gadget only to users with the {right} right."
+        if not described:
+            # Confidence is unchanged: the wiki declared this gate as plainly as
+            # any other, and what is missing is this analyzer's description of
+            # it, not evidence. Saying so is the honest reading -- the raw name
+            # on its own looks like a label a reader failed to understand.
+            reason += " This analyzer has no description for that right."
         _put(
             findings,
             kind="accessRights",
@@ -1687,7 +1737,7 @@ def _scan_gadget_declaration(
             label=label,
             category=GADGET_DECLARED_RIGHT_CATEGORY,
             confidence=GADGET_DECLARED_RIGHT_CONFIDENCE,
-            reason=f"MediaWiki:Gadgets-definition serves this gadget only to users with the {right} right.",
+            reason=reason,
             evidence=_evidence(GADGET_DEFINITION_PAGE_TITLE, declaration.line_number, evidence_line, right),
         )
 
@@ -1791,6 +1841,43 @@ def _scan_browser_permissions(
             category="extension",
             confidence=0.9 if every_site else 0.8,
             reason="WebExtension manifest declares a host match pattern.",
+            evidence=_evidence(path, line_number, line, host),
+        )
+
+
+def _css_remote_host(reference: str) -> str:
+    """Return the host a stylesheet reference points at, or "" if it names none."""
+    _scheme, _slashes, rest = reference.partition("//")
+    host = rest.split("/", 1)[0].split("@")[-1].split(":", 1)[0].strip().lower()
+    return host if source_endpoints.HOSTNAME_RE.match(host) else ""
+
+
+def _scan_stylesheet(findings: dict[tuple[str, str], Finding], path: str, line_number: int, line: str) -> None:
+    """Record the third-party hosts one line of CSS makes the reader's browser fetch.
+
+    A warning rather than an endpoint, and deliberately. The endpoint bucket
+    answers "what does this tool talk to", and its static-asset filter keeps
+    interface icons out of that answer for good reason. This asks something
+    else: whose server learns a reader's address because a page they opened
+    happened to load this stylesheet. No script runs, nobody clicked, and on a
+    gadget declared `default` it happens for every reader on every page.
+
+    Wikimedia hosts are silent. upload.wikimedia.org and the CDN are the same
+    estate the reader is already on, so naming them would bury the one host
+    that is not.
+    """
+    for match in CSS_REMOTE_REF_RE.finditer(line):
+        host = _css_remote_host(match.group(1))
+        if not host or source_endpoints.family(host) != source_endpoints.FAMILY_EXTERNAL:
+            continue
+        _put(
+            findings,
+            kind="warnings",
+            value="stylesheet-third-party-request",
+            label="Stylesheet loads resources from a third-party host",
+            category="privacy",
+            confidence=0.85,
+            reason=f"A stylesheet fetches from {host}, so every reader's address reaches it without a script running.",
             evidence=_evidence(path, line_number, line, host),
         )
 
@@ -2277,24 +2364,79 @@ def _suggestions(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _gadget_scope_options(entry: wiki_sources.GadgetEntry) -> list[str]:
+    """Return the declared options that narrow where this gadget loads.
+
+    Option names rather than their values, because the values are namespace
+    numbers and skin keys that mean nothing outside the wiki, while the fact
+    that a limit exists at all is what stops `default` from being read as
+    "every reader". Reported in the vocabulary's order so two gadgets with the
+    same limits produce the same list.
+    """
+    return [option for option in GADGET_SCOPE_OPTIONS if entry.has(option)]
+
+
+def _declared_rights(entry: wiki_sources.GadgetEntry) -> list[str]:
+    """Return the rights `rights=` names, lowercased, deduplicated, in order."""
+    named = (raw.strip().lower() for raw in entry.values(GADGET_RIGHTS_OPTION))
+    return list(dict.fromkeys(right for right in named if right))
+
+
+def _unknown_declared_rights(entry: wiki_sources.GadgetEntry) -> list[str]:
+    """Return the declared rights GADGET_RIGHT_VOCABULARY has never seen.
+
+    GADGET_RIGHT_VOCABULARY is a measurement -- twenty-one rights, read off five
+    definition pages on one day -- and wikis add rights and gadgets change what
+    they gate on. Nothing re-measured it, so its accuracy could only decay
+    silently. This is the number that says when: every entry here is a right
+    the table was built without, so a rate that used to be zero and is not any
+    more says the pages have moved on and the vocabulary should be read again.
+    """
+    return [right for right in _declared_rights(entry) if right not in GADGET_RIGHT_VOCABULARY]
+
+
 def _wiki_page_row(
     page: wiki_sources.WikiSource | None,
     declaration: wiki_sources.GadgetDeclaration | None = None,
 ) -> dict[str, object]:
     """Render the resolved source page for the report, or {} when there is none.
 
-    `gadgetDefault` rides here rather than in a findings bucket because it is
-    not a permission: it says the gadget is on for everyone who has not turned
-    it off, which changes how much every other finding matters without being one
-    itself. Absent rather than false when no definition line was read, so
-    "not measured" and "declared opt-in" stay distinguishable.
+    The three gadget fields ride here rather than in a findings bucket because
+    none of them is a permission: together they say how far the gadget reaches,
+    which changes how much every other finding matters without being one itself.
+    `gadgetDefault` is whether readers get it without asking, `gadgetHidden`
+    whether they can turn it off in preferences, and `gadgetScope` the limits
+    that keep `default` from meaning the whole wiki.
+
+    `gadgetRights` and `gadgetUnknownRights` are here for a different reason:
+    they are this report's contribution to a measurement about the analyzer
+    rather than about the tool. The rights are already reported as findings, but
+    a finding cannot say what share of the declared rights the vocabulary could
+    describe, and that share is the only signal that GADGET_RIGHT_VOCABULARY has
+    fallen behind the wikis. Both lists carry raw names, because a name the
+    table cannot translate is exactly what has to be read back.
+
+    Every field is absent rather than false or empty when no definition line was
+    read, so "not measured" and "declared opt-in" stay distinguishable.
     """
     if page is None:
         return {}
     row: dict[str, object] = {"domain": page.domain, "title": page.title, "kind": page.kind}
     if declaration is not None:
         row["gadgetDefault"] = declaration.entry.has(GADGET_DEFAULT_OPTION)
+        row["gadgetHidden"] = declaration.entry.has(GADGET_HIDDEN_OPTION)
+        row["gadgetScope"] = _gadget_scope_options(declaration.entry)
+        row["gadgetRights"] = _declared_rights(declaration.entry)
+        row["gadgetUnknownRights"] = _unknown_declared_rights(declaration.entry)
     return row
+
+
+def _wiki_page_strings(row: object, key: str) -> list[str]:
+    """Return one list of names off the wikiPage row, or [] when it has none."""
+    if not isinstance(row, dict):
+        return []
+    values = row.get(key)
+    return [str(item) for item in values] if isinstance(values, list) else []
 
 
 def analyze_source_files(  # noqa: PLR0913 - each argument is a separate thing the caller knows;
@@ -2340,6 +2482,7 @@ def analyze_source_files(  # noqa: PLR0913 - each argument is a separate thing t
         wants_endpoints = source_class != "lockfile"
         endpoints_need_a_call = SOURCE_CLASS_WEIGHTS[source_class] < ENDPOINT_TRUSTED_SOURCE_WEIGHT
         extension_manifest = _is_extension_manifest(source_file)
+        stylesheet = source_file.path.lower().endswith(CSS_SUFFIX)
         for line_number, raw_line in enumerate(source_file.content.splitlines() or [""], start=1):
             line = _bounded_line(raw_line)
             if wants_endpoints:
@@ -2355,6 +2498,8 @@ def analyze_source_files(  # noqa: PLR0913 - each argument is a separate thing t
                 findings, source_file.path, line_number, line, extension_manifest=extension_manifest
             )
             _scan_warnings(findings, source_file.path, line_number, line)
+            if stylesheet:
+                _scan_stylesheet(findings, source_file.path, line_number, line)
     if gadget_declaration is not None:
         _scan_gadget_declaration(findings, gadget_declaration)
     _reconcile_technology_packages(findings)
@@ -2398,6 +2543,12 @@ def analyze_source_files(  # noqa: PLR0913 - each argument is a separate thing t
         "technologyCount": len(report["technology"]),
         "warningCount": len(report["warnings"]),
         "writeActionsDetected": _has_write_access(report["accessRights"], SCORING_MIN_CONFIDENCE),
+        # A count and its denominator, not a verdict on this tool. Stored on
+        # every report so the share of declared rights this analyzer cannot
+        # describe is one query away, instead of a re-reading of the five
+        # definition pages nobody schedules.
+        "declaredRightCount": len(_wiki_page_strings(report["wikiPage"], "gadgetRights")),
+        "unknownDeclaredRightCount": len(_wiki_page_strings(report["wikiPage"], "gadgetUnknownRights")),
         **_assessment_summary(report["assessments"]),
         **_health_summary(report["healthCore"]),
     }

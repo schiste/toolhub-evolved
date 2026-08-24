@@ -1265,6 +1265,7 @@
 	"sourceAnalysis.copied": "Suggested patch copied.",
 	"sourceAnalysis.copyPatch": "Copy patch",
 	"sourceAnalysis.copyUnavailable": "Patch copy is unavailable.",
+	"sourceAnalysis.declaredRestriction": "Declared restriction",
 	"sourceAnalysis.dependencies": "Dependencies",
 	"sourceAnalysis.endpoints": "Endpoints",
 	"sourceAnalysis.evidence": "Evidence",

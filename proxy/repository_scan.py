@@ -874,6 +874,7 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
                 acquired.context, url=url, provider=provider, commit_sha=head, record=record
             ),
         )
+        _report_unknown_rights(tool_name, report)
         with db.session_scope() as s:
             user = _scanner_user(s)
             stored = SourceAnalysisReport(
@@ -934,6 +935,27 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
 #: failure to scan: the report is stored and every lane that reads it will see
 #: it. Counted beside "analyzed" rather than instead of it.
 CACHES_STALE = "caches_stale"
+
+
+def _report_unknown_rights(tool_name: str, report: dict[str, Any]) -> None:
+    """Name any right a gadget declared that the analyzer's vocabulary lacks.
+
+    Nothing is wrong with the tool, so this is not counted as an outcome and
+    does not change the verdict: the gate is reported either way, under its raw
+    name. What is wrong is this analyzer's table of right descriptions, which
+    was measured once off five definition pages and has no other way to say it
+    has fallen behind the wikis. The share is on every stored report; this line
+    is so that a maintainer reading a run notices without being asked to query.
+
+    Rare by construction -- across the pages the vocabulary was built from it
+    would never fire -- which is what makes it worth a line each time it does.
+    """
+    page = report.get("wikiPage")
+    unknown = page.get("gadgetUnknownRights") if isinstance(page, dict) else None
+    if not unknown:
+        return
+    named = ", ".join(str(right) for right in unknown)
+    sys.stderr.write(f"repository-scan: {tool_name} declares rights this analyzer cannot describe: {named}\n")
 
 
 def _refresh_caches(tool_name: str) -> bool:
