@@ -26,7 +26,15 @@ import { test } from "vitest";
 
 import { ROUTE_STYLES } from "../../public_html/views/router.js";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// Stryker runs this suite from a copy of the repo under .stryker-tmp/sandbox-*,
+// with every file in the shard's mutate scope rewritten for instrumentation. The
+// assertions below are about the code as authored -- which view can emit which
+// class -- so they read the real tree rather than that copy. Reading the copy is
+// both wrong (it is not what ships) and slow enough to blow the 5s test timeout,
+// since instrumentation multiplies the size of every file it touches.
+const ROOT = path
+	.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+	.replace(/[/\\]\.stryker-tmp[/\\]sandbox-[^/\\]+$/, "");
 const VIEWS = path.join(ROOT, "public_html/views");
 const STYLES = path.join(ROOT, "public_html/styles");
 

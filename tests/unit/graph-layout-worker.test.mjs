@@ -4,6 +4,19 @@ import { performance } from "node:perf_hooks";
 import { test } from "vitest";
 import { simulate } from "../../public_html/lib/workers/graph-layout-worker.js";
 
+// Stryker runs this suite from a copy of the repo under .stryker-tmp/sandbox-*,
+// against a `simulate` rewritten to report which expressions each test reached.
+// That bookkeeping costs real time -- the 2,000-node layout below lands around 6s
+// instrumented against 1s as authored -- which breaks the budget test twice over:
+// the assertion is false, and the run does not even reach it before vitest's 5s
+// timeout kills it. Neither says anything about the code. Left alone they failed
+// the dry run, and a failed dry run aborts the whole shard, so the nine other views
+// sharing it stopped being mutated over one stopwatch. As authored the budget
+// stands; instrumented the clock is ignored and only correctness is asserted, which
+// is the half that kills mutants anyway.
+const INSTRUMENTED = import.meta.url.includes("/.stryker-tmp/sandbox-");
+const BUDGET_TIMEOUT = INSTRUMENTED ? 60_000 : 5_000;
+
 function seededNodes(count) {
 	return Array.from({ length: count }, (_, index) => {
 		const angle = (index / count) * Math.PI * 2;
@@ -53,24 +66,28 @@ test("worker layout is deterministic and pulls shared facets together", () => {
 	assert.notDeepEqual(first[5], first[4]);
 });
 
-test("Barnes-Hut layout keeps a 2,000-node overview within its worker budget", () => {
-	const nodes = seededNodes(2000);
-	const started = performance.now();
-	const positions = simulate({
-		width: 1200,
-		height: 800,
-		nodes,
-		edges: [],
-		groupBy: "project",
-		groupMeta: [
-			{ id: 0, size: 1000 },
-			{ id: 1, size: 1000 }
-		],
-		ticks: 40
-	});
-	const elapsed = performance.now() - started;
+test(
+	"Barnes-Hut layout keeps a 2,000-node overview within its worker budget",
+	() => {
+		const nodes = seededNodes(2000);
+		const started = performance.now();
+		const positions = simulate({
+			width: 1200,
+			height: 800,
+			nodes,
+			edges: [],
+			groupBy: "project",
+			groupMeta: [
+				{ id: 0, size: 1000 },
+				{ id: 1, size: 1000 }
+			],
+			ticks: 40
+		});
+		const elapsed = performance.now() - started;
 
-	assert.equal(positions.length, nodes.length);
-	assert.ok(positions.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
-	assert.ok(elapsed < 5000, `2,000-node worker layout took ${Math.round(elapsed)}ms`);
-});
+		assert.equal(positions.length, nodes.length);
+		assert.ok(positions.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
+		if (!INSTRUMENTED) assert.ok(elapsed < 5000, `2,000-node worker layout took ${Math.round(elapsed)}ms`);
+	},
+	BUDGET_TIMEOUT
+);
