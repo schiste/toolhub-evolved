@@ -10,6 +10,7 @@ from backend import (
     userscript_projection,
     userscript_sweep,
     userscript_toolinfo,
+    wiki_edit_dates,
 )
 from backend.wikimedia_delivery import WikimediaClient
 
@@ -86,6 +87,14 @@ def main() -> int:
     with no replica credentials that step writes nothing and the collapse falls
     back to discovery order -- which is why it reports whether it reached a
     replica separately from how many rows it wrote.
+
+    Last-edit dates are stamped on the same trip and offered for every page on
+    every run. The sweep itself dates the pages it fetches, but a watch fetches
+    only what moved and a sweep skips pages whose latest revision it already
+    holds -- so the pages the sweep can date are precisely the ones already
+    dated, and everything ingested before this field existed would stay blank
+    forever. One replica query per wiki dates the whole corpus instead, and
+    writes only where the answer moved something forward.
     """
     full = os.environ.get("USERSCRIPT_SWEEP", "").strip().lower() in {"1", "true", "yes"}
     limit = _int_env("USERSCRIPT_LIMIT", 0)
@@ -133,6 +142,12 @@ def main() -> int:
             "userscript-creation-dates: "
             f"wiki={wiki} replica={'yes' if wiki in stamped else 'no'} "
             f"stamped={stamped.get(wiki, 0)}\n",
+        )
+        edited = wiki_edit_dates.backfill_scripts([wiki])
+        sys.stdout.write(
+            "userscript-edit-dates: "
+            f"wiki={wiki} replica={'yes' if wiki in edited else 'no'} "
+            f"stamped={edited.get(wiki, 0)}\n",
         )
         ranked = userscript_projection.project(wiki)
         sys.stdout.write(

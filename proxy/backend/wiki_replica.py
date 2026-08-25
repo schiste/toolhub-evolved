@@ -176,6 +176,32 @@ GADGET_CREATION_QUERY = (
     "GROUP BY p.page_id"
 )
 
+# The other end of the same history: when each page was last edited. Joined on
+# `page_latest` rather than aggregated with MAX(rev_timestamp), which the two
+# queries above have to do because there is no `page_first`. `page_latest` is
+# the current revision's id, so this is one primary-key lookup per page instead
+# of a scan of its whole history -- on a page edited ten thousand times the
+# difference is the entire cost of the query, and the answer is the same.
+#
+# A "last edit" and MediaWiki's own `page_touched` are not the same thing.
+# `page_touched` also moves when a template the page includes changes, or
+# when a null edit refreshes the parser cache, and a catalogue that published
+# it would report tools as freshly updated on days nobody touched their code.
+# The revision's timestamp is the date somebody actually changed the source.
+SCRIPT_EDIT_QUERY = (
+    "SELECT p.page_title, r.rev_timestamp "
+    "FROM page p JOIN revision r ON r.rev_id = p.page_latest "
+    "WHERE p.page_namespace = %s AND (p.page_title LIKE %s OR p.page_title LIKE %s)"
+)
+
+#: The same question asked of gadget code, narrowed the way
+#: `GADGET_CREATION_QUERY` is and for the same reasons.
+GADGET_EDIT_QUERY = (
+    "SELECT p.page_title, r.rev_timestamp "
+    "FROM page p JOIN revision r ON r.rev_id = p.page_latest "
+    "WHERE p.page_namespace = %s AND p.page_title LIKE %s"
+)
+
 #: Content models the census treats as scripts. Namespace-2 pages always record
 #: an explicit model -- measured on 2026-08-22 across metawiki, frwiki and
 #: enwiki, not one row leaves `page_content_model` NULL -- so matching on it is
@@ -251,7 +277,7 @@ def read_page_titles(rows: Iterable[Sequence[Any]]) -> tuple[tuple[str, str, str
     """Give each page its content model, title, and current revision id, in order.
 
     The order is the answer, not an incidental property of it, so this returns a
-    sequence rather than the mapping `read_creation_dates` returns: a dict keyed
+    sequence rather than the mapping `read_page_stamps` returns: a dict keyed
     by title would lose the creation ordering the query went to the trouble of
     producing.
 
@@ -291,8 +317,15 @@ def iso_timestamp(stamp: str) -> str:
     return f"{stamp[0:4]}-{stamp[4:6]}-{stamp[6:8]}T{stamp[8:10]}:{stamp[10:12]}:{stamp[12:14]}Z"
 
 
-def read_creation_dates(rows: Iterable[Sequence[Any]]) -> dict[str, str]:
-    """Map each normalized page title to its MediaWiki creation timestamp."""
+def read_page_stamps(rows: Iterable[Sequence[Any]]) -> dict[str, str]:
+    """Map each normalized page title to one MediaWiki timestamp.
+
+    Which timestamp is the query's business, not this function's: the creation
+    queries below select the oldest revision and the edit queries the newest,
+    and both come back as the same two columns. Named for the shape rather than
+    for either meaning so that neither road reads its rows through a function
+    that claims to be doing the other one's job.
+    """
     found: dict[str, str] = {}
     for row in rows:
         title, stamp = _decoded(row[0]), _decoded(row[1])
@@ -385,7 +418,7 @@ def creation_dates_for(
         CREATION_QUERY,
         [USER_NAMESPACE, *TITLE_PATTERNS],
     )
-    return read_creation_dates(rows)
+    return read_page_stamps(rows)
 
 
 def gadget_creation_dates_for(
@@ -408,7 +441,56 @@ def gadget_creation_dates_for(
         GADGET_CREATION_QUERY,
         [MEDIAWIKI_NAMESPACE, f"{GADGET_TITLE_PREFIX}%"],
     )
-    return read_creation_dates(rows)
+    return read_page_stamps(rows)
+
+
+def script_edit_dates_for(
+    dbname: str,
+    *,
+    user: Credentials,
+    connect: Connect = open_connection,
+) -> dict[str, str]:
+    """Return every user-space script page's last edit timestamp, by normalized title.
+
+    Asked of the replica even though the census already learns the same fact
+    from the API, because the two answer for different sets. The API tells us
+    when a page was last edited only as a side effect of fetching its body, and
+    a sweep deliberately does not fetch a page whose `page_latest` has not
+    moved. That is what makes a second sweep cheap, and it means a page stored
+    before this column existed would keep its blank until somebody happened to
+    edit it. One indexed query per wiki dates the whole corpus instead.
+    """
+    rows = _rows(
+        connect,
+        user,
+        target_for(dbname),
+        SCRIPT_EDIT_QUERY,
+        [USER_NAMESPACE, *TITLE_PATTERNS],
+    )
+    return read_page_stamps(rows)
+
+
+def gadget_edit_dates_for(
+    dbname: str,
+    *,
+    user: Credentials,
+    connect: Connect = open_connection,
+) -> dict[str, str]:
+    """Return every gadget code page's last edit timestamp, keyed as it is stored.
+
+    The gadget census has no API road to this at all: it reads one definition
+    page per wiki and never fetches the code, so without this query a gadget
+    rewritten every week and one untouched since 2009 are indistinguishable to
+    the catalogue.
+    """
+    rows = _rows(
+        connect,
+        user,
+        target_for(dbname),
+        GADGET_EDIT_QUERY,
+        [MEDIAWIKI_NAMESPACE, f"{GADGET_TITLE_PREFIX}%"],
+    )
+    return read_page_stamps(rows)
 
 
 def script_titles_for(

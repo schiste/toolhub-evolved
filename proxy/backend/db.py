@@ -269,6 +269,8 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # Rewritten whole by the next projection run, like every other
             # column here; it only has to exist before that run does.
             "created_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
+            # Likewise rewritten whole by the next projection run.
+            "touched_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
         },
         "user_script_directory_members": {
             "script_id": "INTEGER NULL",
@@ -291,6 +293,11 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # connection publishes no gadget creation dates and nothing else
             # changes.
             "created_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
+            # Empty until a census reaches the Wiki Replicas, on the same terms:
+            # a gadget with no last-edit date publishes no `modified_date` and
+            # simply sorts as unknown, rather than being dated from the day this
+            # catalogue happened to read the wiki.
+            "touched_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
         },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",

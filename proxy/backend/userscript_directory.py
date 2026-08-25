@@ -138,6 +138,11 @@ class Candidate:
     fingerprint: str
     sketch: str = ""
     created_at_wiki: str = ""
+    # The page's last edit, carried through untouched. Unlike `created` it is
+    # never stood in for: there is no ordering that needs it, so a page the
+    # replica has not dated simply has no last-edit date and the catalogue
+    # publishes none.
+    touched_at_wiki: str = ""
 
     @property
     def rank(self) -> tuple[str, str]:

@@ -229,6 +229,29 @@ def test_a_gadget_whose_stored_stamp_is_unreadable_publishes_no_date():
     assert "created_date" not in gadget_toolinfo.toolinfo_record(a_gadget(created_at_wiki="whenever"))
 
 
+def test_a_dated_gadget_publishes_its_latest_revision_as_a_modification_date():
+    record = gadget_toolinfo.toolinfo_record(a_gadget(touched_at_wiki="20260220091500"))
+
+    assert record["modified_date"] == "2026-02-20T09:15:00Z"
+
+
+def test_an_undated_gadget_publishes_no_modification_date_at_all():
+    """`last_seen_at` is when this census read the wiki, not when the gadget moved."""
+    assert "modified_date" not in gadget_toolinfo.toolinfo_record(a_gadget())
+
+
+def test_the_two_dates_are_independent_of_each_other():
+    """A gadget written in 2007 and rewritten last month says both, and neither
+    date is derived from the other.
+    """
+    record = gadget_toolinfo.toolinfo_record(
+        a_gadget(created_at_wiki="20070311120000", touched_at_wiki="20260220091500"),
+    )
+
+    assert record["created_date"] == "2007-03-11T12:00:00Z"
+    assert record["modified_date"] == "2026-02-20T09:15:00Z"
+
+
 def test_a_gadget_shouting_its_suffix_is_still_javascript():
     # The definition parser accepts the suffix casefolded, so this side must too
     # or the file is stored and its language silently lost.

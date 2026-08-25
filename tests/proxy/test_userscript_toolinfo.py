@@ -41,6 +41,7 @@ def a_script(
     wiki=FRWIKI,
     demand=3,
     created="",
+    touched="",
 ):
     """Store one directory entry and the page it was projected from."""
     title = f"User:{owner}/{basename}"
@@ -56,6 +57,7 @@ def a_script(
                 demand=demand,
                 position=1,
                 created_at_wiki=created,
+                touched_at_wiki=touched,
             )
         )
     return title
@@ -120,6 +122,30 @@ def test_a_script_whose_stored_stamp_is_unreadable_publishes_no_date():
     userscript_toolinfo.synchronize(FRWIKI)
 
     assert "created_date" not in catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
+
+
+def test_a_dated_script_publishes_its_pages_latest_revision_as_a_modification_date():
+    a_script(touched="20251104071200")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    assert catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]["modified_date"] == "2025-11-04T07:12:00Z"
+
+
+def test_an_undated_script_publishes_no_modification_date_at_all():
+    """There is no ordering stand-in for this one, so there is nothing to leak."""
+    a_script()
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    assert "modified_date" not in catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
+
+
+def test_a_script_written_once_and_never_touched_since_says_both_dates():
+    a_script(created="20090412183000", touched="20090412183000")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    record = catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
+    assert record["created_date"] == "2009-04-12T18:30:00Z"
+    assert record["modified_date"] == "2009-04-12T18:30:00Z"
 
 
 def test_the_row_is_marked_as_ours_so_a_catalog_snapshot_leaves_it_alone():

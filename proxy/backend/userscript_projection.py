@@ -111,6 +111,7 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
         UserScriptPage.owner,
         UserScriptPage.basename,
         UserScriptPage.created_at_wiki,
+        UserScriptPage.touched_at_wiki,
         UserScriptPage.discovery_rank,
         UserScriptPage.fingerprint,
         UserScriptPage.sketch,
@@ -126,10 +127,11 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
             basename=basename,
             created=created_at_wiki or _sort_key(discovery_rank),
             created_at_wiki=created_at_wiki,
+            touched_at_wiki=touched_at_wiki,
             fingerprint=fingerprint,
             sketch=sketch,
         )
-        for title, owner, basename, created_at_wiki, discovery_rank, fingerprint, sketch in rows
+        for title, owner, basename, created_at_wiki, touched_at_wiki, discovery_rank, fingerprint, sketch in rows
     ]
 
 
@@ -259,6 +261,7 @@ def _write(
                     instances=origin.instances,
                     position=position,
                     created_at_wiki=origin.original.created_at_wiki,
+                    touched_at_wiki=origin.original.touched_at_wiki,
                     computed_at=now,
                 ),
             )

@@ -114,10 +114,11 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
     about -- description, licence, audiences, a bug tracker -- are absent
     rather than filled with a plausible guess.
 
-    `created_date` is the one field the declaration does not carry itself: it
-    comes from the code pages' own history, stamped on the inventory row by
-    `backend.gadget_creation_dates`. It is still a transcription -- the wiki
-    recorded that revision -- and it is omitted, never guessed, when blank.
+    `created_date` and `modified_date` are the two fields the declaration does
+    not carry itself: they come from the code pages' own history, stamped on the
+    inventory row by `backend.gadget_creation_dates` and `backend.wiki_edit_dates`.
+    Both are still transcriptions -- the wiki recorded those revisions -- and
+    both are omitted, never guessed, when blank.
     """
     pages = list(gadget.pages or [])
     record: dict[str, Any] = {
@@ -132,6 +133,13 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
         # gadget began to exist, not when this catalogue noticed it. Absent
         # rather than approximated wherever no replica has answered.
         record["created_date"] = created
+    if touched := wiki_replica.iso_timestamp(gadget.touched_at_wiki or ""):
+        # The newest current revision among the code pages: when the gadget was
+        # last actually changed. Distinct from `last_seen_at` on the inventory
+        # row, which is when this catalogue last read the wiki -- publishing
+        # that would report every gadget as updated on whatever schedule the
+        # census happens to run.
+        record["modified_date"] = touched
     if pages:
         record["repository"] = wiki_sources.page_url(gadget.wiki, f"{wiki_sources.GADGET_PREFIX}{pages[0]}")
     if languages := _languages(pages):

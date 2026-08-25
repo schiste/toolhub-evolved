@@ -1750,6 +1750,12 @@ class UserScriptDirectoryEntry(Base):
     # without joining back. A MediaWiki timestamp, or empty where the replica
     # has never answered for that page.
     created_at_wiki: Mapped[str] = mapped_column(String(32), default="")
+    # The original page's last edit, copied from `UserScriptPage` at projection
+    # time for the same reason as the line above. The original's own date, not
+    # the newest across the pages folded onto it: an entry stands for one
+    # script, and a near-copy somebody edited last night says nothing about
+    # whether the script itself moved.
+    touched_at_wiki: Mapped[str] = mapped_column(String(32), default="")
     computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -1840,6 +1846,14 @@ class WikiGadget(Base):
     # connection has answered for this wiki yet, so a deployment without
     # `replica.my.cnf` stays correct and simply publishes no creation date.
     created_at_wiki: Mapped[str] = mapped_column(String(32), default="")
+    # When the gadget's code was last changed: the newest current-revision
+    # timestamp among its declared pages. The definition page is silent about
+    # this -- a gadget rewritten last week and one untouched since 2009 declare
+    # themselves identically -- and `last_seen_at` below is when this catalogue
+    # last read the wiki, which is a fact about our schedule and not about the
+    # gadget. Empty where no replica has answered, and published as
+    # `modified_date` only when it is not.
+    touched_at_wiki: Mapped[str] = mapped_column(String(32), default="")
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     # Set when a definition page no longer declares this gadget. Kept rather

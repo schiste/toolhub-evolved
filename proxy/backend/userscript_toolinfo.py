@@ -138,6 +138,11 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "") ->
     never dated the page -- the directory has a stand-in for that case, but it
     is an ordering device and is not a date anybody can be shown.
 
+    `modified_date` is the same page's latest revision, and is the field that
+    answers whether a script is still looked after. It has no stand-in at all:
+    nothing orders by it, so an undated page publishes no date rather than
+    borrowing one from when this catalogue last read the wiki.
+
     `_lifecycle` is the exception, and is marked as one by its underscore: it is
     Evolved's reading of the directory's tier rather than anything the wiki
     published.
@@ -153,6 +158,8 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "") ->
     }
     if created := wiki_replica.iso_timestamp(entry.created_at_wiki or ""):
         record["created_date"] = created
+    if touched := wiki_replica.iso_timestamp(entry.touched_at_wiki or ""):
+        record["modified_date"] = touched
     if entry.owner:
         record["author"] = [{"name": entry.owner, "wiki_username": entry.owner}]
     if languages := _languages(entry.basename, content_model):

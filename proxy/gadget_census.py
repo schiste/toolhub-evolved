@@ -4,7 +4,7 @@
 import os
 import sys
 
-from backend import gadget_creation_dates, gadget_inventory, gadget_toolinfo, job_runner
+from backend import gadget_creation_dates, gadget_inventory, gadget_toolinfo, job_runner, wiki_edit_dates
 from backend.wikimedia_delivery import WikimediaClient
 
 DEFAULT_WIKIS = "fr.wikipedia.org,meta.wikimedia.org"
@@ -25,6 +25,10 @@ def main() -> int:
 
     Creation dates are stamped between the two passes, so a gadget dated for the
     first time publishes that date on the same tick rather than the next one.
+    Last-edit dates are stamped alongside them, and unlike creation dates they
+    are re-asked for every gadget on every tick: a definition page does not
+    change when the code it points at is rewritten, so the inventory pass can
+    report a gadget entirely unchanged on the very run its source moved.
 
     The catalogue pass follows every read, including one that changed nothing
     and one that failed. It talks to no wiki -- it rebuilds records from what
@@ -50,6 +54,12 @@ def main() -> int:
                 "gadget-creation-dates: "
                 f"wiki={wiki} replica={'yes' if stamped else 'no'} "
                 f"stamped={stamped.get(wiki, 0)}\n",
+            )
+            edited = wiki_edit_dates.backfill_gadgets([wiki])
+            sys.stdout.write(
+                "gadget-edit-dates: "
+                f"wiki={wiki} replica={'yes' if wiki in edited else 'no'} "
+                f"stamped={edited.get(wiki, 0)}\n",
             )
             catalogued = gadget_toolinfo.synchronize(wiki)
             sys.stdout.write(

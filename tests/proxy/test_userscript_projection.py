@@ -39,7 +39,7 @@ def _database():
         yield
 
 
-def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=False, created="", body=""):
+def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=False, created="", touched="", body=""):
     """Store one census page, filling in what the projection reads."""
     with db.session_scope() as session:
         session.add(
@@ -53,6 +53,7 @@ def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=F
                 sketch=userscripts.sketch(body),
                 discovery_rank=rank,
                 created_at_wiki=created,
+                touched_at_wiki=touched,
                 deleted_at=utcnow() if deleted else None,
             ),
         )
@@ -381,6 +382,36 @@ def test_the_date_travels_from_the_original_not_from_the_copy_that_files_it():
     page("User:Aaa/tool.js", rank=1, fingerprint="same", created="20090101000000")
     projection.project(FRWIKI)
     assert stamps() == {"User:Aaa/tool.js": "20090101000000"}
+
+
+def edit_stamps():
+    """The raw wiki last-edit stamp each frwiki entry carries, keyed by title."""
+    with db.session_scope() as session:
+        rows = session.query(UserScriptDirectoryEntry).filter(UserScriptDirectoryEntry.wiki == FRWIKI).all()
+        return {row.title: row.touched_at_wiki for row in rows}
+
+
+def test_the_entry_carries_the_last_edit_the_wiki_reported():
+    page("User:Aaa/tool.js", rank=0, touched="20251104071200")
+    projection.project(FRWIKI)
+    assert edit_stamps() == {"User:Aaa/tool.js": "20251104071200"}
+
+
+def test_an_unedited_page_carries_no_stand_in_for_its_last_edit():
+    """Nothing orders by this one, so there is no fiction to leak into it."""
+    page("User:Aaa/tool.js", rank=7)
+    projection.project(FRWIKI)
+    assert edit_stamps() == {"User:Aaa/tool.js": ""}
+
+
+def test_the_last_edit_is_the_originals_not_the_newest_across_the_group():
+    """An entry stands for one script. Somebody editing a near-copy last night
+    says nothing about whether the script itself moved.
+    """
+    page("User:Zed/tool.js", rank=0, fingerprint="same", created="20140101000000", touched="20260801000000")
+    page("User:Aaa/tool.js", rank=1, fingerprint="same", created="20090101000000", touched="20180101000000")
+    projection.project(FRWIKI)
+    assert edit_stamps() == {"User:Aaa/tool.js": "20180101000000"}
 
 
 def test_another_wikis_directory_is_left_alone():

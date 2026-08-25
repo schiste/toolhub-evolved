@@ -147,14 +147,14 @@ def test_a_row_missing_either_half_is_skipped():
 
 def test_creation_dates_are_read_as_text_whatever_the_driver_returns():
     rows = ((b"Hiob/monobook.js", b"20090701235434"), ("A/b.js", 20040528131424))
-    assert wiki_replica.read_creation_dates(rows) == {
+    assert wiki_replica.read_page_stamps(rows) == {
         "Hiob/monobook.js": "20090701235434",
         "A/b.js": "20040528131424",
     }
 
 
 def test_a_page_with_no_surviving_revision_is_left_out():
-    assert wiki_replica.read_creation_dates(((b"A/b.js", None),)) == {}
+    assert wiki_replica.read_page_stamps(((b"A/b.js", None),)) == {}
 
 
 # --- the queries themselves ------------------------------------------------
