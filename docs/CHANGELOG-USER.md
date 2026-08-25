@@ -1,12 +1,13 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-statistics-page-stops-taking-the-site-down -->
-<!-- Release title: The Statistics Page Stops Taking the Site Down -->
-<!-- Source range: c24a0353..ab96b917 (5 commits) -->
+<!-- Release id: a-lens-for-the-whole-page -->
+<!-- Release title: A Lens for the Whole Page -->
+<!-- Source range: 74af2958..eb22a5b6 (1 commit) -->
 
 # What's New for Users
 
-- The site stops failing while you are using it. Every so often a page would return an error, or simply hang, for no reason you could see -- and it was rarely the page you were on that caused it. The catalog statistics are assembled from every tool, every person and every relationship in the local copy of the catalog, and until now that assembly could happen inside somebody's request. Whoever asked first paid for it, and if the work grew large enough the whole web service was stopped and restarted underneath everybody. That is the error you were seeing on other pages.
-- The statistics page answers immediately instead of building itself while you wait. The figures were being recomputed at most every six hours but advertised as good for fifteen minutes, so most visitors arrived just after they expired and were made to rebuild them -- around thirteen seconds of work, in front of a spinner, for a page that is the same for everyone. The numbers are now prepared in the background every ten minutes and simply handed over when you ask.
-- When the background preparation falls behind, you get the figures anyway. Rather than making one unlucky visitor wait for a rebuild, the page shows the most recent set it has, with the time it was produced, which is already displayed on the page. Only if that set is more than six hours old -- meaning the background work has genuinely stopped -- does anyone rebuild it, because at that point the alternative is numbers nobody should trust.
-- The whole catalog no longer has to fit in memory at once to be counted. Producing the figures used to gather all 16,827 tools into a single structure before counting anything, which is what pushed the server over its limit. It now reads the catalog in small batches and keeps only the running totals, so the cost stays flat as the catalog grows. The published numbers are unchanged -- every one of them is checked against a recorded copy of the previous output.
+- The statistics page can now be read for user scripts and gadgets alone, or for registered tools alone. It is the whole page that changes, not one chart: the tool count, every documentation percentage, the verified-author and verified-maintainer coverage, the relationship figures and the unresolved-attribution funnel are all recounted against whichever set you picked.
+- Until now only the creation-year chart could be narrowed, which left the narrowed chart surrounded by numbers that had not moved. A reader could not tell which figures on the page applied to what they were looking at, and the most interesting questions -- how well documented the wiki lane actually is, how much of it anyone has verified -- had no answer on the page at all.
+- Switching is instant. All three readings are prepared together and arrive in the same response, so choosing one redraws the page immediately, without a spinner, and without ever showing you one lane's chart beside another lane's totals.
+- The two lanes read very differently, which is the point. Registered tools carry descriptions, URLs, repositories and verified people at a far higher rate than user scripts and gadgets, most of which arrived from a wiki page with little more than a title and a first-revision date. Read as a single average, each was hiding the other.
+- A long-standing miscount is fixed along the way. An unresolved author name left behind by a tool the catalog no longer holds was still being counted in the unresolved-labels total. It is no longer counted, under any lens.
