@@ -1,7 +1,7 @@
 {
   "schema_version": "aethyme-onboarding-v1",
   "repo": {
-    "name": "migrate-toolhub-evolved-to-official-aeth",
+    "name": "stop-statistics-oom-killing-the-webservi",
     "root": ".",
     "kind": "repository",
     "languages": [
@@ -78,6 +78,12 @@
       "confidence": "high"
     },
     {
+      "path": "node_modules",
+      "role": "generated_or_vendor",
+      "reason": "generated output or vendored dependencies",
+      "confidence": "high"
+    },
+    {
       "path": "tests",
       "role": "tests",
       "reason": "conventional test directory",
@@ -108,7 +114,12 @@
       "confidence": "medium"
     }
   },
-  "caution_zones": [],
+  "caution_zones": [
+    {
+      "path": "node_modules",
+      "reason": "likely generated, vendored, fixture, or migration-heavy area"
+    }
+  ],
   "navigation_recipes": [
     {
       "purpose": "Broad repository orientation for a user request",
@@ -145,11 +156,11 @@
     ]
   },
   "freshness": {
-    "generated_at": "2026-08-24T08:37:53+00:00",
-    "snapshot_key": "0acdf131d581bf902bcf2240ea2c561514ff467554f4dd9c3bb54d5b3e5ccf60",
-    "commit": "27f81c66f7bb98287b77a5efea90e0d4e55df131",
-    "repo_dirty": true,
-    "file_count": 548,
+    "generated_at": "2026-08-25T08:02:01+00:00",
+    "snapshot_key": "5732a396c585033f487caaea9853dbf78c41d653",
+    "commit": "5732a396c585033f487caaea9853dbf78c41d653",
+    "repo_dirty": false,
+    "file_count": 565,
     "generator": "deterministic"
   },
   "telemetry": {
@@ -165,9 +176,9 @@
     ],
     "counts": {
       "commands": 7,
-      "areas": 4,
+      "areas": 5,
       "entrypoints": 1,
-      "caution_zones": 0,
+      "caution_zones": 1,
       "navigation_recipes": 3,
       "notes": 0
     },

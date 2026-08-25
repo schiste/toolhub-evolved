@@ -1,7 +1,7 @@
 {
   "schema_version": "aethyme-act-starter-v1",
   "repo": {
-    "name": "migrate-toolhub-evolved-to-official-aeth",
+    "name": "stop-statistics-oom-killing-the-webservi",
     "kind": "repository"
   },
   "recommended_mode": "repo-act",
@@ -45,11 +45,16 @@
       "confidence": "medium"
     }
   },
-  "caution_zones": [],
+  "caution_zones": [
+    {
+      "path": "node_modules",
+      "reason": "likely generated, vendored, fixture, or migration-heavy area"
+    }
+  ],
   "telemetry": {
     "derived_from": ".aethyme/generated/onboarding.json",
     "entrypoint_count": 1,
     "primary_entrypoint_count": 1,
-    "caution_zone_count": 0
+    "caution_zone_count": 1
   }
 }

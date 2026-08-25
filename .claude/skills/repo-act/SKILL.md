@@ -3,7 +3,7 @@ name: repo-act
 description: Use after repo-onboarding or Explore when moving from orientation into execution planning, debugging checklists, and validation steps. Skip when only broad repo orientation is needed.
 ---
 
-# Repo Act: migrate-toolhub-evolved-to-official-aeth
+# Repo Act: stop-statistics-oom-killing-the-webservi
 
 ## When to Use
 
@@ -38,3 +38,7 @@ description: Use after repo-onboarding or Explore when moving from orientation i
 ## Likely Entrypoints
 
 - `tests` (conventional test root)
+
+## Caution Zones
+
+- `node_modules` (likely generated, vendored, fixture, or migration-heavy area)

@@ -3,7 +3,7 @@ name: repo-onboarding
 description: Use when starting work in an unfamiliar repository, when the task asks for repo overview, setup, architecture, entrypoints, test commands, or where to begin. Skip for narrow file-scoped edits once the relevant paths are already known.
 ---
 
-# Repo Onboarding: migrate-toolhub-evolved-to-official-aeth
+# Repo Onboarding: stop-statistics-oom-killing-the-webservi
 
 ## When to Use
 
@@ -46,6 +46,7 @@ description: Use when starting work in an unfamiliar repository, when the task a
 
 - `.github` (automation; automation and CI configuration; high confidence)
 - `docs` (docs; documentation area; high confidence)
+- `node_modules` (generated_or_vendor; generated output or vendored dependencies; high confidence)
 - `tests` (tests; conventional test directory; high confidence)
 - `tools` (tooling; developer tooling or scripts; high confidence)
 
@@ -58,11 +59,15 @@ description: Use when starting work in an unfamiliar repository, when the task a
 - `aethyme graph callers "$PWD" "<symbol-or-file>" --json-output`
   Purpose: Trace likely impact before editing
 
+## Caution Zones
+
+- `node_modules` (likely generated, vendored, fixture, or migration-heavy area)
+
 ## Freshness
 
-- Snapshot key: `0acdf131d581bf902bcf2240ea2c561514ff467554f4dd9c3bb54d5b3e5ccf60`
-- Commit: `27f81c66f7bb98287b77a5efea90e0d4e55df131`
-- Repo dirty: `True`
-- Generated at: `2026-08-24T08:37:53+00:00`
+- Snapshot key: `5732a396c585033f487caaea9853dbf78c41d653`
+- Commit: `5732a396c585033f487caaea9853dbf78c41d653`
+- Repo dirty: `False`
+- Generated at: `2026-08-25T08:02:01+00:00`
 - Overrides applied: `False`
 - Sections generated: `repo, commands, areas, entrypoints, caution_zones, navigation_recipes, summon, freshness`
