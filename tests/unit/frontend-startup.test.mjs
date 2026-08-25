@@ -5,7 +5,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// Every read() below asks what the source says -- which specifier the router names,
+// which class a view emits -- so it has to reach the source. Stryker runs this suite
+// from a copy under .stryker-tmp/sandbox-*, where each file in the shard's mutate
+// scope has been rewritten for instrumentation, and a `loadRouteModule("./graph.js")`
+// there is no longer spelled that way. Strip the sandbox suffix so these assertions
+// read the tree as authored; left alone they fail the dry run, which aborts the shard.
+const ROOT = path
+	.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+	.replace(/[/\\]\.stryker-tmp[/\\]sandbox-[^/\\]+$/, "");
 
 function read(rel) {
 	return fs.readFileSync(path.join(ROOT, rel), "utf8");
