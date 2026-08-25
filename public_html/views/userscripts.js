@@ -6,7 +6,7 @@ import { navigateTo } from "../lib/core/routing.js";
 import { metaItem } from "../lib/atoms/labels.js";
 import { renderPager } from "../lib/molecules/pager.js";
 
-const STYLESHEET = "/styles/userscripts.css";
+export const STYLESHEET = "/styles/userscripts.css";
 const USER_SCRIPT_PAGE_SIZE = 25;
 const TIERS = ["active", "archive"];
 

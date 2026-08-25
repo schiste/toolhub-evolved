@@ -35,7 +35,7 @@ const SG_TOOL_DEPRECATED = FIXTURE_TOOL_DEPRECATED;
 const SG_TOOL_EXPERIMENTAL = FIXTURE_TOOL_EXPERIMENTAL;
 const STYLEGUIDE_TOOLS = [SG_TOOL, SG_TOOL_DEPRECATED, SG_TOOL_EXPERIMENTAL];
 const STYLEGUIDE_ACCOUNT_NAME = "Amina Hassan";
-const STYLEGUIDE_STYLESHEET = "/styles/styleguide.css";
+export const STYLESHEET = "/styles/styleguide.css";
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 const STYLEGUIDE_GRAPH = {
@@ -1099,7 +1099,7 @@ function ensureStyleguideStyles() {
 	if (document.querySelector('link[data-route-style="styleguide"]')) return;
 	const link = document.createElement("link");
 	link.rel = "stylesheet";
-	link.href = STYLEGUIDE_STYLESHEET;
+	link.href = STYLESHEET;
 	link.dataset.routeStyle = "styleguide";
 	document.head.append(link);
 }
@@ -1232,6 +1232,6 @@ export function viewStyleguide() {
 		title: t("styleguide.title", "Design system — Toolhub"),
 		html,
 		mount: mountStyleguide,
-		styles: [STYLEGUIDE_STYLESHEET]
+		styles: [STYLESHEET]
 	};
 }

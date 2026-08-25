@@ -5,6 +5,8 @@ import { t } from "../lib/core/i18n.js";
 import { serverWrite } from "../lib/core/serversync.js";
 import { signedIn } from "../lib/core/session.js";
 
+export const STYLESHEET = "/styles/digests.css";
+
 /** @typedef {"daily" | "weekly" | "monthly"} Cadence */
 /** @type {Cadence[]} */
 const CADENCES = ["daily", "weekly", "monthly"];
@@ -86,7 +88,7 @@ async function archiveView(cadence) {
 	const subscriptions = Array.isArray(subscriptionData?.subscriptions) ? subscriptionData.subscriptions : [];
 	return {
 		title: `${label(cadence)} ${t("digests.title", "Toolhub Digest")}`,
-		styles: ["/styles/digests.css"],
+		styles: [STYLESHEET],
 		html: `<div class="digest-page"><header class="digest-masthead"><div class="digest-masthead__inner">
 		<p class="digest-kicker">${esc(t("digests.masthead.kicker", "From the Toolhub catalog"))}</p><h1>${esc(t("digests.title", "Toolhub Digest"))}</h1>
 		<p>${esc(t("digests.masthead.body", "A short editorial briefing on the tools newly added to Wikimedia's Toolhub."))}</p>
@@ -112,7 +114,7 @@ async function detailView(cadence, editionKey) {
 		: "";
 	return {
 		title: edition.title,
-		styles: ["/styles/digests.css"],
+		styles: [STYLESHEET],
 		html: `<div class="digest-page digest-page--edition"><nav class="digest-edition-nav" aria-label="${esc(t("digests.editionNavigation", "Digest edition"))}">
 		<a href="/digests/${esc(cadence)}"><span aria-hidden="true">←</span> ${esc(t("digests.backToArchive", "All $1 editions", label(cadence).toLowerCase()))}</a>
 		<a href="/feeds/digests/${esc(cadence)}.xml" target="_blank" rel="noopener">RSS <span aria-hidden="true">↗</span></a></nav>
@@ -140,7 +142,7 @@ async function actionView(action) {
 function actionResult(ok, message) {
 	return {
 		title: t("digests.title", "Toolhub Digest"),
-		styles: ["/styles/digests.css"],
+		styles: [STYLESHEET],
 		html: `<div class="digest-action"><p class="digest-kicker">${esc(t("digests.title", "Toolhub Digest"))}</p>
 		<h1>${esc(ok ? t("digests.action.done", "You're all set") : t("digests.action.problem", "We couldn't update that subscription"))}</h1>
 		<p>${esc(message)}</p><a class="btn btn--primary btn--md" href="/digests">${esc(t("digests.action.return", "Return to the digest"))}</a></div>`

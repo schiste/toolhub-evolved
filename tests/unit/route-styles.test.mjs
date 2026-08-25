@@ -26,7 +26,15 @@ import { test } from "vitest";
 
 import { ROUTE_STYLES } from "../../public_html/views/router.js";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// Stryker runs this suite from a copy of the repo under .stryker-tmp/sandbox-*,
+// with every file in the shard's mutate scope rewritten for instrumentation. The
+// assertions below are about the code as authored -- which view can emit which
+// class -- so they read the real tree rather than that copy. Reading the copy is
+// both wrong (it is not what ships) and slow enough to blow the 5s test timeout,
+// since instrumentation multiplies the size of every file it touches.
+const ROOT = path
+	.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+	.replace(/[/\\]\.stryker-tmp[/\\]sandbox-[^/\\]+$/, "");
 const VIEWS = path.join(ROOT, "public_html/views");
 const STYLES = path.join(ROOT, "public_html/styles");
 
@@ -127,18 +135,28 @@ function viewSources() {
 	return sources;
 }
 
-/** href -> owning module, as each view declares it for itself. */
-function declaredByViews() {
+/**
+ * href -> owning module, as each view declares it for itself.
+ *
+ * Read as a value rather than scraped out of the source, because the source is
+ * not always the source: under Stryker the tests run against an instrumented
+ * copy where `const STYLESHEET = "/styles/x.css"` has become a ternary and
+ * `styles: [STYLESHEET]` an array literal wrapped in another, so every regex
+ * that matched here found nothing and this file failed the dry run before a
+ * single mutant was tried. Importing sidesteps the whole class of problem, and
+ * it leaves the href covered: a mutant that empties the string now fails a
+ * test instead of surviving unnoticed.
+ */
+async function declaredByViews() {
 	const declared = new Map();
-	for (const [name, source] of viewSources()) {
-		for (const match of source.matchAll(/styles: \[([^\]]*)\]/g)) {
-			for (const href of match[1].matchAll(/"(\/styles\/[^"]+)"/g)) declared.set(href[1], name);
-			// A `styles` array built from a const resolves through that const.
-			for (const ident of match[1].matchAll(/\b([A-Z][A-Z0-9_]*)\b/g)) {
-				const bound = source.match(new RegExp(`const ${ident[1]} = "(/styles/[^"]+)"`));
-				if (bound) declared.set(bound[1], name);
-			}
-		}
+	// Every view, not just the prefetched ones -- a view that declares a sheet
+	// the router forgot to prefetch is exactly what the second half of the
+	// agreement test is looking for, and iterating the map would hide it.
+	for (const name of viewSources().keys()) {
+		// The `.js` has to sit in the static part or vite cannot enumerate the
+		// candidates, so the basename goes in bare and the extension comes back.
+		const module = await import(`../../public_html/views/${name.replace(/\.js$/, "")}.js`);
+		if (module.STYLESHEET) declared.set(module.STYLESHEET, name);
 	}
 	return declared;
 }
@@ -153,8 +171,8 @@ test("every stylesheet the router prefetches exists", () => {
 	}
 });
 
-test("the router's prefetch map and the views agree on every route stylesheet", () => {
-	const declared = declaredByViews();
+test("the router's prefetch map and the views agree on every route stylesheet", async () => {
+	const declared = await declaredByViews();
 	for (const [href, module] of declared) {
 		assert.equal(
 			ROUTE_STYLES[`./${module}`],

@@ -195,10 +195,15 @@ final verification pass after those issues are fixed.
 - **Proxy** — ruff (`select = ALL`, incl. flake8-bandit security), pip-audit,
   and a pytest asserting the CSP + security headers.
 
-**Mutation testing** (Stryker) runs nightly (`.github/workflows/mutation.yml`)
-at a **literal 100 % score** over `public_html/**`. The handful of genuinely
-equivalent mutants carry documented `// Stryker disable` comments — the project's
-only in-code suppressions — indexed in [EQUIVALENTS.md](EQUIVALENTS.md).
+**Mutation testing** (Stryker) runs weekly (`.github/workflows/mutation.yml`)
+over `public_html/**`, sharded across a matrix because one full-scope run does not
+fit in a job. Each shard declares a **floor** — the score it may not drop below,
+seeded from what that shard measured — rather than the whole app answering to one
+threshold; the shards range from about 22 % to 100 %, so a single number could only
+ever be wrong for most of them. Raise a floor when you write tests that earn it.
+The handful of genuinely equivalent mutants carry documented `// Stryker disable`
+comments — the project's only in-code suppressions — indexed in
+[EQUIVALENTS.md](EQUIVALENTS.md).
 
 ## Local hooks
 

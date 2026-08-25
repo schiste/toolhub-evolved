@@ -5,7 +5,7 @@ import { t } from "../lib/core/i18n.js";
 import { button } from "../lib/atoms/button.js";
 import { loadingRegion, skeletonBlock, skeletonLine } from "../lib/molecules/skeleton.js";
 
-const STYLESHEET = "/styles/statistics.css";
+export const STYLESHEET = "/styles/statistics.css";
 
 /** @param {unknown} value */
 function count(value) {

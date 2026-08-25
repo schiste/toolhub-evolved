@@ -7,7 +7,7 @@ import { authorHref, navigateTo, listHref, toolHref } from "../lib/core/routing.
 import { DEMO_KEYS, demoFeed, recentOwnerCacheGet, recentOwnerCacheSet } from "../lib/core/store.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
-const STYLESHEET = "/styles/recent.css";
+export const STYLESHEET = "/styles/recent.css";
 
 /* ---- Recent changes: data-driven read-only feed ------------------------ */
 const RECENT_FILTERS = [

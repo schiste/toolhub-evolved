@@ -1,7 +1,7 @@
 # Equivalent mutants
 
-Pursuing a literal 100% Stryker mutation score means a small number of mutants
-are genuinely **equivalent** — the mutation produces behaviour that is
+Pushing a shard's Stryker score up eventually runs into mutants that are
+genuinely **equivalent** — the mutation produces behaviour that is
 indistinguishable from the original, so no test can kill it without asserting on
 private implementation detail. Each is suppressed at its source line with:
 

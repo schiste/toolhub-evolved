@@ -3,7 +3,7 @@ import { esc } from "../lib/core/dom.js";
 import { t } from "../lib/core/i18n.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
-const STYLESHEET = "/styles/experiments.css";
+export const STYLESHEET = "/styles/experiments.css";
 
 /* ---- Feature status index --------------------------------------------- */
 // Single source of truth for every Evolved feature and hybrid integration path.

@@ -1,4 +1,4 @@
-# Mutation testing (Stryker) over the whole app, at a literal 100% score.
+# Mutation testing (Stryker) over the whole app.
 # A single full-scope run is ~70 min (7k+ mutants) and exceeds the runner's
 # per-job ceiling, so it is SHARDED into a matrix of short per-area jobs (each a
 # few thousand mutants, well under the limit) that together cover public_html/**.
@@ -63,13 +63,42 @@ jobs:
                     # at 137, parent alive, scope exit 0. Hence the policy on the step below.
                     # 6 GB was also simply too tight: organisms-qv and organisms-graph were
                     # dying there while doing honest work.
-                    # Because `break: 100` already makes every job red, these deaths were
-                    # indistinguishable from a below-threshold score, and the affected
-                    # shards had quietly stopped being measured at all.
-                    - name: core
-                      scope: "public_html/lib/core/**/*.js"
+                    # Because the unreachable `break: 100` of the time already made every
+                    # job red, these deaths were indistinguishable from a below-threshold
+                    # score, and the affected shards had quietly stopped being measured at
+                    # all. The per-shard floors below are what tells the two apart now.
+                    # Every shard carries a `floor`: the score it may not drop below.
+                    # There is no global one, because `break` in stryker.conf.json is a
+                    # single number for an app whose shards range from 22% to 100%, and
+                    # the 100 it held for months failed all of them, every week, until a
+                    # red Mutation run meant nothing at all. Each floor here is what its
+                    # shard actually measured on CI (run 32693322476), rounded down, so
+                    # today's matrix goes green and tomorrow's regression does not. A
+                    # floor of "0" means the shard has never reported a score on CI and
+                    # nothing is being guarded yet -- read the first green run's
+                    # ::notice:: line and raise it. Floors only ever go up.
+                    # core was one shard of 5741 lines and it has never once finished:
+                    # every run on record is killed at exactly 60 min by the job
+                    # ceiling above, so it reports no score at all and no floor could
+                    # apply to it. Split four ways along the same carve-out idiom as
+                    # organisms-*: the heavy files get their own shards and core-rest
+                    # keeps the wildcard, so a new file under lib/core is mutated by
+                    # something the day it is added rather than waiting to be noticed.
+                    - name: core-api
+                      scope: "public_html/lib/core/api.js"
+                      floor: "0"
+                    - name: core-state
+                      scope: "public_html/lib/core/store.js,public_html/lib/core/signals.js"
+                      floor: "0"
+                    - name: core-transform
+                      scope: "public_html/lib/core/i18n.js,public_html/lib/core/graph.js,public_html/lib/core/toolinfo-generator.js,public_html/lib/core/markdown.js,public_html/lib/core/similarity.js"
+                      floor: "0"
+                    - name: core-rest
+                      scope: "public_html/lib/core/**/*.js,!public_html/lib/core/api.js,!public_html/lib/core/store.js,!public_html/lib/core/signals.js,!public_html/lib/core/i18n.js,!public_html/lib/core/graph.js,!public_html/lib/core/toolinfo-generator.js,!public_html/lib/core/markdown.js,!public_html/lib/core/similarity.js"
+                      floor: "0"
                     - name: atoms+molecules
                       scope: "public_html/lib/atoms/**/*.js,public_html/lib/molecules/**/*.js"
+                      floor: "67"
                     # force-graph is isolated: its rAF/canvas physics loop yields
                     # infinite-loop mutants (e.g. a counting-up `for` flipped to count
                     # down) that peg a core until Stryker's timeout. Bundled with the
@@ -79,6 +108,7 @@ jobs:
                     # one core free for the agent so these mutants are killed, not lost.
                     - name: organisms-graph
                       scope: "public_html/lib/organisms/force-graph.js"
+                      floor: "53"
                       concurrency: "1"
                     # quickview's modal/focus-trap mutants make the code read happy-dom's
                     # real offsetParent getter, which hangs until Stryker's timeout. A
@@ -87,20 +117,46 @@ jobs:
                     # cancelled mid-run). Isolated, it is small enough to finish first;
                     # organisms-graph (227 mutants, single-worker) proves that bound.
                     - name: organisms-qv
+                      # Reports 100%, but 24 of its 141 mutants were RuntimeErrors and so
+                      # never entered the denominator. The floor is what it would score if
+                      # every one of those came back a survivor, because a memory cap that
+                      # stops mangling this shard must not read as a test regression.
                       scope: "public_html/lib/organisms/quickview.js"
+                      floor: "82"
                       concurrency: "1"
                     # Everything else in organisms is light, fast HTML/DOM assertion work
                     # (no hang cluster) — runs at the default concurrency.
                     - name: organisms-rest
                       scope: "public_html/lib/organisms/**/*.js,!public_html/lib/organisms/force-graph.js,!public_html/lib/organisms/quickview.js"
+                      floor: "42"
                     - name: views-a
                       scope: "public_html/views/home.js,public_html/views/search.js,public_html/views/tool.js"
+                      floor: "69"
                     - name: views-b
                       scope: "public_html/views/lists.js,public_html/views/toolforms.js"
+                      floor: "70"
                     - name: styleguide
                       scope: "public_html/views/styleguide.js"
+                      floor: "22"
                     - name: views-rest+main
                       scope: "public_html/views/router.js,public_html/views/static.js,public_html/views/graph.js,public_html/views/authors.js,public_html/views/experiments.js,public_html/views/_fixtures.js,public_html/main.js"
+                      floor: "46"
+                    # The three shards below were added to close a coverage gap, not to
+                    # split a slow job: eighteen files matched stryker.conf's `mutate`
+                    # glob and appeared in no scope above, so nothing ever mutated them
+                    # while the config described the app as fully covered. They are
+                    # grouped by area and balanced at roughly 1.3k lines each.
+                    # tests/unit/mutation-shards.test.mjs now fails if a file drifts
+                    # back out of every scope.
+                    - name: views-account
+                      scope: "public_html/views/account-settings.js,public_html/views/accounts.js,public_html/views/developer-settings.js,public_html/views/my-tools.js"
+                      floor: "0"
+                    - name: views-catalog
+                      scope: "public_html/views/recent.js,public_html/views/statistics.js,public_html/views/userscripts.js"
+                      floor: "0"
+                    - name: views-ops
+                      scope: "public_html/views/workers.js,public_html/views/crawler.js,public_html/views/mcp-server.js,public_html/views/digests.js,public_html/views/changelog.js,public_html/views/audit.js,public_html/views/static-routes.js,public_html/views/members.js,public_html/views/community.js,public_html/i18n/locales.js,public_html/lib/workers/graph-layout-worker.js"
+                      floor: "0"
         steps:
             - uses: actions/checkout@v7
             - uses: actions/setup-node@v7
@@ -118,6 +174,11 @@ jobs:
                   # On by default for every shard; a shard may override it in the
                   # matrix. `${VAR:+...}` still drops the flag if ever set empty.
                   RUNNER_REUSE: ${{ matrix.maxTestRunnerReuse || '100' }}
+                  # The lowest score this shard may report, as a ratchet: seeded
+                  # from what the shard measured when the floor was introduced,
+                  # rounded down. It only ever moves up, by hand, when someone
+                  # writes tests. See the enforcement at the end of the run.
+                  FLOOR: ${{ matrix.floor }}
               # Runaway mutants (see the matrix comment) allocate ~15 GB in ~15 s, far
               # faster than Stryker's 5 s timeout can react, and uncapped the kernel may
               # pick the runner agent as its victim, which kills the whole job. The cgroup
@@ -127,9 +188,9 @@ jobs:
               # needs while still leaving the agent room - 6 GB was under it. Stryker
               # restarts the killed child and records the mutant as a RuntimeError.
               run: |
-                  # `bash -e` is GitHub's default and Stryker always exits non-zero
-                  # while `break: 100` stands, so errexit off is what lets the summary
-                  # below run at all; pipefail keeps rc as Stryker's, not tee's.
+                  # `bash -e` is GitHub's default, and a shard that scores under its
+                  # floor has to reach the summary below to say so rather than dying
+                  # at the pipe; pipefail keeps rc as Stryker's, not tee's.
                   set +e -o pipefail
                   set -- --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${RUNNER_REUSE:+--maxTestRunnerReuse $RUNNER_REUSE}
                   if sudo -n systemd-run --version >/dev/null 2>&1; then
@@ -153,4 +214,21 @@ jobs:
                       if (denom > 0 && $8 / (denom + $8) > 0.01)
                           printf "::warning::%s mutants were RuntimeErrors (>1%% of the set) and left the denominator, so the %s%% score is inflated - check the memory cap\n", $8, $2
                   }' /tmp/stryker.log
-                  exit "$rc"
+
+                  # A crash is a crash: report it before judging a score that may not
+                  # exist. Only past that does the floor apply.
+                  [ "$rc" -ne 0 ] && exit "$rc"
+                  score=$(awk -F'|' '/^All files/ { gsub(/ /, "", $2); print $2 }' /tmp/stryker.log)
+                  # An empty score means the report never printed its summary line, which
+                  # is a broken run wearing a green exit code - the one shape a floor
+                  # comparison would silently pass.
+                  if [ -z "$score" ]; then
+                      echo "::error::Stryker exited 0 but printed no score line - the run did not complete"
+                      exit 1
+                  fi
+                  # awk, not `[ ]`, because both sides are decimals.
+                  if ! awk -v s="$score" -v f="$FLOOR" 'BEGIN { exit !(s + 0 >= f + 0) }'; then
+                      echo "::error::${{ matrix.name }} scored $score%, below its floor of $FLOOR% - a test that used to kill a mutant no longer does"
+                      exit 1
+                  fi
+                  echo "::notice::${{ matrix.name }} scored $score%, at or above its floor of $FLOOR%"
