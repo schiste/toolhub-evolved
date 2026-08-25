@@ -866,6 +866,7 @@ export function normalizeTool(t) {
 		deprecated,
 		experimental,
 		lifecycle,
+		created: t.created_date || t.created || null,
 		modified: t.modified_date || t.modified || null,
 		origin: t.origin || "crawler",
 		catalogProjection: t._catalogProjection || null,

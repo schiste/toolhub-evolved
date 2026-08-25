@@ -121,6 +121,11 @@ interface Tool {
 	// "active", "archived", or "" when nothing has measured whether anybody uses
 	// this tool -- which is the case for everything the official catalog supplies.
 	lifecycle: string;
+	// When the tool came into existence, not when this catalogue heard of it:
+	// the Toolhub record's own creation date, or -- for a user script or gadget
+	// -- the first revision of its page on the wiki. Null wherever nothing has
+	// established one, which is every wiki page no replica has answered for.
+	created: string | null;
 	modified: string | null;
 	origin: string;
 	catalogProjection?: Record<string, any> | null;

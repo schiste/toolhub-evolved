@@ -93,7 +93,10 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
 
     A page is offered with the creation date the wiki reports, and falls back to
     discovery order only where `backend.userscript_creation_dates` has not been
-    able to supply one.
+    able to supply one. The wiki's own date is carried alongside, unsubstituted,
+    because that is the one the catalogue is allowed to publish: the fallback
+    exists to order pages, and printing it on a tool page would tell a reader a
+    script was written in a year nobody claimed.
 
     Named columns rather than whole rows, because the widest column on the table
     is the one a `Candidate` never carries. Selecting the page objects brought
@@ -122,6 +125,7 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
             owner=owner,
             basename=basename,
             created=created_at_wiki or _sort_key(discovery_rank),
+            created_at_wiki=created_at_wiki,
             fingerprint=fingerprint,
             sketch=sketch,
         )
@@ -254,6 +258,7 @@ def _write(
                     demand=scores[origin.original.title],
                     instances=origin.instances,
                     position=position,
+                    created_at_wiki=origin.original.created_at_wiki,
                     computed_at=now,
                 ),
             )

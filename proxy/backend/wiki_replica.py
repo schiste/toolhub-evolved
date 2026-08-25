@@ -57,6 +57,15 @@ META_DB = "meta"
 #: User space. The census reads only this namespace, and so does this.
 USER_NAMESPACE = 2
 
+#: Where a wiki keeps its interface pages, and so its gadget code. A gadget is
+#: declared on one page and implemented on others; the others live here.
+MEDIAWIKI_NAMESPACE = 8
+#: What every gadget code page's title begins with, once the namespace is off.
+#: `MediaWiki:Gadget-HotCat.js` is stored as `Gadget-HotCat.js`, so this is both
+#: the LIKE pattern's prefix and the key the declaration's file names are
+#: matched under.
+GADGET_TITLE_PREFIX = "Gadget-"
+
 # `page_title` is stored without its namespace prefix and with underscores for
 # spaces. Stored census titles are full, localized and spaced
 # (`Utilisateur:Tom Smith/monobook.js`), so the two are matched on the part
@@ -153,6 +162,20 @@ CREATION_QUERY = (
 #: predicate and means a page the watch found is never left without a date.
 TITLE_PATTERNS = ("%.js", "%.css")
 
+#: The same question asked of gadget code, which needs no suffix filter: every
+#: page under `Gadget-` is one gadget's implementation whatever it is called,
+#: and a wiki has of the order of a hundred of them rather than tens of
+#: thousands. `MediaWiki:Gadgets-definition` itself does not match the prefix --
+#: it is `Gadgets-definition`, plural -- which is what we want: the date wanted
+#: is when a gadget's code first existed, not when the wiki's list of gadgets
+#: did.
+GADGET_CREATION_QUERY = (
+    "SELECT p.page_title, MIN(r.rev_timestamp) "
+    "FROM page p JOIN revision r ON r.rev_page = p.page_id "
+    "WHERE p.page_namespace = %s AND p.page_title LIKE %s "
+    "GROUP BY p.page_id"
+)
+
 #: Content models the census treats as scripts. Namespace-2 pages always record
 #: an explicit model -- measured on 2026-08-22 across metawiki, frwiki and
 #: enwiki, not one row leaves `page_content_model` NULL -- so matching on it is
@@ -243,6 +266,29 @@ def read_page_titles(rows: Iterable[Sequence[Any]]) -> tuple[tuple[str, str, str
         if model and title:
             found.append((model, title, revision))
     return tuple(found)
+
+
+#: Length of a MediaWiki timestamp, `YYYYMMDDHHMMSS`.
+STAMP_LENGTH: Final[int] = 14
+
+
+def iso_timestamp(stamp: str) -> str:
+    """Render a MediaWiki timestamp as an ISO 8601 instant, or "" if it is not one.
+
+    `20040429080822` becomes `2004-04-29T08:08:22Z`. Stored in the wiki's own
+    format and converted only on the way out, because that is the form the
+    catalogue publishes and `datetime.fromisoformat` is what reads it back --
+    `backend.catalog_statistics` parses every date it bins that way.
+
+    Anything that is not fourteen digits yields "" rather than a guess. A blank
+    is already the ordinary answer for a page no replica has dated, so every
+    consumer of this handles one, and inventing a date from a malformed stamp
+    would publish a fact the wiki never stated.
+    """
+    stamp = stamp.strip()
+    if len(stamp) != STAMP_LENGTH or not stamp.isdigit():
+        return ""
+    return f"{stamp[0:4]}-{stamp[4:6]}-{stamp[6:8]}T{stamp[8:10]}:{stamp[10:12]}:{stamp[12:14]}Z"
 
 
 def read_creation_dates(rows: Iterable[Sequence[Any]]) -> dict[str, str]:
@@ -338,6 +384,29 @@ def creation_dates_for(
         target_for(dbname),
         CREATION_QUERY,
         [USER_NAMESPACE, *TITLE_PATTERNS],
+    )
+    return read_creation_dates(rows)
+
+
+def gadget_creation_dates_for(
+    dbname: str,
+    *,
+    user: Credentials,
+    connect: Connect = open_connection,
+) -> dict[str, str]:
+    """Return every gadget code page's creation timestamp, keyed as it is stored.
+
+    Keys keep the `Gadget-` prefix and the replica's underscores, because that
+    is the form a declaration's file name is turned into to look one up. Only
+    page metadata is read -- a title and the oldest revision timestamp -- for
+    the reason `backend.userscript_creation_dates` gives at length.
+    """
+    rows = _rows(
+        connect,
+        user,
+        target_for(dbname),
+        GADGET_CREATION_QUERY,
+        [MEDIAWIKI_NAMESPACE, f"{GADGET_TITLE_PREFIX}%"],
     )
     return read_creation_dates(rows)
 

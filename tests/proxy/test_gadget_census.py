@@ -64,3 +64,27 @@ def test_the_job_defaults_to_the_pilot_wikis(monkeypatch, capsys, wiki):
 
     assert wiki.asked == ["fr.wikipedia.org", "meta.wikimedia.org"]
     assert "gadget-catalogue: wiki=meta.wikimedia.org" in capsys.readouterr().out
+
+
+def test_the_dating_pass_runs_between_the_read_and_the_catalogue(monkeypatch, capsys, wiki):
+    """Order is the point: a date stamped after the catalogue was built ships one run late."""
+    monkeypatch.setenv("GADGET_WIKIS", FRWIKI)
+    monkeypatch.setattr(job.gadget_creation_dates, "backfill", lambda wikis: {wikis[0]: 3})
+
+    assert job.main() == 0
+
+    out = capsys.readouterr().out
+    assert f"gadget-creation-dates: wiki={FRWIKI} replica=yes stamped=3" in out
+    assert out.index("gadget-inventory:") < out.index("gadget-creation-dates:") < out.index("gadget-catalogue:")
+
+
+def test_a_wiki_with_no_replica_to_read_is_reported_as_such_and_still_catalogued(monkeypatch, capsys, wiki):
+    """Toolforge credentials are how this lane reads dates; without them the census still runs."""
+    monkeypatch.setenv("GADGET_WIKIS", FRWIKI)
+    monkeypatch.setattr(job.gadget_creation_dates, "backfill", lambda _wikis: {})
+
+    assert job.main() == 0
+
+    out = capsys.readouterr().out
+    assert f"gadget-creation-dates: wiki={FRWIKI} replica=no stamped=0" in out
+    assert "gadget-catalogue: wiki=fr.wikipedia.org declared=2 written=1" in out

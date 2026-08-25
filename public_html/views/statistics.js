@@ -62,6 +62,48 @@ function histogram(title, intro, rows) {
 	</figure>`;
 }
 
+// Which records the created-by-year chart counts. `all` is the default because
+// the combined shape is the honest one: the catalogue really does contain both.
+// The other two exist because the series answer different questions -- when the
+// registered catalogue was written down, and how long the wikis have been
+// writing tools nobody registered -- and read as one chart they hide each other.
+const CREATED_SOURCES = [
+	{ key: "all", label: () => t("statistics.createdSourceAll", "Everything") },
+	{ key: "catalog", label: () => t("statistics.createdSourceCatalog", "Registered tools") },
+	{ key: "wiki", label: () => t("statistics.createdSourceWiki", "User scripts and gadgets") }
+];
+
+/** @param {any} distributions */
+function createdByYear(distributions) {
+	const bySource = distributions?.createdByYearBySource || {};
+	/** @param {string} key */
+	const rows = (key) => (key === "all" ? distributions?.createdByYear : bySource[key]);
+	const title = t("statistics.createdByYear", "Catalog records created by year");
+	const intro = t(
+		"statistics.createdByYearIntro",
+		"Registered tools carry Toolhub creation dates; user scripts and gadgets carry their first revision on the wiki."
+	);
+	// Every series is rendered and one is shown, rather than re-rendering on
+	// each choice: the whole document is already in memory, the largest series
+	// is a few dozen rows, and a chart that is simply present cannot be left
+	// blank by a switch that fires before the data it wanted arrived.
+	return `<div class="statistics-source-choice" data-created-source="all">
+		<fieldset class="statistics-source-choice__control">
+			<legend>${esc(t("statistics.createdSourceLegend", "Count records from"))}</legend>
+			<div class="statistics-source-choice__options">
+			${CREATED_SOURCES.map(
+				(source) =>
+					`<label><input type="radio" name="statistics-created-source" value="${esc(source.key)}" data-created-source-option${source.key === "all" ? " checked" : ""}> <span>${esc(source.label())}</span></label>`
+			).join("")}
+			</div>
+		</fieldset>
+		${CREATED_SOURCES.map(
+			(source) =>
+				`<div class="statistics-source-choice__panel" data-source="${esc(source.key)}">${histogram(title, intro, rows(source.key))}</div>`
+		).join("")}
+	</div>`;
+}
+
 /** @param {Record<string, number> | undefined} values */
 function breakdown(values) {
 	const rows = Object.entries(values || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
@@ -141,7 +183,7 @@ export function statisticsHTML(data) {
 			<div class="statistics-section__head"><div><p>${esc(t("statistics.sectionThree", "03 · Time"))}</p><h2 id="statistics-time-title">${esc(t("statistics.timeTitle", "When did the catalog change?"))}</h2></div>
 			<p>${esc(definitions.dateBasis || t("statistics.timeIntro", "Unavailable canonical dates remain visible instead of disappearing from the chart."))}</p></div>
 			<div class="statistics-chart-grid">
-				${histogram(t("statistics.createdByYear", "Catalog records created by year"), t("statistics.createdByYearIntro", "Based on Toolhub creation dates."), distributions.createdByYear)}
+				${createdByYear(distributions)}
 				${histogram(t("statistics.updateRecency", "Time since last update"), t("statistics.updateRecencyIntro", "How recently each canonical record was modified."), distributions.modifiedRecency)}
 			</div>
 			${histogram(t("statistics.modifiedByYear", "Catalog records last updated by year"), t("statistics.modifiedByYearIntro", "A historical distribution of each record's latest modification."), distributions.modifiedByYear)}
@@ -213,17 +255,34 @@ const loadingHTML = () =>
 const errorHTML = () =>
 	`<div class="statistics-error" role="alert"><h1>${esc(t("statistics.errorTitle", "Statistics are temporarily unavailable"))}</h1><p>${esc(t("statistics.errorBody", "The last quality snapshot could not be loaded."))}</p>${button(t("statistics.retry", "Try again"), { attrs: "data-statistics-retry" })}</div>`;
 
+const mountReport = mountJsonReport({
+	name: "statistics",
+	endpoint: "/v1/statistics/",
+	render: statisticsHTML,
+	renderLoading: loadingHTML,
+	renderError: errorHTML
+});
+
+function mountStatistics() {
+	mountReport();
+	const root = document.querySelector("[data-statistics-root]");
+	if (!(root instanceof HTMLElement)) return;
+	// Delegated from the root, which outlives every re-render the report does:
+	// the radios themselves are replaced whenever the document reloads, and a
+	// listener bound to them would be thrown away with the markup it was on.
+	root.addEventListener("change", (event) => {
+		const option = event.target;
+		if (!(option instanceof HTMLInputElement) || !option.hasAttribute("data-created-source-option")) return;
+		const choice = option.closest(".statistics-source-choice");
+		if (choice instanceof HTMLElement) choice.dataset.createdSource = option.value;
+	});
+}
+
 export function viewStatistics() {
 	return {
 		title: t("statistics.docTitle", "Statistics — Toolhub"),
 		html: `<div class="container page statistics-page" data-statistics-root>${loadingHTML()}</div>`,
-		mount: mountJsonReport({
-			name: "statistics",
-			endpoint: "/v1/statistics/",
-			render: statisticsHTML,
-			renderLoading: loadingHTML,
-			renderError: errorHTML
-		}),
+		mount: mountStatistics,
 		styles: [STYLESHEET]
 	};
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, safeHttpUrl, safeUrl, textAttrs } from "../lib/core/dom.js";
-import { relativeTime, t, timeTag } from "../lib/core/i18n.js";
+import { calendarDate, relativeTime, t, timeTag } from "../lib/core/i18n.js";
 import {
 	INDEX,
 	apiGet,
@@ -148,6 +148,25 @@ function catalogUpdatedSignal(tool) {
 		),
 		"history"
 	);
+}
+
+// Tool types this codebase catalogues off a wiki itself. Their creation date is
+// the page's first revision, which is a different claim from "somebody
+// registered this with Toolhub on that day", and the tooltip has to say which.
+const WIKI_TOOL_TYPES = new Set(["user script", "gadget"]);
+
+/** @param {Tool} tool */
+function createdSignal(tool) {
+	const created = tool.created;
+	const label = calendarDate(created);
+	if (!label) return "";
+	const date = new Date(String(created));
+	const tooltip = WIKI_TOOL_TYPES.has(String(tool.toolType || ""))
+		? t("tool.createdOnWikiTooltip", "First revision of this page on the wiki: $1", date.toISOString())
+		: t("tool.createdInCatalogTooltip", "Toolhub catalog record created: $1", date.toISOString());
+	return `<span class="signal toolpage__freshness">${icon("calendar")}
+		<time class="toolpage__when" datetime="${esc(date.toISOString())}" title="${esc(tooltip)}" aria-label="${esc(tooltip)}">${esc(t("tool.created", "Created $1", label))}</time>
+	</span>`;
 }
 
 /** @param {any} evolvedSummary */
@@ -974,6 +993,7 @@ export async function viewTool(name) {
 					${maintainerDisclosure(evolvedSummary)}
 					<span data-tool-endorsement-slot></span>
 					${fitChip(tool)}
+					${createdSignal(tool)}
 					${catalogUpdatedSignal(tool)}
 					${repositoryUpdatedSignal(evolvedSummary)}
 				</div>

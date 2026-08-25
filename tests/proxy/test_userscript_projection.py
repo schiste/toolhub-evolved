@@ -353,6 +353,36 @@ def test_a_page_with_no_creation_date_cannot_outrank_one_that_has_it():
     assert members()["User:Aaa/tool.js"] == ("User:Bbb/tool.js", projection.RELATION_COPY)
 
 
+def stamps():
+    """The raw wiki creation stamp each frwiki entry carries, keyed by title."""
+    with db.session_scope() as session:
+        rows = session.query(UserScriptDirectoryEntry).filter(UserScriptDirectoryEntry.wiki == FRWIKI).all()
+        return {row.title: row.created_at_wiki for row in rows}
+
+
+def test_the_entry_carries_the_date_the_wiki_reported():
+    page("User:Aaa/tool.js", rank=0, created="20090412183000")
+    projection.project(FRWIKI)
+    assert stamps() == {"User:Aaa/tool.js": "20090412183000"}
+
+
+def test_an_undated_page_stores_nothing_rather_than_the_ordering_stand_in():
+    """The sort key is a fiction for ordering. Publishing it would invent a creation date."""
+    page("User:Aaa/tool.js", rank=7)
+    projection.project(FRWIKI)
+    stored = stamps()["User:Aaa/tool.js"]
+    assert stored == ""
+    assert stored != projection._sort_key(7)
+
+
+def test_the_date_travels_from_the_original_not_from_the_copy_that_files_it():
+    """A duplicate group publishes one entry: the original's, and so the original's date."""
+    page("User:Zed/tool.js", rank=0, fingerprint="same", created="20140101000000")
+    page("User:Aaa/tool.js", rank=1, fingerprint="same", created="20090101000000")
+    projection.project(FRWIKI)
+    assert stamps() == {"User:Aaa/tool.js": "20090101000000"}
+
+
 def test_another_wikis_directory_is_left_alone():
     page("User:Aaa/tool.js", rank=0)
     page("User:Zzz/other.js", rank=0, wiki=ENWIKI)

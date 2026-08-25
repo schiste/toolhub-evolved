@@ -7,6 +7,10 @@ speaks bytes, spells titles differently from the census, and is absent entirely
 outside Toolforge.
 """
 
+from datetime import datetime
+
+import pytest
+
 from backend import wiki_replica
 
 CNF = "[client]\nuser='s55555'\npassword='sekrit'\n"
@@ -191,6 +195,57 @@ def test_creation_dates_are_asked_for_user_space_scripts_only():
     assert "GROUP BY p.page_id" in sql
     assert targets[0][1].host == "frwiki.analytics.db.svc.wikimedia.cloud"
     assert found == {"Hiob/monobook.js": "20090701235434"}
+
+
+def test_gadget_creation_dates_are_asked_for_the_gadget_prefix_in_interface_space():
+    seen, closed, targets = [], [], []
+    found = wiki_replica.gadget_creation_dates_for(
+        "frwiki",
+        user=wiki_replica.Credentials("u", "p"),
+        connect=connector(((b"Gadget-HotCat.js", b"20070311120000"),), seen, closed, targets),
+    )
+    sql, params = seen[0]
+    assert params == (8, "Gadget-%")
+    assert "GROUP BY p.page_id" in sql
+    assert targets[0][1].host == "frwiki.analytics.db.svc.wikimedia.cloud"
+    assert found == {"Gadget-HotCat.js": "20070311120000"}
+
+
+def test_the_gadget_query_asks_for_no_suffix_and_so_finds_every_kind_of_code_page():
+    """A gadget can ship .json, and one that does must still have a date."""
+    seen = []
+    wiki_replica.gadget_creation_dates_for(
+        "frwiki",
+        user=wiki_replica.Credentials("u", "p"),
+        connect=connector((), seen, [], []),
+    )
+    sql, _ = seen[0]
+    assert ".js" not in sql
+    assert sql.count("%s") == 2
+
+
+# --- rendering a stored timestamp ------------------------------------------
+
+
+def test_a_mediawiki_timestamp_becomes_an_iso_instant():
+    assert wiki_replica.iso_timestamp("20040429080822") == "2004-04-29T08:08:22Z"
+
+
+def test_a_rendered_timestamp_is_what_fromisoformat_reads_back():
+    """Every consumer of a published creation date parses it this way."""
+    assert datetime.fromisoformat(wiki_replica.iso_timestamp("20040429080822")) == datetime.fromisoformat(
+        "2004-04-29T08:08:22+00:00"
+    )
+
+
+@pytest.mark.parametrize("stamp", ["", "2004", "20040429080822000", "2004-04-29", "not a stamp!!", "2004042908082x"])
+def test_anything_that_is_not_a_mediawiki_timestamp_renders_as_nothing(stamp):
+    """A blank is the ordinary answer for an undated page; a guess never is."""
+    assert wiki_replica.iso_timestamp(stamp) == ""
+
+
+def test_surrounding_whitespace_does_not_stop_a_stamp_being_read():
+    assert wiki_replica.iso_timestamp(" 20040429080822 ") == "2004-04-29T08:08:22Z"
 
 
 def test_the_connection_is_closed_even_when_the_query_fails():

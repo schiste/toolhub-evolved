@@ -26,7 +26,14 @@ from backend.models import (  # noqa: E402
     UnresolvedAttributionEvidence,
     utcnow,
 )
-from backend.sync import AUTHOR_CLAIM_VERIFIED, PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER  # noqa: E402
+from backend.sync import (  # noqa: E402
+    AUTHOR_CLAIM_VERIFIED,
+    PERSON_REL_AUTHOR,
+    PERSON_REL_MAINTAINER,
+    SOURCE_OFFICIAL,
+    SOURCE_WIKI_GADGET,
+    SOURCE_WIKI_USERSCRIPT,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -35,12 +42,13 @@ def fresh_db():
     db.init_schema()
 
 
-def _tool(session, name, record):
+def _tool(session, name, record, source=SOURCE_OFFICIAL):
     now = datetime.now(tz=UTC).replace(tzinfo=None)
     session.add(
         CanonicalToolCache(
             tool_name=name,
             record={"name": name, **record},
+            source=source,
             source_url=f"https://toolhub.example/{name}",
             expires_at=now + timedelta(days=1),
             stale_until=now + timedelta(days=2),
@@ -123,6 +131,41 @@ def test_snapshot_keeps_missing_data_and_relationship_quality_visible():
     ]
     assert payload["distributions"]["modifiedRecency"][0]["count"] == 1
     assert payload["distributions"]["modifiedRecency"][-1]["count"] == 2
+
+
+def _created_histogram(source=None):
+    """The creation-year series, either combined or for one of the two lanes."""
+    now = datetime(2026, 8, 25, 12, tzinfo=UTC)
+    with db.session_scope() as session:
+        _tool(session, "registered", {"created_date": "2019-03-04T11:00:00Z"})
+        _tool(
+            session,
+            "gadget",
+            {"created_date": "2007-03-11T12:00:00Z"},
+            source=SOURCE_WIKI_GADGET,
+        )
+        _tool(
+            session,
+            "script",
+            {"created_date": "2009-04-12T18:30:00Z"},
+            source=SOURCE_WIKI_USERSCRIPT,
+        )
+        session.flush()
+        distributions = catalog_statistics.build_snapshot(session, now=now)["distributions"]
+    series = distributions["createdByYear"] if source is None else distributions["createdByYearBySource"][source]
+    return {bucket["key"]: bucket["count"] for bucket in series if bucket["count"]}
+
+
+def test_the_creation_years_count_every_source_together_by_default():
+    assert _created_histogram() == {"2007": 1, "2009": 1, "2019": 1}
+
+
+def test_the_registered_lane_leaves_out_what_the_wikis_contributed():
+    assert _created_histogram("catalog") == {"2019": 1}
+
+
+def test_the_wiki_lane_holds_both_gadgets_and_user_scripts_and_nothing_else():
+    assert _created_histogram("wiki") == {"2007": 1, "2009": 1}
 
 
 def test_statistics_endpoint_is_publicly_cacheable_and_supports_etag():

@@ -38,6 +38,7 @@ export const FIXTURE_TOOL = {
 	deprecated: false,
 	experimental: false,
 	lifecycle: "",
+	created: "2019-03-04T11:00:00Z",
 	modified: "2026-05-12T14:30:00Z",
 	origin: "crawler",
 	weeklyViews: 1842,

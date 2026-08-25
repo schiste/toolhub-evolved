@@ -33,14 +33,29 @@ def _database():
         yield
 
 
-def a_script(owner="Lupin", basename="popups.js", tier=TIER_ACTIVE, model="javascript", wiki=FRWIKI, demand=3):
+def a_script(
+    owner="Lupin",
+    basename="popups.js",
+    tier=TIER_ACTIVE,
+    model="javascript",
+    wiki=FRWIKI,
+    demand=3,
+    created="",
+):
     """Store one directory entry and the page it was projected from."""
     title = f"User:{owner}/{basename}"
     with db.session_scope() as session:
         session.add(UserScriptPage(wiki=wiki, title=title, owner=owner, basename=basename, content_model=model))
         session.add(
             UserScriptDirectoryEntry(
-                wiki=wiki, title=title, owner=owner, basename=basename, tier=tier, demand=demand, position=1
+                wiki=wiki,
+                title=title,
+                owner=owner,
+                basename=basename,
+                tier=tier,
+                demand=demand,
+                position=1,
+                created_at_wiki=created,
             )
         )
     return title
@@ -88,6 +103,23 @@ def test_the_record_transcribes_the_page_and_infers_nothing():
     assert record["_lifecycle"] == LIFECYCLE_ACTIVE
     # No description. Nothing here has read any prose about this script.
     assert "description" not in record
+    # And no creation date: no replica has dated this page.
+    assert "created_date" not in record
+
+
+def test_a_dated_script_publishes_its_pages_first_revision_as_a_creation_date():
+    a_script(created="20090412183000")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    assert catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]["created_date"] == "2009-04-12T18:30:00Z"
+
+
+def test_a_script_whose_stored_stamp_is_unreadable_publishes_no_date():
+    """The directory's ordering stand-in is not a MediaWiki timestamp, and must never print as one."""
+    a_script(created="00000000-0000000009919")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    assert "created_date" not in catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
 
 
 def test_the_row_is_marked_as_ours_so_a_catalog_snapshot_leaves_it_alone():

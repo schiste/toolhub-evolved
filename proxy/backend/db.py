@@ -266,6 +266,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         # They still need the column to exist before that run does.
         "user_script_directory": {
             "script_id": "INTEGER NULL",
+            # Rewritten whole by the next projection run, like every other
+            # column here; it only has to exist before that run does.
+            "created_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
         },
         "user_script_directory_members": {
             "script_id": "INTEGER NULL",
@@ -281,6 +284,13 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # predates it -- see `proxy/migrate.py`, which fills them in from
             # the bodies already stored rather than waiting for another sweep.
             "sketch": "VARCHAR(1024) NOT NULL DEFAULT ''",
+        },
+        "wiki_gadgets": {
+            # Empty until a census reaches the Wiki Replicas, exactly as for
+            # `user_script_pages` above: a deployment that never gets a replica
+            # connection publishes no gadget creation dates and nothing else
+            # changes.
+            "created_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
         },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",

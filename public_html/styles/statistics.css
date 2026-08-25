@@ -276,6 +276,55 @@
 	margin: var(--space-0);
 }
 
+/* The chart occupies one cell of the grid and the switch sits above it, so the
+   whole group has to be the grid item rather than the figure. */
+.statistics-source-choice {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: var(--space-3);
+}
+
+/* A bare fieldset. Its own box is removed because the chart below already
+   carries the border that groups this section. */
+.statistics-source-choice__control {
+	padding: var(--space-0);
+	border: none;
+}
+
+/* Not laid out by the fieldset itself: a legend is not a flex item in every
+   engine, so the options get their own row to sit in. */
+.statistics-source-choice__control legend {
+	padding: var(--space-0);
+	color: var(--color-text-muted);
+}
+
+.statistics-source-choice__options {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-3);
+}
+
+.statistics-source-choice__control label {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+}
+
+.statistics-source-choice__panel {
+	min-width: 0;
+}
+
+/* Every series is in the document; the chosen one is the one that is shown. A
+   reader with scripting off sees the default, which is the combined chart. */
+.statistics-source-choice[data-created-source="all"] > .statistics-source-choice__panel:not([data-source="all"]),
+.statistics-source-choice[data-created-source="catalog"]
+	> .statistics-source-choice__panel:not([data-source="catalog"]),
+.statistics-source-choice[data-created-source="wiki"] > .statistics-source-choice__panel:not([data-source="wiki"]) {
+	display: none;
+}
+
 .statistics-histogram figcaption p {
 	margin-top: var(--space-1);
 	color: var(--color-text-secondary);

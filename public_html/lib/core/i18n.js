@@ -466,6 +466,22 @@ const numberFmt = new Intl.NumberFormat(LOCALE);
 const compactNumberFmt = new Intl.NumberFormat(LOCALE, { notation: "compact", maximumFractionDigits: 1 });
 const relativeTimeFmt = new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" });
 const dateTimeFmt = new Intl.DateTimeFormat(LOCALE, { dateStyle: "medium", timeStyle: "short" });
+const dateFmt = new Intl.DateTimeFormat(LOCALE, { dateStyle: "long" });
+/**
+ * Format an instant as a plain date, with no time of day.
+ *
+ * For dates that are facts rather than freshness. "22 years ago" is the right
+ * way to read a last edit and the wrong way to read a creation date: the reader
+ * wants the year, and the minute a page was first saved in 2004 is noise.
+ *
+ * @param {string | null | undefined} iso
+ * @returns {string} the formatted date, or "" if there is nothing to format
+ */
+export function calendarDate(iso) {
+	if (!iso) return "";
+	const date = new Date(iso);
+	return Number.isNaN(date.getTime()) ? "" : dateFmt.format(date);
+}
 /** @param {string} locale */
 export function localeDir(locale) {
 	return RTL_LANGS.has(String(locale).split("-")[0].toLowerCase()) ? "rtl" : "ltr";

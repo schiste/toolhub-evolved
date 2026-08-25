@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from backend import canonical_tools, db, gadget_inventory, wiki_sources
+from backend import canonical_tools, db, gadget_inventory, wiki_replica, wiki_sources
 from backend.models import CanonicalToolCache, utcnow
 from backend.sync import SOURCE_WIKI_GADGET, SYNC_EVOLVED_REAL
 from backend.wikimedia_urls import without_format_marks
@@ -113,6 +113,11 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
     lives on. Nothing is inferred, and fields the declaration says nothing
     about -- description, licence, audiences, a bug tracker -- are absent
     rather than filled with a plausible guess.
+
+    `created_date` is the one field the declaration does not carry itself: it
+    comes from the code pages' own history, stamped on the inventory row by
+    `backend.gadget_creation_dates`. It is still a transcription -- the wiki
+    recorded that revision -- and it is omitted, never guessed, when blank.
     """
     pages = list(gadget.pages or [])
     record: dict[str, Any] = {
@@ -122,6 +127,11 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
         "tool_type": TOOL_TYPE,
         "for_wikis": [gadget.wiki],
     }
+    if created := wiki_replica.iso_timestamp(gadget.created_at_wiki or ""):
+        # The oldest first revision among the gadget's code pages: when the
+        # gadget began to exist, not when this catalogue noticed it. Absent
+        # rather than approximated wherever no replica has answered.
+        record["created_date"] = created
     if pages:
         record["repository"] = wiki_sources.page_url(gadget.wiki, f"{wiki_sources.GADGET_PREFIX}{pages[0]}")
     if languages := _languages(pages):

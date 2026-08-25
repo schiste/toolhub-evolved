@@ -88,6 +88,9 @@ def test_the_record_transcribes_the_declaration_and_invents_nothing():
         "repository": "https://fr.wikipedia.org/wiki/MediaWiki:Gadget-Popups.js",
         "technology_used": ["JavaScript", "CSS"],
     }
+    # And in particular no creation date: this run reached no replica, and the
+    # definition page says nothing about when the gadget was written.
+    assert "created_date" not in record
     # An empty description is a gap somebody can fill. A guessed one is this
     # codebase putting words in a maintainer's mouth.
     assert "description" not in record
@@ -209,6 +212,21 @@ def test_a_declaration_with_nothing_to_transcribe_still_produces_a_record():
 
     assert "repository" not in record
     assert "technology_used" not in record
+
+
+def test_a_dated_gadget_publishes_its_first_revision_as_a_creation_date():
+    record = gadget_toolinfo.toolinfo_record(a_gadget(created_at_wiki="20070311120000"))
+
+    assert record["created_date"] == "2007-03-11T12:00:00Z"
+
+
+def test_an_undated_gadget_publishes_no_creation_date_at_all():
+    """No replica has answered for it; a `first_seen_at` in 2026 is not the answer."""
+    assert "created_date" not in gadget_toolinfo.toolinfo_record(a_gadget())
+
+
+def test_a_gadget_whose_stored_stamp_is_unreadable_publishes_no_date():
+    assert "created_date" not in gadget_toolinfo.toolinfo_record(a_gadget(created_at_wiki="whenever"))
 
 
 def test_a_gadget_shouting_its_suffix_is_still_javascript():

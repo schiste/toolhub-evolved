@@ -1693,3 +1693,36 @@ test("viewTool leaves the technology names alone when no source analysis ran", a
 	assert.ok(r.html.includes("Flask"));
 	assert.ok(!r.html.includes("Flask 3"));
 });
+
+test("viewTool prints a creation date when the record carries one", async () => {
+	h.getTool.mockResolvedValue(toolFixture("dated", { created: "2009-04-12T18:30:00Z" }));
+	const r = await tool.viewTool("dated");
+	assert.ok(r.html.includes('<time class="toolpage__when" datetime="2009-04-12T18:30:00.000Z"'));
+	assert.ok(r.html.includes("Created April 12, 2009"));
+});
+
+test("viewTool says nothing about creation for a record nothing has dated", async () => {
+	h.getTool.mockResolvedValue(toolFixture("undated", { created: null }));
+	const r = await tool.viewTool("undated");
+	assert.ok(!r.html.includes("Created "));
+});
+
+test("viewTool distinguishes a wiki first revision from a catalog registration", async () => {
+	// The same chip makes two different claims, and only the tooltip says which:
+	// a gadget from 2007 predates Toolhub itself, so calling that a catalog
+	// record would be plainly wrong.
+	h.getTool.mockResolvedValue(toolFixture("hotcat", { created: "2007-03-11T12:00:00Z", toolType: "gadget" }));
+	const gadget = await tool.viewTool("hotcat");
+	assert.ok(gadget.html.includes('title="First revision of this page on the wiki: 2007-03-11T12:00:00.000Z"'));
+
+	h.getTool.mockResolvedValue(toolFixture("registered", { created: "2019-03-04T11:00:00Z", toolType: "web app" }));
+	const registered = await tool.viewTool("registered");
+	assert.ok(registered.html.includes('title="Toolhub catalog record created: 2019-03-04T11:00:00.000Z"'));
+});
+
+test("viewTool ignores a creation date it cannot read rather than printing an invalid one", async () => {
+	h.getTool.mockResolvedValue(toolFixture("garbled", { created: "00000000-0000000009919" }));
+	const r = await tool.viewTool("garbled");
+	assert.ok(!r.html.includes("Created "));
+	assert.ok(!r.html.includes("Invalid Date"));
+});

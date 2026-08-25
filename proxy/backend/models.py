@@ -1745,6 +1745,11 @@ class UserScriptDirectoryEntry(Base):
     # Rank within the tier, from 1. Stored because the ordering is what the
     # directory is for, and recomputing it costs a sort over the whole wiki.
     position: Mapped[int] = mapped_column(Integer, default=0)
+    # The original page's own first revision, copied from `UserScriptPage` at
+    # projection time so the catalogue record can publish a creation date
+    # without joining back. A MediaWiki timestamp, or empty where the replica
+    # has never answered for that page.
+    created_at_wiki: Mapped[str] = mapped_column(String(32), default="")
     computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -1828,6 +1833,13 @@ class WikiGadget(Base):
     # The user rights a reader needs before the gadget is offered to them at
     # all, which is the closest thing a definition gives us to an audience.
     rights: Mapped[list] = mapped_column(JSON, default=list)
+    # When the gadget's code first existed on the wiki: the oldest first
+    # revision among its declared pages, as a MediaWiki timestamp. Distinct
+    # from `first_seen_at` below, which is when *we* first read the definition
+    # -- HotCat is from 2007 and this catalogue is not. Empty when no replica
+    # connection has answered for this wiki yet, so a deployment without
+    # `replica.my.cnf` stays correct and simply publishes no creation date.
+    created_at_wiki: Mapped[str] = mapped_column(String(32), default="")
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     # Set when a definition page no longer declares this gadget. Kept rather

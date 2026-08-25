@@ -30,6 +30,8 @@ from backend.sync import (
     PERSON_REL_AUTHOR,
     PERSON_REL_MAINTAINER,
     SOURCE_OFFICIAL,
+    SOURCE_WIKI_GADGET,
+    SOURCE_WIKI_USERSCRIPT,
     SYNC_OFFICIAL,
 )
 from backend.toolinfo_authors import author_assertions
@@ -77,6 +79,23 @@ def _year_histogram(values: list[Any]) -> list[dict[str, Any]]:
     if unknown:
         rows.append({"key": "unknown", "label": "Date unavailable", "count": unknown})
     return rows
+
+
+#: The lanes this codebase catalogues itself, off the wikis, as opposed to
+#: everything registered with Toolhub. The created-by-year chart can be read
+#: either way and defaults to both, because the two answer different questions:
+#: how old the registered catalogue is, and how long the wikis have been
+#: writing tools nobody registered.
+WIKI_SOURCES = (SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT)
+
+
+def _created_values(records: dict[str, dict[str, Any]], names: set[str] | None = None) -> list[Any]:
+    """Every creation date the given records carry, in whatever field holds it."""
+    return [
+        record.get("created_date") or record.get("created")
+        for name, record in records.items()
+        if names is None or name in names
+    ]
 
 
 def _recency_histogram(values: list[Any], now: datetime) -> list[dict[str, Any]]:
@@ -276,10 +295,16 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
     checked_at = (now or datetime.now(tz=UTC)).astimezone(UTC)
     tool_rows = list(
         session.execute(
-            select(CanonicalToolCache.tool_name, CanonicalToolCache.record).order_by(CanonicalToolCache.tool_name)
+            select(
+                CanonicalToolCache.tool_name,
+                CanonicalToolCache.record,
+                CanonicalToolCache.source,
+            ).order_by(CanonicalToolCache.tool_name)
         )
     )
-    records = {name: record if isinstance(record, dict) else {} for name, record in tool_rows}
+    records = {name: record if isinstance(record, dict) else {} for name, record, _ in tool_rows}
+    wiki_tools = {name for name, _, source in tool_rows if source in WIKI_SOURCES}
+    catalog_tools = set(records) - wiki_tools
     tool_names = set(records)
     total = len(tool_names)
 
@@ -388,9 +413,16 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
             "classifications": dict(sorted(source_classifications.items())),
         },
         "distributions": {
-            "createdByYear": _year_histogram(
-                [record.get("created_date") or record.get("created") for record in records.values()]
-            ),
+            "createdByYear": _year_histogram(_created_values(records)),
+            # The same chart split by where the record came from, so a reader
+            # can ask about the registered catalogue and the wiki lanes
+            # separately. Both series are always emitted; which is shown is the
+            # page's business, and showing both is the default because the
+            # combined shape is the honest one.
+            "createdByYearBySource": {
+                "catalog": _year_histogram(_created_values(records, catalog_tools)),
+                "wiki": _year_histogram(_created_values(records, wiki_tools)),
+            },
             "modifiedByYear": _year_histogram(
                 [record.get("modified_date") or record.get("modified") for record in records.values()]
             ),

@@ -645,6 +645,20 @@ test("paginate breaks (returns what it has) when a page request errors", async (
 });
 
 // ----------------------------------------------------------------- normalizeTool / authors
+test("normalizeTool reads a creation date from either spelling the catalog uses", () => {
+	// Toolhub publishes `created_date`; the wiki lanes' toolinfo records use the
+	// same key, and a record already normalized once carries `created`.
+	assert.equal(
+		api.normalizeTool({ name: "a", created_date: "2019-03-04T11:00:00Z" }).created,
+		"2019-03-04T11:00:00Z"
+	);
+	assert.equal(api.normalizeTool({ name: "b", created: "2007-03-11T12:00:00Z" }).created, "2007-03-11T12:00:00Z");
+	assert.equal(
+		api.normalizeTool({ name: "c", created_date: "2019-03-04T11:00:00Z", created: "1999-01-01T00:00:00Z" }).created,
+		"2019-03-04T11:00:00Z"
+	);
+});
+
 test("normalizeTool fills compact defaults for a minimal record", () => {
 	const o = api.normalizeTool({ name: "min" });
 	assert.equal(o.name, "min");
@@ -657,6 +671,7 @@ test("normalizeTool fills compact defaults for a minimal record", () => {
 	assert.equal(o.deprecated, false);
 	assert.equal(o.experimental, false);
 	assert.equal(o.modified, null);
+	assert.equal(o.created, null);
 	for (const f of [
 		"keywords",
 		"authors",

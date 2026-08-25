@@ -4,7 +4,7 @@
 import os
 import sys
 
-from backend import gadget_inventory, gadget_toolinfo, job_runner
+from backend import gadget_creation_dates, gadget_inventory, gadget_toolinfo, job_runner
 from backend.wikimedia_delivery import WikimediaClient
 
 DEFAULT_WIKIS = "fr.wikipedia.org,meta.wikimedia.org"
@@ -22,6 +22,9 @@ def main() -> int:
     One request per wiki. `MediaWiki:Gadgets-definition` is the entire
     inventory, so where the user-script census costs thousands of requests and
     is asked for explicitly, this can simply run on a schedule.
+
+    Creation dates are stamped between the two passes, so a gadget dated for the
+    first time publishes that date on the same tick rather than the next one.
 
     The catalogue pass follows every read, including one that changed nothing
     and one that failed. It talks to no wiki -- it rebuilds records from what
@@ -41,6 +44,12 @@ def main() -> int:
                 f"declared={read['declared']} added={read['added']} "
                 f"updated={read['updated']} folded={read['folded']} "
                 f"retired={read['retired']}\n",
+            )
+            stamped = gadget_creation_dates.backfill([wiki])
+            sys.stdout.write(
+                "gadget-creation-dates: "
+                f"wiki={wiki} replica={'yes' if stamped else 'no'} "
+                f"stamped={stamped.get(wiki, 0)}\n",
             )
             catalogued = gadget_toolinfo.synchronize(wiki)
             sys.stdout.write(

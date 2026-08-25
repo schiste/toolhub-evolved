@@ -49,7 +49,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from backend import canonical_tools, db, wiki_sources
+from backend import canonical_tools, db, wiki_replica, wiki_sources
 from backend.models import CanonicalToolCache, UserScriptDirectoryEntry, UserScriptPage, utcnow
 from backend.sync import LIFECYCLE_ACTIVE, LIFECYCLE_ARCHIVED, SOURCE_WIKI_USERSCRIPT, SYNC_EVOLVED_REAL
 from backend.userscript_directory import TIER_ACTIVE
@@ -133,6 +133,11 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "") ->
     source -- there is no forge behind it, which is the whole reason this census
     exists.
 
+    `created_date` is the page's own first revision, carried here from the
+    census by way of the projection. It is omitted when the Wiki Replicas have
+    never dated the page -- the directory has a stand-in for that case, but it
+    is an ordering device and is not a date anybody can be shown.
+
     `_lifecycle` is the exception, and is marked as one by its underscore: it is
     Evolved's reading of the directory's tier rather than anything the wiki
     published.
@@ -146,6 +151,8 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "") ->
         "repository": f"{wiki_sources.page_url(entry.wiki, entry.title)}?action=raw",
         "_lifecycle": LIFECYCLE_ACTIVE if entry.tier == TIER_ACTIVE else LIFECYCLE_ARCHIVED,
     }
+    if created := wiki_replica.iso_timestamp(entry.created_at_wiki or ""):
+        record["created_date"] = created
     if entry.owner:
         record["author"] = [{"name": entry.owner, "wiki_username": entry.owner}]
     if languages := _languages(entry.basename, content_model):

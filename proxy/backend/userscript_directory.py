@@ -121,6 +121,14 @@ class Candidate:
     is the sample of the same body that `similarity` reads, and is empty on a
     page stored before sketches existed -- which resembles nothing, so such a
     page folds exactly as it did before rather than folding wrongly.
+
+    `created_at_wiki` is the same date without the stand-in: the wiki's own
+    timestamp, or empty. Two fields rather than one because they answer
+    different questions. `created` must always order, so it is allowed to be
+    invented; `created_at_wiki` is published to readers as a fact about the
+    page, so it must never be. Deriving one from the other after the fact would
+    mean identifying a minted key by its shape, which is exactly the kind of
+    inference that ends with a stand-in on a tool page.
     """
 
     title: str
@@ -129,6 +137,7 @@ class Candidate:
     created: str
     fingerprint: str
     sketch: str = ""
+    created_at_wiki: str = ""
 
     @property
     def rank(self) -> tuple[str, str]:

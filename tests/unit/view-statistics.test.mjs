@@ -38,6 +38,10 @@ const payload = {
 	},
 	distributions: {
 		createdByYear: [{ key: "2025", label: "2025", count: 500 }],
+		createdByYearBySource: {
+			catalog: [{ key: "2025", label: "2025", count: 320 }],
+			wiki: [{ key: "2025", label: "2025", count: 180 }]
+		},
 		modifiedByYear: [{ key: "2026", label: "2026", count: 700 }],
 		modifiedRecency: [{ key: "last30Days", label: "Last 30 days", count: 300 }],
 		toolTypes: [{ key: "web-app", label: "Web app", count: 1200 }]
@@ -108,4 +112,52 @@ test("the wait is a skeleton of the ledger, announced but not written out", () =
 	assert.equal(body.querySelectorAll(".statistics-ledger > div").length, 4);
 	assert.equal(body.querySelectorAll(".statistics-section").length, 2);
 	assert.equal(region.querySelector(".spinner"), null);
+});
+
+test("the creation histogram offers all three lanes and starts on the combined one", () => {
+	document.body.innerHTML = statisticsHTML(payload);
+	const choice = document.querySelector(".statistics-source-choice");
+	assert.equal(choice.dataset.createdSource, "all");
+	assert.deepEqual(
+		[...choice.querySelectorAll("[data-created-source-option]")].map((input) => input.value),
+		["all", "catalog", "wiki"]
+	);
+	assert.equal(choice.querySelector("[data-created-source-option]:checked").value, "all");
+	// Every panel is drawn up front, so switching lane cannot leave the figure
+	// empty and a reader without scripting still sees the combined series.
+	assert.deepEqual(
+		[...choice.querySelectorAll(".statistics-source-choice__panel")].map((panel) => panel.dataset.source),
+		["all", "catalog", "wiki"]
+	);
+	const counts = [...choice.querySelectorAll(".statistics-source-choice__panel")].map((panel) =>
+		panel.textContent.replaceAll(/\s+/g, " ")
+	);
+	assert.match(counts[0], /500/);
+	assert.match(counts[1], /320/);
+	assert.match(counts[2], /180/);
+});
+
+test("choosing a lane records the choice on the group rather than redrawing the chart", async () => {
+	h.backendGetJson.mockResolvedValue(payload);
+	const view = viewStatistics();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await vi.waitFor(() => assert.ok(document.querySelector(".statistics-source-choice")));
+	const wiki = document.querySelector('[data-created-source-option][value="wiki"]');
+	wiki.checked = true;
+	wiki.dispatchEvent(new window.Event("change", { bubbles: true }));
+	assert.equal(document.querySelector(".statistics-source-choice").dataset.createdSource, "wiki");
+	// The panels stay where they were: only CSS decides which one is visible.
+	assert.equal(document.querySelectorAll(".statistics-source-choice__panel").length, 3);
+});
+
+test("a report rendered before the split existed still draws the combined series", () => {
+	const older = { ...payload, distributions: { ...payload.distributions, createdByYearBySource: undefined } };
+	document.body.innerHTML = statisticsHTML(older);
+	const panels = document.querySelectorAll(".statistics-source-choice__panel");
+	assert.equal(panels.length, 3);
+	assert.match(panels[0].textContent, /500/);
+	// The lane panels draw empty rather than repeating the combined numbers,
+	// which would read as a split that had been measured.
+	assert.equal(panels[1].querySelectorAll("li").length, 0);
 });
