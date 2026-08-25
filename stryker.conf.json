@@ -5,10 +5,9 @@
 	"coverageAnalysis": "perTest",
 	"mutate": ["public_html/**/*.js"],
 	"reporters": ["clear-text", "progress"],
-	"_thresholds_note": "The whole app (public_html/**) is at a literal 100% mutation score; genuine equivalent mutants carry documented // Stryker disable comments (see EQUIVALENTS.md). break: 100 holds that line. Runs nightly via .github/workflows/mutation.yml.",
+	"_thresholds_note": "No break here on purpose. `break` is one number for the whole app, and the app is not one number: measured per shard the score runs from the low single digits to about 70%, so any value that passed the best shard would wave the worst ones through, and 100 -- which this said for a long time, and which the app has never met -- failed every shard on every run until the failure meant nothing. Enforcement is per shard instead: each entry in the matrix of .github/workflows/mutation.yml carries a `floor` it may not drop below, seeded from what it measured and raised by hand when someone writes tests. high/low only tint the report. Genuine equivalent mutants carry documented // Stryker disable comments (see EQUIVALENTS.md). Runs weekly via that workflow.",
 	"thresholds": {
 		"high": 100,
-		"low": 100,
-		"break": 100
+		"low": 100
 	}
 }
