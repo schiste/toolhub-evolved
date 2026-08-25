@@ -56,7 +56,7 @@ const TOOLHUB_LAUNCH_YEAR = "2021";
 /** Standard annotation glyph; the meaning is carried by the note, not the mark. */
 const NOTE_MARK = "\u24D8";
 
-/** Rows a time histogram should annotate, as row key to hover text. */
+/** Rows a time histogram should annotate, as row key to note text. */
 function launchNote() {
 	return { [TOOLHUB_LAUNCH_YEAR]: t("statistics.launchNote", "Toolhub launched") };
 }
@@ -64,15 +64,25 @@ function launchNote() {
 /**
  * A marker on one histogram row, explaining the shape of the bar next to it.
  *
- * `title` is the hover text and `aria-describedby` would need an id per row,
- * so the note is repeated as visually-hidden text: a bare `title` on a span is
- * not reliably announced, and a reader who cannot hover would otherwise get
- * the anomaly with no explanation at all.
+ * The explanation used to be a `title`, which cannot satisfy what an annotation
+ * mark promises: it needs a second of motionless hover, ignores clicks, never
+ * appears on touch at all, and sits on an element no keyboard can reach. The
+ * mark is a real button instead, so pointing, tapping and tabbing all open the
+ * same bubble -- `:focus-within` rather than `:focus-visible`, because a click
+ * must count and only the latter filters mouse focus out.
+ *
+ * The button's accessible name is the note itself, so a screen reader gets the
+ * explanation on focus without an `aria-describedby` id that would have to be
+ * unique across two charts on one page. That makes the visible bubble a second
+ * copy of text already announced, hence `aria-hidden`.
  *
  * @param {string} note
  */
 function histogramNote(note) {
-	return `<span class="statistics-histogram__note" title="${esc(note)}">${esc(NOTE_MARK)}<span class="visually-hidden">${esc(note)}</span></span>`;
+	return `<span class="statistics-histogram__note">
+		<button type="button" class="statistics-histogram__note-mark"><span aria-hidden="true">${esc(NOTE_MARK)}</span><span class="visually-hidden">${esc(note)}</span></button>
+		<span class="statistics-histogram__note-bubble" role="tooltip" aria-hidden="true">${esc(note)}</span>
+	</span>`;
 }
 
 /**

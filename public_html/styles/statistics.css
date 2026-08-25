@@ -334,13 +334,61 @@
 
 /* The row label and its marker share a line, so the marker is sized off the
    label rather than given a box of its own: a bar chart that grows a second
-   column when one row is annotated reads as two different charts. `help`
-   rather than `pointer` because hovering explains the bar; it does not go
-   anywhere. */
+   column when one row is annotated reads as two different charts. The wrapper
+   is the positioning context and the bubble is taken out of flow, so opening a
+   note cannot change any row's height. */
 .statistics-histogram__note {
+	position: relative;
 	margin-inline-start: var(--space-1);
+}
+
+/* A button only so that tap and keyboard reach it; it should read as the mark
+   it replaced, not as a control. `help` rather than `pointer` because it
+   explains the bar next to it and does not go anywhere. */
+.statistics-histogram__note-mark {
+	padding: var(--space-0);
+	border: none;
+	background: none;
 	color: var(--color-text-secondary);
+	font: inherit;
+	line-height: 1;
 	cursor: help;
+}
+
+/* Hidden by visibility rather than display so the bubble keeps a box to
+   measure and can transition; `opacity` alone would leave it in the hit-test
+   tree, able to swallow clicks meant for the bar underneath. */
+.statistics-histogram__note-bubble {
+	position: absolute;
+	z-index: 1;
+	bottom: calc(100% + var(--space-1));
+	inset-inline-start: 50%;
+	visibility: hidden;
+	width: max-content;
+	max-width: 16rem;
+	padding: var(--space-1) var(--space-2);
+	transform: translateX(-50%);
+	opacity: 0;
+	border-radius: var(--radius-sm);
+	box-shadow: var(--shadow-popover);
+	background: var(--color-text);
+	color: var(--color-surface);
+	font-size: var(--fs-small);
+	transition: opacity 140ms ease;
+}
+
+/* :focus-within, not :focus-visible -- a click on the mark must open the note,
+   and :focus-visible deliberately ignores mouse focus. */
+.statistics-histogram__note:hover .statistics-histogram__note-bubble,
+.statistics-histogram__note:focus-within .statistics-histogram__note-bubble {
+	visibility: visible;
+	opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.statistics-histogram__note-bubble {
+		transition: none;
+	}
 }
 
 .statistics-histogram meter {

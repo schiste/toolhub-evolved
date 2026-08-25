@@ -284,16 +284,19 @@ test("other query parameters on the address survive a change of lens", async () 
 	assert.equal(location.search, "?whats-new=1&lens=wiki");
 });
 
-// The 2021 bar is three times its neighbours because launching Toolhub imported
+// The 2021 bar is three times its neighbors because launching Toolhub imported
 // a catalog that already existed, and nothing on the axis says so. These tests
 // pin where the explanation lands, because a note on the wrong bar is worse
 // than no note: it would attribute the launch to a year it did not happen in.
+// They also pin how it opens: the first version used `title`, which shipped
+// looking correct and reached nobody -- no click, no tap, no keyboard.
+/** Row labels of every row carrying a note, in document order. */
 /** @param {string} html */
 const noteRows = (html) => {
 	document.body.innerHTML = html;
 	return [...document.querySelectorAll("li")]
 		.filter((li) => li.querySelector(".statistics-histogram__note"))
-		.map((li) => li.querySelector("span").textContent.trim());
+		.map((li) => li.querySelector("span").firstChild.textContent.trim());
 };
 
 const dated = {
@@ -316,16 +319,32 @@ const dated = {
 };
 
 test("the launch year is annotated on every time histogram that reaches it", () => {
-	const rows = noteRows(statisticsHTML(dated));
 	// Once for created-by-year and once for last-updated-by-year, never elsewhere.
-	assert.deepEqual(rows, ["2021ⓘToolhub launched", "2021ⓘToolhub launched"]);
+	assert.deepEqual(noteRows(statisticsHTML(dated)), ["2021", "2021"]);
 });
 
-test("the launch note explains itself to a reader who cannot hover", () => {
+test("the launch note opens by pointer, tap and keyboard alike", () => {
 	document.body.innerHTML = statisticsHTML(dated);
-	const note = document.querySelector(".statistics-histogram__note");
-	assert.equal(note.getAttribute("title"), "Toolhub launched");
-	assert.equal(note.querySelector(".visually-hidden").textContent, "Toolhub launched");
+	const mark = document.querySelector(".statistics-histogram__note-mark");
+	// A button is the whole point: `title` on a span answered to hover only, and
+	// then only after a second of it. Anything focusable and activatable will do,
+	// but it must not go back to being an inert span.
+	assert.equal(mark.tagName, "BUTTON");
+	assert.equal(mark.getAttribute("type"), "button");
+	// Its accessible name is the explanation, so focusing it announces the note
+	// without an aria-describedby id that two charts on one page would collide on.
+	assert.equal(mark.querySelector(".visually-hidden").textContent, "Toolhub launched");
+	assert.equal(mark.textContent.replace("\u24D8", "").trim(), "Toolhub launched");
+});
+
+test("the visible bubble carries the note without announcing it twice", () => {
+	document.body.innerHTML = statisticsHTML(dated);
+	const bubble = document.querySelector(".statistics-histogram__note-bubble");
+	assert.equal(bubble.textContent, "Toolhub launched");
+	assert.equal(bubble.getAttribute("role"), "tooltip");
+	// The button already announces the same words; unhidden this would be read
+	// twice on every focus.
+	assert.equal(bubble.getAttribute("aria-hidden"), "true");
 });
 
 test("a time histogram that never reaches 2021 carries no note", () => {
