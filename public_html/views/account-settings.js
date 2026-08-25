@@ -11,7 +11,7 @@ import { logoutForm } from "../lib/organisms/account.js";
 import { accountSection, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
-const STYLESHEET = "/styles/account-settings.css";
+export const STYLESHEET = "/styles/account-settings.css";
 
 function exportTextarea(value = "") {
 	return `<textarea class="le__input account-data__export" data-export-json rows="12" aria-label="${t("accountData.exportJson", "Evolved data export JSON")}" readonly>${esc(value)}</textarea>`;

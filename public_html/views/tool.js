@@ -41,7 +41,7 @@ import { setIssueContext } from "../lib/organisms/issue-drawer.js";
 import { prosePage, viewNotFound } from "./static.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
-const STYLESHEET = "/styles/tool.css";
+export const STYLESHEET = "/styles/tool.css";
 
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";

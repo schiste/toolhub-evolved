@@ -9,7 +9,7 @@ import { openQuickView } from "../lib/organisms/quickview.js";
 import { loadingRegion, skeletonBlock } from "../lib/molecules/skeleton.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
-const STYLESHEET = "/styles/graph.css";
+export const STYLESHEET = "/styles/graph.css";
 
 const GRAPH_LIMITS = [250, 500, 1000, 2000, 4000];
 const GRAPH_GROUPINGS = [

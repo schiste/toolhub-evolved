@@ -5,7 +5,7 @@ import { t } from "../lib/core/i18n.js";
 import { releaseNotesHTML } from "../lib/molecules/release-notes.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
-const STYLESHEET = "/styles/changelog.css";
+export const STYLESHEET = "/styles/changelog.css";
 
 /** @param {string | undefined} value */
 function dateLabel(value) {

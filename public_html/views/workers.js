@@ -5,7 +5,7 @@ import { t } from "../lib/core/i18n.js";
 import { button } from "../lib/atoms/button.js";
 import { loadingRegion, skeletonLine } from "../lib/molecules/skeleton.js";
 
-const STYLESHEET = "/styles/workers.css";
+export const STYLESHEET = "/styles/workers.css";
 
 const MINUTES_PER_HOUR = 60;
 const MINUTES_PER_DAY = 1440;

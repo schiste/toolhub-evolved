@@ -12,7 +12,7 @@ import { buildToolinfoGeneratorEntries, toolinfoGeneratorWorkspace } from "../li
 import { toolRegistrationWorkspace } from "./toolforms.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
-const STYLESHEET = "/styles/my-tools.css";
+export const STYLESHEET = "/styles/my-tools.css";
 
 const AUTHOR_CLAIM_TOOLFORGE_MAINTAINER = "toolforge_maintainer";
 const AUTHOR_CLAIM_SIGNED_TOOLINFO = "signed_toolinfo";

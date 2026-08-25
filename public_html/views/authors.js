@@ -19,7 +19,7 @@ import { communityHeader } from "./community.js";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from "../lib/core/paging.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
-const STYLESHEET = "/styles/authors.css";
+export const STYLESHEET = "/styles/authors.css";
 
 const PEOPLE_ROLES = new Set(["author", "maintainer"]);
 const PEOPLE_VERIFICATIONS = new Set(["verified", "unverified"]);

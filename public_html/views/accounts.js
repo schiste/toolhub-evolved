@@ -10,7 +10,7 @@ import { communityHeader } from "./community.js";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from "../lib/core/paging.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
-const STYLESHEET = "/styles/accounts.css";
+export const STYLESHEET = "/styles/accounts.css";
 
 const ACCOUNT_ORDERINGS = new Set(["name", "recent"]);
 
