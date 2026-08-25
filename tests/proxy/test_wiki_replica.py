@@ -325,3 +325,284 @@ def test_enumeration_narrows_by_model_rather_than_by_suffix():
     # The whole point of reading the replica: a page holding JavaScript under a
     # name that does not end in `.js` is a script, and a suffix scan misses it.
     assert "LIKE" not in wiki_replica.ENUMERATION_QUERY
+
+
+# --- section addressing and the pass-scoped pool ---------------------------
+
+
+class PooledConnection:
+    """A connection that records the databases it was switched to."""
+
+    def __init__(self, rows, seen, closed, database, switches):
+        self.rows, self.seen, self.closed = rows, seen, closed
+        self.database, self.switches = database, switches
+
+    def cursor(self):
+        return FakeCursor(self.rows, self.seen)
+
+    def select_db(self, database):
+        self.database = database
+        self.switches.append(database)
+
+    def close(self):
+        self.closed.append(self.database)
+
+
+def pooling_connector(rows, seen, closed, opened, switches):
+    def connect(user, target):
+        opened.append(target.host)
+        return PooledConnection(rows, seen, closed, target.database, switches)
+
+    return connect
+
+
+def test_a_wiki_with_no_section_is_still_addressed_by_its_own_alias():
+    target = wiki_replica.target_for("frwiki")
+    assert target == wiki_replica.Target(
+        host="frwiki.analytics.db.svc.wikimedia.cloud", database="frwiki_p"
+    )
+
+
+def test_a_section_addresses_the_shared_instance_and_keeps_the_wikis_database():
+    target = wiki_replica.target_for("frwiki", "s6")
+    assert target == wiki_replica.Target(
+        host="s6.analytics.db.svc.wikimedia.cloud", database="frwiki_p"
+    )
+
+
+def test_the_column_spelling_of_a_section_is_not_the_address_spelling():
+    assert wiki_replica.section_of("s6.labsdb") == "s6"
+    assert wiki_replica.section_of("s3.labsdb") == "s3"
+    # A row that has already been stripped, and one that has no section at all.
+    assert wiki_replica.section_of("s1") == "s1"
+    assert wiki_replica.section_of("") == ""
+
+
+def test_wikis_sharing_a_section_share_one_connection():
+    """The whole point: 869 wikis on one instance must not be 869 connections."""
+    seen, closed, opened, switches = [], [], [], []
+    user = wiki_replica.Credentials(user="s1", password="p")
+    connect = pooling_connector([], seen, closed, opened, switches)
+    with wiki_replica.pooled(connect) as pooled:
+        for dbname in ("aawiki", "abwiki", "acewiki"):
+            wiki_replica.script_edit_dates_for(dbname, section="s3", user=user, connect=pooled)
+    assert opened == ["s3.analytics.db.svc.wikimedia.cloud"]
+    # The first wiki is served by the database the connection opened on; only
+    # the wikis after it need switching to.
+    assert switches == ["abwiki_p", "acewiki_p"]
+    assert len(seen) == 3
+
+
+def test_a_reader_closing_its_connection_does_not_close_the_pools():
+    """Readers close what they open. Inside a pass that has to mean 'release'."""
+    seen, closed, opened, switches = [], [], [], []
+    user = wiki_replica.Credentials(user="s1", password="p")
+    connect = pooling_connector([], seen, closed, opened, switches)
+    with wiki_replica.pooled(connect) as pooled:
+        wiki_replica.script_edit_dates_for("aawiki", section="s3", user=user, connect=pooled)
+        assert closed == []
+        wiki_replica.gadget_edit_dates_for("abwiki", section="s3", user=user, connect=pooled)
+        assert closed == []
+    assert closed == ["abwiki_p"]
+
+
+def test_wikis_on_different_sections_get_different_connections():
+    seen, closed, opened, switches = [], [], [], []
+    user = wiki_replica.Credentials(user="s1", password="p")
+    connect = pooling_connector([], seen, closed, opened, switches)
+    with wiki_replica.pooled(connect) as pooled:
+        wiki_replica.script_edit_dates_for("enwiki", section="s1", user=user, connect=pooled)
+        wiki_replica.script_edit_dates_for("frwiki", section="s6", user=user, connect=pooled)
+        wiki_replica.script_edit_dates_for("dewiki", section="s5", user=user, connect=pooled)
+    assert opened == [
+        "s1.analytics.db.svc.wikimedia.cloud",
+        "s6.analytics.db.svc.wikimedia.cloud",
+        "s5.analytics.db.svc.wikimedia.cloud",
+    ]
+    assert switches == []
+
+
+def test_the_pool_closes_every_connection_it_opened_even_when_a_read_raises():
+    closed, opened, switches = [], [], []
+    user = wiki_replica.Credentials(user="s1", password="p")
+
+    def connect(_user, target):
+        opened.append(target.host)
+        return PooledConnection([], [], closed, target.database, switches)
+
+    with pytest.raises(RuntimeError), wiki_replica.pooled(connect) as pooled:
+        wiki_replica.script_edit_dates_for("enwiki", section="s1", user=user, connect=pooled)
+        message = "the pass gave up"
+        raise RuntimeError(message)
+    assert closed == ["enwiki_p"]
+
+
+def test_a_connection_that_stops_giving_cursors_is_dropped_not_reused():
+    """One wiki's dead connection must not be inherited by the next wiki."""
+    opened, closed = [], []
+
+    class Broken(PooledConnection):
+        def cursor(self):
+            message = "server has gone away"
+            raise OSError(message)
+
+    def connect(_user, target):
+        opened.append(target.host)
+        return (Broken if len(opened) == 1 else PooledConnection)([], [], closed, target.database, [])
+
+    user = wiki_replica.Credentials(user="s1", password="p")
+    with wiki_replica.pooled(connect) as pooled:
+        with pytest.raises(OSError, match="gone away"):
+            wiki_replica.script_edit_dates_for("aawiki", section="s3", user=user, connect=pooled)
+        # The next wiki on the same section reconnects rather than failing for
+        # a reason that has nothing to do with it.
+        wiki_replica.script_edit_dates_for("abwiki", section="s3", user=user, connect=pooled)
+    assert opened == ["s3.analytics.db.svc.wikimedia.cloud"] * 2
+
+
+def test_without_a_section_the_pool_reuses_nothing():
+    """Per-wiki aliases are distinct hosts, so pooling them is a no-op, not a bug."""
+    seen, closed, opened, switches = [], [], [], []
+    user = wiki_replica.Credentials(user="s1", password="p")
+    connect = pooling_connector([], seen, closed, opened, switches)
+    with wiki_replica.pooled(connect) as pooled:
+        wiki_replica.script_edit_dates_for("aawiki", user=user, connect=pooled)
+        wiki_replica.script_edit_dates_for("abwiki", user=user, connect=pooled)
+    assert opened == [
+        "aawiki.analytics.db.svc.wikimedia.cloud",
+        "abwiki.analytics.db.svc.wikimedia.cloud",
+    ]
+
+
+# --- the roster ------------------------------------------------------------
+
+
+def test_the_roster_reads_identity_and_address_out_of_one_row():
+    rows = ((b"frwiki", b"https://fr.wikipedia.org", b"wikipedia", b"fr", b"s6.labsdb", 0),)
+    (entry,) = wiki_replica.read_roster(rows)
+    assert entry == wiki_replica.WikiRow(
+        wiki="fr.wikipedia.org",
+        dbname="frwiki",
+        section="s6",
+        family="wikipedia",
+        lang="fr",
+        closed=False,
+    )
+
+
+def test_a_closed_wiki_is_on_the_roster_and_says_so():
+    """Closed wikis are readable and their scripts are real; they just never change."""
+    rows = ((b"aawiki", b"https://aa.wikipedia.org", b"wikipedia", b"aa", b"s3.labsdb", 1),)
+    (entry,) = wiki_replica.read_roster(rows)
+    assert (entry.wiki, entry.closed) == ("aa.wikipedia.org", True)
+
+
+def test_the_flags_survive_the_decimals_the_driver_returns():
+    """`is_closed` comes back as Decimal('1'), which is truthy either way -- and
+    Decimal('0'), which is falsy as a number and truthy as an object."""
+    from decimal import Decimal
+
+    rows = (
+        (b"a", b"https://a.example", b"f", b"x", b"s3.labsdb", Decimal("0")),
+        (b"b", b"https://b.example", b"f", b"x", b"s3.labsdb", Decimal("1")),
+    )
+    assert [entry.closed for entry in wiki_replica.read_roster(rows)] == [False, True]
+
+
+def test_a_row_with_no_database_or_no_host_is_not_a_wiki_that_can_be_read():
+    rows = (
+        (b"", b"https://nowhere.example", b"f", b"x", b"s3.labsdb", 0),
+        (b"orphan", b"", b"f", b"x", b"s3.labsdb", 0),
+        (b"good", b"https://good.example", b"f", b"x", b"s3.labsdb", 0),
+    )
+    assert [entry.dbname for entry in wiki_replica.read_roster(rows)] == ["good"]
+
+
+def test_a_wiki_with_no_section_is_kept_and_read_singly():
+    """Not knowing where a wiki lives is a reason to address it the long way,
+    not a reason to drop it from the roster."""
+    rows = ((b"oddwiki", b"https://odd.example", b"f", b"x", b"", 0),)
+    (entry,) = wiki_replica.read_roster(rows)
+    assert entry.section == ""
+    assert wiki_replica.target_for(entry.dbname, entry.section).host.startswith("oddwiki.")
+
+
+def test_the_roster_is_one_read_of_meta_and_nothing_per_wiki():
+    seen, closed, targets = [], [], []
+    rows = ((b"frwiki", b"https://fr.wikipedia.org", b"wikipedia", b"fr", b"s6.labsdb", 0),)
+    user = wiki_replica.Credentials(user="s1", password="p")
+    entries = wiki_replica.roster_for(user=user, connect=connector(rows, seen, closed, targets))
+    assert [entry.wiki for entry in entries] == ["fr.wikipedia.org"]
+    assert [target.database for _user, target in targets] == ["meta_p"]
+    assert [params for _sql, params in seen] == [()]
+
+
+# --- resolving where each wiki is read ------------------------------------
+
+
+@pytest.fixture
+def _has_credentials(monkeypatch):
+    monkeypatch.setattr(wiki_replica, "credentials", lambda: wiki_replica.Credentials(user="s1", password="p"))
+
+
+@pytest.mark.usefixtures("_has_credentials")
+def test_a_caller_that_already_knows_the_addresses_never_asks_meta():
+    """The registry stores this. A scheduled pass over a thousand wikis must not
+    reopen `meta_p` to relearn it."""
+    opened = []
+
+    def connect(_user, target):
+        opened.append(target.database)
+        return FakeConnection([], [], [])
+
+    known = {"fr.wikipedia.org": wiki_replica.Address(dbname="frwiki", section="s6")}
+    user, found = wiki_replica.resolve(["fr.wikipedia.org"], connect=connect, known=known)
+    assert user is not None
+    assert found == known
+    assert opened == []
+
+
+@pytest.mark.usefixtures("_has_credentials")
+def test_a_wiki_the_caller_does_not_know_is_looked_up():
+    rows = ((b"metawiki", b"https://meta.wikimedia.org"),)
+    seen = []
+    known = {"fr.wikipedia.org": wiki_replica.Address(dbname="frwiki", section="s6")}
+    _user, found = wiki_replica.resolve(
+        ["fr.wikipedia.org", "meta.wikimedia.org"],
+        connect=connector(rows, seen, []),
+        known=known,
+    )
+    assert found["meta.wikimedia.org"] == wiki_replica.Address(dbname="metawiki", section="")
+    # Only the wiki that was missing was asked about.
+    assert seen[0][1] == ("https://meta.wikimedia.org",)
+
+
+@pytest.mark.usefixtures("_has_credentials")
+def test_a_meta_that_will_not_answer_leaves_the_caller_what_it_already_knew():
+    """A scheduled pass supplies every address, so an unreachable meta_p must
+    not cost it the wikis it could have covered without one."""
+
+    def refuse(_user, _target):
+        message = "connection refused"
+        raise OSError(message)
+
+    known = {"fr.wikipedia.org": wiki_replica.Address(dbname="frwiki", section="s6")}
+    user, found = wiki_replica.resolve(["fr.wikipedia.org", "new.example"], connect=refuse, known=known)
+    assert user is not None
+    assert found == known
+
+
+def test_no_credentials_resolves_nothing(monkeypatch):
+    monkeypatch.setattr(wiki_replica, "credentials", lambda: None)
+    known = {"fr.wikipedia.org": wiki_replica.Address(dbname="frwiki")}
+    assert wiki_replica.resolve(["fr.wikipedia.org"], known=known) == (None, {})
+
+
+@pytest.mark.usefixtures("_has_credentials")
+def test_an_address_with_no_database_is_not_an_address():
+    """A registry row written before its wiki was resolvable must not be
+    mistaken for a known one and skip the lookup."""
+    rows = ((b"frwiki", b"https://fr.wikipedia.org"),)
+    known = {"fr.wikipedia.org": wiki_replica.Address(dbname="", section="s6")}
+    _user, found = wiki_replica.resolve(["fr.wikipedia.org"], connect=connector(rows, [], []), known=known)
+    assert found["fr.wikipedia.org"].dbname == "frwiki"

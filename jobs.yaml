@@ -376,23 +376,47 @@
   schedule: "5 3 * * *"
   emails: onfailure
 
+- name: wiki-registry
+  # Which Wikimedia wikis exist, and which replica instance each one is on.
+  # `meta_p.wiki` lists about a thousand of them and already omits the private
+  # ones, so what it returns is exactly the set the censuses can read. One
+  # connection, one read, into a local table the census lanes consult every
+  # hour without touching the replicas for it.
+  #
+  # Weekly because that is the rate the answer changes at -- a wiki is created,
+  # renamed or closed a few times a year -- not the rate it is needed at. A run
+  # that cannot reach a replica reports read=0 and succeeds: the registry it
+  # failed to update is still correct until a wiki is created, and failing here
+  # would only add a red job to a week in which nothing was wrong.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name wiki-registry --stale-after 1800 -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/wiki_registry_refresh.py
+  image: python3.13
+  schedule: "17 2 * * 1"
+  emails: onfailure
+
 - name: gadget-census
   # Gadget directory: read each wiki's MediaWiki:Gadgets-definition and turn
   # every gadget it declares into a catalogue record. The definition page is
   # the entire inventory, so this is one request per wiki -- unlike the
   # user-script census next to it, which is thousands and has to be asked for.
-  # Daily because definition pages change rarely; the catalogue pass that
-  # follows reads no wiki at all, so it also picks up any change to what this
-  # codebase considers a tool on the next tick.
+  # The catalogue pass that follows reads no wiki at all, so it also picks up
+  # any change to what this codebase considers a tool on the next tick.
   #
-  # English Wikipedia is here for the same reason it is on the user-script
-  # census: it declares more gadgets than either of the others -- 113 against
-  # frwiki's 95 and Meta's 75 -- and a gadget there is the form a successful
-  # user script most often ends up in. It costs one more request a day, because
-  # a wiki's whole gadget inventory is one page.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-census -- /usr/bin/env GADGET_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/gadget_census.py
+  # No wiki list. Every readable Wikimedia wiki is covered, and which ones a
+  # given run covers comes from the schedule: the wikis owed a turn, most
+  # overdue first, grouped by replica instance. A wiki that keeps answering
+  # "nothing moved" is asked less often and a wiki that changes every day is
+  # asked more, which is how a thousand wikis fit in a budget sized for a
+  # couple of hundred. Closed wikis drift out to a quarterly turn on their own.
+  #
+  # Every six hours rather than daily, because the unit of work is now a slice
+  # of a queue rather than a fixed list: four half-hour runs a day cover four
+  # times the wikis and leave the same three and a half hours of every six to
+  # the two dozen jobs that share this database. GADGET_BUDGET_SECONDS is the
+  # half-hour; it is checked between wikis, never during one, so a run may
+  # overrun by the cost of its last wiki and never by more.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-census -- /usr/bin/env GADGET_BUDGET_SECONDS=1800 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/gadget_census.py
   image: python3.13
-  schedule: "9 4 * * *"
+  schedule: "9 */6 * * *"
   emails: onfailure
 
 - name: userscript-census
@@ -419,13 +443,27 @@
   # second while the job runs, which is why the census now sends maxlag and
   # stops when a wiki says it is behind rather than reading through the lag.
   #
-  # Meta is here for the cross-wiki edges: global.js lives there and loads
-  # scripts hosted on other wikis, which is the strongest signal a script has
-  # for becoming a global gadget. English Wikipedia is here because it is where
-  # the largest population of user scripts is written, and where a script that
-  # matters is most likely to already exist under a different name. Its 155,575
-  # pages are why USERSCRIPT_LIMIT exists: its first sweep runs for about 8
-  # hourly runs, then the wiki falls through to watching like the other two.
+  # No wiki list. Every readable Wikimedia wiki is covered, and which ones a
+  # given run covers comes from the schedule: the wikis owed a turn, most
+  # overdue first, grouped by replica instance so one connection per instance
+  # serves the whole pass. A corpus nobody edits drifts out to a monthly turn
+  # and a corpus edited hourly keeps its hourly one, which is what makes a
+  # thousand corpora fit in a budget sized for the handful that move.
+  #
+  # USERSCRIPT_BUDGET_SECONDS is twenty minutes of the hour between runs, not
+  # the whole hour: the replicas are shared with the gadget lane and the
+  # database with two dozen other jobs, including a projection refresh that
+  # averages nine minutes. It is checked between wikis and never during one --
+  # a half-swept corpus is worse than a run that finished late -- so a run may
+  # overrun by the cost of its last wiki and never by more. A wiki that fails
+  # is recorded and backed off rather than failing the run; only every
+  # attempted wiki failing does that, which is the shape of a real problem.
+  #
+  # An operator can still name wikis: USERSCRIPT_WIKIS=en.wikipedia.org with
+  # USERSCRIPT_SWEEP=1 overrides the queue outright, which is how one big
+  # corpus is swept on demand. Its 155,575 pages are why USERSCRIPT_LIMIT
+  # exists: enwiki's first sweep runs for about 8 hourly runs, then the wiki
+  # falls through to watching like every other.
   #
   # `python -u` because this job is killed rather than ended. Buffered stdout is
   # flushed when the process exits; a process that is SIGKILLed by a memory
@@ -446,7 +484,7 @@
   # pages project to roughly 800MB and 1Gi would put us back where we started
   # within a few months of corpus growth. If enwiki outgrows 2Gi, the fix is to
   # fold in slices the way the ingest already does, not another doubling.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org USERSCRIPT_LIMIT=20000 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_LIMIT=20000 USERSCRIPT_BUDGET_SECONDS=1200 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
   image: python3.13
   schedule: "23 * * * *"
   mem: 2Gi

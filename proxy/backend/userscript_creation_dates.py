@@ -28,7 +28,7 @@ from backend import db, wiki_replica
 from backend.models import UserScriptPage
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from sqlalchemy.orm import Session
 
@@ -90,6 +90,7 @@ def backfill(
     wikis: Sequence[str],
     *,
     connect: wiki_replica.Connect = wiki_replica.open_connection,
+    known: Mapping[str, wiki_replica.Address] | None = None,
 ) -> dict[str, int]:
     """Fill in creation dates for each wiki, if its replica can be reached.
 
@@ -99,20 +100,16 @@ def backfill(
     observation rather than a job failure, and the census this runs after has
     already done its real work by the time it gets here.
     """
-    user = wiki_replica.credentials()
+    user, addresses = wiki_replica.resolve(wikis, connect=connect, known=known)
     if user is None:
-        return {}
-    try:
-        dbnames = wiki_replica.dbnames_for(wikis, user=user, connect=connect)
-    except Exception:  # noqa: BLE001 - an unreachable replica is not a failed census
         return {}
     written: dict[str, int] = {}
     for wiki in wikis:
-        dbname = dbnames.get(wiki)
-        if dbname is None:
+        address = addresses.get(wiki)
+        if address is None:
             continue
         try:
-            dates = wiki_replica.creation_dates_for(dbname, user=user, connect=connect)
+            dates = wiki_replica.creation_dates_for(address.dbname, section=address.section, user=user, connect=connect)
         except Exception:  # noqa: BLE001, S112 - one wiki's outage must not hide the others
             continue
         written[wiki] = record(wiki, dates)

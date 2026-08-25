@@ -35,12 +35,13 @@ from __future__ import annotations
 
 import configparser
 import os
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
 #: Where Toolforge writes a tool's replica credentials.
 DEFAULT_CONFIG_PATH = "~/replica.my.cnf"
@@ -95,9 +96,23 @@ if TYPE_CHECKING:
     Connect = Callable[[Credentials, Target], Any]
 
 
-def target_for(dbname: str) -> Target:
-    """Return where to reach one wiki's replica, by its database name."""
-    return Target(host=f"{dbname}{HOST_SUFFIX}", database=f"{dbname}_p")
+def target_for(dbname: str, section: str = "") -> Target:
+    """Return where to reach one wiki's replica, by its database name.
+
+    Without a section this is the per-wiki alias, which is the right address for
+    a tool that reads one or two wikis: it needs to know nothing but the name.
+
+    With one it is the shared instance that wiki lives on, and every wiki on that
+    instance resolves to the same host. That is what lets a pass covering
+    hundreds of wikis open one connection instead of hundreds, which the
+    replicas' own documentation asks for by name -- section addressing is
+    discouraged generally and excepted for "heavily crosswiki tools which would
+    otherwise open hundreds of database connections". Eight instances serve every
+    Wikimedia wiki, and one of them serves 869 of them, so the difference for a
+    full pass is three orders of magnitude of connection churn.
+    """
+    host = section or dbname
+    return Target(host=f"{host}{HOST_SUFFIX}", database=f"{dbname}_p")
 
 
 def config_path() -> Path:
@@ -267,6 +282,76 @@ def read_dbnames(rows: Iterable[Sequence[Any]]) -> dict[str, str]:
     return found
 
 
+#: Every readable Wikimedia wiki, with what it takes to address one. `meta_p`
+#: is the roster rather than a list this repository keeps: it is maintained by
+#: the people who create and close wikis, it names the database and the instance
+#: for each, and -- the part a hand-kept list gets wrong -- it already omits the
+#: wikis with no public replica at all, so what it returns is exactly the set
+#: that can be read.
+ROSTER_QUERY = "SELECT dbname, url, family, lang, `slice`, is_closed FROM wiki"
+
+#: What `meta_p.wiki.slice` appends to the section name. The column says
+#: `s6.labsdb` where an address wants `s6`, and the suffix is the name of a
+#: service that has since been renamed -- so it is stripped rather than carried.
+SECTION_SUFFIX = ".labsdb"
+
+
+@dataclass(frozen=True)
+class WikiRow:
+    """One wiki as `meta_p` describes it: who it is, and where to read it."""
+
+    wiki: str
+    dbname: str
+    section: str
+    family: str
+    lang: str
+    closed: bool
+
+
+def section_of(value: str) -> str:
+    """Return the section name an address wants, from the column's spelling."""
+    return _decoded(value).removesuffix(SECTION_SUFFIX).strip()
+
+
+def _flag(value: object) -> bool:
+    """Read one of `meta_p`'s numeric flags, which arrive as decimals."""
+    text = _decoded(value)
+    return bool(text) and text not in {"0", "0.0", "False", "None"}
+
+
+#: Positions in a roster row, named because a fixture may be shorter than the
+#: query and a wiki with no section is still a wiki.
+SECTION_COLUMN: Final = 4
+CLOSED_COLUMN: Final = 5
+
+
+def read_roster(rows: Iterable[Sequence[Any]]) -> tuple[WikiRow, ...]:
+    """Turn `meta_p.wiki` rows into addressable wikis, dropping what cannot be one.
+
+    A row with no database name or no host is not a wiki this can read, and a
+    row with no section is one whose address cannot be shortened -- that one is
+    kept, because `target_for` falls back to the per-wiki alias and reading it
+    singly is better than not reading it.
+    """
+    found: list[WikiRow] = []
+    for row in rows:
+        dbname, url = _decoded(row[0]), _decoded(row[1])
+        host = url.removeprefix("https://").removeprefix("http://").strip("/")
+        if not (dbname and host):
+            continue
+        found.append(
+            WikiRow(
+                wiki=host,
+                dbname=dbname,
+                section=section_of(row[4]) if len(row) > SECTION_COLUMN else "",
+                family=_decoded(row[2]),
+                lang=_decoded(row[3]),
+                closed=_flag(row[5]) if len(row) > CLOSED_COLUMN else False,
+            )
+        )
+    return tuple(found)
+
+
 #: Position of `page_latest` in an enumeration row. Named because a row can be
 #: shorter -- a caller reading an older query, or a fixture that predates the
 #: column -- and a page with no revision id is still a page.
@@ -378,6 +463,101 @@ def _rows(
         connection.close()
 
 
+class _Borrowed:
+    """One pooled connection, lent to a reader that expects to own it.
+
+    Every reader here opens a connection, uses it once and closes it, which is
+    the correct shape for a caller reading one wiki. Closing it is the only part
+    a pass over many wikis needs to take back, so that is the only part this
+    changes: `close` returns the connection to the pool instead of ending it,
+    and the pool ends it when the pass does.
+    """
+
+    def __init__(self, connection: Any, pool: _Pool, host: str) -> None:  # noqa: ANN401 - the driver's own type
+        self._connection = connection
+        self._pool = pool
+        self._host = host
+
+    def cursor(self) -> Any:  # noqa: ANN401 - the driver's own type
+        """Open a cursor on the pooled connection."""
+        try:
+            return self._connection.cursor()
+        except Exception:
+            # A connection that cannot produce a cursor is finished, and every
+            # later wiki on this section would inherit it. Drop it here so the
+            # next one reconnects rather than failing for a reason that has
+            # nothing to do with it.
+            self._pool.discard(self._host)
+            raise
+
+    def close(self) -> None:
+        """Release the connection back to the pool, which owns its lifetime."""
+
+
+class _Pool:
+    """The open connections one pass is using, one per replica host.
+
+    The replicas forbid connection pools in the sense that matters -- holding
+    connections open while idle, which costs the server memory for nothing and
+    which administrators kill on sight. This is the opposite arrangement and is
+    worth being precise about: a connection here exists only while a pass is
+    actively running queries through it, is reused only by the wikis that share
+    its instance, and is closed when the pass ends. Nothing survives a run, and
+    nothing sits idle inside one.
+
+    What it buys is the thing the replicas ask for. Reading 1,028 wikis by their
+    per-wiki aliases is 1,028 connections; reading them by section is eight.
+    """
+
+    def __init__(self, connect: Connect) -> None:
+        self._connect = connect
+        self._open: dict[str, Any] = {}
+
+    def borrow(self, user: Credentials, target: Target) -> _Borrowed:
+        """Return the connection for this target's host, opening one if needed."""
+        connection = self._open.get(target.host)
+        if connection is None:
+            self._open[target.host] = connection = self._connect(user, target)
+        else:
+            # Same instance, different wiki. `select_db` is what makes one
+            # connection serve every database on its section, and it is why the
+            # queries themselves need no qualifying and no rewriting.
+            connection.select_db(target.database)
+        return _Borrowed(connection, self, target.host)
+
+    def discard(self, host: str) -> None:
+        """Forget a connection that failed, so the next borrower opens a fresh one."""
+        connection = self._open.pop(host, None)
+        if connection is not None:
+            with suppress(Exception):
+                connection.close()
+
+    def close(self) -> None:
+        """End every connection this pass opened."""
+        for host in list(self._open):
+            self.discard(host)
+
+
+@contextmanager
+def pooled(connect: Connect = open_connection) -> Iterator[Connect]:
+    """Reuse one connection per replica instance for the length of one pass.
+
+    Yields something every reader in this module already accepts -- a `Connect`
+    -- so a caller covering many wikis wraps its pass in this and changes
+    nothing else. Readers still open, use and close a connection each; those
+    calls are simply answered from the pool while the pass lasts.
+
+    Only pays off when the targets share a host, which is what passing a section
+    to `target_for` arranges. Without one, every wiki addresses its own alias,
+    every borrow is a miss, and this costs one dictionary lookup per read.
+    """
+    pool = _Pool(connect)
+    try:
+        yield pool.borrow
+    finally:
+        pool.close()
+
+
 def dbnames_for(
     wikis: Sequence[str],
     *,
@@ -404,9 +584,74 @@ def dbnames_for(
     return read_dbnames(rows)
 
 
+@dataclass(frozen=True)
+class Address:
+    """Where one wiki is read: which database, and which instance it is on.
+
+    The section is optional because it only ever makes the address shorter. A
+    caller that has one gets a shared connection; a caller that does not gets
+    the per-wiki alias, which has always worked and still does.
+    """
+
+    dbname: str
+    section: str = ""
+
+
+def resolve(
+    wikis: Sequence[str],
+    *,
+    connect: Connect = open_connection,
+    known: Mapping[str, Address] | None = None,
+) -> tuple[Credentials | None, dict[str, Address]]:
+    """Work out how to reach each wiki, asking `meta_p` only about the ones left.
+
+    `known` is what the caller already has -- the registry stores a database and
+    a section for every wiki it has ever seen, so a scheduled pass supplies the
+    lot and this never opens a `meta_p` connection at all. Anything not in it,
+    such as a wiki named by hand in an operator override, is looked up.
+
+    Best effort, which is the contract every caller of this was already written
+    to: no `replica.my.cnf` yields no credentials and no addresses, and a
+    `meta_p` that will not answer yields whatever the caller already knew. Both
+    read downstream as "there was nothing to do here", which is the truth.
+    """
+    user = credentials()
+    if user is None:
+        return None, {}
+    wanted = list(dict.fromkeys(wikis))
+    found = {wiki: address for wiki, address in (known or {}).items() if wiki in set(wanted) and address.dbname}
+    missing = [wiki for wiki in wanted if wiki not in found]
+    if not missing:
+        return user, found
+    try:
+        dbnames = dbnames_for(missing, user=user, connect=connect)
+    except Exception:  # noqa: BLE001 - an unreachable meta_p is not a failed census
+        return user, found
+    for wiki, dbname in dbnames.items():
+        found[wiki] = Address(dbname=dbname)
+    return user, found
+
+
+def roster_for(
+    *,
+    user: Credentials,
+    connect: Connect = open_connection,
+) -> tuple[WikiRow, ...]:
+    """Ask `meta_p` for every wiki that can be read, and where each one lives.
+
+    One connection and one unfiltered read of a table of about a thousand rows,
+    which is why the roster is fetched whole rather than asked per wiki. The
+    alternative -- `dbnames_for` on the wikis a pass is about to cover -- costs
+    a `meta_p` connection on every run of every lane to re-learn something that
+    changes when a wiki is created or closed.
+    """
+    return read_roster(_rows(connect, user, target_for(META_DB), ROSTER_QUERY, []))
+
+
 def creation_dates_for(
     dbname: str,
     *,
+    section: str = "",
     user: Credentials,
     connect: Connect = open_connection,
 ) -> dict[str, str]:
@@ -414,7 +659,7 @@ def creation_dates_for(
     rows = _rows(
         connect,
         user,
-        target_for(dbname),
+        target_for(dbname, section),
         CREATION_QUERY,
         [USER_NAMESPACE, *TITLE_PATTERNS],
     )
@@ -424,6 +669,7 @@ def creation_dates_for(
 def gadget_creation_dates_for(
     dbname: str,
     *,
+    section: str = "",
     user: Credentials,
     connect: Connect = open_connection,
 ) -> dict[str, str]:
@@ -437,7 +683,7 @@ def gadget_creation_dates_for(
     rows = _rows(
         connect,
         user,
-        target_for(dbname),
+        target_for(dbname, section),
         GADGET_CREATION_QUERY,
         [MEDIAWIKI_NAMESPACE, f"{GADGET_TITLE_PREFIX}%"],
     )
@@ -447,6 +693,7 @@ def gadget_creation_dates_for(
 def script_edit_dates_for(
     dbname: str,
     *,
+    section: str = "",
     user: Credentials,
     connect: Connect = open_connection,
 ) -> dict[str, str]:
@@ -463,7 +710,7 @@ def script_edit_dates_for(
     rows = _rows(
         connect,
         user,
-        target_for(dbname),
+        target_for(dbname, section),
         SCRIPT_EDIT_QUERY,
         [USER_NAMESPACE, *TITLE_PATTERNS],
     )
@@ -473,6 +720,7 @@ def script_edit_dates_for(
 def gadget_edit_dates_for(
     dbname: str,
     *,
+    section: str = "",
     user: Credentials,
     connect: Connect = open_connection,
 ) -> dict[str, str]:
@@ -486,7 +734,7 @@ def gadget_edit_dates_for(
     rows = _rows(
         connect,
         user,
-        target_for(dbname),
+        target_for(dbname, section),
         GADGET_EDIT_QUERY,
         [MEDIAWIKI_NAMESPACE, f"{GADGET_TITLE_PREFIX}%"],
     )
@@ -496,6 +744,7 @@ def gadget_edit_dates_for(
 def script_titles_for(
     dbname: str,
     *,
+    section: str = "",
     user: Credentials,
     connect: Connect = open_connection,
 ) -> tuple[tuple[str, str, str], ...]:
@@ -510,7 +759,7 @@ def script_titles_for(
     rows = _rows(
         connect,
         user,
-        target_for(dbname),
+        target_for(dbname, section),
         ENUMERATION_QUERY,
         [USER_NAMESPACE, *SCRIPT_MODELS],
     )

@@ -1935,3 +1935,90 @@ class ListRevisionChange(Base):
     # only a title look identical otherwise.
     reason: Mapped[str] = mapped_column(String(64), default="")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class WikiProject(Base):
+    """Every Wikimedia wiki the census can read, and where to read it.
+
+    `meta_p.wiki` is the roster -- it lists about a thousand wikis and already
+    omits the private ones, so what it returns is exactly the readable set and
+    no second filter is needed. It is copied here rather than queried per run
+    because it changes when a wiki is created, renamed or closed, which is a
+    few times a year, while the lanes that need it run every hour: asking the
+    replicas the same thousand-row question every tick of every lane buys
+    nothing but a connection.
+
+    `section` is why this table exists at all. Every wiki on one replica
+    instance answers on the same host, and 869 of them share `s3`, so storing
+    the instance alongside the name is the difference between a full pass
+    opening eight connections and opening a thousand.
+
+    A wiki that disappears from `meta_p` is marked rather than deleted. It has
+    pages in the census and catalogue records built from them, and a wiki being
+    absent from one roster read -- a renamed database, a truncated answer -- is
+    not evidence that its scripts stopped existing.
+    """
+
+    __tablename__ = "wiki_projects"
+    __table_args__ = (Index("ix_wiki_projects_section_wiki", "section", "wiki"),)
+    # The host, as every other table in this codebase spells a wiki:
+    # `fr.wikipedia.org`. The census keys on this, not on the database name.
+    wiki: Mapped[str] = mapped_column(String(255), primary_key=True)
+    # The replica database, without the `_p` suffix the reader adds.
+    dbname: Mapped[str] = mapped_column(String(64), index=True)
+    # `s1`..`s8`, already stripped of the `.labsdb` spelling `meta_p` uses.
+    # Empty means "read this one by its own alias", which still works.
+    section: Mapped[str] = mapped_column(String(16), default="")
+    family: Mapped[str] = mapped_column(String(64), default="")
+    lang: Mapped[str] = mapped_column(String(32), default="")
+    # A closed wiki is readable and its scripts are real; it just never changes
+    # again. Worth knowing so the schedule can visit it rarely rather than
+    # never -- its corpus still has to be discovered once.
+    closed: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # When the last roster read still listed this wiki. A row whose timestamp
+    # stops moving while other rows advance is a wiki that left the roster.
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class WikiLaneState(Base):
+    """When one wiki was last covered by one lane, and when it is next owed a turn.
+
+    The census used to run over every configured wiki on every tick, which is a
+    schedule only because the list had three entries in it. At a thousand wikis
+    a run cannot cover everything, so something has to decide what this run
+    covers -- and the honest form of that decision is per wiki and per lane,
+    because enwiki's user scripts move hourly and a closed wiki's have not moved
+    since 2010.
+
+    `cadence_seconds` is per row rather than per lane because the right interval
+    is a property of the wiki, and nobody knows it in advance. It is learned
+    instead: a run that found work shortens it, a run that found none lengthens
+    it, both within bounds the lane sets. A thousand wikis tune themselves to
+    roughly the rate they actually change at, which is the only way to spend a
+    fixed budget on the wikis that need it.
+
+    Failures move `next_due_at` without touching the cadence. A wiki that cannot
+    be read is not a wiki that changed its edit rate, and folding the two
+    together would leave a wiki permanently slow after an afternoon of replica
+    trouble.
+    """
+
+    __tablename__ = "wiki_lane_state"
+    __table_args__ = (Index("ix_wiki_lane_state_lane_due", "lane", "next_due_at"),)
+    wiki: Mapped[str] = mapped_column(String(255), primary_key=True)
+    # Which pass this row is about: `userscript` or `gadget`. They cover the
+    # same wikis at different costs and different rates, so they queue apart.
+    lane: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # When this wiki is next owed a turn in this lane. The queue is ordered by
+    # it, so it is the only column the selection reads.
+    next_due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    cadence_seconds: Mapped[int] = mapped_column(Integer, default=3600)
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Counted rather than inferred from the timestamps, because "failed twice"
+    # and "failed for two days" are different facts and backoff wants the first.
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    runs: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

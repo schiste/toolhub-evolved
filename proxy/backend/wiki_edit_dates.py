@@ -43,7 +43,7 @@ from backend import db, gadget_creation_dates, wiki_replica
 from backend.models import UserScriptPage, WikiGadget
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from sqlalchemy.orm import Session
 
@@ -174,30 +174,11 @@ def record_scripts(wiki: str, dates: dict[str, str]) -> int:
             written += _stamp_scripts(rows, dates)
 
 
-def _dbnames(
-    wikis: Sequence[str],
-    connect: wiki_replica.Connect,
-) -> tuple[wiki_replica.Credentials | None, dict[str, str]]:
-    """Resolve each wiki's replica database, or report that none can be reached.
-
-    Best effort by construction, for the reason the module docstring gives: no
-    `replica.my.cnf`, an unreachable replica, or a wiki `meta_p` has never heard
-    of yields no credentials and no names, and every caller reads that as
-    "nothing to stamp" rather than as a failed census.
-    """
-    user = wiki_replica.credentials()
-    if user is None:
-        return None, {}
-    try:
-        return user, wiki_replica.dbnames_for(wikis, user=user, connect=connect)
-    except Exception:  # noqa: BLE001 - an unreachable replica is not a failed census
-        return None, {}
-
-
 def backfill_gadgets(
     wikis: Sequence[str],
     *,
     connect: wiki_replica.Connect = wiki_replica.open_connection,
+    known: Mapping[str, wiki_replica.Address] | None = None,
 ) -> dict[str, int]:
     """Date each wiki's gadgets, and report how many rows moved.
 
@@ -206,16 +187,18 @@ def backfill_gadgets(
     The two look identical in a count and want different reactions from whoever
     reads the log.
     """
-    user, dbnames = _dbnames(wikis, connect)
+    user, addresses = wiki_replica.resolve(wikis, connect=connect, known=known)
     if user is None:
         return {}
     written: dict[str, int] = {}
     for wiki in wikis:
-        dbname = dbnames.get(wiki)
-        if dbname is None:
+        address = addresses.get(wiki)
+        if address is None:
             continue
         try:
-            dates = wiki_replica.gadget_edit_dates_for(dbname, user=user, connect=connect)
+            dates = wiki_replica.gadget_edit_dates_for(
+                address.dbname, section=address.section, user=user, connect=connect
+            )
         except Exception:  # noqa: BLE001, S112 - one wiki's outage must not hide the others
             continue
         written[wiki] = record_gadgets(wiki, dates)
@@ -226,18 +209,21 @@ def backfill_scripts(
     wikis: Sequence[str],
     *,
     connect: wiki_replica.Connect = wiki_replica.open_connection,
+    known: Mapping[str, wiki_replica.Address] | None = None,
 ) -> dict[str, int]:
     """Date each wiki's user-space script pages, on the same terms as the gadgets."""
-    user, dbnames = _dbnames(wikis, connect)
+    user, addresses = wiki_replica.resolve(wikis, connect=connect, known=known)
     if user is None:
         return {}
     written: dict[str, int] = {}
     for wiki in wikis:
-        dbname = dbnames.get(wiki)
-        if dbname is None:
+        address = addresses.get(wiki)
+        if address is None:
             continue
         try:
-            dates = wiki_replica.script_edit_dates_for(dbname, user=user, connect=connect)
+            dates = wiki_replica.script_edit_dates_for(
+                address.dbname, section=address.section, user=user, connect=connect
+            )
         except Exception:  # noqa: BLE001, S112 - one wiki's outage must not hide the others
             continue
         written[wiki] = record_scripts(wiki, dates)

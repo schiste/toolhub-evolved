@@ -1554,14 +1554,18 @@ def test_one_wikis_failure_does_not_cost_the_next_wiki_its_turn(monkeypatch, cap
 
     monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org")
     monkeypatch.setattr(job.userscript_sweep, "run", run)
-    # Still a failure -- a wiki that could not be covered is one the guard
-    # should count, and `job_runner` signals that by letting it out -- but not
-    # before every other wiki has had its run.
-    with pytest.raises(job.CensusIncompleteError, match="census failed for meta.wikimedia.org"):
-        job.main()
+    # No longer a failed run either, which is the other half of that lesson and
+    # a deliberate change of contract. With three wikis, one unreachable meant
+    # something was wrong and the guard was right to escalate. Now that the
+    # queue covers every readable Wikimedia wiki, some wiki is always having a
+    # bad day, and a run that failed for it would have the guard disable the
+    # whole census within three ticks -- starving the other thousand corpora
+    # for one wiki's afternoon. The failure is recorded on the wiki instead.
+    assert job.main() == 0
     assert covered == ["fr.wikipedia.org", "en.wikipedia.org"]
     out = capsys.readouterr().out
     assert "wiki=meta.wikimedia.org failed error=RuntimeError" in out
+    assert "userscript-census: queued=3 covered=2 failed=1" in out
 
 
 def test_two_loads_the_database_calls_one_do_not_fail_the_page():

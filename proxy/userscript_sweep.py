@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Toolforge job entrypoint for the user-script census."""
 
+from __future__ import annotations
+
 import os
 import sys
 
@@ -11,14 +13,30 @@ from backend import (
     userscript_sweep,
     userscript_toolinfo,
     wiki_edit_dates,
+    wiki_registry,
+    wiki_replica,
+    wiki_schedule,
 )
 from backend.wikimedia_delivery import WikimediaClient
 
-DEFAULT_WIKIS = "fr.wikipedia.org,meta.wikimedia.org"
+LANE = wiki_schedule.USERSCRIPT_LANE
+
+# The wikis a run covers when there is no registry to ask yet -- what the first
+# run after a deployment does, before the weekly registry job has filled the
+# roster in, and the list this lane covered for its whole life before the roster
+# existed.
+FALLBACK_WIKIS = "fr.wikipedia.org,meta.wikimedia.org,en.wikipedia.org"
+
+# How long a run may spend reading wikis, out of the hour between runs. Twenty
+# minutes rather than the whole hour because these are not the only jobs on the
+# cluster: the replicas are shared with the gadget lane, and the database with
+# two dozen other jobs including a projection refresh that averages nine
+# minutes. A budget is a floor on how much of the hour is left for them.
+DEFAULT_BUDGET = 1200
 
 
 class CensusIncompleteError(RuntimeError):
-    """Raised when at least one configured wiki could not be covered this run."""
+    """Raised when no wiki this run attempted could be covered."""
 
 
 def _int_env(name: str, default: int) -> int:
@@ -61,10 +79,30 @@ def _progress(summary: dict) -> str:
     )
 
 
-def _wikis() -> list[str]:
-    """List the wikis this run should cover, in order, from the environment."""
-    raw = os.environ.get("USERSCRIPT_WIKIS", DEFAULT_WIKIS)
+def _override() -> list[str]:
+    """List the wikis an operator named by hand, if any."""
+    raw = os.environ.get("USERSCRIPT_WIKIS", "")
     return [wiki.strip() for wiki in raw.split(",") if wiki.strip()]
+
+
+def _queue() -> tuple[wiki_schedule.Due, ...]:
+    """Decide which wikis this run covers, and in which order.
+
+    An override wins outright: someone asking for three named wikis wants those
+    three, now, whatever the schedule thinks -- which is also how a full sweep
+    of one big wiki is asked for. Otherwise the queue answers, and an empty
+    queue means one of two very different things: every wiki is up to date,
+    which is the healthy steady state, or the registry has never been filled in,
+    which is where a fresh deployment sits until the weekly job runs. Only the
+    second is worth falling back for, so the registry is asked which it is.
+    """
+    if override := _override():
+        return wiki_schedule.named(override)
+    if queue := wiki_schedule.due(LANE):
+        return queue
+    if wiki_registry.projects():
+        return ()
+    return wiki_schedule.named([wiki.strip() for wiki in FALLBACK_WIKIS.split(",") if wiki.strip()])
 
 
 def main() -> int:
@@ -103,8 +141,16 @@ def main() -> int:
         _int_env("USERSCRIPT_WATCH_WINDOWS", userscript_sweep.WATCH_WINDOWS) or userscript_sweep.WATCH_WINDOWS
     )
 
-    def cover(client: WikimediaClient, wiki: str) -> None:
-        """Bring one wiki up to date and report what that took, in three lines."""
+    def cover(client: WikimediaClient, entry: wiki_schedule.Due, connect: wiki_replica.Connect) -> bool:
+        """Bring one wiki up to date and report what that took, in five lines.
+
+        What it returns is the one bit the schedule learns from: whether this
+        wiki was worth reading. A wiki that keeps answering "nothing written" is
+        asked less often, which is how a thousand corpora fit into a budget
+        sized for the handful that actually move.
+        """
+        wiki = entry.wiki
+        known = wiki_schedule.addresses([entry])
         summary = userscript_sweep.run(
             client.request,
             wiki,
@@ -137,13 +183,13 @@ def main() -> int:
             f"{f' collisions={collisions}' if collisions else ''}"
             f"{_progress(summary)}\n",
         )
-        stamped = userscript_creation_dates.backfill([wiki])
+        stamped = userscript_creation_dates.backfill([wiki], connect=connect, known=known)
         sys.stdout.write(
             "userscript-creation-dates: "
             f"wiki={wiki} replica={'yes' if wiki in stamped else 'no'} "
             f"stamped={stamped.get(wiki, 0)}\n",
         )
-        edited = wiki_edit_dates.backfill_scripts([wiki])
+        edited = wiki_edit_dates.backfill_scripts([wiki], connect=connect, known=known)
         sys.stdout.write(
             "userscript-edit-dates: "
             f"wiki={wiki} replica={'yes' if wiki in edited else 'no'} "
@@ -170,36 +216,78 @@ def main() -> int:
             f"duplicate={catalogued['duplicate']} conflicted={catalogued['conflicted']} "
             f"retired={catalogued['retired']}\n",
         )
+        return bool(summary["written"] or catalogued["written"] or catalogued["retired"])
 
     def body() -> None:
-        """Cover every configured wiki, and let each one fail on its own.
+        """Cover as many wikis as the run has time for, and let each one fail on its own.
+
+        Every Wikimedia wiki has user scripts and a thousand corpora will not
+        fit in one hour, so the run takes the wikis it owes a turn, most overdue
+        first, and stops when its budget is spent. It never stops mid-wiki: a
+        half-swept corpus is worse than a run that finished late, and the wiki
+        after it is only more overdue next time.
 
         The wikis are independent corpora that happen to share a run, so a run
         that stops at the first exception spends its whole budget on the wikis
         before the bad one and never reaches the wikis after it. That is not
         hypothetical: on 2026-08-23 a single Meta page whose loads collided
         under the database's collation raised out of Meta's ingest, and because
-        enwiki is third in the list, enwiki's first sweep stopped advancing --
+        enwiki was third in the list, enwiki's first sweep stopped advancing --
         three runs later the job guard disabled the job, and neither wiki moved
         again. Ordering decided which corpus starved, which is not a thing
         ordering should decide.
 
-        The run still fails if any wiki did, because a wiki that cannot be
-        covered is a job failure and the guard is right to count it. What
-        changes is that the other wikis get their turn first.
+        A failing wiki no longer fails the run either, which is the other half
+        of that lesson and a deliberate change of contract. With three wikis, an
+        unreachable one meant something was wrong and the guard was right to
+        escalate. With a thousand, some wiki is always having a bad day, and a
+        run that failed for it would have the guard disable the whole census
+        within three ticks -- starving nine hundred and ninety-nine corpora for
+        one wiki's outage. The failure is recorded on the wiki instead, which
+        backs it off and leaves its place in the rotation intact. What still
+        fails the run is every attempted wiki failing: that is the shape of a
+        real problem rather than one wiki's bad afternoon.
         """
-        client = WikimediaClient()
+        budget = wiki_schedule.Budget(_int_env("USERSCRIPT_BUDGET_SECONDS", DEFAULT_BUDGET))
+        queue = _queue()
+        covered: list[str] = []
         failed: list[str] = []
-        for wiki in _wikis():
-            try:
-                cover(client, wiki)
-            except Exception as error:  # noqa: BLE001 - one wiki's failure is not the next wiki's
-                failed.append(wiki)
-                sys.stdout.write(
-                    f"userscript-census: wiki={wiki} failed error={type(error).__name__}: {error}\n",
-                )
-        if failed:
-            message = f"census failed for {', '.join(failed)}"
+        client = WikimediaClient()
+        # One connection per replica instance for the whole pass, rather than
+        # one per wiki. Eight instances serve every Wikimedia wiki and one of
+        # them serves 869, and the queue has already ordered the run so that a
+        # section's wikis are covered together.
+        with wiki_replica.pooled() as connect:
+            for entry in queue:
+                if not budget.remains():
+                    break
+                wiki_schedule.start(entry.wiki, LANE)
+                try:
+                    changed = cover(client, entry, connect)
+                except Exception as error:  # noqa: BLE001 - one wiki's failure is not the next wiki's
+                    failed.append(entry.wiki)
+                    wiki_schedule.settle(entry.wiki, LANE, wiki_schedule.Outcome(error=type(error).__name__))
+                    sys.stdout.write(
+                        f"userscript-census: wiki={entry.wiki} failed error={type(error).__name__}: {error}\n",
+                    )
+                else:
+                    covered.append(entry.wiki)
+                    wiki_schedule.settle(
+                        entry.wiki,
+                        LANE,
+                        wiki_schedule.Outcome(changed=changed, closed=entry.closed),
+                    )
+        # `backlog` is the number that says whether this schedule is keeping up.
+        # Everything else on the line describes the run; this describes the work
+        # still owed, and a backlog that grows every tick is a budget decision
+        # rather than something the queue can fix by itself.
+        sys.stdout.write(
+            "userscript-census: "
+            f"queued={len(queue)} covered={len(covered)} failed={len(failed)} "
+            f"seconds={budget.spent():.0f} backlog={wiki_schedule.backlog(LANE)}\n",
+        )
+        if failed and not covered:
+            message = f"census failed for every wiki attempted: {', '.join(failed)}"
             raise CensusIncompleteError(message)
 
     return job_runner.run_job("userscript-census", body)
