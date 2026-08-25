@@ -409,3 +409,52 @@
 		flex-direction: column;
 	}
 }
+
+/* Split out of organisms.css: rules only views/styleguide.js can produce.
+   See the note in tests/unit/route-styles.test.mjs before moving more here. */
+
+.icon-btn:hover {
+	background: var(--color-surface-muted);
+	color: var(--color-progressive);
+	text-decoration: none;
+}
+.icon-btn:focus-visible {
+	outline: 2px solid var(--color-progressive);
+	outline-offset: 1px;
+	box-shadow: none;
+}
+.panel__foot {
+	display: inline-block;
+	margin-top: var(--space-2);
+	font-weight: 600;
+}
+
+/* Members grid. */
+.mgrid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+	gap: var(--space-3);
+}
+.mcard {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	border: var(--border-base);
+	border-radius: var(--radius-md);
+	padding: var(--space-3);
+	background: var(--color-surface);
+	min-width: 0;
+}
+.mcard__b {
+	min-width: 0;
+}
+.mcard__n {
+	font-weight: 700;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.mcard__c {
+	font-size: var(--fs-caption);
+	color: var(--color-text-muted);
+}

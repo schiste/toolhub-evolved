@@ -1,0 +1,105 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Route-owned styles for account-settings, split out of organisms.css.
+
+   These rules were in the global bundle every page downloads, and nothing
+   outside views/account-settings.js can produce the classes they match -- a test in
+   tests/unit/route-styles.test.mjs holds that. Loading them with the route
+   instead keeps ~521 gzipped bytes off every other page in the app.
+
+   Order matters: this sheet lands after the merged app.css, so a rule here
+   wins any equal-specificity tie it used to lose -- not only against its own
+   selector elsewhere, but against a different selector that lands on the same
+   element, which is how .people-page__results-head quietly changed the
+   accounts page mid-review. Rules in that position were left in organisms.css
+   on purpose; tests/unit/route-styles.test.mjs fails if one arrives here. */
+
+.account-data__export {
+	margin-top: var(--space-3);
+	min-height: 220px;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+.account-profile {
+	display: grid;
+	gap: var(--space-3);
+	max-width: 760px;
+}
+.account-profile__identity {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+}
+.account-profile__identity p {
+	margin: var(--space-1) var(--space-0) var(--space-0);
+}
+.account-profile__avatar {
+	width: var(--avatar-lg);
+	height: var(--avatar-lg);
+	border-radius: 50%;
+	object-fit: cover;
+}
+.account-claims {
+	display: grid;
+	gap: var(--space-2);
+}
+.account-claim {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	padding-block: var(--space-2);
+	border-bottom: var(--border-muted);
+}
+.account-claim p {
+	margin: var(--space-1) var(--space-0) var(--space-0);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.account-links__list {
+	display: grid;
+	gap: var(--space-2);
+	margin: var(--space-0) var(--space-0) var(--space-4);
+	padding: var(--space-0);
+	list-style: none;
+}
+.account-links__list li {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: var(--space-2) var(--space-4);
+	padding-block: var(--space-2);
+	border-bottom: var(--border-muted);
+}
+.account-links__list span {
+	color: var(--color-text-secondary);
+}
+.account-links__connect,
+.account-links__challenge,
+.account-links__challenge form {
+	display: grid;
+	gap: var(--space-3);
+}
+.account-links__connect {
+	max-width: 760px;
+}
+.account-links__connect h3,
+.account-links__connect p,
+.account-links__challenge ol {
+	margin: var(--space-0);
+}
+.account-links__challenge {
+	margin-top: var(--space-2);
+	padding: var(--space-4);
+	border-inline-start: var(--border-progressive-strong);
+	background: var(--color-progressive-subtle);
+}
+.account-links__challenge ol {
+	display: grid;
+	gap: var(--space-3);
+}
+.account-links__command {
+	margin-block: var(--space-2);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}

@@ -11,6 +11,9 @@ import { sourceAnalysisWorkspace } from "../lib/organisms/source-analysis.js";
 import { buildToolinfoGeneratorEntries, toolinfoGeneratorWorkspace } from "../lib/organisms/toolinfo-generator.js";
 import { toolRegistrationWorkspace } from "./toolforms.js";
 
+/* Split out of organisms.css; the router preloads it alongside this module. */
+const STYLESHEET = "/styles/my-tools.css";
+
 const AUTHOR_CLAIM_TOOLFORGE_MAINTAINER = "toolforge_maintainer";
 const AUTHOR_CLAIM_SIGNED_TOOLINFO = "signed_toolinfo";
 const AUTHOR_CLAIM_TOOLINFO_URL_CONTROL = "toolinfo_url_control";
@@ -326,6 +329,7 @@ export async function viewMyTools() {
 			generator.mount();
 			registration.mount();
 			sourceAnalysis.mount();
-		}
+		},
+		styles: [STYLESHEET]
 	};
 }

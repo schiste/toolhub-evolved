@@ -272,6 +272,12 @@ def _fill_route_hint_bundles(text: str, plan_: bundle_modules.Plan, app_bundle_u
             if dependency in plan_.owner
         }
         hint["bundles"] = sorted(_append_version(url, version) for url in serving if url != app_bundle_url)
+        # A hinted route may also own a stylesheet. It stays unversioned on
+        # purpose: views/router.js requests the bare url, and a preload for a
+        # different url is a second fetch rather than a head start.
+        sheet = hint.get("css")
+        if sheet and not (plan_.src / sheet.lstrip("/")).exists():
+            raise SystemExit(f"index.html: route hint {path} names a stylesheet that does not exist: {sheet}")
 
     indent = island.group("open")[: len(island.group("open")) - len(island.group("open").lstrip("\t"))]
     body = "\n".join(indent + "\t" + line for line in json.dumps(hints, indent="\t", sort_keys=True).splitlines())

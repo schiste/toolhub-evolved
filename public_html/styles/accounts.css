@@ -1,0 +1,106 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Route-owned styles for accounts, split out of organisms.css.
+
+   These rules were in the global bundle every page downloads, and nothing
+   outside views/accounts.js can produce the classes they match -- a test in
+   tests/unit/route-styles.test.mjs holds that. Loading them with the route
+   instead keeps ~630 gzipped bytes off every other page in the app.
+
+   Order matters: this sheet lands after the merged app.css, so a rule here
+   wins any equal-specificity tie it used to lose -- not only against its own
+   selector elsewhere, but against a different selector that lands on the same
+   element, which is how .people-page__results-head quietly changed the
+   accounts page mid-review. Rules in that position were left in organisms.css
+   on purpose; tests/unit/route-styles.test.mjs fails if one arrives here. */
+
+.people-page__search {
+	max-width: 720px;
+	margin-block: var(--space-4) var(--space-3);
+}
+.people-directory {
+	margin-block-end: var(--space-5);
+}
+.people-directory__filters label {
+	display: grid;
+	gap: var(--space-1);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.people-directory__filters :where(input, select) {
+	width: 100%;
+	min-height: 40px;
+	padding-inline: var(--space-2);
+	border: var(--border-base);
+	background: var(--color-surface);
+	color: var(--color-text);
+}
+.account-directory__notice--error {
+	border-inline-start-color: var(--color-destructive);
+	background: var(--color-destructive-subtle);
+	color: var(--color-destructive);
+}
+.account-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+	gap: var(--space-3);
+}
+.account-card {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--space-3);
+	min-width: 0;
+	padding: var(--space-3);
+	border: var(--border-base);
+	background: var(--color-surface);
+	color: var(--color-text);
+	text-decoration: none;
+}
+.account-card:hover {
+	border-color: var(--color-progressive);
+	text-decoration: none;
+}
+.account-card__avatar {
+	width: 56px;
+	height: 56px;
+	flex: 0 0 56px;
+	border-radius: 50%;
+}
+.account-card__body {
+	display: grid;
+	gap: var(--space-1);
+	min-width: 0;
+}
+.account-card__name {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+.account-card small {
+	color: var(--color-text-secondary);
+}
+.account-directory [data-account-pager] {
+	margin-block-start: var(--space-4);
+}
+.account-detail {
+	display: grid;
+	gap: var(--space-4);
+}
+.account-detail__head {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+}
+.account-detail__facts > div {
+	min-width: 0;
+	padding: var(--space-3);
+	background: var(--color-surface-muted);
+}
+.account-detail__facts dt {
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.account-detail__facts dd {
+	margin: var(--space-1) var(--space-0) var(--space-0);
+	overflow-wrap: anywhere;
+	font-weight: 700;
+}

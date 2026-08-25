@@ -133,7 +133,7 @@ def _cached_api_response(
 # colours). img-src allows any https origin: tool icons are arbitrary remote
 # images. The browser only ever fetches same-origin (/api/ is proxied
 # server-side), hence connect-src 'self'.
-_THEME_SCRIPT_HASH = "sha256-srCyu4URUHf5ifEyo7uYm6nvngYAUeQrFX+U2m4FsYY="
+_THEME_SCRIPT_HASH = "sha256-ESl7KZMMBsM//AJUTvBpVNYXZx7KjFR6DTYA8+/qcgs="
 _CSP = (
     "default-src 'self'; "
     f"script-src 'self' '{_THEME_SCRIPT_HASH}'; "

@@ -1,0 +1,220 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Route-owned styles for tool, split out of organisms.css.
+
+   These rules were in the global bundle every page downloads, and nothing
+   outside views/tool.js can produce the classes they match -- a test in
+   tests/unit/route-styles.test.mjs holds that. Loading them with the route
+   instead keeps ~975 gzipped bytes off every other page in the app.
+
+   Order matters: this sheet lands after the merged app.css, so a rule here
+   wins any equal-specificity tie it used to lose -- not only against its own
+   selector elsewhere, but against a different selector that lands on the same
+   element, which is how .people-page__results-head quietly changed the
+   accounts page mid-review. Rules in that position were left in organisms.css
+   on purpose; tests/unit/route-styles.test.mjs fails if one arrives here. */
+
+.graph--ego {
+	margin-top: var(--space-3);
+}
+.graph__caption {
+	margin: var(--space-2) var(--space-0) var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}
+.toolpage__by {
+	color: var(--color-text-secondary);
+	margin-top: var(--space-1);
+}
+.toolpage__subtitle {
+	margin: var(--space-1) var(--space-0) var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-body);
+	line-height: 1.45;
+	max-width: 72ch;
+}
+.toolpage__sponsor,
+.toolpage__notice {
+	margin-top: var(--space-1);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.toolpage__label {
+	color: var(--color-text-muted);
+	font-weight: 600;
+}
+.toolpage__sep {
+	color: var(--color-text-muted);
+}
+.toolpage__prov {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	margin: var(--space-1) var(--space-0);
+}
+.toolpage__wikidata {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	text-decoration: none;
+}
+.toolpage__wikidata:hover {
+	text-decoration: none;
+	background: var(--color-interactive-subtle);
+}
+.toolpage__row {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	flex-wrap: wrap;
+	margin-top: var(--space-2);
+}
+.toolpage__h2 {
+	font-size: var(--fs-subtitle);
+	margin: var(--space-5) var(--space-0) var(--space-3);
+	padding-bottom: var(--space-2);
+	border-bottom: var(--border-base);
+}
+
+.catalog-evidence {
+	margin-block: var(--space-6);
+}
+
+.catalog-evidence__field {
+	border-block-start: 1px solid var(--color-border);
+	padding-block: var(--space-2);
+}
+
+.catalog-evidence__field summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.catalog-evidence__field ul {
+	margin-block: var(--space-2) var(--space-0);
+}
+
+.catalog-evidence__effective {
+	color: var(--color-success);
+}
+
+.catalog-evidence__warning {
+	color: var(--color-warning-text);
+	font-size: var(--fs-small);
+	font-weight: 400;
+}
+.toolpage__signal-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	margin-bottom: var(--space-3);
+}
+.tool-media__grid {
+	display: grid;
+	gap: var(--space-3);
+}
+.tool-media__item {
+	margin: var(--space-0);
+}
+.tool-media__item img {
+	display: block;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	object-fit: cover;
+	border: var(--border-base);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface-muted);
+}
+.tool-media__item figcaption {
+	margin-top: var(--space-1);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	line-height: 1.35;
+}
+.tool-media__form {
+	display: grid;
+	gap: var(--space-2);
+	margin-top: var(--space-3);
+}
+.toolpage__sub {
+	margin-top: var(--space-3);
+	padding-top: var(--space-3);
+	border-top: var(--border-muted);
+}
+
+.toolpage__management {
+	display: grid;
+	gap: var(--space-2);
+}
+.toolpage__owner-label {
+	color: var(--color-text-muted);
+	font-size: var(--fs-micro);
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+.related__titleline {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	min-width: 0;
+}
+.related__status {
+	flex: 0 0 auto;
+}
+.maint-list__group {
+	display: grid;
+	gap: var(--space-2);
+}
+.maint-list__group h3 {
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.maint-list__group ul {
+	display: grid;
+	gap: var(--space-3);
+	margin: var(--space-0);
+	padding: var(--space-0);
+	list-style: none;
+}
+.maint-list__item {
+	display: grid;
+	gap: var(--space-2);
+}
+.maint-list__identity {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	font-size: var(--fs-caption);
+}
+.maint-list__name {
+	display: grid;
+	gap: var(--space-0-5);
+	min-width: 0;
+}
+.maint-list__name small {
+	color: var(--color-text-secondary);
+	font-size: var(--fs-micro);
+}
+.author-ref {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	min-width: 0;
+	max-width: 100%;
+}
+.author-ref > a:first-child {
+	overflow-wrap: anywhere;
+}
+.author-ref__external {
+	color: var(--color-text-muted);
+	display: inline-flex;
+	align-items: center;
+	text-decoration: none;
+}
+.author-ref__external:hover {
+	color: var(--color-progressive);
+	text-decoration: none;
+}

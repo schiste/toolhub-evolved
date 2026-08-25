@@ -40,6 +40,9 @@ import { openClaimDrawer } from "../lib/organisms/claim-drawer.js";
 import { setIssueContext } from "../lib/organisms/issue-drawer.js";
 import { prosePage, viewNotFound } from "./static.js";
 
+/* Split out of organisms.css; the router preloads it alongside this module. */
+const STYLESHEET = "/styles/tool.css";
+
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 
@@ -205,7 +208,8 @@ function viewToolNotFound(name) {
 			<h1 class="page__title">${t("tool.notFoundTitle", "Tool not found")}</h1>
 			<p class="page__intro">${t("tool.notFoundIntroLead", "The record for")} <code${dirAttrs(rawName)}>${esc(rawName)}</code> ${t("tool.notFoundIntroMid", "may have been")} <strong>${t("tool.notFoundIntroFates", "deleted, renamed, or never registered")}</strong>.</p>
 			<p><a href="${searchHref}">${t("tool.searchForName", 'Search for "$1"', esc(rawName))}</a> · <a href="/search">${t("tool.browseAllTools", "Browse all tools")}</a></p>
-		</div>`
+		</div>`,
+		styles: [STYLESHEET]
 	};
 }
 
@@ -1127,7 +1131,7 @@ export async function viewTool(name) {
 			}
 		});
 	}
-	return { title: t("tool.docTitle", "$1 — Toolhub", tool.title), html, mount };
+	return { title: t("tool.docTitle", "$1 — Toolhub", tool.title), html, mount, styles: [STYLESHEET] };
 }
 
 // Tool revision history — live from /api/tools/{name}/revisions/.
@@ -1162,7 +1166,8 @@ export async function viewToolHistory(name) {
 			<a class="back" href="${toolHref(name)}">${t("tool.backToName", "← Back to $1", esc(title))}</a>
 			<h1 class="page__title">${t("tool.revisionHistoryTitle", "Revision history")}</h1>
 			<ul class="feed">${rows || `<li><div class="feed__static">${data ? t("tool.noRevisions", "No revisions recorded.") : t("tool.revisionsUnavailable", "Revision history isn't available right now.")}</div></li>`}</ul>
-		</div>`
+		</div>`,
+		styles: [STYLESHEET]
 	};
 }
 /** @param {string} name */

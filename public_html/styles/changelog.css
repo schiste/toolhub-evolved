@@ -1,0 +1,55 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Route-owned styles for changelog, split out of organisms.css.
+
+   These rules were in the global bundle every page downloads, and nothing
+   outside views/changelog.js can produce the classes they match -- a test in
+   tests/unit/route-styles.test.mjs holds that. Loading them with the route
+   instead keeps ~337 gzipped bytes off every other page in the app.
+
+   Order matters: this sheet lands after the merged app.css, so a rule here
+   wins any equal-specificity tie it used to lose -- not only against its own
+   selector elsewhere, but against a different selector that lands on the same
+   element, which is how .people-page__results-head quietly changed the
+   accounts page mid-review. Rules in that position were left in organisms.css
+   on purpose; tests/unit/route-styles.test.mjs fails if one arrives here. */
+
+.changelog__release {
+	margin-top: var(--space-5);
+	padding-top: var(--space-4);
+	border-top: var(--border-muted);
+}
+.changelog__release-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--space-4);
+}
+.changelog__release-head p {
+	margin-top: var(--space-1);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}
+.changelog__release-head > :where(a, .changelog__commit) {
+	flex: 0 0 auto;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
+.changelog__audience {
+	margin-top: var(--space-4);
+}
+.changelog__audience h3 {
+	margin-bottom: var(--space-2);
+}
+.changelog__notes {
+	margin: var(--space-0);
+	padding-inline-start: var(--space-4);
+}
+.changelog__technical {
+	margin-top: var(--space-4);
+}
+.changelog__technical-summary {
+	color: var(--color-progressive);
+	font-weight: 700;
+	cursor: pointer;
+}

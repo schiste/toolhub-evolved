@@ -4,6 +4,9 @@ import { backendGetJson } from "../lib/core/api.js";
 import { t } from "../lib/core/i18n.js";
 import { releaseNotesHTML } from "../lib/molecules/release-notes.js";
 
+/* Split out of organisms.css; the router preloads it alongside this module. */
+const STYLESHEET = "/styles/changelog.css";
+
 /** @param {string | undefined} value */
 function dateLabel(value) {
 	const date = new Date(value || "");
@@ -38,6 +41,7 @@ export async function viewChangelog() {
 		<h1>${esc(t("changelog.title", "Changelog"))}</h1>
 		<p>${esc(t("changelog.intro", "Product changes are grouped into curated releases. Maintenance deployments update the serving build without creating another version."))}</p>
 		${rows || `<p class="empty">${esc(t("changelog.empty", "No changelog entries are available yet."))}</p>`}
-	</article></div>`
+	</article></div>`,
+		styles: [STYLESHEET]
 	};
 }

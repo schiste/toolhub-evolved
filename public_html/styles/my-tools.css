@@ -1,0 +1,83 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Route-owned styles for my-tools, split out of organisms.css.
+
+   These rules were in the global bundle every page downloads, and nothing
+   outside views/my-tools.js can produce the classes they match -- a test in
+   tests/unit/route-styles.test.mjs holds that. Loading them with the route
+   instead keeps ~418 gzipped bytes off every other page in the app.
+
+   Order matters: this sheet lands after the merged app.css, so a rule here
+   wins any equal-specificity tie it used to lose -- not only against its own
+   selector elsewhere, but against a different selector that lands on the same
+   element, which is how .people-page__results-head quietly changed the
+   accounts page mid-review. Rules in that position were left in organisms.css
+   on purpose; tests/unit/route-styles.test.mjs fails if one arrives here. */
+
+.account-records__col--tool {
+	width: 25%;
+}
+.account-records__col--owner {
+	width: 14%;
+}
+.account-records__col--verification {
+	width: 20%;
+}
+.account-records__col--source {
+	width: 18%;
+}
+.account-records__col--type {
+	width: 9%;
+}
+.account-records__col--updated {
+	width: 9%;
+}
+.account-records__col--actions {
+	width: 5%;
+}
+.account-records__title {
+	display: inline-flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	text-decoration: none;
+}
+.account-records__title strong {
+	color: var(--color-text);
+}
+.account-records__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1-5);
+	font-size: var(--fs-caption);
+}
+.account-records__action {
+	padding: var(--space-0);
+	border: var(--space-0);
+	background: transparent;
+	color: var(--color-progressive);
+	font: inherit;
+	text-align: start;
+	text-decoration: underline;
+	cursor: pointer;
+}
+.account-tools__badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-0-5);
+	align-items: flex-start;
+	max-width: 100%;
+}
+.account-tools__toolinfo {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--space-1);
+	max-width: 100%;
+}
+.account-tools__toolinfo a {
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
+.account-tools__source-badge {
+	cursor: help;
+}

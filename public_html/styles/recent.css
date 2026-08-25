@@ -1,0 +1,224 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Route-owned styles for recent, split out of organisms.css.
+
+   These rules were in the global bundle every page downloads, and nothing
+   outside views/recent.js can produce the classes they match -- a test in
+   tests/unit/route-styles.test.mjs holds that. Loading them with the route
+   instead keeps ~1044 gzipped bytes off every other page in the app.
+
+   Order matters: this sheet lands after the merged app.css, so a rule here
+   wins any equal-specificity tie it used to lose -- not only against its own
+   selector elsewhere, but against a different selector that lands on the same
+   element, which is how .people-page__results-head quietly changed the
+   accounts page mid-review. Rules in that position were left in organisms.css
+   on purpose; tests/unit/route-styles.test.mjs fails if one arrives here. */
+
+/* Recent changes table. */
+.recent-page {
+	max-width: var(--container-wide);
+}
+
+.recent-head {
+	margin-bottom: var(--space-4);
+}
+
+.recent-controls {
+	display: grid;
+	gap: var(--space-3);
+	padding-block: var(--space-3);
+	border-block: var(--border-base);
+	margin-bottom: var(--space-4);
+}
+
+.recent-control {
+	display: grid;
+	gap: var(--space-1);
+	align-items: start;
+	height: auto;
+	min-width: 0;
+}
+
+.recent-control__label {
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+	font-weight: 700;
+}
+
+.recent-actions {
+	display: flex;
+	gap: var(--space-2);
+	align-items: center;
+	height: var(--ctl-h-md);
+}
+
+.recent-table__col--item {
+	width: 24%;
+}
+
+.recent-table__col--type {
+	width: 6%;
+}
+
+.recent-table__col--owner {
+	width: 14%;
+}
+
+.recent-table__col--updated-by {
+	width: 12%;
+}
+
+.recent-table__col--action {
+	width: 8%;
+}
+
+.recent-table__col--review {
+	width: 11%;
+}
+
+.recent-table__col--updated {
+	width: 8%;
+}
+
+.recent-table__col--comment {
+	width: 17%;
+}
+
+.recent-table__item {
+	display: grid;
+	gap: var(--space-0-5);
+	color: var(--color-text);
+	text-decoration: none;
+}
+
+.recent-table__item:hover strong {
+	color: var(--color-progressive);
+}
+
+.recent-table__person {
+	color: var(--color-progressive);
+	text-decoration: none;
+}
+
+.recent-table__person:hover,
+.recent-table__person:focus-visible {
+	color: var(--color-progressive-hover);
+	text-decoration: underline;
+}
+
+.recent-table__comment {
+	overflow-wrap: anywhere;
+	color: var(--color-text-secondary);
+	line-height: 1.45;
+}
+
+.recent-comment {
+	display: block;
+	width: 100%;
+	padding: var(--space-0);
+	border: none;
+	appearance: none;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+	line-height: inherit;
+	text-align: start;
+}
+
+.recent-comment__text {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.recent-comment:hover .recent-comment__text {
+	color: var(--color-progressive);
+}
+
+.recent-comment:focus-visible {
+	outline: 0;
+	box-shadow: var(--focus-ring);
+}
+
+.recent-comment[aria-expanded="true"] .recent-comment__text {
+	overflow: visible;
+	overflow-wrap: anywhere;
+	text-overflow: clip;
+	white-space: normal;
+}
+
+/* The named form of a comment wraps instead of truncating: a day's worth of
+   tool names is the content of the cell, not an aside behind a disclosure. */
+.recent-comment__change {
+	display: block;
+	overflow-wrap: anywhere;
+}
+
+.recent-comment__tool {
+	color: var(--color-progressive);
+	text-decoration: none;
+}
+
+.recent-comment__tool:hover,
+.recent-comment__tool:focus-visible {
+	text-decoration: underline;
+}
+
+.recent-table__sort {
+	color: var(--color-progressive);
+	display: inline-block;
+	width: 0;
+	height: 0;
+	border-inline: 4px solid transparent;
+}
+
+.recent-table__sort--asc {
+	border-block-end: 5px solid currentcolor;
+}
+
+.recent-table__sort--desc {
+	border-block-start: 5px solid currentcolor;
+}
+
+.recent-chip {
+	display: inline-flex;
+	align-items: center;
+	min-height: 20px;
+	padding: var(--space-0-5) var(--space-2);
+	border-radius: var(--radius-pill);
+	background: var(--color-surface-muted);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-micro);
+	font-weight: 700;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.recent-chip--tools,
+.recent-chip--patrolled {
+	background: var(--color-success-subtle);
+	color: var(--color-success);
+}
+
+.recent-chip--lists,
+.recent-chip--evolved {
+	background: var(--color-progressive-subtle);
+	color: var(--color-progressive);
+}
+
+.recent-chip--unpatrolled {
+	background: var(--color-warning-subtle);
+	color: var(--color-warning-text);
+}
+
+.recent-chip--suppressed {
+	background: var(--color-destructive-subtle);
+	color: var(--color-destructive);
+}
+
+.recent-empty {
+	color: var(--color-text-muted);
+	text-align: center;
+}

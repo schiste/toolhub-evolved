@@ -6,6 +6,9 @@ import { apiGet, backendGetJson } from "../lib/core/api.js";
 import { authorHref, navigateTo, listHref, toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, demoFeed, recentOwnerCacheGet, recentOwnerCacheSet } from "../lib/core/store.js";
 
+/* Split out of organisms.css; the router preloads it alongside this module. */
+const STYLESHEET = "/styles/recent.css";
+
 /* ---- Recent changes: data-driven read-only feed ------------------------ */
 const RECENT_FILTERS = [
 	{ value: "all", label: t("parity.all", "All") },
@@ -540,6 +543,7 @@ export async function viewRecent() {
 					toggle.getAttribute("aria-expanded") === "true" ? "false" : "true"
 				);
 			});
-		}
+		},
+		styles: [STYLESHEET]
 	};
 }

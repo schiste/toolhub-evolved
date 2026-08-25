@@ -1,0 +1,116 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Route-owned styles for graph, split out of organisms.css.
+
+   These rules were in the global bundle every page downloads, and nothing
+   outside views/graph.js can produce the classes they match -- a test in
+   tests/unit/route-styles.test.mjs holds that. Loading them with the route
+   instead keeps ~661 gzipped bytes off every other page in the app.
+
+   Order matters: this sheet lands after the merged app.css, so a rule here
+   wins any equal-specificity tie it used to lose -- not only against its own
+   selector elsewhere, but against a different selector that lands on the same
+   element, which is how .people-page__results-head quietly changed the
+   accounts page mid-review. Rules in that position were left in organisms.css
+   on purpose; tests/unit/route-styles.test.mjs fails if one arrives here. */
+
+.graph__toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	min-height: var(--ctl-h-md);
+	margin-bottom: var(--space-2);
+}
+.graph__toolbar-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+}
+.graph__zoom-out {
+	width: var(--btn-h-sm);
+	padding-inline: var(--space-0);
+	font-size: var(--fs-body);
+}
+.graph__zoom-readout {
+	min-width: 4ch;
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	font-variant-numeric: tabular-nums;
+	text-align: end;
+}
+.graph__view-options,
+.graph__filters {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: var(--space-3);
+	margin-bottom: var(--space-3);
+}
+.graph__view-options {
+	padding-block: var(--space-2);
+	border-block: var(--border-base);
+}
+.graph__filter {
+	display: grid;
+	gap: var(--space-1);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+	font-weight: 600;
+}
+.graph__select {
+	min-width: 12rem;
+	min-height: var(--ctl-h-md);
+	padding: var(--space-1) var(--space-6) var(--space-1) var(--space-2);
+	border: var(--border-base);
+	border-radius: var(--radius-base);
+	background: var(--color-surface);
+	color: var(--color-text);
+	font: inherit;
+}
+.graph__select:focus-visible {
+	outline: 2px solid var(--color-progressive);
+	outline-offset: 1px;
+}
+.graph__filter-count {
+	margin-inline-start: auto;
+	padding-bottom: var(--space-2);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	font-variant-numeric: tabular-nums;
+}
+.graph__filter-empty {
+	margin-block: var(--space-3);
+}
+.graph__loading {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	min-height: 260px;
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}
+.graph__loading--error {
+	flex-direction: column;
+	color: var(--color-destructive);
+}
+@media (width <= 600px) {
+	.graph__filter {
+		flex: 1 1 12rem;
+	}
+	.graph__select {
+		width: 100%;
+		min-width: 0;
+	}
+	.graph__filter-count {
+		flex-basis: 100%;
+		margin-inline-start: var(--space-0);
+		padding-bottom: var(--space-0);
+	}
+}
+.graph__note {
+	margin: var(--space-2) var(--space-0) var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}

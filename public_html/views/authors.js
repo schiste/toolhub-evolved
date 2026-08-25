@@ -18,6 +18,9 @@ import { renderPager } from "../lib/molecules/pager.js";
 import { communityHeader } from "./community.js";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from "../lib/core/paging.js";
 
+/* Split out of organisms.css; the router preloads it alongside this module. */
+const STYLESHEET = "/styles/authors.css";
+
 const PEOPLE_ROLES = new Set(["author", "maintainer"]);
 const PEOPLE_VERIFICATIONS = new Set(["verified", "unverified"]);
 const PEOPLE_ACTIVITIES = new Set(["active", "quiet", "unknown"]);
@@ -146,7 +149,8 @@ function renderPerson(person, tools) {
 				const page = positiveInteger(button.getAttribute("data-page"), 1);
 				navigateTo(`${personHref(person)}${page > 1 ? `?page=${page}` : ""}`);
 			});
-		}
+		},
+		styles: [STYLESHEET]
 	};
 }
 
@@ -209,7 +213,8 @@ function renderDisambiguation(name, resolution) {
 			<a class="back" href="/people">${t("authors.backToPeople", "← Back to people")}</a>
 			<header><h1 class="page__title"${dirAttrs(name)}>${esc(name)}</h1><p class="page__intro">${t("authors.disambiguationIntro", "This name does not identify one unique person. Choose a verified identity below.")}</p></header>
 			${choices}${attributions}
-		</div>`
+		</div>`,
+		styles: [STYLESHEET]
 	};
 }
 
@@ -855,6 +860,7 @@ export async function viewPeople() {
 				showLoading();
 				window.dispatchEvent(new Event("toolhub:navigate"));
 			});
-		}
+		},
+		styles: [STYLESHEET]
 	};
 }

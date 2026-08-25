@@ -9,6 +9,9 @@ import { renderPager } from "../lib/molecules/pager.js";
 import { communityHeader } from "./community.js";
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from "../lib/core/paging.js";
 
+/* Split out of organisms.css; the router preloads it alongside this module. */
+const STYLESHEET = "/styles/accounts.css";
+
 const ACCOUNT_ORDERINGS = new Set(["name", "recent"]);
 
 /** @param {string | null} value @param {number} fallback */
@@ -242,6 +245,7 @@ export async function viewAccounts(options = {}) {
 			$("[data-account-retry]")?.addEventListener("click", () =>
 				window.dispatchEvent(new Event("toolhub:navigate"))
 			);
-		}
+		},
+		styles: [STYLESHEET]
 	};
 }

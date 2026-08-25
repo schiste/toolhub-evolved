@@ -18,6 +18,32 @@ import { isStaticSlug } from "./static-routes.js";
 export const ROUTE_MODULE_TIMEOUT_MS = 10_000;
 
 /**
+ * Route modules that own a stylesheet, split out of organisms.css so the rules
+ * only one view can produce stop riding on every page. Each module declares the
+ * same href in its own `STYLESHEET` const — that is the copy dispatch awaits;
+ * this one exists to start the request early. tests/unit/route-styles.test.mjs
+ * fails if the two ever disagree, and if a view grows a stylesheet without
+ * being listed here.
+ * @type {Record<string, string>}
+ */
+export const ROUTE_STYLES = {
+	"./tool.js": "/styles/tool.css",
+	"./recent.js": "/styles/recent.css",
+	"./authors.js": "/styles/authors.css",
+	"./graph.js": "/styles/graph.css",
+	"./accounts.js": "/styles/accounts.css",
+	"./account-settings.js": "/styles/account-settings.css",
+	"./my-tools.js": "/styles/my-tools.css",
+	"./experiments.js": "/styles/experiments.css",
+	"./changelog.js": "/styles/changelog.css",
+	"./statistics.js": "/styles/statistics.css",
+	"./workers.js": "/styles/workers.css",
+	"./userscripts.js": "/styles/userscripts.css",
+	"./digests.js": "/styles/digests.css",
+	"./styleguide.js": "/styles/styleguide.css"
+};
+
+/**
  * A dynamic import can remain pending indefinitely when a static response is
  * interrupted. Turn that browser-level stall into a normal rejected load so
  * the router can retry once and ultimately render its error boundary.
@@ -53,6 +79,14 @@ function loadModuleAttempt(loader) {
  * @returns {ModuleResult<T>}
  */
 export function loadRouteModule(specifier, loader, retryLoader = undefined) {
+	// Start the route's own stylesheet now rather than when the view returns.
+	// The view still declares it in `styles`, which is what dispatch awaits
+	// before committing HTML; this only moves the request off the critical
+	// path, so the sheet downloads while the module does instead of after it.
+	// Failure is ignored on purpose: loadRouteStyle resolves either way, and
+	// the await in loadViewStyles is what decides whether we paint.
+	const sheet = ROUTE_STYLES[specifier];
+	if (sheet) void loadRouteStyle(sheet);
 	return loadModuleAttempt(loader).catch(() =>
 		loadModuleAttempt(retryLoader || (() => import(`${specifier}?retry=${Date.now().toString(36)}`)))
 	);

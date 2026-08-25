@@ -8,6 +8,9 @@ import { communityColors, forceGraph } from "../lib/organisms/force-graph.js";
 import { openQuickView } from "../lib/organisms/quickview.js";
 import { loadingRegion, skeletonBlock } from "../lib/molecules/skeleton.js";
 
+/* Split out of organisms.css; the router preloads it alongside this module. */
+const STYLESHEET = "/styles/graph.css";
+
 const GRAPH_LIMITS = [250, 500, 1000, 2000, 4000];
 const GRAPH_GROUPINGS = [
 	"similarity",
@@ -286,5 +289,5 @@ export function viewGraph() {
 		});
 		void load(state, false);
 	}
-	return { title: t("graph.docTitle", "Tool map — Toolhub"), html, mount };
+	return { title: t("graph.docTitle", "Tool map — Toolhub"), html, mount, styles: [STYLESHEET] };
 }

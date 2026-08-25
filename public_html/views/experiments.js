@@ -2,6 +2,9 @@
 import { esc } from "../lib/core/dom.js";
 import { t } from "../lib/core/i18n.js";
 
+/* Split out of organisms.css; the router preloads it alongside this module. */
+const STYLESHEET = "/styles/experiments.css";
+
 /* ---- Feature status index --------------------------------------------- */
 // Single source of truth for every Evolved feature and hybrid integration path.
 export const EXPERIMENTS = [
@@ -687,6 +690,7 @@ export function viewExperiments() {
 			${t("experiments.introTail", "These features are visible by default; for the live-vs-local model and where your data goes, see")}
 			<a href="/rules-of-engagement">${t("experiments.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 			${groups}
-		</div>`
+		</div>`,
+		styles: [STYLESHEET]
 	};
 }

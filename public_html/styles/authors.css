@@ -1,0 +1,163 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Route-owned styles for authors, split out of organisms.css.
+
+   These rules were in the global bundle every page downloads, and nothing
+   outside views/authors.js can produce the classes they match -- a test in
+   tests/unit/route-styles.test.mjs holds that. Loading them with the route
+   instead keeps ~876 gzipped bytes off every other page in the app.
+
+   Order matters: this sheet lands after the merged app.css, so a rule here
+   wins any equal-specificity tie it used to lose -- not only against its own
+   selector elsewhere, but against a different selector that lands on the same
+   element, which is how .people-page__results-head quietly changed the
+   accounts page mid-review. Rules in that position were left in organisms.css
+   on purpose; tests/unit/route-styles.test.mjs fails if one arrives here. */
+
+.author-page__avatar {
+	width: 96px;
+	height: 96px;
+	flex: 0 0 96px;
+	border-radius: 50%;
+	object-fit: cover;
+	font-size: var(--fs-title);
+}
+.author-page__profile {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	font-size: var(--fs-caption);
+	font-weight: 600;
+	white-space: nowrap;
+}
+.author-page__bio {
+	max-width: 72ch;
+	margin-block: var(--space-4);
+}
+.author-page__stats div {
+	padding: var(--space-3);
+	border: var(--border-base);
+	background: var(--color-surface-muted);
+}
+.author-page__stats dt {
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.author-page__stats dd {
+	margin: var(--space-1) var(--space-0) var(--space-0);
+	font-size: var(--fs-subtitle);
+	font-weight: 700;
+}
+.author-page__tools {
+	margin-block-start: var(--space-5);
+}
+.author-tool-card {
+	display: grid;
+	gap: var(--space-2);
+	height: 100%;
+}
+.author-tool-card__summary-note {
+	margin: var(--space-0);
+	padding: var(--space-2);
+	border-inline-start: var(--border-heavy);
+	background: var(--color-warning-subtle);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.author-page__tools [data-person-tools-pager] {
+	margin-block-start: var(--space-4);
+}
+.community-facets__control {
+	width: 100%;
+}
+.community-result-section {
+	display: grid;
+	gap: var(--space-3);
+	margin-block-end: var(--space-6);
+}
+.community-person-result,
+.community-tool-result {
+	display: grid;
+	gap: var(--space-2);
+	height: 100%;
+}
+.community-supporting-evidence,
+.community-other-matches {
+	padding: var(--space-3);
+	border: var(--border-base);
+	background: var(--color-surface-muted);
+}
+.community-supporting-evidence__summary,
+.community-other-matches__summary {
+	cursor: pointer;
+	font-weight: 700;
+}
+.community-supporting-evidence > p,
+.community-tool-result__reason {
+	margin: var(--space-2) var(--space-0) var(--space-0);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.community-tool-result__reason span {
+	display: block;
+	margin-block-start: var(--space-1);
+}
+.community-other-matches > .community-result-section {
+	margin-block: var(--space-4) var(--space-0);
+}
+.community-result-section.people-attributions {
+	margin-block-start: var(--space-0);
+}
+.entity-card--stable {
+	--tcard-corner-color: var(--color-progressive);
+	--tcard-corner-color-hover: var(--color-progressive-hover);
+	--tcard-corner-color-focus: var(--color-progressive-hover);
+}
+.entity-card--verified {
+	--tcard-corner-color: var(--color-success);
+	--tcard-corner-color-hover: var(--color-success);
+	--tcard-corner-color-focus: var(--color-success);
+}
+.entity-card__avatar {
+	flex: 0 0 var(--avatar-md);
+}
+.entity-card__tag--identity {
+	background: var(--color-progressive-subtle);
+	color: var(--color-progressive);
+}
+.people-attributions {
+	margin-block-start: var(--space-6);
+	padding-block-start: var(--space-4);
+	border-block-start: var(--border-base);
+}
+.people-attributions__intro {
+	max-width: 720px;
+	margin-block: var(--space-1) var(--space-0);
+}
+.people-attributions__list {
+	display: grid;
+	gap: var(--space-2);
+	margin: var(--space-3) var(--space-0) var(--space-0);
+	padding: var(--space-0);
+	list-style: none;
+}
+.people-attribution__mark {
+	display: grid;
+	width: 32px;
+	height: 32px;
+	place-items: center;
+	border: var(--border-base);
+	border-radius: 50%;
+	color: var(--color-text-secondary);
+	font-weight: 700;
+}
+.people-attribution__content {
+	display: grid;
+	gap: var(--space-1);
+	min-width: 0;
+}
+.people-attribution__signals {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1);
+}

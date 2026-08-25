@@ -743,12 +743,15 @@ test("render: waits for declared route styles before committing the view", async
 	});
 	const viewEl = document.querySelector("#view");
 
+	// Scoped to this sheet's href, not just any route style: loading a route
+	// module now prefetches that route's own stylesheet, so links left in the
+	// head by earlier tests would otherwise be the ones found here.
+	const selector = 'link[data-route-style][href="data:text/css,.route-test{}"]';
 	const p = router.render();
-	await flushUntil(() => document.querySelector("link[data-route-style]"));
-	const link = document.querySelector("link[data-route-style]");
+	await flushUntil(() => document.querySelector(selector));
+	const link = document.querySelector(selector);
 
 	assert.ok(link);
-	assert.equal(link.getAttribute("href"), "data:text/css,.route-test{}");
 	assert.doesNotMatch(viewEl.innerHTML, /API docs/);
 
 	link.dispatchEvent(new Event("load"));

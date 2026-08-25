@@ -38,9 +38,21 @@
 		     view actually makes. -->
 		<script type="application/json" id="route-hints">
 			{
-				"/recent": { "api": "/v1/catalog/recent/?page_size=30", "module": "views/recent.js" },
-				"/workers": { "api": "/v1/workers/", "module": "views/workers.js" },
-				"/statistics": { "api": "/v1/statistics/", "module": "views/statistics.js" },
+				"/recent": {
+					"api": "/v1/catalog/recent/?page_size=30",
+					"module": "views/recent.js",
+					"css": "/styles/recent.css"
+				},
+				"/workers": {
+					"api": "/v1/workers/",
+					"module": "views/workers.js",
+					"css": "/styles/workers.css"
+				},
+				"/statistics": {
+					"api": "/v1/statistics/",
+					"module": "views/statistics.js",
+					"css": "/styles/statistics.css"
+				},
 				"/crawler-history": {
 					"api": "/v1/catalog/crawler/runs/?page_size=12",
 					"module": "views/crawler.js"
@@ -140,6 +152,20 @@
 						}
 						/* Only the build knows which bundle serves a view, so this list
 						   is empty in local development, where modules load unbundled. */
+						/* A route's own stylesheet is discovered only once its module
+						   has resolved, and dispatch waits for it before painting. This
+						   turns that wait into a cache hit. rel=preload does not apply
+						   the sheet, so the router still appends it after app.css and
+						   the cascade order is unchanged -- and the href must stay byte
+						   identical to the one views/router.js requests, or the browser
+						   fetches twice and the preload is wasted. */
+						if (hint.css) {
+							var sheet = document.createElement("link");
+							sheet.rel = "preload";
+							sheet.as = "style";
+							sheet.href = hint.css;
+							document.head.appendChild(sheet);
+						}
 						(hint.bundles || []).forEach(function (href) {
 							var link = document.createElement("link");
 							link.rel = "modulepreload";
