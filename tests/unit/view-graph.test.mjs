@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test, vi, beforeEach } from "vitest";
 // backend graph payload (network), communityColors/forceGraph (canvas), openQuickView and hasContext
 // are all mocked so the legend HTML + mount() wiring are exercised deterministically. esc stays real.
@@ -252,14 +254,24 @@ test("the canvas waits as one shape rather than as a written sentence", () => {
 	assert.equal(region.querySelector(".spinner"), null);
 });
 
+// Stryker runs this suite from a copy of the repo under .stryker-tmp/sandbox-*, in
+// which every file in the shard's mutate scope has been rewritten for instrumentation.
+// The height check below is about graph.js as authored -- a call whose shape only
+// exists in the source -- and instrumentation rewrites exactly that shape, so read
+// through the real tree rather than the copy. Left alone the regex found nothing, the
+// test failed the dry run, and a failed dry run aborts every file in the shard.
+const ROOT = path
+	.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+	.replace(/[/\\]\.stryker-tmp[/\\]sandbox-[^/\\]+$/, "");
+
 test("the map skeleton is exactly as tall as the map that replaces it", () => {
 	// Two files have to agree on that height or the canvas grows under the reader
 	// the moment the layout arrives.
 	const styled = /\.graph__skeleton > \.skeleton \{\n\theight: (\d+)px;/.exec(
-		readFileSync("public_html/styles/organisms.css", "utf8")
+		readFileSync(path.join(ROOT, "public_html/styles/organisms.css"), "utf8")
 	);
 	const rendered = /forceGraph\(target, next, \{[^}]*height: (\d+)/.exec(
-		readFileSync("public_html/views/graph.js", "utf8")
+		readFileSync(path.join(ROOT, "public_html/views/graph.js"), "utf8")
 	);
 	assert.ok(styled, "no height declared for the map skeleton");
 	assert.ok(rendered, "no height passed to forceGraph");
