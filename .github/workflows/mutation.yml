@@ -100,7 +100,7 @@ jobs:
                     - name: styleguide
                       scope: "public_html/views/styleguide.js"
                     - name: views-rest+main
-                      scope: "public_html/views/router.js,public_html/views/static.js,public_html/views/parity.js,public_html/views/graph.js,public_html/views/authors.js,public_html/views/experiments.js,public_html/views/_fixtures.js,public_html/main.js"
+                      scope: "public_html/views/router.js,public_html/views/static.js,public_html/views/graph.js,public_html/views/authors.js,public_html/views/experiments.js,public_html/views/_fixtures.js,public_html/main.js"
         steps:
             - uses: actions/checkout@v7
             - uses: actions/setup-node@v7

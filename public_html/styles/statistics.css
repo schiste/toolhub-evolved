@@ -332,6 +332,17 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/* The row label and its marker share a line, so the marker is sized off the
+   label rather than given a box of its own: a bar chart that grows a second
+   column when one row is annotated reads as two different charts. `help`
+   rather than `pointer` because hovering explains the bar; it does not go
+   anywhere. */
+.statistics-histogram__note {
+	margin-inline-start: var(--space-1);
+	color: var(--color-text-secondary);
+	cursor: help;
+}
+
 .statistics-histogram meter {
 	height: 0.55rem;
 }

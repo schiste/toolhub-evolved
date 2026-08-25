@@ -1642,6 +1642,7 @@
 	"statistics.handlePeople": "Metric label for identities backed by a trusted public account handle.",
 	"statistics.identityOnlyPeople": "Metric label for publishable identities with no current author or maintainer relationship.",
 	"statistics.intro": "Introductory sentence for the Statistics page.",
+	"statistics.launchNote": "Hover text on the 2021 bar of the catalog time histograms, explaining that the spike is Toolhub's launch importing an existing catalog rather than a year of unusual activity.",
 	"statistics.lensAll": "Option counting every catalog record, registered and wiki alike. The default.",
 	"statistics.lensCatalog": "Option counting only records registered with Toolhub.",
 	"statistics.lensLegend": "Label for the control choosing which tools every figure on the statistics page is counted against.",

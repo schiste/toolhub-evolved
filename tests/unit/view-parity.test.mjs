@@ -5,7 +5,10 @@ import { test, vi, beforeEach } from "vitest";
 // apiGet hits the network and demoFeed reads localStorage; both are made deterministic.
 // demoFeed is a pass-through so the live results render verbatim (and we assert the key
 // it is called with). Everything else (esc, i18n, routing hrefs, avatar, metaItem) is real.
-import { viewRecent, viewMembers, viewCrawler, viewAudit, targetHref } from "../../public_html/views/parity.js";
+import { viewRecent } from "../../public_html/views/recent.js";
+import { viewMembers } from "../../public_html/views/members.js";
+import { viewCrawler } from "../../public_html/views/crawler.js";
+import { viewAudit, targetHref } from "../../public_html/views/audit.js";
 import * as api from "../../public_html/lib/core/api.js";
 import { DEMO_KEYS } from "../../public_html/lib/core/store.js";
 

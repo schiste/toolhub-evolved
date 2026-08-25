@@ -1642,6 +1642,7 @@
 	"statistics.handlePeople": "Trusted-handle identities",
 	"statistics.identityOnlyPeople": "Identity-only people",
 	"statistics.intro": "A transparent view of catalog coverage, identity resolution, and data freshness.",
+	"statistics.launchNote": "Toolhub launched",
 	"statistics.lensAll": "Everything",
 	"statistics.lensCatalog": "Registered tools",
 	"statistics.lensLegend": "Count every figure against",

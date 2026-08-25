@@ -45,19 +45,54 @@ function qualityRow(title, description, metric) {
 	</div>`;
 }
 
-/** @param {string} title @param {string} intro @param {Array<{ key?: string, label?: string, count?: number }>} rows */
-function histogram(title, intro, rows) {
+// Toolhub opened in 2021, and the created-by-year chart shows it as a spike
+// three times the neighboring years -- not because that many tools were
+// written, but because launching imported a catalog that already existed. A
+// reader has no way to tell those apart from the bar alone. The note is keyed
+// by row rather than drawn at a fixed position, so a chart that has no 2021
+// row simply does not carry it: last-updated dates only start in 2022.
+const TOOLHUB_LAUNCH_YEAR = "2021";
+
+/** Standard annotation glyph; the meaning is carried by the note, not the mark. */
+const NOTE_MARK = "\u24D8";
+
+/** Rows a time histogram should annotate, as row key to hover text. */
+function launchNote() {
+	return { [TOOLHUB_LAUNCH_YEAR]: t("statistics.launchNote", "Toolhub launched") };
+}
+
+/**
+ * A marker on one histogram row, explaining the shape of the bar next to it.
+ *
+ * `title` is the hover text and `aria-describedby` would need an id per row,
+ * so the note is repeated as visually-hidden text: a bare `title` on a span is
+ * not reliably announced, and a reader who cannot hover would otherwise get
+ * the anomaly with no explanation at all.
+ *
+ * @param {string} note
+ */
+function histogramNote(note) {
+	return `<span class="statistics-histogram__note" title="${esc(note)}">${esc(NOTE_MARK)}<span class="visually-hidden">${esc(note)}</span></span>`;
+}
+
+/**
+ * @param {string} title @param {string} intro
+ * @param {Array<{ key?: string, label?: string, count?: number }>} rows
+ * @param {Record<string, string>} [notes] hover text keyed by row key
+ */
+function histogram(title, intro, rows, notes = {}) {
 	const values = Array.isArray(rows) ? rows : [];
 	const maximum = Math.max(1, ...values.map((row) => Number(row.count) || 0));
 	return `<figure class="statistics-histogram">
 		<figcaption><h3>${esc(title)}</h3><p>${esc(intro)}</p></figcaption>
 		<ol>${values
-			.map(
-				(row) => `<li>
-					<div><span>${esc(row.label || humanize(row.key || ""))}</span><strong>${esc(count(row.count))}</strong></div>
+			.map((row) => {
+				const note = notes[String(row.key ?? "")];
+				return `<li>
+					<div><span>${esc(row.label || humanize(row.key || ""))}${note ? histogramNote(note) : ""}</span><strong>${esc(count(row.count))}</strong></div>
 					<meter min="0" max="${esc(String(maximum))}" value="${esc(String(Number(row.count) || 0))}">${esc(count(row.count))}</meter>
-				</li>`
-			)
+				</li>`;
+			})
 			.join("")}</ol>
 	</figure>`;
 }
@@ -231,10 +266,10 @@ export function statisticsHTML(data, lens = LENS_ALL) {
 			<div class="statistics-section__head"><div><p>${esc(t("statistics.sectionThree", "03 · Time"))}</p><h2 id="statistics-time-title">${esc(t("statistics.timeTitle", "When did the catalog change?"))}</h2></div>
 			<p>${esc(definitions.dateBasis || t("statistics.timeIntro", "Unavailable canonical dates remain visible instead of disappearing from the chart."))}</p></div>
 			<div class="statistics-chart-grid">
-				${histogram(t("statistics.createdByYear", "Catalog records created by year"), t("statistics.createdByYearIntro", "Registered tools carry Toolhub creation dates; user scripts and gadgets carry their first revision on the wiki."), distributions.createdByYear)}
+				${histogram(t("statistics.createdByYear", "Catalog records created by year"), t("statistics.createdByYearIntro", "Registered tools carry Toolhub creation dates; user scripts and gadgets carry their first revision on the wiki."), distributions.createdByYear, launchNote())}
 				${histogram(t("statistics.updateRecency", "Time since last update"), t("statistics.updateRecencyIntro", "How recently each canonical record was modified."), distributions.modifiedRecency)}
 			</div>
-			${histogram(t("statistics.modifiedByYear", "Catalog records last updated by year"), t("statistics.modifiedByYearIntro", "A historical distribution of each record's latest modification."), distributions.modifiedByYear)}
+			${histogram(t("statistics.modifiedByYear", "Catalog records last updated by year"), t("statistics.modifiedByYearIntro", "A historical distribution of each record's latest modification."), distributions.modifiedByYear, launchNote())}
 		</section>
 
 		<section class="statistics-section" aria-labelledby="statistics-pipeline-title">

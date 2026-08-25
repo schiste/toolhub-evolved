@@ -1157,9 +1157,6 @@
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: var(--space-3);
 }
-.account-data__links {
-	margin-top: var(--space-3);
-}
 .account-links__start-row {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
@@ -1196,27 +1193,6 @@
 .account-keys__output {
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
-}
-.account-records__head {
-	align-items: flex-start;
-}
-.account-records__source {
-	display: inline-flex;
-	align-items: center;
-	flex: 0 0 auto;
-	padding: var(--space-1) var(--space-2);
-	background: var(--color-progressive-subtle);
-	color: var(--color-progressive);
-	border-radius: var(--radius-sm);
-	font-size: var(--fs-caption);
-	font-weight: 700;
-}
-.account-records__summary {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--space-3);
-	margin: var(--space-4) var(--space-0);
 }
 .account-records__table-wrap {
 	overflow-x: auto;
@@ -1782,13 +1758,6 @@
 	margin: var(--space-0);
 	line-height: 1.15;
 }
-.toolpage__sync-error {
-	max-width: 72ch;
-	margin: var(--space-1) var(--space-0) var(--space-0);
-	color: var(--color-destructive);
-	font-size: var(--fs-caption);
-	line-height: 1.4;
-}
 .toolpage__glance {
 	display: flex;
 	flex-wrap: wrap;
@@ -2011,24 +1980,11 @@
 .community-tool-result > .tcard {
 	height: auto;
 }
-.entity-card--unresolved {
-	--tcard-corner-color: var(--color-warning-text);
-	--tcard-corner-color-hover: var(--color-warning-text);
-	--tcard-corner-color-focus: var(--color-warning-text);
-}
 .entity-card--static {
 	cursor: default;
 }
 .entity-card--static:hover {
 	background-color: var(--color-surface);
-}
-.entity-card__unknown {
-	display: grid;
-	place-items: center;
-	border: var(--border-base);
-	background: var(--color-surface-muted);
-	color: var(--color-text-secondary);
-	font-weight: 700;
 }
 .entity-card__subtitle {
 	white-space: normal;
@@ -2165,7 +2121,6 @@
 	.people-directory__filters {
 		grid-template-columns: 1fr;
 	}
-	.community-directory__definitions,
 	.account-detail__facts {
 		grid-template-columns: 1fr;
 	}

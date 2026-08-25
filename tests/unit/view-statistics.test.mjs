@@ -283,3 +283,63 @@ test("other query parameters on the address survive a change of lens", async () 
 	wiki.dispatchEvent(new window.Event("change", { bubbles: true }));
 	assert.equal(location.search, "?whats-new=1&lens=wiki");
 });
+
+// The 2021 bar is three times its neighbours because launching Toolhub imported
+// a catalog that already existed, and nothing on the axis says so. These tests
+// pin where the explanation lands, because a note on the wrong bar is worse
+// than no note: it would attribute the launch to a year it did not happen in.
+/** @param {string} html */
+const noteRows = (html) => {
+	document.body.innerHTML = html;
+	return [...document.querySelectorAll("li")]
+		.filter((li) => li.querySelector(".statistics-histogram__note"))
+		.map((li) => li.querySelector("span").textContent.trim());
+};
+
+const dated = {
+	...payload,
+	distributions: {
+		...payload.distributions,
+		createdByYear: [
+			{ key: "2020", label: "2020", count: 632 },
+			{ key: "2021", label: "2021", count: 2076 },
+			{ key: "2022", label: "2022", count: 1761 }
+		],
+		modifiedByYear: [
+			{ key: "2021", label: "2021", count: 40 },
+			{ key: "2026", label: "2026", count: 700 }
+		],
+		// A tool type happens to be named for the year; it is not a date, and a
+		// note there would be a coincidence of strings rather than a fact.
+		toolTypes: [{ key: "2021", label: "2021", count: 12 }]
+	}
+};
+
+test("the launch year is annotated on every time histogram that reaches it", () => {
+	const rows = noteRows(statisticsHTML(dated));
+	// Once for created-by-year and once for last-updated-by-year, never elsewhere.
+	assert.deepEqual(rows, ["2021ⓘToolhub launched", "2021ⓘToolhub launched"]);
+});
+
+test("the launch note explains itself to a reader who cannot hover", () => {
+	document.body.innerHTML = statisticsHTML(dated);
+	const note = document.querySelector(".statistics-histogram__note");
+	assert.equal(note.getAttribute("title"), "Toolhub launched");
+	assert.equal(note.querySelector(".visually-hidden").textContent, "Toolhub launched");
+});
+
+test("a time histogram that never reaches 2021 carries no note", () => {
+	// Last-updated dates only start in 2022 in production, so this is the live
+	// shape rather than a hypothetical one.
+	const rows = noteRows(
+		statisticsHTML({
+			...payload,
+			distributions: {
+				...payload.distributions,
+				createdByYear: [],
+				modifiedByYear: [{ key: "2026", label: "2026", count: 700 }]
+			}
+		})
+	);
+	assert.deepEqual(rows, []);
+});

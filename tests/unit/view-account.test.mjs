@@ -23,7 +23,9 @@ vi.mock("../../public_html/lib/core/store.js", async (orig) => {
 });
 
 const { setServerUser } = await import("../../public_html/lib/core/session.js");
-const { viewAccountSettings, viewDeveloperSettings, viewMyTools } = await import("../../public_html/views/account.js");
+const { viewAccountSettings } = await import("../../public_html/views/account-settings.js");
+const { viewDeveloperSettings } = await import("../../public_html/views/developer-settings.js");
+const { viewMyTools } = await import("../../public_html/views/my-tools.js");
 
 beforeEach(() => {
 	vi.clearAllMocks();
