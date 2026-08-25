@@ -72,11 +72,19 @@ jobs:
                     # single number for an app whose shards range from 22% to 100%, and
                     # the 100 it held for months failed all of them, every week, until a
                     # red Mutation run meant nothing at all. Each floor here is what its
-                    # shard actually measured on CI (run 32693322476), rounded down, so
+                    # shard actually measured on CI (run 32862303176), rounded down, so
                     # today's matrix goes green and tomorrow's regression does not. A
-                    # floor of "0" means the shard has never reported a score on CI and
-                    # nothing is being guarded yet -- read the first green run's
-                    # ::notice:: line and raise it. Floors only ever go up.
+                    # floor of "0" means nothing is being guarded yet -- read the first
+                    # green run's ::notice:: line and raise it. Floors only ever go up.
+                    #
+                    # Re-seed them from a run of the tree they will guard, not from an
+                    # older one. A score is a ratio, and the denominator grows every time
+                    # a session lands code the tests have not caught up with yet, so a
+                    # floor carried across a few merges fails on dilution and reads
+                    # exactly like a regression -- which is the fault this whole file is
+                    # here to stop making. The first attempt did it anyway: floors read
+                    # from run 32693322476 put views-a and atoms+molecules a fraction of
+                    # a point under, on 114 lines of other people's honest work.
                     # core was one shard of 5741 lines and it has never once finished:
                     # every run on record is killed at exactly 60 min by the job
                     # ceiling above, so it reports no score at all and no floor could
@@ -86,10 +94,10 @@ jobs:
                     # something the day it is added rather than waiting to be noticed.
                     - name: core-api
                       scope: "public_html/lib/core/api.js"
-                      floor: "0"
+                      floor: "67"
                     - name: core-state
                       scope: "public_html/lib/core/store.js,public_html/lib/core/signals.js"
-                      floor: "0"
+                      floor: "67"
                     - name: core-transform
                       scope: "public_html/lib/core/i18n.js,public_html/lib/core/graph.js,public_html/lib/core/toolinfo-generator.js,public_html/lib/core/markdown.js,public_html/lib/core/similarity.js"
                       floor: "0"
@@ -98,7 +106,7 @@ jobs:
                       floor: "0"
                     - name: atoms+molecules
                       scope: "public_html/lib/atoms/**/*.js,public_html/lib/molecules/**/*.js"
-                      floor: "67"
+                      floor: "66"
                     # force-graph is isolated: its rAF/canvas physics loop yields
                     # infinite-loop mutants (e.g. a counting-up `for` flipped to count
                     # down) that peg a core until Stryker's timeout. Bundled with the
@@ -117,12 +125,17 @@ jobs:
                     # cancelled mid-run). Isolated, it is small enough to finish first;
                     # organisms-graph (227 mutants, single-worker) proves that bound.
                     - name: organisms-qv
-                      # Reports 100%, but 24 of its 141 mutants were RuntimeErrors and so
-                      # never entered the denominator. The floor is what it would score if
-                      # every one of those came back a survivor, because a memory cap that
-                      # stops mangling this shard must not read as a test regression.
+                      # Reports 100%, but a quarter of its mutants never reach the
+                      # denominator: RuntimeErrors are excluded from it, and this shard
+                      # produced 24 of them one run and 34 the next. The floor is what it
+                      # would score if every one of those came back a survivor -- 107 of
+                      # 141, taking the worse count -- because a memory cap that stops
+                      # mangling this shard must not read as a test regression. So this
+                      # one is a worst-case bound rather than a measurement, and the count
+                      # it is derived from moves: re-derive it from the errors column,
+                      # never raise it toward the 100 the shard appears to report.
                       scope: "public_html/lib/organisms/quickview.js"
-                      floor: "82"
+                      floor: "75"
                       concurrency: "1"
                     # Everything else in organisms is light, fast HTML/DOM assertion work
                     # (no hang cluster) — runs at the default concurrency.
@@ -131,7 +144,7 @@ jobs:
                       floor: "42"
                     - name: views-a
                       scope: "public_html/views/home.js,public_html/views/search.js,public_html/views/tool.js"
-                      floor: "69"
+                      floor: "68"
                     - name: views-b
                       scope: "public_html/views/lists.js,public_html/views/toolforms.js"
                       floor: "70"
@@ -139,8 +152,12 @@ jobs:
                       scope: "public_html/views/styleguide.js"
                       floor: "22"
                     - name: views-rest+main
+                      # Back to 0: the 46 here was measured on a tree this shard has since
+                      # left behind, and the run that would have replaced it aborted its
+                      # dry run instead. Nothing has scored these files since, so there is
+                      # nothing honest to guard with. Read the first green run and raise it.
                       scope: "public_html/views/router.js,public_html/views/static.js,public_html/views/graph.js,public_html/views/authors.js,public_html/views/experiments.js,public_html/views/_fixtures.js,public_html/main.js"
-                      floor: "46"
+                      floor: "0"
                     # The three shards below were added to close a coverage gap, not to
                     # split a slow job: eighteen files matched stryker.conf's `mutate`
                     # glob and appeared in no scope above, so nothing ever mutated them
@@ -150,13 +167,13 @@ jobs:
                     # back out of every scope.
                     - name: views-account
                       scope: "public_html/views/account-settings.js,public_html/views/accounts.js,public_html/views/developer-settings.js,public_html/views/my-tools.js"
-                      floor: "0"
+                      floor: "42"
                     - name: views-catalog
                       scope: "public_html/views/recent.js,public_html/views/statistics.js,public_html/views/userscripts.js"
-                      floor: "0"
+                      floor: "58"
                     - name: views-ops
                       scope: "public_html/views/workers.js,public_html/views/crawler.js,public_html/views/mcp-server.js,public_html/views/digests.js,public_html/views/changelog.js,public_html/views/audit.js,public_html/views/static-routes.js,public_html/views/members.js,public_html/views/community.js,public_html/i18n/locales.js,public_html/lib/workers/graph-layout-worker.js"
-                      floor: "0"
+                      floor: "42"
         steps:
             - uses: actions/checkout@v7
             - uses: actions/setup-node@v7
@@ -217,7 +234,29 @@ jobs:
 
                   # A crash is a crash: report it before judging a score that may not
                   # exist. Only past that does the floor apply.
-                  [ "$rc" -ne 0 ] && exit "$rc"
+                  if [ "$rc" -ne 0 ]; then
+                      # Every abort arrives as the same non-zero rc -- a failed dry run, an
+                      # OOM, the 60-minute ceiling -- and the run page shows "exit code 1"
+                      # for all three, though they need different people and different
+                      # fixes. Split them here, in an annotation, because annotations are
+                      # readable while the run is still going and the log is not.
+                      # The dry-run case is the one worth naming: Stryker stops before
+                      # generating a single mutant, so one stale assertion silently costs
+                      # the whole shard, and nothing on the run page says which test it was.
+                      failed=$(awk '/tests failed in the initial test run/ { hit = 1; next }
+                                    hit && /^\t[^\t]/ {
+                                        gsub(/^\t|\r|\033\[[0-9;]*m/, "")
+                                        list = list sep $0; sep = "; "
+                                    }
+                                    hit && /^[^\t]/ { exit }
+                                    END { print list }' /tmp/stryker.log)
+                      if [ -n "$failed" ]; then
+                          echo "::error::${{ matrix.name }} aborted its dry run, so none of its files were mutated - these tests failed before any mutant was generated: $failed"
+                      else
+                          echo "::error::${{ matrix.name }} exited $rc without failing a test - not a dry-run abort, so check the memory cap and the job time limit"
+                      fi
+                      exit "$rc"
+                  fi
                   score=$(awk -F'|' '/^All files/ { gsub(/ /, "", $2); print $2 }' /tmp/stryker.log)
                   # An empty score means the report never printed its summary line, which
                   # is a broken run wearing a green exit code - the one shape a floor
