@@ -3,6 +3,7 @@
 
 import contextlib
 import json
+import os
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,13 +15,14 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import catalog_statistics, db, people_index  # noqa: E402
+from backend import catalog_statistics, db, job_catalog, people_index  # noqa: E402
 from backend.models import (  # noqa: E402
     ApiCacheMeta,
     CanonicalToolCache,
     ToolhubAccountProjection,
     ToolinfoAuthorBinding,
     ToolinfoSource,
+    ToolinfoSourceAttestation,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
@@ -318,7 +320,10 @@ def test_parse_date_rejects_garbage_and_normalizes_timezones():
 
 
 def test_year_histogram_omits_the_unknown_bucket_when_every_date_parses():
-    rows = catalog_statistics._year_histogram(["2024-01-01", "2025-06-01"])
+    histogram = catalog_statistics._YearHistogram()
+    for value in ("2024-01-01", "2025-06-01"):
+        histogram.add(value)
+    rows = histogram.rows()
 
     assert rows == [
         {"key": "2024", "label": "2024", "count": 1},
@@ -336,7 +341,10 @@ def test_recency_histogram_walks_every_bucket_including_older_and_unknown():
         "garbage",  # unknown
     ]
 
-    rows = catalog_statistics._recency_histogram(values, now)
+    histogram = catalog_statistics._RecencyHistogram(now)
+    for value in values:
+        histogram.add(value)
+    rows = histogram.rows()
     by_key = {row["key"]: row["count"] for row in rows}
 
     assert by_key["last30Days"] == 1
@@ -509,3 +517,304 @@ def test_snapshot_force_rebuild_updates_the_existing_cache_row_in_place():
     with db.session_scope() as session:
         row = session.get(ApiCacheMeta, catalog_statistics.SNAPSHOT_KEY)
         assert json.loads(row.value) == second
+
+
+def _seed_every_branch(session, now):
+    """Seed one dataset that reaches every quantity build_snapshot counts.
+
+    ``test_the_snapshot_payload_matches_the_recorded_golden_document`` compares
+    the whole payload against a file generated from this seed, so a change to
+    how the snapshot is assembled has to show up as a reviewed diff in that
+    file rather than as a silently different number on /statistics.
+    """
+    naive_now = now.replace(tzinfo=None)
+    _tool(
+        session,
+        "complete",
+        {
+            "title": "Complete",
+            "description": "Fully described",
+            "url": "https://complete.example",
+            "tool_type": "web app",
+            "repository": "https://git.example/complete",
+            "user_docs_url": "https://docs.example/complete",
+            "author": [{"name": "Ada"}],
+            "created_date": "2024-02-01T00:00:00Z",
+            "modified_date": "2026-08-10T00:00:00Z",
+        },
+    )
+    _tool(
+        session,
+        "sparse",
+        {
+            "title": "Sparse",
+            "tool_type": "bot",
+            "created_date": "2023-06-01",
+            "modified_date": "2026-05-01",
+        },
+    )
+    _tool(
+        session,
+        "deprecated",
+        {
+            "title": "Deprecated",
+            "description": "Retired",
+            "url": "https://deprecated.example",
+            "deprecated": True,
+            "author": [{"name": "Grace"}],
+            "created_date": "2022-01-01",
+            "modified_date": "2025-12-01",
+        },
+    )
+    _tool(
+        session,
+        "experimental",
+        {
+            "title": "Experimental",
+            "experimental": True,
+            "tool_type": "web app",
+            "created": "2021-03-03",
+            "modified": "2021-03-03",
+        },
+    )
+    _tool(session, "undated", {"title": "Undated", "created_date": "not-a-date"})
+    # Sourced from a wiki so the by-source split is pinned with both lanes
+    # populated; every other counter reads a record field and ignores source.
+    _tool(
+        session,
+        "ancient",
+        {
+            "title": "Ancient",
+            "tool_type": "",
+            "created_date": "2015-05-05",
+            "modified_date": "2015-05-05",
+        },
+        source=SOURCE_WIKI_USERSCRIPT,
+    )
+
+    stable = people_index.ensure_person(session, display_name="Ada", wikimedia_global_user_id="11", source="test")
+    # A handle only counts as publishable when it came from a trusted public
+    # source, which is what makes "grace" resolvable as a verified handle.
+    handle = people_index.ensure_person(session, display_name="Grace", wiki_username="grace", source="toolhub_oauth")
+    # Publishable, but attached to no tool: the identityOnly branch.
+    people_index.ensure_person(session, display_name="Orphan", wikimedia_global_user_id="12", source="test")
+    session.flush()
+
+    session.add_all(
+        [
+            # Current verified author: the tool, the person and the row all count.
+            ToolPersonRelationship(
+                tool_name="complete",
+                person_id=stable.id,
+                relationship_type=PERSON_REL_AUTHOR,
+                verification_status=AUTHOR_CLAIM_VERIFIED,
+                verified_at=naive_now - timedelta(hours=2),
+            ),
+            # Verified inside the 7-day window but outside 24 hours.
+            ToolPersonRelationship(
+                tool_name="sparse",
+                person_id=stable.id,
+                relationship_type=PERSON_REL_MAINTAINER,
+                verification_status=AUTHOR_CLAIM_VERIFIED,
+                verified_at=naive_now - timedelta(days=3),
+            ),
+            # Verified but expired, which reads as stale rather than verified.
+            ToolPersonRelationship(
+                tool_name="deprecated",
+                person_id=handle.id,
+                relationship_type=PERSON_REL_AUTHOR,
+                verification_status=AUTHOR_CLAIM_VERIFIED,
+                verified_at=naive_now - timedelta(days=40),
+                expires_at=naive_now - timedelta(days=1),
+            ),
+            ToolPersonRelationship(
+                tool_name="experimental",
+                person_id=handle.id,
+                relationship_type=PERSON_REL_AUTHOR,
+            ),
+            # A row for a tool the catalog no longer carries is skipped.
+            ToolPersonRelationship(
+                tool_name="vanished",
+                person_id=stable.id,
+                relationship_type=PERSON_REL_MAINTAINER,
+                verification_status=AUTHOR_CLAIM_VERIFIED,
+            ),
+        ]
+    )
+    session.add_all(
+        [
+            ToolRelationshipEvidence(tool_name="complete", person_id=stable.id, relationship_type=PERSON_REL_AUTHOR),
+            ToolRelationshipEvidence(
+                tool_name="sparse",
+                person_id=stable.id,
+                relationship_type=PERSON_REL_MAINTAINER,
+                expires_at=naive_now - timedelta(hours=1),
+            ),
+            ToolRelationshipEvidence(
+                tool_name="deprecated",
+                person_id=handle.id,
+                relationship_type=PERSON_REL_AUTHOR,
+                expires_at=naive_now + timedelta(hours=12),
+            ),
+            ToolRelationshipEvidence(
+                tool_name="experimental",
+                person_id=handle.id,
+                relationship_type=PERSON_REL_AUTHOR,
+                withdrawn_at=naive_now - timedelta(days=2),
+            ),
+            # Evidence for a tool outside the catalog must not be counted.
+            ToolRelationshipEvidence(tool_name="vanished", person_id=stable.id, relationship_type=PERSON_REL_AUTHOR),
+        ]
+    )
+
+    _label(session, "Ada", tool_name="complete")
+    _label(session, "Ambiguous", tool_name="sparse")
+    _label(session, "Grace", tool_name="deprecated")
+    _label(session, "Someone Unfindable", tool_name="experimental")
+    _label(session, "lonelyhandle", tool_name="undated")
+    _label(session, "Vanished Author", tool_name="vanished")
+    expired = UnresolvedAttributionEvidence(
+        tool_name="ancient",
+        observed_label="Expired",
+        normalized_label="expired",
+        relationship_type=PERSON_REL_AUTHOR,
+        source="test",
+        expires_at=naive_now - timedelta(days=1),
+    )
+    session.add(expired)
+    _account(session, "1", "Ada")
+    _account(session, "2", "Ambiguous")
+    _account(session, "3", "Ambiguous")
+
+    source_valid = ToolinfoSource(url="https://feeds.example/valid.json", valid=True, item_count=12)
+    source_broken = ToolinfoSource(url="https://feeds.example/broken.json", valid=False, item_count=0)
+    source_unchecked = ToolinfoSource(url="https://feeds.example/unchecked.json", valid=True, item_count=3)
+    session.add_all([source_valid, source_broken, source_unchecked])
+    session.flush()
+    session.add_all(
+        [
+            ToolinfoSourceAttestation(source_id=source_valid.id, status="verified", classification="official"),
+            ToolinfoSourceAttestation(source_id=source_broken.id, status="unverified", classification="community"),
+        ]
+    )
+    session.add_all(
+        [
+            ToolinfoAuthorBinding(
+                source_id=source_valid.id, normalized_label="ada", person_id=stable.id, status="bound", method="handle"
+            ),
+            ToolinfoAuthorBinding(source_id=source_valid.id, normalized_label="grace", status="unresolved"),
+            ToolinfoAuthorBinding(
+                source_id=source_broken.id,
+                normalized_label="withdrawn",
+                status="bound",
+                method="handle",
+                withdrawn_at=naive_now - timedelta(days=1),
+            ),
+        ]
+    )
+    session.flush()
+
+
+GOLDEN_SNAPSHOT = Path(__file__).with_name("fixtures") / "catalog_statistics_snapshot.json"
+
+
+def test_the_snapshot_payload_matches_the_recorded_golden_document():
+    """The whole payload is pinned, not a handful of keys.
+
+    build_snapshot answers roughly forty separate questions about the catalog.
+    Asserting a few of them leaves the rest free to drift during a refactor,
+    which is exactly what happened to the memory profile of this function. The
+    recorded document is the oracle: regenerate it deliberately when a number
+    is meant to change, and never to make a test pass.
+    """
+    now = datetime(2026, 8, 25, 12, tzinfo=UTC)
+    with db.session_scope() as session:
+        _seed_every_branch(session, now)
+        payload = catalog_statistics.build_snapshot(session, now=now)
+
+    if os.environ.get("UPDATE_GOLDEN_SNAPSHOT") == "1":
+        # Tab indentation because prettier owns JSON formatting in this repo,
+        # so regeneration stays a diff of numbers rather than of whitespace.
+        GOLDEN_SNAPSHOT.write_text(json.dumps(payload, indent="\t", sort_keys=True) + "\n")
+
+    assert payload == json.loads(GOLDEN_SNAPSHOT.read_text())
+
+
+def test_a_request_serves_a_stale_snapshot_rather_than_rebuilding_it():
+    """Past the freshness window is not a reason to make a visitor wait.
+
+    Rebuilding inside the request is what got the web service OOM-killed, and
+    with a 15-minute window and a 6-hour precompute it was happening to almost
+    everybody. The stored copy is served instead; /statistics shows its
+    `generatedAt`, so the staleness is on the page rather than hidden.
+    """
+    with db.session_scope() as session:
+        _tool(session, "t", {"title": "T"})
+    catalog_statistics.snapshot()
+    with db.session_scope() as session:
+        _tool(session, "second", {"title": "Second"})
+        row = session.get(ApiCacheMeta, catalog_statistics.SNAPSHOT_KEY)
+        row.updated_at = utcnow() - catalog_statistics.SNAPSHOT_MAX_AGE - timedelta(minutes=1)
+
+    payload = catalog_statistics.snapshot()
+
+    assert payload["catalog"]["totalTools"] == 1
+
+
+def test_a_request_rebuilds_once_the_stored_snapshot_passes_the_stale_limit():
+    """Serving stale forever would hide a refresh job that stopped running."""
+    with db.session_scope() as session:
+        _tool(session, "t", {"title": "T"})
+    catalog_statistics.snapshot()
+    with db.session_scope() as session:
+        _tool(session, "second", {"title": "Second"})
+        row = session.get(ApiCacheMeta, catalog_statistics.SNAPSHOT_KEY)
+        row.updated_at = utcnow() - catalog_statistics.SNAPSHOT_STALE_LIMIT - timedelta(minutes=1)
+
+    payload = catalog_statistics.snapshot()
+
+    assert payload["catalog"]["totalTools"] == 2
+
+
+def test_refresh_rebuilds_and_stores_the_snapshot():
+    with db.session_scope() as session:
+        _tool(session, "t", {"title": "T"})
+
+    report = catalog_statistics.refresh()
+
+    assert report["stored"] is True
+    assert report["totalTools"] == 1
+    with db.session_scope() as session:
+        row = session.get(ApiCacheMeta, catalog_statistics.SNAPSHOT_KEY)
+        assert json.loads(row.value)["generatedAt"] == report["generatedAt"]
+
+
+def test_refresh_declines_instead_of_rebuilding_a_payload_it_cannot_store(monkeypatch):
+    @contextlib.contextmanager
+    def never_acquires(_name, *, timeout_seconds=0):  # noqa: ARG001
+        yield False
+
+    monkeypatch.setattr(catalog_statistics.db, "advisory_lock", never_acquires)
+    with db.session_scope() as session:
+        _tool(session, "t", {"title": "T"})
+
+    report = catalog_statistics.refresh()
+
+    assert report["stored"] is False
+    with db.session_scope() as session:
+        assert session.get(ApiCacheMeta, catalog_statistics.SNAPSHOT_KEY) is None
+
+
+def test_the_refresh_job_is_scheduled_inside_the_freshness_window_it_promises():
+    """The two numbers are a contract, and they used to be six hours apart.
+
+    SNAPSHOT_MAX_AGE said fifteen minutes; the only job that precomputed the
+    snapshot ran every six hours. Nothing connected them, so the endpoint
+    quietly moved the rebuild onto the request path. Read the schedule from
+    jobs.yaml, which is the same file Toolforge and /workers read.
+    """
+    jobs = {job.name: job for job in job_catalog.load()}
+    refresh_job = jobs["statistics-refresh"]
+
+    interval = timedelta(minutes=refresh_job.expected_interval_minutes)
+    assert timedelta() < interval <= catalog_statistics.SNAPSHOT_MAX_AGE

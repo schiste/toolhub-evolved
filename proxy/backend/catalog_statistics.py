@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from sqlalchemy import select
 
@@ -40,7 +40,18 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 SNAPSHOT_KEY = "catalog_statistics_v1"
+# How long a stored snapshot is advertised as fresh. The statistics-refresh
+# job has to run more often than this or the page reports an age it never
+# reaches; tests/proxy/test_catalog_statistics.py pins the two together.
 SNAPSHOT_MAX_AGE = timedelta(minutes=15)
+# The point at which serving stale stops being better than making one
+# visitor wait: past this, the refresh job is not running and somebody has
+# to rebuild for the page to mean anything.
+SNAPSHOT_STALE_LIMIT = timedelta(hours=6)
+# Rows are consumed in batches so a 17,000-tool catalog never lands in
+# memory at once; the size is a throughput/allocation trade-off, not a
+# correctness one.
+STREAM_BATCH_SIZE = 500
 CORE_FIELDS = ("title", "description", "url", "tool_type", "repository", "user_docs_url")
 RECENCY_BUCKETS = (
     ("last30Days", "Last 30 days", 30),
@@ -66,60 +77,69 @@ def _parse_date(value: Any) -> datetime | None:  # noqa: ANN401 - canonical publ
     return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
 
-def _year_histogram(values: list[Any]) -> list[dict[str, Any]]:
-    years: Counter[str] = Counter()
-    unknown = 0
-    for value in values:
+class _YearHistogram:
+    """Count dates by year while the row that carried them is discarded.
+
+    Written as an accumulator rather than a function over a list because the
+    caller streams the catalog: holding the values long enough to pass them
+    here is what used to make this module the largest allocation in the
+    process.
+    """
+
+    def __init__(self) -> None:
+        self._years: Counter[str] = Counter()
+        self._unknown = 0
+
+    def add(self, value: Any) -> None:  # noqa: ANN401 - canonical public JSON
         parsed = _parse_date(value)
         if parsed is None:
-            unknown += 1
+            self._unknown += 1
         else:
-            years[str(parsed.year)] += 1
-    rows = [{"key": year, "label": year, "count": count} for year, count in sorted(years.items())]
-    if unknown:
-        rows.append({"key": "unknown", "label": "Date unavailable", "count": unknown})
-    return rows
+            self._years[str(parsed.year)] += 1
+
+    def rows(self) -> list[dict[str, Any]]:
+        rows = [{"key": year, "label": year, "count": count} for year, count in sorted(self._years.items())]
+        if self._unknown:
+            rows.append({"key": "unknown", "label": "Date unavailable", "count": self._unknown})
+        return rows
 
 
-#: The lanes this codebase catalogues itself, off the wikis, as opposed to
+#: The lanes this codebase catalogs itself, off the wikis, as opposed to
 #: everything registered with Toolhub. The created-by-year chart can be read
 #: either way and defaults to both, because the two answer different questions:
-#: how old the registered catalogue is, and how long the wikis have been
+#: how old the registered catalog is, and how long the wikis have been
 #: writing tools nobody registered.
 WIKI_SOURCES = (SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT)
 
 
-def _created_values(records: dict[str, dict[str, Any]], names: set[str] | None = None) -> list[Any]:
-    """Every creation date the given records carry, in whatever field holds it."""
-    return [
-        record.get("created_date") or record.get("created")
-        for name, record in records.items()
-        if names is None or name in names
-    ]
+class _RecencyHistogram:
+    """Bucket dates by age against one fixed instant, one value at a time."""
 
+    def __init__(self, now: datetime) -> None:
+        self._now = now
+        self._counts: Counter[str] = Counter()
 
-def _recency_histogram(values: list[Any], now: datetime) -> list[dict[str, Any]]:
-    counts: Counter[str] = Counter()
-    for value in values:
+    def add(self, value: Any) -> None:  # noqa: ANN401 - canonical public JSON
         parsed = _parse_date(value)
         if parsed is None:
-            counts["unknown"] += 1
-            continue
-        age_days = max(0, (now - parsed).days)
+            self._counts["unknown"] += 1
+            return
+        age_days = max(0, (self._now - parsed).days)
         for key, _label, upper_bound in RECENCY_BUCKETS:
             if age_days <= upper_bound:
-                counts[key] += 1
-                break
-        else:
-            counts["olderThan3Years"] += 1
-    rows = [{"key": key, "label": label, "count": counts[key]} for key, label, _upper_bound in RECENCY_BUCKETS]
-    rows.extend(
-        (
-            {"key": "older", "label": "More than 3 years", "count": counts["olderThan3Years"]},
-            {"key": "unknown", "label": "Date unavailable", "count": counts["unknown"]},
+                self._counts[key] += 1
+                return
+        self._counts["olderThan3Years"] += 1
+
+    def rows(self) -> list[dict[str, Any]]:
+        rows = [{"key": key, "label": label, "count": self._counts[key]} for key, label, _bound in RECENCY_BUCKETS]
+        rows.extend(
+            (
+                {"key": "older", "label": "More than 3 years", "count": self._counts["olderThan3Years"]},
+                {"key": "unknown", "label": "Date unavailable", "count": self._counts["unknown"]},
+            )
         )
-    )
-    return rows
+        return rows
 
 
 def _attribution_funnel(
@@ -141,14 +161,15 @@ def _attribution_funnel(
     attestation binds through. No external lookups happen here.
     """
     account_counts: Counter[str] = Counter(
-        session.execute(select(ToolhubAccountProjection.normalized_username)).scalars()
+        _stream(session, select(ToolhubAccountProjection.normalized_username)).scalars()
     )
     handle_people: dict[str, set[int]] = {}
-    for person_id, normalized in session.execute(
+    for person_id, normalized in _stream(
+        session,
         select(PersonIdentifier.person_id, PersonIdentifier.normalized_value).where(
             PersonIdentifier.is_current.is_(True),
             PersonIdentifier.namespace.in_((people_index.NS_WIKI_USERNAME, people_index.NS_TOOLFORGE_USERNAME)),
-        )
+        ),
     ):
         if person_id in publishable_person_ids and normalized:
             handle_people.setdefault(normalized, set()).add(person_id)
@@ -170,9 +191,17 @@ def _attribution_funnel(
                 counts["noLocalMatchHandleShaped"] += 1
             else:
                 counts["noLocalMatchNameShaped"] += 1
-    bindings = list(
-        session.execute(select(ToolinfoAuthorBinding).where(ToolinfoAuthorBinding.withdrawn_at.is_(None))).scalars()
-    )
+    binding_statuses: Counter[str] = Counter()
+    binding_methods: Counter[str] = Counter()
+    for status, method in _stream(
+        session,
+        select(ToolinfoAuthorBinding.status, ToolinfoAuthorBinding.method).where(
+            ToolinfoAuthorBinding.withdrawn_at.is_(None)
+        ),
+    ):
+        binding_statuses[status] += 1
+        if method:
+            binding_methods[method] += 1
     return {
         "distinctLabels": len(labels),
         "exactToolhubAccount": counts["exactToolhubAccount"],
@@ -181,8 +210,8 @@ def _attribution_funnel(
         "noLocalMatch": counts["noLocalMatch"],
         "noLocalMatchHandleShaped": counts["noLocalMatchHandleShaped"],
         "noLocalMatchNameShaped": counts["noLocalMatchNameShaped"],
-        "sourceBindings": dict(sorted(Counter(row.status for row in bindings).items())),
-        "sourceBindingMethods": dict(sorted(Counter(row.method for row in bindings if row.method).items())),
+        "sourceBindings": dict(sorted(binding_statuses.items())),
+        "sourceBindingMethods": dict(sorted(binding_methods.items())),
     }
 
 
@@ -194,8 +223,50 @@ def _coverage(count: int, total: int) -> dict[str, int]:
     }
 
 
-def _current_relationship(row: ToolPersonRelationship, now: datetime) -> bool:
-    return row.expires_at is None or row.expires_at > now.replace(tzinfo=None)
+def _stream(session: Session, statement: Any) -> Any:  # noqa: ANN401 - SQLAlchemy select/result
+    """Iterate a query in batches instead of buffering the whole result set.
+
+    Every caller here reduces rows to counters and small name sets, so the
+    rows themselves never need to exist all at once. Selecting columns rather
+    than entities also keeps them out of the session identity map.
+    """
+    return session.execute(statement.execution_options(yield_per=STREAM_BATCH_SIZE))
+
+
+def _evidence_freshness(
+    session: Session,
+    tool_names: set[str],
+    naive_now: datetime,
+    roles: tuple[str, ...],
+) -> Counter[str]:
+    """Count relationship evidence by freshness without collecting the rows.
+
+    Restricting the query by `tool_name IN (...)` used to send one bind
+    parameter per catalog tool -- roughly 17,000 of them. The catalog set is
+    already in memory, so the same restriction costs nothing here, and only
+    four counters survive the loop either way.
+    """
+    counts: Counter[str] = Counter()
+    expiring_before = naive_now + timedelta(hours=72)
+    for tool_name, withdrawn_at, expires_at in _stream(
+        session,
+        select(
+            ToolRelationshipEvidence.tool_name,
+            ToolRelationshipEvidence.withdrawn_at,
+            ToolRelationshipEvidence.expires_at,
+        ).where(ToolRelationshipEvidence.relationship_type.in_(roles)),
+    ):
+        if tool_name not in tool_names:
+            continue
+        if withdrawn_at is not None:
+            counts["withdrawn"] += 1
+        elif expires_at is not None and expires_at <= naive_now:
+            counts["expired"] += 1
+        else:
+            counts["active"] += 1
+            if expires_at is not None and expires_at <= expiring_before:
+                counts["expiringWithin72Hours"] += 1
+    return counts
 
 
 def _relationship_statistics(
@@ -215,43 +286,39 @@ def _relationship_statistics(
         "last7Days": {role: set() for role in roles},
     }
     naive_now = checked_at.replace(tzinfo=None)
-    relationships = session.execute(
-        select(ToolPersonRelationship).where(ToolPersonRelationship.relationship_type.in_(roles))
-    ).scalars()
-    for relationship in relationships:
-        if relationship.tool_name not in tool_names:
+    relationships = _stream(
+        session,
+        select(
+            ToolPersonRelationship.tool_name,
+            ToolPersonRelationship.person_id,
+            ToolPersonRelationship.relationship_type,
+            ToolPersonRelationship.verification_status,
+            ToolPersonRelationship.verified_at,
+            ToolPersonRelationship.expires_at,
+        ).where(ToolPersonRelationship.relationship_type.in_(roles)),
+    )
+    verified_since_7d = naive_now - timedelta(days=7)
+    verified_since_24h = naive_now - timedelta(hours=24)
+    for tool_name, person_id, role, verification_status, verified_at, expires_at in relationships:
+        if tool_name not in tool_names:
             continue
-        status = relationship.verification_status or "unverified"
-        is_current = _current_relationship(relationship, checked_at)
+        status = verification_status or "unverified"
+        is_current = expires_at is None or expires_at > naive_now
         if status == AUTHOR_CLAIM_VERIFIED and not is_current:
             status = "stale"
-        status_counts[relationship.relationship_type][status] += 1
+        status_counts[role][status] += 1
         if is_current:
-            linked_people.add(relationship.person_id)
+            linked_people.add(person_id)
         if status != AUTHOR_CLAIM_VERIFIED:
             continue
-        verified_by_role[relationship.relationship_type].add(relationship.tool_name)
-        verified_people_by_role[relationship.relationship_type].add(relationship.person_id)
-        if relationship.verified_at is not None and relationship.verified_at >= naive_now - timedelta(days=7):
-            newly_verified["last7Days"][relationship.relationship_type].add(relationship.tool_name)
-            if relationship.verified_at >= naive_now - timedelta(hours=24):
-                newly_verified["last24Hours"][relationship.relationship_type].add(relationship.tool_name)
+        verified_by_role[role].add(tool_name)
+        verified_people_by_role[role].add(person_id)
+        if verified_at is not None and verified_at >= verified_since_7d:
+            newly_verified["last7Days"][role].add(tool_name)
+            if verified_at >= verified_since_24h:
+                newly_verified["last24Hours"][role].add(tool_name)
 
-    evidence_rows = list(
-        session.execute(
-            select(ToolRelationshipEvidence).where(
-                ToolRelationshipEvidence.tool_name.in_(tool_names or {"<none>"}),
-                ToolRelationshipEvidence.relationship_type.in_(roles),
-            )
-        ).scalars()
-    )
-    active_evidence = [row for row in evidence_rows if row.withdrawn_at is None]
-    expired_evidence = [row for row in active_evidence if row.expires_at is not None and row.expires_at <= naive_now]
-    expiring_evidence = [
-        row
-        for row in active_evidence
-        if row.expires_at is not None and naive_now < row.expires_at <= naive_now + timedelta(hours=72)
-    ]
+    evidence_counts = _evidence_freshness(session, tool_names, naive_now, roles)
 
     def window_metrics(window: str) -> dict[str, int]:
         authors = newly_verified[window][PERSON_REL_AUTHOR]
@@ -281,94 +348,194 @@ def _relationship_statistics(
             "last7Days": window_metrics("last7Days"),
         },
         "evidenceFreshness": {
-            "active": len(active_evidence) - len(expired_evidence),
-            "expired": len(expired_evidence),
-            "expiringWithin72Hours": len(expiring_evidence),
-            "withdrawn": len(evidence_rows) - len(active_evidence),
+            "active": evidence_counts["active"],
+            "expired": evidence_counts["expired"],
+            "expiringWithin72Hours": evidence_counts["expiringWithin72Hours"],
+            "withdrawn": evidence_counts["withdrawn"],
         },
     }
     return verified_by_role, status_counts, metrics
 
 
+class _CatalogTotals(NamedTuple):
+    """Everything one streamed pass over the canonical catalog can answer."""
+
+    tool_names: set[str]
+    listed_authors: int
+    deprecated: int
+    experimental: int
+    core_complete: int
+    metadata_counts: Counter[str]
+    tool_types: Counter[str]
+    created_by_year: _YearHistogram
+    created_by_year_catalog: _YearHistogram
+    created_by_year_wiki: _YearHistogram
+    modified_by_year: _YearHistogram
+    modified_recency: _RecencyHistogram
+
+
+def _catalog_totals(session: Session, checked_at: datetime) -> _CatalogTotals:
+    """Reduce every canonical record to counters, keeping only the names.
+
+    This used to build a dict of all ~17,000 decoded records first. Every
+    quantity derived from it is a count, a histogram bucket, or a tool name,
+    so the records themselves only had to exist one at a time -- and holding
+    them all was the largest allocation in the web service, which is what got
+    it OOM-killed while answering /statistics.
+    """
+    tool_names: set[str] = set()
+    listed_authors = 0
+    deprecated = 0
+    experimental = 0
+    core_complete = 0
+    metadata_counts: Counter[str] = Counter()
+    tool_types: Counter[str] = Counter()
+    created_by_year = _YearHistogram()
+    # The by-source split is accumulated in the same pass rather than by
+    # revisiting the records: which lane a row came from is a column on it, so
+    # the only thing a second pass would buy is a second read of the catalog.
+    created_by_source = {"catalog": _YearHistogram(), "wiki": _YearHistogram()}
+    modified_by_year = _YearHistogram()
+    modified_recency = _RecencyHistogram(checked_at)
+    for tool_name, raw_record, source in _stream(
+        session,
+        select(
+            CanonicalToolCache.tool_name,
+            CanonicalToolCache.record,
+            CanonicalToolCache.source,
+        ).order_by(CanonicalToolCache.tool_name),
+    ):
+        record = raw_record if isinstance(raw_record, dict) else {}
+        tool_names.add(tool_name)
+        has_author = bool(author_assertions(record))
+        listed_authors += has_author
+        deprecated += record.get("deprecated") is True
+        experimental += record.get("experimental") is True
+        for field in CORE_FIELDS:
+            if _has_value(record.get(field)):
+                metadata_counts[field] += 1
+        if has_author and all(_has_value(record.get(field)) for field in ("title", "description", "url")):
+            core_complete += 1
+        tool_types[str(record.get("tool_type") or "Unspecified").strip() or "Unspecified"] += 1
+        created = record.get("created_date") or record.get("created")
+        created_by_year.add(created)
+        created_by_source["wiki" if source in WIKI_SOURCES else "catalog"].add(created)
+        modified = record.get("modified_date") or record.get("modified")
+        modified_by_year.add(modified)
+        modified_recency.add(modified)
+    return _CatalogTotals(
+        tool_names=tool_names,
+        listed_authors=listed_authors,
+        deprecated=deprecated,
+        experimental=experimental,
+        core_complete=core_complete,
+        metadata_counts=metadata_counts,
+        tool_types=tool_types,
+        created_by_year=created_by_year,
+        created_by_year_catalog=created_by_source["catalog"],
+        created_by_year_wiki=created_by_source["wiki"],
+        modified_by_year=modified_by_year,
+        modified_recency=modified_recency,
+    )
+
+
+class _UnresolvedAttribution(NamedTuple):
+    """Catalog tools and labels that attribution has not resolved yet."""
+
+    author_tools: set[str]
+    labels: set[str]
+    tools: set[str]
+
+
+def _unresolved_attribution(session: Session, tool_names: set[str], naive_now: datetime) -> _UnresolvedAttribution:
+    """Collect the three unresolved-attribution sets in one streamed pass."""
+    author_tools: set[str] = set()
+    labels: set[str] = set()
+    tools: set[str] = set()
+    for tool_name, normalized_label, relationship_type, expires_at in _stream(
+        session,
+        select(
+            UnresolvedAttributionEvidence.tool_name,
+            UnresolvedAttributionEvidence.normalized_label,
+            UnresolvedAttributionEvidence.relationship_type,
+            UnresolvedAttributionEvidence.expires_at,
+        ).where(
+            UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+            UnresolvedAttributionEvidence.relationship_type.in_((PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER)),
+        ),
+    ):
+        unexpired = expires_at is None or expires_at > naive_now
+        if tool_name in tool_names:
+            tools.add(tool_name)
+            if relationship_type == PERSON_REL_AUTHOR and unexpired:
+                author_tools.add(tool_name)
+        if normalized_label and unexpired:
+            labels.add(normalized_label)
+    return _UnresolvedAttribution(author_tools=author_tools, labels=labels, tools=tools)
+
+
+def _source_statistics(session: Session) -> dict[str, Any]:
+    """Summarize toolinfo feeds and whatever attestation each one carries."""
+    attestations = {
+        source_id: (status, classification)
+        for source_id, status, classification in _stream(
+            session,
+            select(
+                ToolinfoSourceAttestation.source_id,
+                ToolinfoSourceAttestation.status,
+                ToolinfoSourceAttestation.classification,
+            ),
+        )
+    }
+    total = 0
+    valid_feeds = 0
+    items = 0
+    statuses: Counter[str] = Counter()
+    classifications: Counter[str] = Counter()
+    for source_id, valid, item_count in _stream(
+        session, select(ToolinfoSource.id, ToolinfoSource.valid, ToolinfoSource.item_count)
+    ):
+        total += 1
+        valid_feeds += bool(valid)
+        items += item_count
+        status, classification = attestations.get(source_id, ("notChecked", "notChecked"))
+        statuses[status] += 1
+        classifications[classification] += 1
+    return {
+        "total": total,
+        "validFeeds": valid_feeds,
+        "items": items,
+        "statuses": dict(sorted(statuses.items())),
+        "classifications": dict(sorted(classifications.items())),
+    }
+
+
 def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str, Any]:
     """Build one deterministic statistics document from local projections."""
     checked_at = (now or datetime.now(tz=UTC)).astimezone(UTC)
-    tool_rows = list(
-        session.execute(
-            select(
-                CanonicalToolCache.tool_name,
-                CanonicalToolCache.record,
-                CanonicalToolCache.source,
-            ).order_by(CanonicalToolCache.tool_name)
-        )
-    )
-    records = {name: record if isinstance(record, dict) else {} for name, record, _ in tool_rows}
-    wiki_tools = {name for name, _, source in tool_rows if source in WIKI_SOURCES}
-    catalog_tools = set(records) - wiki_tools
-    tool_names = set(records)
+    catalog = _catalog_totals(session, checked_at)
+    tool_names = catalog.tool_names
     total = len(tool_names)
-
-    listed_author_tools = {name for name, record in records.items() if author_assertions(record)}
-    deprecated_tools = {name for name, record in records.items() if record.get("deprecated") is True}
-    experimental_tools = {name for name, record in records.items() if record.get("experimental") is True}
-    metadata_counts = {
-        field: sum(_has_value(record.get(field)) for record in records.values()) for field in CORE_FIELDS
-    }
-    core_complete = sum(
-        all(_has_value(record.get(field)) for field in ("title", "description", "url"))
-        and bool(author_assertions(record))
-        for record in records.values()
-    )
 
     publishable_person_ids = people_index.public_identity_ids(session)
     verified_by_role, status_counts, relationship_metrics = _relationship_statistics(
         session, tool_names, checked_at, publishable_person_ids
     )
 
-    unresolved_rows = list(
-        session.execute(
-            select(UnresolvedAttributionEvidence).where(
-                UnresolvedAttributionEvidence.withdrawn_at.is_(None),
-                UnresolvedAttributionEvidence.relationship_type.in_((PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER)),
-            )
-        ).scalars()
-    )
-    unresolved_author_tools = {
-        row.tool_name
-        for row in unresolved_rows
-        if row.tool_name in tool_names
-        and row.relationship_type == PERSON_REL_AUTHOR
-        and (row.expires_at is None or row.expires_at > checked_at.replace(tzinfo=None))
-    }
-    unresolved_labels = {
-        row.normalized_label
-        for row in unresolved_rows
-        if row.normalized_label and (row.expires_at is None or row.expires_at > checked_at.replace(tzinfo=None))
-    }
+    unresolved = _unresolved_attribution(session, tool_names, checked_at.replace(tzinfo=None))
 
-    quality_counts = Counter(
-        quality
-        for _person_id, quality in session.execute(
-            select(Person.id, Person.identity_quality).where(Person.id.in_(publishable_person_ids or {-1}))
-        )
-    )
+    # Filtering in Python rather than `Person.id IN (...)`: the publishable set
+    # is already in memory, and the IN form sent one bind parameter per person.
+    quality_counts: Counter[str] = Counter()
+    for person_id, quality in _stream(session, select(Person.id, Person.identity_quality)):
+        if person_id in publishable_person_ids:
+            quality_counts[quality] += 1
 
-    sources = list(session.execute(select(ToolinfoSource)).scalars())
-    attestations = {row.source_id: row for row in session.execute(select(ToolinfoSourceAttestation)).scalars()}
-    source_statuses = Counter(
-        (attestations.get(source.id).status if attestations.get(source.id) else "notChecked") for source in sources
-    )
-    source_classifications = Counter(
-        (attestations.get(source.id).classification if attestations.get(source.id) else "notChecked")
-        for source in sources
-    )
+    sources = _source_statistics(session)
 
-    tool_types = Counter(
-        str(record.get("tool_type") or "Unspecified").strip() or "Unspecified" for record in records.values()
-    )
     type_rows = [
         {"key": label.casefold().replace(" ", "-"), "label": label, "count": count}
-        for label, count in sorted(tool_types.items(), key=lambda item: (-item[1], item[0].casefold()))
+        for label, count in sorted(catalog.tool_types.items(), key=lambda item: (-item[1], item[0].casefold()))
     ]
 
     verified_authors = len(verified_by_role[PERSON_REL_AUTHOR])
@@ -379,18 +546,18 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
         "syncStatus": SYNC_OFFICIAL,
         "catalog": {
             "totalTools": total,
-            "activeTools": total - len(deprecated_tools),
-            "deprecatedTools": len(deprecated_tools),
-            "experimentalTools": len(experimental_tools),
-            "listedAuthors": _coverage(len(listed_author_tools), total),
+            "activeTools": total - catalog.deprecated,
+            "deprecatedTools": catalog.deprecated,
+            "experimentalTools": catalog.experimental,
+            "listedAuthors": _coverage(catalog.listed_authors, total),
             "verifiedAuthors": _coverage(verified_authors, total),
             "verifiedMaintainers": _coverage(verified_maintainers, total),
-            "unresolvedAuthorTools": len(unresolved_author_tools),
-            "coreMetadataComplete": _coverage(core_complete, total),
+            "unresolvedAuthorTools": len(unresolved.author_tools),
+            "coreMetadataComplete": _coverage(catalog.core_complete, total),
         },
         "metadata": [
-            {"key": field, "label": field.replace("_", " ").title(), **_coverage(count, total)}
-            for field, count in metadata_counts.items()
+            {"key": field, "label": field.replace("_", " ").title(), **_coverage(catalog.metadata_counts[field], total)}
+            for field in CORE_FIELDS
         ],
         "relationships": {
             "authors": dict(sorted(status_counts[PERSON_REL_AUTHOR].items())),
@@ -401,34 +568,24 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
             "publishablePeople": len(publishable_person_ids),
             "stablePeople": quality_counts["stable"],
             "handlePeople": quality_counts["handle"],
-            "unresolvedLabels": len(unresolved_labels),
-            "unresolvedTools": len({row.tool_name for row in unresolved_rows if row.tool_name in tool_names}),
+            "unresolvedLabels": len(unresolved.labels),
+            "unresolvedTools": len(unresolved.tools),
         },
-        "attribution": _attribution_funnel(session, unresolved_labels, publishable_person_ids),
-        "sources": {
-            "total": len(sources),
-            "validFeeds": sum(source.valid for source in sources),
-            "items": sum(source.item_count for source in sources),
-            "statuses": dict(sorted(source_statuses.items())),
-            "classifications": dict(sorted(source_classifications.items())),
-        },
+        "attribution": _attribution_funnel(session, unresolved.labels, publishable_person_ids),
+        "sources": sources,
         "distributions": {
-            "createdByYear": _year_histogram(_created_values(records)),
+            "createdByYear": catalog.created_by_year.rows(),
             # The same chart split by where the record came from, so a reader
-            # can ask about the registered catalogue and the wiki lanes
+            # can ask about the registered catalog and the wiki lanes
             # separately. Both series are always emitted; which is shown is the
             # page's business, and showing both is the default because the
             # combined shape is the honest one.
             "createdByYearBySource": {
-                "catalog": _year_histogram(_created_values(records, catalog_tools)),
-                "wiki": _year_histogram(_created_values(records, wiki_tools)),
+                "catalog": catalog.created_by_year_catalog.rows(),
+                "wiki": catalog.created_by_year_wiki.rows(),
             },
-            "modifiedByYear": _year_histogram(
-                [record.get("modified_date") or record.get("modified") for record in records.values()]
-            ),
-            "modifiedRecency": _recency_histogram(
-                [record.get("modified_date") or record.get("modified") for record in records.values()], checked_at
-            ),
+            "modifiedByYear": catalog.modified_by_year.rows(),
+            "modifiedRecency": catalog.modified_recency.rows(),
             "toolTypes": type_rows,
         },
         "definitions": {
@@ -448,12 +605,24 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
 
 
 def snapshot(*, force: bool = False) -> dict[str, Any]:
-    """Return a shared cached snapshot, rebuilding it at most every 15 minutes."""
+    """Return the shared cached snapshot, preferring a stale one to a rebuild.
+
+    The rebuild reads the whole catalog, so whoever pays for it waits seconds
+    on a pod capped at half a CPU. That used to be whichever visitor arrived
+    first after the 15-minute window closed, which -- with the precompute job
+    running every six hours -- was almost every visitor. The refresh is now
+    the statistics-refresh job's work (see `proxy/statistics_refresh.py`), and
+    a request serves what that job last stored even when it is past
+    SNAPSHOT_MAX_AGE. The payload carries `generatedAt`, and /statistics shows
+    it, so serving stale is visible rather than silent.
+
+    A request still rebuilds in two cases: nothing has ever been stored, and
+    the stored copy is older than SNAPSHOT_STALE_LIMIT, which bounds how long
+    a dead refresh job can freeze the page. The shared lock keeps that to one
+    worker at a time; the others go on serving the stale payload rather than
+    turning cache contention into a 500.
+    """
     now = utcnow()
-    # The shared lock prevents two freshly restarted web workers from inserting
-    # the same cache key simultaneously. A worker that cannot acquire it may
-    # still serve the last snapshot, keeping this diagnostic endpoint read-only
-    # under load rather than turning cache contention into a 500.
     with (
         db.advisory_lock("catalog-statistics-refresh", timeout_seconds=2) as acquired,
         db.session_scope() as session,
@@ -466,14 +635,45 @@ def snapshot(*, force: bool = False) -> dict[str, Any]:
             except json.JSONDecodeError:
                 decoded = None
             cached_payload = decoded if isinstance(decoded, dict) else None
-        if cached_payload is not None and (not force and (cached.updated_at >= now - SNAPSHOT_MAX_AGE or not acquired)):
-            return cached_payload
+        if cached_payload is not None and not force:
+            serve_stale = cached.updated_at >= now - SNAPSHOT_STALE_LIMIT or not acquired
+            if serve_stale:
+                return cached_payload
         payload = build_snapshot(session, now=now.replace(tzinfo=UTC))
-        if not acquired:
-            return payload
-        if cached is None:
-            cached = ApiCacheMeta(key=SNAPSHOT_KEY, value="")
-            session.add(cached)
-        cached.value = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        cached.updated_at = now
+        if acquired:
+            _store(session, payload, now)
         return payload
+
+
+def _store(session: Session, payload: dict[str, Any], now: datetime) -> None:
+    """Write one rebuilt snapshot into the shared cache row."""
+    cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
+    if cached is None:
+        cached = ApiCacheMeta(key=SNAPSHOT_KEY, value="")
+        session.add(cached)
+    cached.value = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    cached.updated_at = now
+
+
+def refresh() -> dict[str, Any]:
+    """Rebuild and store the snapshot on behalf of the statistics-refresh job.
+
+    Separate from ``snapshot(force=True)`` because a job that loses the lock
+    should stop rather than spend the whole rebuild on a payload it is not
+    allowed to store, and because the caller needs to report whether the
+    stored copy actually moved.
+    """
+    now = utcnow()
+    with (
+        db.advisory_lock("catalog-statistics-refresh", timeout_seconds=2) as acquired,
+        db.session_scope() as session,
+    ):
+        if not acquired:
+            return {"stored": False, "reason": "another refresh holds the lock"}
+        payload = build_snapshot(session, now=now.replace(tzinfo=UTC))
+        _store(session, payload, now)
+        return {
+            "stored": True,
+            "generatedAt": payload["generatedAt"],
+            "totalTools": payload["catalog"]["totalTools"],
+        }

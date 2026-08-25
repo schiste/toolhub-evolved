@@ -92,6 +92,17 @@
   timeout: 1800
   emails: onfailure
 
+- name: statistics-refresh
+  # /statistics serves one precomputed document. This has to run more often
+  # than catalog_statistics.SNAPSHOT_MAX_AGE, or the page advertises a
+  # freshness it never has and a visitor ends up rebuilding it inside their
+  # own request -- which is what OOM-killed the web service.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name statistics-refresh --stale-after 480 -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/statistics_refresh.py
+  image: python3.13
+  schedule: "*/10 * * * *"
+  timeout: 240
+  emails: onfailure
+
 - name: source-attestations-full
   # Weekly full audit is the backstop for rule/dependency bugs; ordinary feed
   # and identity changes use the incremental content-hash path above.

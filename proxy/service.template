@@ -1,0 +1,15 @@
+# Webservice settings for `webservice start|restart`, which reads exactly one
+# service.template from ~, ~/www/python/src, ~/www/js or ~/public_html and
+# exits 1 if it finds more than one. ~/www/python/src is a symlink to this
+# directory, so this file is the only copy -- do not add a second one.
+#
+# Values here become argparse defaults, so an explicit flag on the command
+# line still wins. tools/deploy.sh passes the type but never --mem.
+type: python3.13
+# The default is 512Mi, shared by four uWSGI workers in one container. The
+# tool idles around 261Mi of that, and rebuilding the catalog statistics
+# snapshot on top of it OOM-killed the pod (exit 137), which reached the
+# browser as a 503 on /v1/statistics/. The rebuild is much cheaper now and
+# runs in a job rather than a request; this is the headroom that keeps a
+# single expensive read from taking the whole web service down with it.
+mem: 1Gi
