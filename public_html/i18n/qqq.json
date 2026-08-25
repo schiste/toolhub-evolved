@@ -2046,6 +2046,7 @@
 	"tool.revisionBy": "TODO: document this message.",
 	"tool.revisionDiffTitle": "TODO: document this message.",
 	"tool.revisionHistoryTitle": "TODO: document this message.",
+	"tool.revisionsUnavailable": "Empty state on a tool's revision history when the history could not be read at all, as opposed to a tool that has genuinely never been edited (which uses {{msg-toolhub|tool.noRevisions}}).",
 	"tool.screenshot": "TODO: document this message.",
 	"tool.screenshotsTitle": "TODO: document this message.",
 	"tool.searchForName": "TODO: document this message.\n\nParameters:\n* $1 - TODO",

@@ -16,6 +16,30 @@ import {
 export const READ_TIMEOUT_MS = 12_000;
 
 /**
+ * A read index.html started before this bundle existed.
+ *
+ * The shell knows the route while app.js is still downloading, so for the few
+ * pages whose first paint waits on one slow read it issues that read straight
+ * away and parks the promise on `window` (see the route-hints block there).
+ * Claiming it here, at the transport layer, rather than at apiGet's level means
+ * every caching, retry, timing and stale-revalidate decision above stays
+ * exactly where it was: the shell contributes a head start, not a second code
+ * path through the API.
+ *
+ * Single use. A Response body can only be read once, and a retry after a failed
+ * preflight has to go back to the network rather than replay the failure.
+ * @param {RequestInfo | URL} input
+ * @returns {Promise<Response> | undefined}
+ */
+function takePreflight(input) {
+	const started = /** @type {{ __preflight?: Map<string, Promise<Response>> }} */ (globalThis).__preflight;
+	if (!started || typeof input !== "string") return undefined;
+	const warm = started.get(input);
+	if (warm) started.delete(input);
+	return warm;
+}
+
+/**
  * Bound every read that can gate route or account rendering. Timeout failures
  * reject through the existing error paths, so the UI can recover instead of
  * leaving its initial busy state in place forever.
@@ -34,7 +58,25 @@ export function fetchRead(input, init = {}) {
 		timedOut = true;
 		controller.abort();
 	}, READ_TIMEOUT_MS);
-	return fetch(input, { ...init, signal: controller.signal })
+	const warm = takePreflight(input);
+	// A preflight runs on its own connection and cannot be cancelled from here,
+	// so the timeout is honoured by abandoning it rather than aborting it. The
+	// orphaned response is simply discarded.
+	const request = warm
+		? Promise.race([
+				warm,
+				new Promise((_resolve, reject) => {
+					if (controller.signal.aborted) {
+						reject(controller.signal.reason);
+					} else {
+						controller.signal.addEventListener("abort", () => reject(controller.signal.reason), {
+							once: true
+						});
+					}
+				})
+			])
+		: fetch(input, { ...init, signal: controller.signal });
+	return request
 		.catch((error) => {
 			if (timedOut) throw new DOMException("Read timed out", "TimeoutError");
 			throw error;

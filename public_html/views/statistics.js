@@ -75,6 +75,44 @@ const LENSES = [
 	{ key: "wiki", label: () => t("statistics.lensWiki", "User scripts and gadgets") }
 ];
 
+// The lens is part of the address, so a reading can be linked to. It is left
+// out of the URL entirely when it is the default: a bare /statistics is the
+// canonical address for the combined page, and stamping "?lens=all" on it would
+// make two spellings of one page.
+const LENS_PARAM = "lens";
+
+/**
+ * The lens named by the address bar, when it names one this build can draw.
+ *
+ * An unknown value is not worth an error: a link from a later build, a typo, or
+ * a lens that has since been renamed all fall back to the combined reading,
+ * which is true of every catalog rather than wrong about a subset of it.
+ *
+ * @param {string} [search]
+ */
+function lensFromLocation(search = globalThis.location?.search || "") {
+	const requested = new URLSearchParams(search).get(LENS_PARAM) || "";
+	return LENSES.some((entry) => entry.key === requested) ? requested : LENS_ALL;
+}
+
+/**
+ * Write the lens actually on screen back to the address bar.
+ *
+ * `replaceState`, not `pushState`: the reader is re-reading one page under a
+ * different light, not moving through the site, and a history entry per radio
+ * click would make the back button walk through lenses before it leaves.
+ *
+ * @param {string} lens
+ */
+function rememberLens(lens) {
+	const url = new URL(location.href);
+	if (lens === LENS_ALL) url.searchParams.delete(LENS_PARAM);
+	else url.searchParams.set(LENS_PARAM, lens);
+	const next = `${url.pathname}${url.search}${url.hash}`;
+	if (next === `${location.pathname}${location.search}${location.hash}`) return;
+	history.replaceState(history.state, "", next);
+}
+
 /**
  * The document to render, and whether the payload can offer a choice at all.
  *
@@ -272,12 +310,18 @@ function mountStatistics() {
 	// and never shows a figure from one lens beside a figure from another.
 	/** @type {any} */
 	let payload = null;
-	let lens = LENS_ALL;
+	// A shared link decides the opening lens; anything else opens combined.
+	let lens = lensFromLocation();
 	mountJsonReport({
 		name: "statistics",
 		endpoint: "/v1/statistics/",
 		render: (loaded) => {
 			payload = loaded;
+			// A snapshot that predates lenses refuses the requested one and is
+			// drawn combined. The address has to follow what is on screen, or a
+			// reader would copy a "?lens=wiki" link to a page showing everything.
+			lens = lensDocument(loaded, lens).lens;
+			rememberLens(lens);
 			return statisticsHTML(loaded, lens);
 		},
 		renderLoading: loadingHTML,
@@ -292,6 +336,7 @@ function mountStatistics() {
 		const option = event.target;
 		if (!(option instanceof HTMLInputElement) || !option.hasAttribute("data-statistics-lens-option")) return;
 		lens = option.value;
+		rememberLens(lens);
 		root.innerHTML = statisticsHTML(payload, lens);
 		// The radio that was just clicked no longer exists. Without this the
 		// focus ring lands back on <body> and a keyboard user loses their place

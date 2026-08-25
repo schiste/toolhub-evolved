@@ -42,9 +42,16 @@ locale registries — and the app would fail in ways that are miserable to debug
 * ``core`` is the static graph of the shell plus the landing route: exactly the
   set that was already being modulepreloaded, so the landing payload keeps its
   current byte count and simply arrives in one response instead of 39.
-* ``common`` holds modules that more than one lazy route needs. Keeping them
-  out of core is what stops the landing page paying for routes nobody visited.
+* ``shared-*`` bundles hold modules that several lazy routes need, grouped by
+  the exact set of routes that need them, so a route imports shared code only
+  when it actually uses it. One ``common`` catch-all absorbs the groups too
+  small to be worth their own request.
 * one bundle per lazy route, holding only that route's private modules.
+
+Grouping shared code by its dependents rather than pooling it is the
+difference between a route paying for the code it uses and paying for the
+union of everything any two routes happen to share: measured on this app, the
+median route's lazy payload is 17 KB gzipped that way against 74 KB pooled.
 
 Cross-bundle references become real module imports (`import { t } from
 "/bundle/app.js"`), so the browser's module map keeps one instance of each.
@@ -293,6 +300,12 @@ def _check_supported_syntax(modules: set[Path], src: Path) -> None:
         raise BundleError("tools/bundle_modules.py cannot bundle this syntax:\n" + "\n".join(found))
 
 
+#: Shared modules whose group totals less than this go to ``common`` instead of
+#: their own bundle. A separate request has to earn its round trip; below a few
+#: kilobytes it is cheaper to ship the module to routes that will not run it.
+_SHARED_BUNDLE_FLOOR = 8 * 1024
+
+
 def _slug(module: Path, src: Path) -> str:
     return module.relative_to(src).as_posix().removesuffix(".js").replace("/", "-")
 
@@ -322,21 +335,54 @@ def plan(src: Path, core_entries: tuple[str, ...]) -> Plan:
             frontier.extend(static_graph(target))
 
     private = {entry: static_graph(entry) - core_modules for entry in lazy_entries}
-    shared_count: dict[Path, int] = {}
-    for graph in private.values():
+    #: for each module outside core, the lazy routes whose graph contains it
+    users: dict[Path, set[Path]] = {}
+    for entry, graph in private.items():
         for module in graph:
-            shared_count[module] = shared_count.get(module, 0) + 1
-    common_modules = {module for module, count in shared_count.items() if count > 1}
+            users.setdefault(module, set()).add(entry)
 
-    everything = core_modules | common_modules | {m for g in private.values() for m in g}
+    # Modules wanted by two or more routes cannot simply be copied into each of
+    # them — a module emitted twice would have two copies of its top-level
+    # state, which `plan()` rejects below. They have to be hoisted somewhere
+    # both routes can import. *Which* somewhere is the whole question, because
+    # a hoisted module is paid for by every route that loads the bundle holding
+    # it, including routes that never touch it.
+    #
+    # Grouping by the exact set of routes that want a module answers it without
+    # giving up the one-copy rule: `views/toolforms.js` is wanted by /my-tools
+    # and the tool forms themselves, so it lands in a bundle those two import
+    # and nobody else does. Grouping every shared module this way would leave a
+    # long tail of one-module bundles, so a group under `_SHARED_BUNDLE_FLOOR`
+    # falls back into `common` and is over-shipped on purpose: at that size the
+    # request costs more than the bytes.
+    by_signature: dict[frozenset[Path], set[Path]] = {}
+    for module, wanted_by in users.items():
+        if len(wanted_by) > 1:
+            by_signature.setdefault(frozenset(wanted_by), set()).add(module)
+
+    shared_groups: list[set[Path]] = []
+    common_modules: set[Path] = set()
+    for _, group in sorted(by_signature.items(), key=lambda kv: sorted(str(p) for p in kv[0])):
+        if sum(module.stat().st_size for module in group) >= _SHARED_BUNDLE_FLOOR:
+            shared_groups.append(group)
+        else:
+            common_modules |= group
+
+    hoisted = common_modules.union(*shared_groups) if shared_groups else set(common_modules)
+    everything = core_modules | hoisted | {m for g in private.values() for m in g}
     _check_supported_syntax(everything, src)
     _check_no_cycles(everything)
 
     bundles = [Bundle("app", _topological(core_modules))]
     if common_modules:
         bundles.append(Bundle("common", _topological(common_modules)))
+    for group in shared_groups:
+        # Named for the group's largest module. Every module belongs to exactly
+        # one group, so no two groups can claim the same name.
+        anchor = max(group, key=lambda module: (module.stat().st_size, str(module)))
+        bundles.append(Bundle(f"shared-{_slug(anchor, src)}", _topological(group)))
     for entry in sorted(lazy_entries):
-        members = private[entry] - common_modules
+        members = private[entry] - hoisted
         if members:
             bundles.append(Bundle(f"route-{_slug(entry, src)}", _topological(members)))
 

@@ -6,6 +6,7 @@ in test users the same way tests/proxy/test_backend.py does, without importing
 from it.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
+import cache_prewarm  # noqa: E402
 from backend import authz, catalog_projection, catalog_read, db, security, sync, tool_assets  # noqa: E402
 from backend.models import CanonicalToolCache, CatalogCuration, CatalogFacetValue, User, utcnow  # noqa: E402
 
@@ -153,6 +155,123 @@ def test_catalog_cached_compatibility_surface_never_falls_through_to_network(cli
     assert cached.status_code == 200
     assert cached.get_json() == {"openapi": "3"}
     assert cached.headers["X-Toolhub-Evolved-Source"] == "local-replica"
+
+
+def test_catalog_audit_feed_from_the_replica_withholds_private_activity(client, monkeypatch):
+    """The replica mirrors upstream verbatim, private rows and all.
+
+    app.py filters its own proxied copies of these bytes, so serving the same
+    store through /v1/catalog must not become the way around that filter: which
+    url a reader arrives on should not decide what they are shown.
+    """
+    feed = json.dumps(
+        {
+            "count": 2,
+            "results": [
+                {"id": 1, "content_type": "tool", "action": "updated"},
+                {"id": 2, "content_type": "favorite", "action": "favorited"},
+            ],
+        }
+    ).encode()
+    monkeypatch.setattr(catalog_read, "cached_payload", lambda _url: (feed, "application/json", 200))
+
+    response = client.get("/v1/catalog/auditlogs/?page_size=25")
+
+    assert response.status_code == 200
+    assert [row["id"] for row in response.get_json()["results"]] == [1]
+
+
+def test_the_prewarmed_audit_url_is_the_one_the_catalog_route_looks_up(client):
+    """Nothing stubbed on either side, because the bug was in between them.
+
+    The prewarmer writes under the full upstream url and the route reads back
+    under a url it rebuilds from the request. Both tests above hold a stub where
+    the other half should be, so neither would notice the two spellings drifting
+    apart -- which is the failure that produced an empty audit page.
+    """
+    feed = json.dumps(
+        {
+            "count": 109_061,
+            "results": [
+                {"id": 1, "content_type": "tool", "action": "updated"},
+                {"id": 2, "content_type": "favorite", "action": "favorited"},
+            ],
+        }
+    ).encode()
+
+    class _Upstream:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def iter_content(self, _size):
+            yield feed
+
+        def close(self):
+            pass
+
+    class _Session:
+        def get(self, _url, **_kwargs):
+            return _Upstream()
+
+    audit = [e for e in cache_prewarm.hot_endpoints() if e.path == "/api/auditlogs/"]
+    assert audit, "nothing keeps the audit feed warm, so the route can only 503"
+    assert cache_prewarm.run_once(_Session(), endpoints=audit).warmed == 1
+
+    response = client.get("/v1/catalog/auditlogs/?page_size=25")
+
+    assert response.status_code == 200
+    assert response.headers["X-Toolhub-Evolved-Source"] == "local-replica"
+    assert [row["id"] for row in response.get_json()["results"]] == [1]
+
+
+def test_a_prewarmed_tool_history_is_readable_back_under_an_awkward_name(client):
+    """The seam again, on the surface where the two spellings can differ.
+
+    The prewarmer writes the name as it read it; the route gets its path from
+    Flask already decoded and rebuilds the same string. Percent-encode on either
+    side alone and the tool's history is unreachable forever -- rendered, since
+    the view cannot tell a miss from an honest empty page, as a tool nobody has
+    ever edited.
+    """
+    feed = json.dumps({"results": [{"id": 7, "comment": "edited"}]}).encode()
+
+    class _Upstream:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def iter_content(self, _size):
+            yield feed
+
+        def close(self):
+            pass
+
+    class _Session:
+        def get(self, _url, **_kwargs):
+            return _Upstream()
+
+    endpoints = cache_prewarm.tool_revision_endpoints(["a tool"])
+    assert cache_prewarm.run_once(_Session(), endpoints=endpoints).warmed == 1
+
+    response = client.get("/v1/catalog/tools/a%20tool/revisions/?page_size=20")
+
+    assert response.status_code == 200
+    assert [row["id"] for row in response.get_json()["results"]] == [7]
+
+
+def test_catalog_non_activity_surfaces_are_served_byte_for_byte(client, monkeypatch):
+    """Only the activity feeds are filtered.
+
+    The filter reads a row's own fields, so a surface that merely happens to
+    spell one of them the same way must still be passed through untouched --
+    which is a property of the url, not of the payload.
+    """
+    runs = json.dumps({"results": [{"id": 7, "content_type": "favorite"}]}).encode()
+    monkeypatch.setattr(catalog_read, "cached_payload", lambda _url: (runs, "application/json", 200))
+
+    response = client.get("/v1/catalog/crawler/runs/?page_size=12")
+
+    assert response.status_code == 200
+    assert response.data == runs
 
 
 def test_catalog_facets_are_available_as_an_independent_local_read(client):

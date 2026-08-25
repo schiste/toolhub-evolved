@@ -158,20 +158,35 @@ probe_js() {
 	esac
 }
 
+# The entry bundle, a chunk shared between several routes, and two routes only a
+# dynamic import reaches — the same spread the per-module probes covered before
+# the build started concatenating them. Which shared chunks exist depends on how
+# the routes divide the code between them (tools/bundle_modules.py groups shared
+# modules by the routes that want them), so the shared name is read out of the
+# build instead of being spelled here and left to rot when the split shifts.
+probe_urls="$BASE_URL/bundle/app.js"
+for candidate in "$REPO_DIR"/dist/bundle/shared-*.js "$REPO_DIR"/dist/bundle/common.js; do
+	if [ -f "$candidate" ]; then
+		probe_urls="$probe_urls $BASE_URL/bundle/$(basename "$candidate")"
+		break
+	fi
+done
+probe_urls="$probe_urls $BASE_URL/bundle/route-views-statistics.js"
+probe_urls="$probe_urls $BASE_URL/bundle/route-views-experiments.js"
+
 echo "Waiting for webservice to serve the app ..."
 attempt=1
 ready=0
 while [ "$attempt" -le 30 ]; do
-	# The entry bundle, the chunk shared by the lazy routes, and two routes that
-	# are only reachable through a dynamic import — the same spread the
-	# per-module probes covered before the build started concatenating them.
-	if curl -fsS -o /dev/null "$BASE_URL/" \
-		&& probe_js "$BASE_URL/bundle/app.js" \
-		&& probe_js "$BASE_URL/bundle/common.js" \
-		&& probe_js "$BASE_URL/bundle/route-views-statistics.js" \
-		&& probe_js "$BASE_URL/bundle/route-views-experiments.js"; then
+	if curl -fsS -o /dev/null "$BASE_URL/"; then
 		ready=1
-		break
+		for url in $probe_urls; do
+			probe_js "$url" || {
+				ready=0
+				break
+			}
+		done
+		[ "$ready" -eq 1 ] && break
 	fi
 	sleep 2
 	attempt=$((attempt + 1))

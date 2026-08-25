@@ -1135,11 +1135,14 @@ export async function viewTool(name) {
 export async function viewToolHistory(name) {
 	const [liveT, data] = await Promise.all([
 		getTool(name),
-		// Stryker disable next-line ObjectLiteral: `{}` is equivalent to `{ results: [] }` because the value is read as `data.results || []`.
-		apiGet(`/tools/${encodeURIComponent(name)}/revisions/`, { page_size: "20" }).catch(() => ({ results: [] }))
+		// null rather than an empty page, because those are different answers. A
+		// tool nobody has ever edited and a history the replica has never been
+		// asked to hold both used to render "No revisions recorded.", which
+		// states the first when only the second is true.
+		apiGet(`/tools/${encodeURIComponent(name)}/revisions/`, { page_size: "20" }).catch(() => null)
 	]);
 	// Local Evolved edits show as the most recent revisions.
-	const revs = [...demoRevisionsFor(name), ...(data.results || [])];
+	const revs = [...demoRevisionsFor(name), ...((data && data.results) || [])];
 	const tool = liveT;
 	if (!tool && revs.length === 0) return viewNotFound();
 	const title = tool ? tool.title : (revs[0] && revs[0].content_title) || name;
@@ -1158,7 +1161,7 @@ export async function viewToolHistory(name) {
 		<div class="container page">
 			<a class="back" href="${toolHref(name)}">${t("tool.backToName", "← Back to $1", esc(title))}</a>
 			<h1 class="page__title">${t("tool.revisionHistoryTitle", "Revision history")}</h1>
-			<ul class="feed">${rows || `<li><div class="feed__static">${t("tool.noRevisions", "No revisions recorded.")}</div></li>`}</ul>
+			<ul class="feed">${rows || `<li><div class="feed__static">${data ? t("tool.noRevisions", "No revisions recorded.") : t("tool.revisionsUnavailable", "Revision history isn't available right now.")}</div></li>`}</ul>
 		</div>`
 	};
 }

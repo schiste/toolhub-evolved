@@ -76,6 +76,7 @@ payload.lenses = { catalog: lens(2000, 45, 320), wiki: lens(1000, 4, 180) };
 beforeEach(() => {
 	document.body.innerHTML = "";
 	h.backendGetJson.mockReset();
+	window.history.replaceState({}, "", "/statistics");
 });
 
 test("statistics report exposes exact counts alongside accessible histograms", () => {
@@ -195,4 +196,90 @@ test("a snapshot cached before lenses existed is drawn without offering the choi
 	// whole-catalog numbers would be worse than no option at all.
 	assert.equal(document.querySelector(".statistics-lens"), null);
 	assert.match(document.body.textContent, /3,000/);
+});
+
+test("a link that names a lane opens on it instead of on the combined page", async () => {
+	window.history.replaceState({}, "", "/statistics?lens=wiki");
+	h.backendGetJson.mockResolvedValue(payload);
+	const view = viewStatistics();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await vi.waitFor(() => assert.ok(document.querySelector(".statistics-lens")));
+	assert.equal(document.querySelector(".statistics-report").dataset.statisticsLens, "wiki");
+	assert.equal(document.querySelector("[data-statistics-lens-option]:checked").value, "wiki");
+	assert.match(document.body.textContent, /1,000/);
+});
+
+test("a lens nobody can draw is read as the combined page, not as an error", async () => {
+	window.history.replaceState({}, "", "/statistics?lens=phabricator");
+	h.backendGetJson.mockResolvedValue(payload);
+	const view = viewStatistics();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await vi.waitFor(() => assert.ok(document.querySelector(".statistics-lens")));
+	assert.equal(document.querySelector(".statistics-report").dataset.statisticsLens, "all");
+	// The address is corrected too: what was copied out of the bar has to be
+	// the page that was read, and the stale name was never that page.
+	assert.equal(location.search, "");
+});
+
+test("choosing a lane puts it in the address bar so the reading can be shared", async () => {
+	h.backendGetJson.mockResolvedValue(payload);
+	const view = viewStatistics();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await vi.waitFor(() => assert.ok(document.querySelector(".statistics-lens")));
+	// The combined page is the bare address; only a narrowed one is spelled out.
+	assert.equal(location.search, "");
+	const wiki = document.querySelector('[data-statistics-lens-option][value="wiki"]');
+	wiki.checked = true;
+	wiki.dispatchEvent(new window.Event("change", { bubbles: true }));
+	assert.equal(location.search, "?lens=wiki");
+	const everything = document.querySelector('[data-statistics-lens-option][value="all"]');
+	everything.checked = true;
+	everything.dispatchEvent(new window.Event("change", { bubbles: true }));
+	assert.equal(location.search, "");
+	assert.equal(location.pathname, "/statistics");
+});
+
+test("switching lens rewrites the address rather than stacking history entries", async () => {
+	h.backendGetJson.mockResolvedValue(payload);
+	const view = viewStatistics();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await vi.waitFor(() => assert.ok(document.querySelector(".statistics-lens")));
+	const before = window.history.length;
+	for (const name of ["wiki", "catalog", "wiki"]) {
+		const option = document.querySelector(`[data-statistics-lens-option][value="${name}"]`);
+		option.checked = true;
+		option.dispatchEvent(new window.Event("change", { bubbles: true }));
+	}
+	// Three clicks, no new entries: back leaves the page, as it would have
+	// before the lens existed.
+	assert.equal(window.history.length, before);
+	assert.equal(location.search, "?lens=wiki");
+});
+
+test("a lens link to a snapshot that has none is corrected to the page actually shown", async () => {
+	window.history.replaceState({}, "", "/statistics?lens=catalog");
+	h.backendGetJson.mockResolvedValue({ ...payload, lenses: undefined });
+	const view = viewStatistics();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await vi.waitFor(() => assert.match(document.body.textContent, /3,000/));
+	assert.equal(document.querySelector(".statistics-lens"), null);
+	assert.equal(location.search, "");
+});
+
+test("other query parameters on the address survive a change of lens", async () => {
+	window.history.replaceState({}, "", "/statistics?whats-new=1");
+	h.backendGetJson.mockResolvedValue(payload);
+	const view = viewStatistics();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await vi.waitFor(() => assert.ok(document.querySelector(".statistics-lens")));
+	const wiki = document.querySelector('[data-statistics-lens-option][value="wiki"]');
+	wiki.checked = true;
+	wiki.dispatchEvent(new window.Event("change", { bubbles: true }));
+	assert.equal(location.search, "?whats-new=1&lens=wiki");
 });

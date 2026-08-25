@@ -16,6 +16,7 @@ Run from anywhere: `python tools/build_dist.py`.
 
 import gzip
 import argparse
+import json
 import os
 import re
 import shutil
@@ -160,6 +161,123 @@ def _source_fingerprint() -> str:
     return f"{latest:x}"
 
 
+#: One `<link rel="preload" ... data-deferred-style />` from the shell's global
+#: stylesheet block. main.js turns each into a real stylesheet once the module
+#: graph resolves (see activateDeferredStyles).
+_DEFERRED_STYLE_RE = re.compile(
+    r'^(?P<indent>[ \t]*)<link rel="preload" href="(?P<url>/styles/[^"]+\.css)" as="style" data-deferred-style />[ \t]*\n',
+    re.MULTILINE,
+)
+#: The no-JS fallback for the same block.
+_STYLE_NOSCRIPT_RE = re.compile(
+    r'^(?P<indent>[ \t]*)<noscript>[ \t]*\n'
+    r'(?P<links>(?:[ \t]*<link rel="stylesheet" href="/styles/[^"]+\.css" />[ \t]*\n)+)'
+    r'[ \t]*</noscript>[ \t]*\n',
+    re.MULTILINE,
+)
+#: Where the merged global stylesheet lands.
+_GLOBAL_STYLE_URL = "/styles/app.css"
+
+
+def global_stylesheets(index_html: str) -> list[str]:
+    """The shell's global stylesheets, in cascade order.
+
+    Read out of index.html rather than listed here, so adding a seventh layer
+    to the design system is a one-line edit to the shell and the build follows.
+    """
+    return [match.group("url") for match in _DEFERRED_STYLE_RE.finditer(index_html)]
+
+
+def _merge_global_styles(text: str, urls: list[str]) -> str:
+    """Point the shell at one merged stylesheet instead of the whole layering.
+
+    Six files that always load together are six responses and six separately
+    compressed streams; concatenated they share a compression dictionary and
+    arrive in one. The layers stay separate in `public_html/` because that is
+    where they are read and edited — the same no-build-in-development split the
+    JS bundler makes.
+    """
+    if not urls:
+        return text
+
+    matches = list(_DEFERRED_STYLE_RE.finditer(text))
+    indent = matches[0].group("indent")
+    merged = indent + '<link rel="preload" href="' + _GLOBAL_STYLE_URL + '" as="style" data-deferred-style />\n'
+    seen = 0
+
+    def one(_match: re.Match[str]) -> str:
+        nonlocal seen
+        seen += 1
+        return merged if seen == 1 else ""
+
+    text = _DEFERRED_STYLE_RE.sub(one, text)
+
+    noscript = _STYLE_NOSCRIPT_RE.search(text)
+    if noscript is None:
+        raise SystemExit("index.html: global stylesheets have a preload block but no <noscript> fallback")
+    pad = noscript.group("indent")
+    fallback = (
+        pad
+        + "<noscript>\n"
+        + pad
+        + '\t<link rel="stylesheet" href="'
+        + _GLOBAL_STYLE_URL
+        + '" />\n'
+        + pad
+        + "</noscript>\n"
+    )
+    return text[: noscript.start()] + fallback + text[noscript.end() :]
+
+
+#: The shell's route hint table, as a JSON island the build can rewrite without
+#: parsing the surrounding script.
+_ROUTE_HINTS_RE = re.compile(
+    r'(?P<open>[ \t]*<script type="application/json" id="route-hints">\n)'
+    r"(?P<body>.*?)"
+    r"(?P<close>[ \t]*</script>\n)",
+    re.DOTALL,
+)
+
+
+def _fill_route_hint_bundles(text: str, plan_: bundle_modules.Plan, app_bundle_url: str, version: str) -> str:
+    """Resolve each hint's view module into the bundles that serve it.
+
+    The shell knows the route before app.js has parsed, but only the build knows
+    which bundle a view ended up in — that depends on how the routes divide the
+    shared code between them, and it changes whenever they do. So the shell names
+    a source module and the build answers with urls, rather than the shell
+    hardcoding a bundle name that quietly stops existing.
+
+    A hint naming a module that is gone is a build failure, not a silent skip: an
+    unresolved hint still looks like a working page, just a slower one, which is
+    the kind of regression nobody notices for months.
+    """
+    island = _ROUTE_HINTS_RE.search(text)
+    if island is None:
+        return text
+
+    hints = json.loads(island.group("body"))
+    for path, hint in sorted(hints.items()):
+        module = hint.pop("module", None)
+        if module is None:
+            continue
+        target = (plan_.src / module).resolve()
+        if not target.exists():
+            raise SystemExit(f"index.html: route hint {path} names a module that does not exist: {module}")
+        # Everything the view pulls in statically, minus the entry bundle the
+        # shell already preloads for every route.
+        serving = {
+            plan_.owner[dependency].url
+            for dependency in bundle_modules.static_graph(target)
+            if dependency in plan_.owner
+        }
+        hint["bundles"] = sorted(_append_version(url, version) for url in serving if url != app_bundle_url)
+
+    indent = island.group("open")[: len(island.group("open")) - len(island.group("open").lstrip("\t"))]
+    body = "\n".join(indent + "\t" + line for line in json.dumps(hints, indent="\t", sort_keys=True).splitlines())
+    return text[: island.start("body")] + body + "\n" + text[island.end("body") :]
+
+
 def _asset_version() -> str:
     """Return a stable build id for cache-busting deployed static assets."""
     if os.environ.get("TOOLHUB_ASSET_VERSION"):
@@ -281,6 +399,9 @@ def build(deployment_manifest: Path | None = None) -> tuple[int, int, int, list[
     version = _asset_version()
     plan = bundle_modules.plan(SRC, _PRELOAD_ENTRIES)
     app_bundle = plan.bundles[0]
+    global_styles = global_stylesheets((SRC / "index.html").read_text(encoding="utf-8"))
+    #: minified global layers, keyed by url, concatenated in cascade order below
+    merged_css: dict[str, str] = {}
     dropped: list[str] = []
     raw = mini = packed = 0
     for path in sorted(SRC.rglob("*")):
@@ -311,19 +432,36 @@ def build(deployment_manifest: Path | None = None) -> tuple[int, int, int, list[
             mini += len(text.encode("utf-8"))
         elif path.suffix == ".css":
             text = _minify_css(data.decode("utf-8"))
-            out.write_text(text, encoding="utf-8")
             raw += len(data)
+            if f"/{rel.as_posix()}" in global_styles:
+                # Held back for the merged sheet below; shipping it as well
+                # would serve the same rules twice under two urls.
+                merged_css[f"/{rel.as_posix()}"] = text
+                continue
+            out.write_text(text, encoding="utf-8")
             mini += len(text.encode("utf-8"))
         elif path.suffix == ".html":
             html = data.decode("utf-8")
             if rel.name == "index.html":
                 html = _point_entry_at_bundle(html, app_bundle.url)
+                html = _merge_global_styles(html, global_styles)
+                html = _fill_route_hint_bundles(html, plan, app_bundle.url, version)
             html = _version_html_assets(html, version)
             if rel.name == "index.html":
                 html = _inject_preloads(html, version, [app_bundle.url])
             out.write_text(html, encoding="utf-8")
         else:
             out.write_bytes(data)
+        packed += _write_precompressed(out)
+    missing = [url for url in global_styles if url not in merged_css]
+    if missing:
+        raise SystemExit(f"index.html names global stylesheets that do not exist: {missing}")
+    if merged_css:
+        out = TMP / _GLOBAL_STYLE_URL.lstrip("/")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        text = "\n".join(merged_css[url] for url in global_styles)
+        out.write_text(text, encoding="utf-8")
+        mini += len(text.encode("utf-8"))
         packed += _write_precompressed(out)
     for bundle in plan.bundles:
         out = TMP / "bundle" / f"{bundle.name}.js"

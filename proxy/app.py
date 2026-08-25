@@ -120,15 +120,20 @@ def _cached_api_response(
     return resp
 
 
-# CSP hash of the one inline theme script in index.html (kept inline so the theme
-# resolves before first paint — no FOUC). tests/proxy/test_app.py recomputes this
-# from index.html and fails if it drifts, so the value can never silently rot.
+# CSP hash of the one inline script in index.html. It holds the work that has to
+# happen before any module runs: theme resolution (no FOUC), the boot watchdog,
+# and the route preflight that starts a slow page's main read while app.js is
+# still downloading. Anything the build rewrites must stay out of it, or the hash
+# computed from public_html/ would not match what dist/ serves — hence the route
+# hint table sits beside it as a non-executable JSON block, which carries no hash.
+# tests/proxy/test_app.py recomputes this from index.html and fails if it drifts,
+# so the value can never silently rot.
 # script-src is strict (no 'unsafe-inline'); style-src allows inline because the
 # UI emits data-driven inline styles (avatar colours, progress widths, graph node
 # colours). img-src allows any https origin: tool icons are arbitrary remote
 # images. The browser only ever fetches same-origin (/api/ is proxied
 # server-side), hence connect-src 'self'.
-_THEME_SCRIPT_HASH = "sha256-izz39nmNCIB17JW9URoFiyyhWgVE/RJng4CucQCIOnI="
+_THEME_SCRIPT_HASH = "sha256-srCyu4URUHf5ifEyo7uYm6nvngYAUeQrFX+U2m4FsYY="
 _CSP = (
     "default-src 'self'; "
     f"script-src 'self' '{_THEME_SCRIPT_HASH}'; "

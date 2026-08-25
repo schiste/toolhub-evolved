@@ -142,3 +142,70 @@ def test_a_module_follows_everything_it_imports(tmp_path):
     app = _render_all(src)["app"]
 
     assert app.index("const leaf = 1") < app.index("const mid = leaf + 1") < app.index("const boot")
+
+
+def _big(name: str, size: int = 9000) -> str:
+    """A module large enough to be worth its own request."""
+    return f"export const {name} = 1;\n" + f"// {'x' * 60}\n" * (size // 61)
+
+
+def test_shared_code_is_grouped_by_the_routes_that_want_it(tmp_path):
+    """A route should pay for the code it runs, not for the pool.
+
+    `heavy.js` is wanted by two of the three routes. Pooling it into one shared
+    bundle would put it on the wire for the third as well, which is how the
+    lazy payload of an average route grew to several times the size of the
+    route itself.
+    """
+    src = tmp_path / "public_html"
+    _write(src, "main.js", 'export const boot = () => [import("./a.js"), import("./b.js"), import("./c.js")];\n')
+    _write(src, "a.js", 'import { heavy } from "./heavy.js";\nexport const a = () => heavy;\n')
+    _write(src, "b.js", 'import { heavy } from "./heavy.js";\nexport const b = () => heavy;\n')
+    _write(src, "c.js", "export const c = 1;\n")
+    _write(src, "heavy.js", _big("heavy"))
+
+    plan = bundle_modules.plan(src, ("main.js",))
+    home = plan.owner[(src / "heavy.js").resolve()]
+
+    assert home.name == "shared-heavy"
+    rendered = _render_all(src)
+    assert home.url in rendered["route-a"]
+    assert home.url in rendered["route-b"]
+    assert home.url not in rendered["route-c"]
+
+
+def test_two_shared_groups_do_not_pool_into_one_bundle(tmp_path):
+    """Sharing with a different route is not the same as sharing.
+
+    Both modules below are wanted by exactly two routes, but not by the same
+    two. One bundle holding both would make /a fetch what only /c runs.
+    """
+    src = tmp_path / "public_html"
+    _write(src, "main.js", 'export const boot = () => [import("./a.js"), import("./b.js"), import("./c.js")];\n')
+    _write(src, "a.js", 'import { ab } from "./ab.js";\nexport const a = () => ab;\n')
+    _write(src, "b.js", 'import { ab } from "./ab.js";\nimport { bc } from "./bc.js";\nexport const b = () => [ab, bc];\n')
+    _write(src, "c.js", 'import { bc } from "./bc.js";\nexport const c = () => bc;\n')
+    _write(src, "ab.js", _big("ab"))
+    _write(src, "bc.js", _big("bc"))
+
+    plan = bundle_modules.plan(src, ("main.js",))
+    ab = plan.owner[(src / "ab.js").resolve()]
+    bc = plan.owner[(src / "bc.js").resolve()]
+
+    assert ab is not bc
+    rendered = _render_all(src)
+    assert bc.url not in rendered["route-a"]
+    assert ab.url not in rendered["route-c"]
+
+
+def test_a_small_shared_group_rides_along_in_common(tmp_path):
+    """Below a few kilobytes the round trip costs more than the bytes."""
+    src = tmp_path / "public_html"
+    _write(src, "main.js", 'export const boot = () => [import("./a.js"), import("./b.js")];\n')
+    _write(src, "a.js", 'import { tiny } from "./tiny.js";\nexport const a = () => tiny;\n')
+    _write(src, "b.js", 'import { tiny } from "./tiny.js";\nexport const b = () => tiny;\n')
+    _write(src, "tiny.js", "export const tiny = 1;\n")
+
+    plan = bundle_modules.plan(src, ("main.js",))
+
+    assert plan.owner[(src / "tiny.js").resolve()].name == "common"

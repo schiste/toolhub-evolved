@@ -2,6 +2,7 @@
 """Tests for the production static build helper."""
 
 import json
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -189,8 +190,16 @@ def test_landing_page_costs_one_request_within_budget(monkeypatch, tmp_path):
     dist = tmp_path / "dist"
     html = (dist / "index.html").read_text(encoding="utf-8")
 
-    assert html.count("modulepreload") == 1
+    # Count the links, not the word: the shell's inline preflight also mentions
+    # "modulepreload", and a substring match would call that a regression when
+    # the number of requests has not moved at all.
+    assert html.count('<link rel="modulepreload"') == 1
     assert 'src="/bundle/app.js?v=abc123"' in html
+    # The landing route must also stay out of the route-hint table, or the shell
+    # would inject further bundle requests at runtime that the count above, being
+    # static, would never see.
+    hints = json.loads(re.search(r'id="route-hints">(.*?)</script>', html, re.DOTALL).group(1))
+    assert "/" not in hints
     packed = (dist / "bundle" / "app.js.gz").stat().st_size
     assert packed <= _LANDING_GZIP_LIMIT, f"landing bundle is {packed} gzipped bytes"
 
@@ -262,3 +271,65 @@ def test_build_rejects_an_emitted_import_that_points_nowhere(monkeypatch, tmp_pa
 
     with pytest.raises(SystemExit, match="missing.js"):
         build_dist.build()
+
+
+def _styled_shell(tmp_path):
+    """A shell whose global stylesheets use the real deferred-style block."""
+    src = tmp_path / "public_html"
+    (src / "styles").mkdir(parents=True)
+    (src / "data").mkdir(parents=True)
+    (src / "index.html").write_text(
+        '<!doctype html>\n'
+        '\t\t<link rel="preload" href="/styles/tokens.css" as="style" data-deferred-style />\n'
+        '\t\t<link rel="preload" href="/styles/organisms.css" as="style" data-deferred-style />\n'
+        '\t\t<noscript>\n'
+        '\t\t\t<link rel="stylesheet" href="/styles/tokens.css" />\n'
+        '\t\t\t<link rel="stylesheet" href="/styles/organisms.css" />\n'
+        '\t\t</noscript>\n'
+        '<script type="module" src="/main.js"></script>\n',
+        encoding="utf-8",
+    )
+    (src / "main.js").write_text("export const boot = () => 1;\n", encoding="utf-8")
+    # Cascade order matters: organisms.css is meant to win.
+    (src / "styles" / "tokens.css").write_text("a { color: red; }\n", encoding="utf-8")
+    (src / "styles" / "organisms.css").write_text("a { color: blue; }\n", encoding="utf-8")
+    (src / "styles" / "statistics.css").write_text(".stat { color: green; }\n", encoding="utf-8")
+    (src / "data" / "changelog.json").write_text("{}\n", encoding="utf-8")
+    (src / "data" / "deployments.json").write_text("{}\n", encoding="utf-8")
+    return src
+
+
+def test_the_global_stylesheets_ship_as_one_file(monkeypatch, tmp_path):
+    """Six layers that always load together are six responses for one thing.
+
+    They stay separate under `public_html/`, which is where they are edited;
+    only the served copy is merged.
+    """
+    src = _styled_shell(tmp_path)
+    dist = _use_fixture(monkeypatch, tmp_path, src)
+    build_dist.build(None)
+
+    merged = (dist / "styles" / "app.css").read_text(encoding="utf-8")
+    # Cascade order, not alphabetical or filesystem order.
+    assert merged.index("red") < merged.index("blue")
+    # The layers must not also be served under their own urls, or the same
+    # rules arrive twice and whichever loads last wins by accident.
+    assert not (dist / "styles" / "tokens.css").exists()
+    assert not (dist / "styles" / "organisms.css").exists()
+    # A route stylesheet is not global and is left alone.
+    assert (dist / "styles" / "statistics.css").exists()
+
+    shell = (dist / "index.html").read_text(encoding="utf-8")
+    assert shell.count("data-deferred-style") == 1
+    assert shell.count('<link rel="stylesheet" href="/styles/app.css') == 1
+    assert "/styles/tokens.css" not in shell
+
+
+def test_a_global_stylesheet_the_shell_names_but_does_not_exist_fails_the_build(monkeypatch, tmp_path):
+    """Silently dropping it would ship a page missing a whole design layer."""
+    src = _styled_shell(tmp_path)
+    (src / "styles" / "organisms.css").unlink()
+    _use_fixture(monkeypatch, tmp_path, src)
+
+    with pytest.raises(SystemExit, match="organisms.css"):
+        build_dist.build(None)

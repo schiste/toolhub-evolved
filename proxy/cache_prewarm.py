@@ -23,6 +23,15 @@ CACHEABLE_MAX_STATUS = 300
 REFRESH_AHEAD_SECONDS = 70
 TRANSIENT_UPSTREAM_STATUSES = {502, 503, 504}
 DEFAULT_SEARCH_QUERIES = ("wikidata", "commons", "toolforge", "template", "bot")
+# views/tool.js asks for twenty, and the replica is keyed on the exact url, so
+# this has to stay that number.
+REVISIONS_PAGE_SIZE = "20"
+# Revision history is per tool and so unbounded; it cannot join the static hot
+# list. Warming the tools currently on /recent covers the way people actually
+# reach a history -- the feed, then a tool, then its history -- at a cost that
+# stays flat as the catalog grows. Half the owner budget, because each of these
+# is a real upstream request where an owner lookup is a local database read.
+REVISION_MAX_TOOLS = 25
 
 
 @dataclass(frozen=True)
@@ -44,6 +53,8 @@ class PrewarmSummary:
     failed: int = 0
     owners: int = 0
     owner_cached: int = 0
+    revisions: int = 0
+    revisions_warmed: int = 0
 
     def observe(self, result: str) -> None:
         """Record one endpoint prewarm result."""
@@ -63,7 +74,8 @@ class PrewarmSummary:
             "cache-prewarm: "
             f"warmed={self.warmed} revalidated={self.revalidated} "
             f"skipped={self.skipped} failed={self.failed} endpoints={self.endpoints} "
-            f"owners={self.owners} owner_cached={self.owner_cached}"
+            f"owners={self.owners} owner_cached={self.owner_cached} "
+            f"revisions={self.revisions_warmed}/{self.revisions}"
         )
 
 
@@ -86,6 +98,10 @@ def hot_endpoints() -> tuple[HotEndpoint, ...]:
         HotEndpoint("/api/ui/home/"),
         HotEndpoint("/api/recent/", (("page_size", "30"),)),
         HotEndpoint("/api/crawler/runs/", (("page_size", "12"),)),
+        # The audit feed is served straight from the replica, keyed on the exact
+        # url, so this page_size has to be the one views/audit.js asks for or the
+        # page gets a 503 it silently renders as "no audit entries".
+        HotEndpoint("/api/auditlogs/", (("page_size", "25"),)),
         HotEndpoint("/api/schema/"),
         HotEndpoint("/api/lists/", (("page_size", "30"),)),
         HotEndpoint("/api/lists/", (("featured", "true"), ("page_size", "6"))),
@@ -215,6 +231,30 @@ def _recent_tool_names(rows: list[dict[str, object]]) -> list[str]:
     )
 
 
+def tool_revision_endpoints(names: Iterable[str]) -> tuple[HotEndpoint, ...]:
+    """Return revision-history endpoints for one bounded set of tool names.
+
+    The name is placed in the path exactly as it was read, unencoded. That looks
+    like an omission and is not: backend/v1_catalog.py receives its path through
+    Flask's `path` converter, which hands it over already decoded, and builds the
+    replica lookup key from that. Percent-encoding here would file every tool
+    whose name is not plain ASCII under a key no request could ever produce, and
+    the only symptom would be a history page that stays empty forever. The HTTP
+    client encodes the url on its way out, so the fetch itself is unaffected.
+    """
+    return tuple(
+        HotEndpoint(f"/api/tools/{name}/revisions/", (("page_size", REVISIONS_PAGE_SIZE),))
+        for name in list(names)[:REVISION_MAX_TOOLS]
+    )
+
+
+def prewarm_tool_revisions(session: requests.Session | None = None) -> tuple[int, int]:
+    """Prewarm revision history for the tools currently visible on /recent."""
+    endpoints = tool_revision_endpoints(_recent_tool_names(_recent_rows_from_cache()))
+    warmed = sum(1 for e in endpoints if prewarm_endpoint(e, session=session) in {"warmed", "revalidated"})
+    return len(endpoints), warmed
+
+
 def prewarm_recent_owners() -> tuple[int, int]:
     """Prewarm owner-by-tool rows for tools currently visible on /recent."""
     names = _recent_tool_names(_recent_rows_from_cache())
@@ -234,6 +274,7 @@ def run_once(
     for endpoint in endpoints or hot_endpoints():
         summary.observe(prewarm_endpoint(endpoint, session=session))
     summary.owners, summary.owner_cached = prewarm_recent_owners()
+    summary.revisions, summary.revisions_warmed = prewarm_tool_revisions(session)
     return summary
 
 

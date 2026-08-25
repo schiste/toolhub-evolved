@@ -10,6 +10,7 @@ reloading backend.v1 keeps working.
 from flask import Blueprint, Response, jsonify, request
 
 from backend import (
+    activity_privacy,
     authz,
     catalog_projection,
     catalog_read,
@@ -82,7 +83,16 @@ def v1_catalog_read(path: str) -> Response:  # noqa: PLR0911 - explicit compatib
             {"error": "local replica entry unavailable", "replica": catalog_read.replica_status()}, status=503
         )
     body, content_type, status = cached
-    response = Response(body, status=status, content_type=content_type)
+    # The replica stores upstream verbatim, and the audit feed is one of the
+    # surfaces upstream reports private rows on. app.py filters its own copies of
+    # these same bytes in _cached_api_response; this branch reads the same store
+    # and so has to make the same decision, or which endpoint a reader happens to
+    # come through would decide whether they see a withheld row. Every other
+    # compatibility surface is untouched: sanitize_public_api_payload keys off the
+    # url and returns anything outside the activity paths byte for byte.
+    response = Response(
+        activity_privacy.sanitize_public_api_payload(url, body), status=status, content_type=content_type
+    )
     response.headers["Cache-Control"] = "public, max-age=30, stale-if-error=86400"
     response.headers["X-Toolhub-Evolved-Source"] = "local-replica"
     return response

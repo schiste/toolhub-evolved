@@ -2046,6 +2046,7 @@
 	"tool.revisionBy": "Revision by",
 	"tool.revisionDiffTitle": "Revision diff",
 	"tool.revisionHistoryTitle": "Revision history",
+	"tool.revisionsUnavailable": "Revision history isn't available right now.",
 	"tool.screenshot": "Screenshot",
 	"tool.screenshotsTitle": "Screenshots · Evolved data",
 	"tool.searchForName": "Search for \"$1\"",

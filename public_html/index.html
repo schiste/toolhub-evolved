@@ -19,6 +19,34 @@
 			title="Toolhub recently updated tools"
 			href="/feeds/tools/recently-updated.xml"
 		/>
+		<!-- Routes whose first paint waits on one slow read. Starting that read
+		     here, rather than after app.js has downloaded, parsed and imported the
+		     view, buys the read's entire server time: 1.5s on /recent, 1.4s on
+		     /workers. The bytes are not the constraint — the wait is, and it
+		     overlaps the JS download for free.
+
+		     "module" is what the production build (tools/build_dist.py) resolves
+		     into "bundles", so the route's code downloads alongside app.js instead
+		     of a wave later. Local development leaves it unresolved and serves
+		     modules unbundled, which is the right no-op.
+
+		     These are hints, and wrong ones are cheap: a stale url costs one
+		     unused request, a missing route costs nothing beyond the status quo.
+		     What is not cheap is a url that silently stops matching what the view
+		     asks for, because that looks exactly like no hint at all — so
+		     tests/unit/route-preflight.test.mjs pins each one to the request its
+		     view actually makes. -->
+		<script type="application/json" id="route-hints">
+			{
+				"/recent": { "api": "/v1/catalog/recent/?page_size=30", "module": "views/recent.js" },
+				"/workers": { "api": "/v1/workers/", "module": "views/workers.js" },
+				"/statistics": { "api": "/v1/statistics/", "module": "views/statistics.js" },
+				"/crawler-history": {
+					"api": "/v1/catalog/crawler/runs/?page_size=12",
+					"module": "views/crawler.js"
+				}
+			}
+		</script>
 		<!-- Resolve the color theme before first paint to avoid a flash (see lib/core/theme.js). -->
 		<script>
 			(function () {
@@ -83,6 +111,42 @@
 					/* A module request that never settles also prevents `load`.
 					   Keep a separate upper bound for that rarer failure mode. */
 					setTimeout(recoverBoot, 15000);
+				} catch (e) {}
+				/* Route preflight. The shell already knows which page this is, so for
+				   the few routes whose first paint waits on one slow read, start that
+				   read now rather than after app.js has downloaded, parsed and
+				   imported the view. lib/core/api.js claims the pending response at
+				   its transport seam, so nothing above it changes and the read is
+				   made once either way.
+
+				   This lives in the same inline script as the theme and the boot
+				   watchdog because the CSP carries a hash for exactly one inline
+				   script (proxy/app.py) — and, more importantly, because the build
+				   must never rewrite hashed content. The part the build does rewrite
+				   is the route-hints JSON above, which is data, not script, and so
+				   carries no hash at all. */
+				try {
+					var hintEl = document.getElementById("route-hints");
+					var hint = hintEl && JSON.parse(hintEl.textContent)[location.pathname];
+					if (hint) {
+						if (hint.api) {
+							var read = fetch(hint.api, { headers: { Accept: "application/json" } });
+							/* Nothing may ever claim this — an unreachable route, a
+							   redirect, a visitor who leaves. Mark it handled so an
+							   ordinary network failure cannot surface as an unhandled
+							   rejection. The real consumer still sees the rejection. */
+							read.catch(function () {});
+							window.__preflight = new Map([[hint.api, read]]);
+						}
+						/* Only the build knows which bundle serves a view, so this list
+						   is empty in local development, where modules load unbundled. */
+						(hint.bundles || []).forEach(function (href) {
+							var link = document.createElement("link");
+							link.rel = "modulepreload";
+							link.href = href;
+							document.head.appendChild(link);
+						});
+					}
 				} catch (e) {}
 			})();
 		</script>

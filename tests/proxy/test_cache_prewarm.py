@@ -2,6 +2,7 @@
 """Tests for the scheduled Toolhub API cache prewarmer."""
 
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -69,6 +70,44 @@ def test_hot_endpoint_urls_cover_spa_entrypoints_and_search_terms(monkeypatch):
     assert "https://toolhub.example/api/search/tools/?q=wikidata&page=1&page_size=21" in urls
     assert "https://toolhub.example/api/search/tools/?q=commons&page=1&page_size=21" in urls
     assert len(urls) == len(set(urls))
+
+
+def test_the_audit_page_asks_for_a_page_size_the_prewarmer_keeps_hot(monkeypatch):
+    """/v1/catalog/auditlogs/ is answered only from the replica, keyed on the
+    exact url including its query string. A page_size nothing prewarms is a 503,
+    and views/audit.js turns a failed read into an empty feed -- so a mismatch
+    here does not look like a bug, it looks like a catalog where nothing has
+    ever changed. Assert against the number the view actually asks for rather
+    than a copy of it, since a copy drifts in exactly the same silence.
+    """
+    monkeypatch.setenv("TOOLHUB_API_BASE", "https://toolhub.example")
+    source = (ROOT / "public_html" / "views" / "audit.js").read_text(encoding="utf-8")
+    asked = re.search(r'apiGet\(\s*"/auditlogs/"\s*,\s*\{\s*page_size:\s*"(\d+)"', source)
+    assert asked is not None, "views/audit.js no longer reads /auditlogs/ with a literal page_size"
+
+    urls = [cache_prewarm.url_for_endpoint(endpoint) for endpoint in cache_prewarm.hot_endpoints()]
+
+    assert f"https://toolhub.example/api/auditlogs/?page_size={asked.group(1)}" in urls
+
+
+def test_the_history_page_asks_for_a_page_size_the_prewarmer_uses(monkeypatch):
+    """Same coupling as the audit feed, and the same silent failure if it drifts."""
+    monkeypatch.setenv("TOOLHUB_API_BASE", "https://toolhub.example")
+    source = (ROOT / "public_html" / "views" / "tool.js").read_text(encoding="utf-8")
+    asked = re.search(r"/revisions/`,\s*\{\s*page_size:\s*\"(\d+)\"", source)
+    assert asked is not None, "views/tool.js no longer reads /revisions/ with a literal page_size"
+
+    assert cache_prewarm.REVISIONS_PAGE_SIZE == asked.group(1)
+
+
+def test_revision_endpoints_are_bounded_and_leave_the_tool_name_unencoded():
+    """The lookup key is built from an already-decoded path, so encoding here
+    would file an awkwardly named tool under a key no request can produce."""
+    endpoints = cache_prewarm.tool_revision_endpoints([f"tool-{i}" for i in range(100)])
+    assert len(endpoints) == cache_prewarm.REVISION_MAX_TOOLS
+
+    spaced = cache_prewarm.tool_revision_endpoints(["a tool"])
+    assert spaced[0].path == "/api/tools/a tool/revisions/"
 
 
 def test_run_once_warms_missing_endpoint_and_skips_fresh_endpoint():

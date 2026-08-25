@@ -1131,6 +1131,30 @@ test("viewToolHistory revisions apiGet rejects → demo only", async () => {
 	assert.ok(r.html.includes("system</strong>"), "null user falls back to system");
 });
 
+test("viewToolHistory: an unreadable history says so instead of claiming there is none", async () => {
+	// The replica answers 503 for any tool whose history no job has warmed, and
+	// the view used to render that as "No revisions recorded." -- a statement
+	// about the tool, made from a fact about the cache.
+	h.getTool.mockResolvedValue(toolFixture("cold", { title: "Cold" }));
+	h.demoRevisionsFor.mockReturnValue([]);
+	h.apiGet.mockRejectedValue(new Error("local replica entry unavailable"));
+
+	const r = await tool.viewToolHistory("cold");
+
+	assert.ok(r.html.includes("isn't available right now"), r.html);
+	assert.ok(!r.html.includes("No revisions recorded."), "an unreadable history is not an empty one");
+});
+
+test("viewToolHistory: a tool that genuinely has no revisions still says so", async () => {
+	h.getTool.mockResolvedValue(toolFixture("fresh", { title: "Fresh" }));
+	h.demoRevisionsFor.mockReturnValue([]);
+	h.apiGet.mockResolvedValue({ results: [] });
+
+	const r = await tool.viewToolHistory("fresh");
+
+	assert.ok(r.html.includes("No revisions recorded."), r.html);
+});
+
 test("viewToolHistory no tool + no revisions → viewNotFound", async () => {
 	h.getTool.mockResolvedValue(null);
 	h.demoRevisionsFor.mockReturnValue([]);
