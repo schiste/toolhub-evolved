@@ -1,12 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: launch-year-annotation -->
-<!-- Release title: What Happened in 2021 -->
-<!-- Source range: e454a2d2..4dcd3c6d (3 commits, promoted as one) -->
+<!-- Release id: launch-note-affordance -->
+<!-- Release title: The 2021 Note, Now Readable -->
+<!-- Source range: a37b8649..98f499d8 (1 commit, promoted as one) -->
 
 # What's New for Users
 
-- The statistics page now explains its tallest bar. On the charts of catalog records by year, 2021 stands about three times its neighbors -- not because that many tools were written that year, but because Toolhub launched and imported a catalog that already existed. Hover the small marker beside 2021 and it says so.
-- The explanation is not hover-only. It is read out as part of the row, so a reader using a screen reader gets the same context rather than an unexplained number.
-- Only the date charts are marked. A chart that has no 2021 -- last-updated dates, for instance -- carries no marker, and neither does a category that happens to be named after a year.
-- Pages are a little lighter again. About 1.1 KB of styling described interfaces the site no longer has, and it was still being downloaded on every visit. Nothing on screen changes.
+- The marker beside 2021 on the statistics charts now actually opens. It shipped in the previous release as a browser tooltip, which meant it appeared only after holding the pointer still for about a second, did nothing at all when clicked, and never appeared on a phone or tablet. It now opens the moment you point at it, when you click or tap it, and when you reach it with the keyboard.
+- The note stays open while it has your attention. Clicking the marker keeps the explanation on screen after the pointer moves away, so it can be read rather than chased.
+- The charts do not move when a note opens. The explanation floats above the bar it belongs to, so rows stay exactly where they were.
