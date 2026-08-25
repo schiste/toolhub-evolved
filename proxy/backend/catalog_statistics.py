@@ -53,6 +53,21 @@ SNAPSHOT_STALE_LIMIT = timedelta(hours=6)
 # correctness one.
 STREAM_BATCH_SIZE = 500
 CORE_FIELDS = ("title", "description", "url", "tool_type", "repository", "user_docs_url")
+#: What each measurement on the page means. Static text, identical under every
+#: lens: narrowing the catalog changes the numbers, never what they are called.
+DEFINITIONS = {
+    "verifiedAuthor": "A current author relationship backed by stable identity evidence.",
+    "listedAuthor": "The canonical Toolhub record contains at least one author attribution.",
+    "verifiedMaintainer": "A current maintainer relationship backed by confirmed access evidence.",
+    "identityOnly": "A publishable person identity with no current author or maintainer relationship.",
+    "newlyVerifiedTool": "A canonical tool whose current relationship first became verified in the window.",
+    "coreMetadata": "Title, description, tool URL, and at least one listed author are present.",
+    "dateBasis": "Dates are canonical Toolhub catalog record dates; unavailable values remain visible.",
+    "noLocalMatch": "Unresolved labels no current rule can reach, so the remaining limit is the rules.",
+    "exactToolhubAccount": "Unresolved labels matching exactly one official Toolhub username.",
+    "handleShaped": "Unreachable labels shaped like a chosen handle, which a public registry could resolve.",
+    "nameShaped": "Unreachable labels indistinguishable from a person name, never resolved from text alone.",
+}
 RECENCY_BUCKETS = (
     ("last30Days", "Last 30 days", 30),
     ("days31To90", "31-90 days", 90),
@@ -159,6 +174,11 @@ def _attribution_funnel(
     exact Toolhub username is what ``discover_identity_candidates`` tries
     first, and a current handle on a publishable person is what source
     attestation binds through. No external lookups happen here.
+
+    ``sourceBindings`` and ``sourceBindingMethods`` are the exception to the
+    lens: a binding is scoped to a toolinfo feed record and carries no tool
+    name, so it cannot be narrowed to a set of tools. They describe the
+    ingest pipeline, and read the same under every lens.
     """
     account_counts: Counter[str] = Counter(
         _stream(session, select(ToolhubAccountProjection.normalized_username)).scalars()
@@ -368,35 +388,88 @@ class _CatalogTotals(NamedTuple):
     metadata_counts: Counter[str]
     tool_types: Counter[str]
     created_by_year: _YearHistogram
-    created_by_year_catalog: _YearHistogram
-    created_by_year_wiki: _YearHistogram
     modified_by_year: _YearHistogram
     modified_recency: _RecencyHistogram
 
 
-def _catalog_totals(session: Session, checked_at: datetime) -> _CatalogTotals:
-    """Reduce every canonical record to counters, keeping only the names.
+#: The lenses the page can be read under. ``all`` is every canonical record;
+#: the other two are the halves ``WIKI_SOURCES`` splits the catalog into.
+LENS_ALL = "all"
+LENS_CATALOG = "catalog"
+LENS_WIKI = "wiki"
+LENSES = (LENS_ALL, LENS_CATALOG, LENS_WIKI)
+
+
+class _LensAccumulator:
+    """Counters for one lens, fed one record at a time.
+
+    Every quantity the catalog pass produces is a count, a histogram bucket,
+    or a tool name, so a lens costs its counters and its name set -- not a
+    second copy of the records. That is what makes three lenses affordable:
+    the expensive part is decoding each record, and this way it happens once.
+    """
+
+    def __init__(self, checked_at: datetime) -> None:
+        self.tool_names: set[str] = set()
+        self.listed_authors = 0
+        self.deprecated = 0
+        self.experimental = 0
+        self.core_complete = 0
+        self.metadata_counts: Counter[str] = Counter()
+        self.tool_types: Counter[str] = Counter()
+        self.created_by_year = _YearHistogram()
+        self.modified_by_year = _YearHistogram()
+        self.modified_recency = _RecencyHistogram(checked_at)
+
+    def add(self, tool_name: str, record: dict[str, Any], *, has_author: bool) -> None:
+        """Fold one already-decoded record into this lens."""
+        self.tool_names.add(tool_name)
+        self.listed_authors += has_author
+        self.deprecated += record.get("deprecated") is True
+        self.experimental += record.get("experimental") is True
+        for field in CORE_FIELDS:
+            if _has_value(record.get(field)):
+                self.metadata_counts[field] += 1
+        if has_author and all(_has_value(record.get(field)) for field in ("title", "description", "url")):
+            self.core_complete += 1
+        self.tool_types[str(record.get("tool_type") or "Unspecified").strip() or "Unspecified"] += 1
+        created = record.get("created_date") or record.get("created")
+        self.created_by_year.add(created)
+        modified = record.get("modified_date") or record.get("modified")
+        self.modified_by_year.add(modified)
+        self.modified_recency.add(modified)
+
+    def totals(self) -> _CatalogTotals:
+        return _CatalogTotals(
+            tool_names=self.tool_names,
+            listed_authors=self.listed_authors,
+            deprecated=self.deprecated,
+            experimental=self.experimental,
+            core_complete=self.core_complete,
+            metadata_counts=self.metadata_counts,
+            tool_types=self.tool_types,
+            created_by_year=self.created_by_year,
+            modified_by_year=self.modified_by_year,
+            modified_recency=self.modified_recency,
+        )
+
+
+def _catalog_totals(session: Session, checked_at: datetime) -> dict[str, _CatalogTotals]:
+    """Reduce every canonical record to counters, once per lens, in one pass.
 
     This used to build a dict of all ~17,000 decoded records first. Every
     quantity derived from it is a count, a histogram bucket, or a tool name,
     so the records themselves only had to exist one at a time -- and holding
     them all was the largest allocation in the web service, which is what got
     it OOM-killed while answering /statistics.
+
+    A record belongs to ``all`` and to exactly one of ``catalog``/``wiki``,
+    which is a column on the row rather than anything the record has to be
+    re-read to decide. Accumulating the lenses together therefore costs one
+    extra counter update per row, where filtering per lens would cost a
+    second and third pass over the catalog.
     """
-    tool_names: set[str] = set()
-    listed_authors = 0
-    deprecated = 0
-    experimental = 0
-    core_complete = 0
-    metadata_counts: Counter[str] = Counter()
-    tool_types: Counter[str] = Counter()
-    created_by_year = _YearHistogram()
-    # The by-source split is accumulated in the same pass rather than by
-    # revisiting the records: which lane a row came from is a column on it, so
-    # the only thing a second pass would buy is a second read of the catalog.
-    created_by_source = {"catalog": _YearHistogram(), "wiki": _YearHistogram()}
-    modified_by_year = _YearHistogram()
-    modified_recency = _RecencyHistogram(checked_at)
+    lenses = {name: _LensAccumulator(checked_at) for name in LENSES}
     for tool_name, raw_record, source in _stream(
         session,
         select(
@@ -406,37 +479,11 @@ def _catalog_totals(session: Session, checked_at: datetime) -> _CatalogTotals:
         ).order_by(CanonicalToolCache.tool_name),
     ):
         record = raw_record if isinstance(raw_record, dict) else {}
-        tool_names.add(tool_name)
         has_author = bool(author_assertions(record))
-        listed_authors += has_author
-        deprecated += record.get("deprecated") is True
-        experimental += record.get("experimental") is True
-        for field in CORE_FIELDS:
-            if _has_value(record.get(field)):
-                metadata_counts[field] += 1
-        if has_author and all(_has_value(record.get(field)) for field in ("title", "description", "url")):
-            core_complete += 1
-        tool_types[str(record.get("tool_type") or "Unspecified").strip() or "Unspecified"] += 1
-        created = record.get("created_date") or record.get("created")
-        created_by_year.add(created)
-        created_by_source["wiki" if source in WIKI_SOURCES else "catalog"].add(created)
-        modified = record.get("modified_date") or record.get("modified")
-        modified_by_year.add(modified)
-        modified_recency.add(modified)
-    return _CatalogTotals(
-        tool_names=tool_names,
-        listed_authors=listed_authors,
-        deprecated=deprecated,
-        experimental=experimental,
-        core_complete=core_complete,
-        metadata_counts=metadata_counts,
-        tool_types=tool_types,
-        created_by_year=created_by_year,
-        created_by_year_catalog=created_by_source["catalog"],
-        created_by_year_wiki=created_by_source["wiki"],
-        modified_by_year=modified_by_year,
-        modified_recency=modified_recency,
-    )
+        lane = LENS_WIKI if source in WIKI_SOURCES else LENS_CATALOG
+        lenses[LENS_ALL].add(tool_name, record, has_author=has_author)
+        lenses[lane].add(tool_name, record, has_author=has_author)
+    return {name: accumulator.totals() for name, accumulator in lenses.items()}
 
 
 class _UnresolvedAttribution(NamedTuple):
@@ -448,7 +495,13 @@ class _UnresolvedAttribution(NamedTuple):
 
 
 def _unresolved_attribution(session: Session, tool_names: set[str], naive_now: datetime) -> _UnresolvedAttribution:
-    """Collect the three unresolved-attribution sets in one streamed pass."""
+    """Collect the three unresolved-attribution sets in one streamed pass.
+
+    All three narrow to ``tool_names``, labels included: an author token that
+    only ever appeared on a registered tool is not part of the wiki lane's
+    unresolved vocabulary, and counting it there would make the funnel read
+    the same under every lens.
+    """
     author_tools: set[str] = set()
     labels: set[str] = set()
     tools: set[str] = set()
@@ -464,12 +517,15 @@ def _unresolved_attribution(session: Session, tool_names: set[str], naive_now: d
             UnresolvedAttributionEvidence.relationship_type.in_((PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER)),
         ),
     ):
+        if tool_name not in tool_names:
+            continue
+        tools.add(tool_name)
         unexpired = expires_at is None or expires_at > naive_now
-        if tool_name in tool_names:
-            tools.add(tool_name)
-            if relationship_type == PERSON_REL_AUTHOR and unexpired:
-                author_tools.add(tool_name)
-        if normalized_label and unexpired:
+        if not unexpired:
+            continue
+        if relationship_type == PERSON_REL_AUTHOR:
+            author_tools.add(tool_name)
+        if normalized_label:
             labels.add(normalized_label)
     return _UnresolvedAttribution(author_tools=author_tools, labels=labels, tools=tools)
 
@@ -510,40 +566,46 @@ def _source_statistics(session: Session) -> dict[str, Any]:
     }
 
 
-def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str, Any]:
-    """Build one deterministic statistics document from local projections."""
-    checked_at = (now or datetime.now(tz=UTC)).astimezone(UTC)
-    catalog = _catalog_totals(session, checked_at)
+class _Shared(NamedTuple):
+    """The parts of the page that do not narrow with the lens.
+
+    Feeds, people, and vocabulary are not tools, so restricting the catalog
+    does not restrict them. Computing them once also keeps the three lenses
+    from disagreeing about how many publishable people exist.
+    """
+
+    publishable_person_ids: set[int]
+    quality_counts: Counter[str]
+    sources: dict[str, Any]
+
+
+def _lens_document(
+    session: Session,
+    catalog: _CatalogTotals,
+    checked_at: datetime,
+    shared: _Shared,
+) -> dict[str, Any]:
+    """Assemble every block of the page for one lens's set of tools.
+
+    Each helper here already narrows on ``tool_names``, so a lens is not a
+    filter applied to a finished document -- it is the same document computed
+    against a smaller catalog. ``sources``, the person quality counts, and the
+    definitions are the exceptions: they describe feeds, people, and
+    vocabulary rather than tools, so they are computed once and shared.
+    """
     tool_names = catalog.tool_names
     total = len(tool_names)
-
-    publishable_person_ids = people_index.public_identity_ids(session)
     verified_by_role, status_counts, relationship_metrics = _relationship_statistics(
-        session, tool_names, checked_at, publishable_person_ids
+        session, tool_names, checked_at, shared.publishable_person_ids
     )
-
     unresolved = _unresolved_attribution(session, tool_names, checked_at.replace(tzinfo=None))
-
-    # Filtering in Python rather than `Person.id IN (...)`: the publishable set
-    # is already in memory, and the IN form sent one bind parameter per person.
-    quality_counts: Counter[str] = Counter()
-    for person_id, quality in _stream(session, select(Person.id, Person.identity_quality)):
-        if person_id in publishable_person_ids:
-            quality_counts[quality] += 1
-
-    sources = _source_statistics(session)
-
     type_rows = [
         {"key": label.casefold().replace(" ", "-"), "label": label, "count": count}
         for label, count in sorted(catalog.tool_types.items(), key=lambda item: (-item[1], item[0].casefold()))
     ]
-
     verified_authors = len(verified_by_role[PERSON_REL_AUTHOR])
     verified_maintainers = len(verified_by_role[PERSON_REL_MAINTAINER])
     return {
-        "generatedAt": checked_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "source": SOURCE_OFFICIAL,
-        "syncStatus": SYNC_OFFICIAL,
         "catalog": {
             "totalTools": total,
             "activeTools": total - catalog.deprecated,
@@ -565,42 +627,63 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
         },
         "relationshipMetrics": relationship_metrics,
         "identities": {
-            "publishablePeople": len(publishable_person_ids),
-            "stablePeople": quality_counts["stable"],
-            "handlePeople": quality_counts["handle"],
+            "publishablePeople": len(shared.publishable_person_ids),
+            "stablePeople": shared.quality_counts["stable"],
+            "handlePeople": shared.quality_counts["handle"],
             "unresolvedLabels": len(unresolved.labels),
             "unresolvedTools": len(unresolved.tools),
         },
-        "attribution": _attribution_funnel(session, unresolved.labels, publishable_person_ids),
-        "sources": sources,
+        "attribution": _attribution_funnel(session, unresolved.labels, shared.publishable_person_ids),
+        "sources": shared.sources,
         "distributions": {
             "createdByYear": catalog.created_by_year.rows(),
-            # The same chart split by where the record came from, so a reader
-            # can ask about the registered catalog and the wiki lanes
-            # separately. Both series are always emitted; which is shown is the
-            # page's business, and showing both is the default because the
-            # combined shape is the honest one.
-            "createdByYearBySource": {
-                "catalog": catalog.created_by_year_catalog.rows(),
-                "wiki": catalog.created_by_year_wiki.rows(),
-            },
             "modifiedByYear": catalog.modified_by_year.rows(),
             "modifiedRecency": catalog.modified_recency.rows(),
             "toolTypes": type_rows,
         },
-        "definitions": {
-            "verifiedAuthor": "A current author relationship backed by stable identity evidence.",
-            "listedAuthor": "The canonical Toolhub record contains at least one author attribution.",
-            "verifiedMaintainer": "A current maintainer relationship backed by confirmed access evidence.",
-            "identityOnly": "A publishable person identity with no current author or maintainer relationship.",
-            "newlyVerifiedTool": "A canonical tool whose current relationship first became verified in the window.",
-            "coreMetadata": "Title, description, tool URL, and at least one listed author are present.",
-            "dateBasis": "Dates are canonical Toolhub catalog record dates; unavailable values remain visible.",
-            "noLocalMatch": "Unresolved labels no current rule can reach, so the remaining limit is the rules.",
-            "exactToolhubAccount": "Unresolved labels matching exactly one official Toolhub username.",
-            "handleShaped": "Unreachable labels shaped like a chosen handle, which a public registry could resolve.",
-            "nameShaped": "Unreachable labels indistinguishable from a person name, never resolved from text alone.",
-        },
+        "definitions": DEFINITIONS,
+    }
+
+
+def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str, Any]:
+    """Build one deterministic statistics document from local projections.
+
+    The document is the ``all`` lens, with the other two beside it under
+    ``lenses``. Three whole documents rather than one filtered client-side
+    because most blocks here are not sums the page could re-add: a coverage
+    percentage, a verified-relationship count, and an unresolved-label funnel
+    all have to be recomputed against the narrower set of tools to mean
+    anything. The payload is a few kilobytes, so carrying all three costs far
+    less than a request per switch would.
+    """
+    checked_at = (now or datetime.now(tz=UTC)).astimezone(UTC)
+    totals = _catalog_totals(session, checked_at)
+
+    # Computed once and shared: these describe feeds and people rather than
+    # tools, so they do not narrow with the lens.
+    publishable_person_ids = people_index.public_identity_ids(session)
+    # Filtering in Python rather than `Person.id IN (...)`: the publishable set
+    # is already in memory, and the IN form sent one bind parameter per person.
+    quality_counts: Counter[str] = Counter()
+    for person_id, quality in _stream(session, select(Person.id, Person.identity_quality)):
+        if person_id in publishable_person_ids:
+            quality_counts[quality] += 1
+    shared = _Shared(
+        publishable_person_ids=publishable_person_ids,
+        quality_counts=quality_counts,
+        sources=_source_statistics(session),
+    )
+
+    documents = {name: _lens_document(session, totals[name], checked_at, shared) for name in LENSES}
+    return {
+        "generatedAt": checked_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "source": SOURCE_OFFICIAL,
+        "syncStatus": SYNC_OFFICIAL,
+        **documents[LENS_ALL],
+        # The narrower readings sit beside the full one rather than replacing
+        # it, so a client that knows nothing about lenses still reads the
+        # document it always did.
+        "lenses": {LENS_CATALOG: documents[LENS_CATALOG], LENS_WIKI: documents[LENS_WIKI]},
     }
 
 

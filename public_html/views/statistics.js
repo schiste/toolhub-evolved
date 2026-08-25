@@ -62,46 +62,46 @@ function histogram(title, intro, rows) {
 	</figure>`;
 }
 
-// Which records the created-by-year chart counts. `all` is the default because
-// the combined shape is the honest one: the catalogue really does contain both.
-// The other two exist because the series answer different questions -- when the
-// registered catalogue was written down, and how long the wikis have been
-// writing tools nobody registered -- and read as one chart they hide each other.
-const CREATED_SOURCES = [
-	{ key: "all", label: () => t("statistics.createdSourceAll", "Everything") },
-	{ key: "catalog", label: () => t("statistics.createdSourceCatalog", "Registered tools") },
-	{ key: "wiki", label: () => t("statistics.createdSourceWiki", "User scripts and gadgets") }
+// Which tools every figure on the page is counted against. `all` is the default
+// because the combined reading is the honest one: the catalogue really does
+// hold both. The other two exist because the two lanes answer different
+// questions -- how well the registered catalogue is documented, and how far the
+// wikis have got with tools nobody registered -- and read as one page they hide
+// each other behind an average.
+const LENS_ALL = "all";
+const LENSES = [
+	{ key: LENS_ALL, label: () => t("statistics.lensAll", "Everything") },
+	{ key: "catalog", label: () => t("statistics.lensCatalog", "Registered tools") },
+	{ key: "wiki", label: () => t("statistics.lensWiki", "User scripts and gadgets") }
 ];
 
-/** @param {any} distributions */
-function createdByYear(distributions) {
-	const bySource = distributions?.createdByYearBySource || {};
-	/** @param {string} key */
-	const rows = (key) => (key === "all" ? distributions?.createdByYear : bySource[key]);
-	const title = t("statistics.createdByYear", "Catalog records created by year");
-	const intro = t(
-		"statistics.createdByYearIntro",
-		"Registered tools carry Toolhub creation dates; user scripts and gadgets carry their first revision on the wiki."
-	);
-	// Every series is rendered and one is shown, rather than re-rendering on
-	// each choice: the whole document is already in memory, the largest series
-	// is a few dozen rows, and a chart that is simply present cannot be left
-	// blank by a switch that fires before the data it wanted arrived.
-	return `<div class="statistics-source-choice" data-created-source="all">
-		<fieldset class="statistics-source-choice__control">
-			<legend>${esc(t("statistics.createdSourceLegend", "Count records from"))}</legend>
-			<div class="statistics-source-choice__options">
-			${CREATED_SOURCES.map(
-				(source) =>
-					`<label><input type="radio" name="statistics-created-source" value="${esc(source.key)}" data-created-source-option${source.key === "all" ? " checked" : ""}> <span>${esc(source.label())}</span></label>`
-			).join("")}
-			</div>
-		</fieldset>
-		${CREATED_SOURCES.map(
-			(source) =>
-				`<div class="statistics-source-choice__panel" data-source="${esc(source.key)}">${histogram(title, intro, rows(source.key))}</div>`
+/**
+ * The document to render, and whether the payload can offer a choice at all.
+ *
+ * A snapshot cached before lenses existed carries no `lenses` key. Falling back
+ * to the combined document would then label whole-catalog numbers "wiki", so
+ * the control is withheld instead and the page reads exactly as it used to.
+ *
+ * @param {any} data @param {string} lens
+ */
+function lensDocument(data, lens) {
+	const lenses = data?.lenses;
+	const offered = LENSES.every((entry) => entry.key === LENS_ALL || lenses?.[entry.key]);
+	const report = lens === LENS_ALL || !offered ? data : lenses[lens];
+	return { report: report || {}, offered, lens: offered ? lens : LENS_ALL };
+}
+
+/** @param {string} lens */
+function lensControl(lens) {
+	return `<fieldset class="statistics-lens">
+		<legend>${esc(t("statistics.lensLegend", "Count every figure against"))}</legend>
+		<div class="statistics-lens__options">
+		${LENSES.map(
+			(entry) =>
+				`<label><input type="radio" name="statistics-lens" value="${esc(entry.key)}" data-statistics-lens-option${entry.key === lens ? " checked" : ""}> <span>${esc(entry.label())}</span></label>`
 		).join("")}
-	</div>`;
+		</div>
+	</fieldset>`;
 }
 
 /** @param {Record<string, number> | undefined} values */
@@ -114,25 +114,35 @@ function breakdown(values) {
 		: `<p class="empty">${esc(t("statistics.noEvidence", "No evidence has been indexed yet."))}</p>`;
 }
 
-/** @param {any} data */
-export function statisticsHTML(data) {
-	const catalog = data?.catalog || {};
-	const identities = data?.identities || {};
-	const relationshipMetrics = data?.relationshipMetrics || {};
+/**
+ * Render the whole report from one lens's document.
+ *
+ * Only `generatedAt` is read from the payload itself: it stamps the snapshot,
+ * not the subset being shown, and all three lenses were built in the same pass.
+ *
+ * @param {any} data @param {string} [lens]
+ */
+export function statisticsHTML(data, lens = LENS_ALL) {
+	const view = lensDocument(data, lens);
+	const report = view.report;
+	const catalog = report.catalog || {};
+	const identities = report.identities || {};
+	const relationshipMetrics = report.relationshipMetrics || {};
 	const peopleMetrics = relationshipMetrics.people || {};
 	const rowMetrics = relationshipMetrics.rows || {};
 	const newVerification = relationshipMetrics.newlyVerifiedTools?.last24Hours || {};
 	const evidenceFreshness = relationshipMetrics.evidenceFreshness || {};
-	const sources = data?.sources || {};
-	const distributions = data?.distributions || {};
-	const definitions = data?.definitions || {};
-	return `<div class="statistics-report">
+	const sources = report.sources || {};
+	const distributions = report.distributions || {};
+	const definitions = report.definitions || {};
+	return `<div class="statistics-report" data-statistics-lens="${esc(view.lens)}">
 		<header class="statistics-report__head">
 			<div><p class="statistics-report__eyebrow">${esc(t("statistics.eyebrow", "Catalog quality ledger"))}</p>
 			<h1>${esc(t("statistics.title", "Statistics"))}</h1>
 			<p>${esc(t("statistics.intro", "A transparent view of catalog coverage, identity resolution, and data freshness."))}</p></div>
 			<p class="statistics-report__as-of"><span>${esc(t("statistics.generated", "Snapshot generated"))}</span><time datetime="${esc(data?.generatedAt || "")}">${esc(dateLabel(data?.generatedAt))}</time></p>
 		</header>
+		${view.offered ? lensControl(view.lens) : ""}
 
 		<dl class="statistics-ledger" aria-label="${esc(t("statistics.catalogOverview", "Catalog overview"))}">
 			<div><dt>${esc(t("statistics.totalTools", "Total tools"))}</dt><dd>${esc(count(catalog.totalTools))}</dd></div>
@@ -158,8 +168,8 @@ export function statisticsHTML(data) {
 				<div><dt>${esc(t("statistics.evidenceExpiring", "Evidence expiring within 72h"))}</dt><dd>${esc(count(evidenceFreshness.expiringWithin72Hours))}</dd></div>
 			</dl>
 			<div class="statistics-columns">
-				<div><h3>${esc(t("statistics.authorEvidence", "Author relationship evidence"))}</h3>${breakdown(data?.relationships?.authors)}</div>
-				<div><h3>${esc(t("statistics.maintainerEvidence", "Maintainer relationship evidence"))}</h3>${breakdown(data?.relationships?.maintainers)}</div>
+				<div><h3>${esc(t("statistics.authorEvidence", "Author relationship evidence"))}</h3>${breakdown(report.relationships?.authors)}</div>
+				<div><h3>${esc(t("statistics.maintainerEvidence", "Maintainer relationship evidence"))}</h3>${breakdown(report.relationships?.maintainers)}</div>
 			</div>
 		</section>
 
@@ -168,7 +178,7 @@ export function statisticsHTML(data) {
 			<p>${esc(t("statistics.metadataIntro", "Coverage is measured field by field. A core-complete record has a title, description, tool URL, and listed author."))}</p></div>
 			<div class="statistics-metadata">
 				<div class="statistics-metadata__lead"><span>${esc(t("statistics.coreComplete", "Core-complete tools"))}</span>${coverageMetric(catalog.coreMetadataComplete || {})}</div>
-				${(data?.metadata || [])
+				${(report.metadata || [])
 					.map(
 						(
 							/** @type {{ key?: string, label?: string, count?: number, missingCount?: number, percent?: number }} */ metric
@@ -183,7 +193,7 @@ export function statisticsHTML(data) {
 			<div class="statistics-section__head"><div><p>${esc(t("statistics.sectionThree", "03 · Time"))}</p><h2 id="statistics-time-title">${esc(t("statistics.timeTitle", "When did the catalog change?"))}</h2></div>
 			<p>${esc(definitions.dateBasis || t("statistics.timeIntro", "Unavailable canonical dates remain visible instead of disappearing from the chart."))}</p></div>
 			<div class="statistics-chart-grid">
-				${createdByYear(distributions)}
+				${histogram(t("statistics.createdByYear", "Catalog records created by year"), t("statistics.createdByYearIntro", "Registered tools carry Toolhub creation dates; user scripts and gadgets carry their first revision on the wiki."), distributions.createdByYear)}
 				${histogram(t("statistics.updateRecency", "Time since last update"), t("statistics.updateRecencyIntro", "How recently each canonical record was modified."), distributions.modifiedRecency)}
 			</div>
 			${histogram(t("statistics.modifiedByYear", "Catalog records last updated by year"), t("statistics.modifiedByYearIntro", "A historical distribution of each record's latest modification."), distributions.modifiedByYear)}
@@ -255,26 +265,39 @@ const loadingHTML = () =>
 const errorHTML = () =>
 	`<div class="statistics-error" role="alert"><h1>${esc(t("statistics.errorTitle", "Statistics are temporarily unavailable"))}</h1><p>${esc(t("statistics.errorBody", "The last quality snapshot could not be loaded."))}</p>${button(t("statistics.retry", "Try again"), { attrs: "data-statistics-retry" })}</div>`;
 
-const mountReport = mountJsonReport({
-	name: "statistics",
-	endpoint: "/v1/statistics/",
-	render: statisticsHTML,
-	renderLoading: loadingHTML,
-	renderError: errorHTML
-});
-
 function mountStatistics() {
-	mountReport();
+	// The loaded document and the chosen lens, held for the lifetime of the
+	// view. Switching lens is a re-render of markup already in memory, not a
+	// request: all three documents arrived together, so the page never waits
+	// and never shows a figure from one lens beside a figure from another.
+	/** @type {any} */
+	let payload = null;
+	let lens = LENS_ALL;
+	mountJsonReport({
+		name: "statistics",
+		endpoint: "/v1/statistics/",
+		render: (loaded) => {
+			payload = loaded;
+			return statisticsHTML(loaded, lens);
+		},
+		renderLoading: loadingHTML,
+		renderError: errorHTML
+	})();
 	const root = document.querySelector("[data-statistics-root]");
 	if (!(root instanceof HTMLElement)) return;
 	// Delegated from the root, which outlives every re-render the report does:
-	// the radios themselves are replaced whenever the document reloads, and a
-	// listener bound to them would be thrown away with the markup it was on.
+	// the radios themselves are replaced on each render, and a listener bound
+	// to them would be thrown away with the markup it was on.
 	root.addEventListener("change", (event) => {
 		const option = event.target;
-		if (!(option instanceof HTMLInputElement) || !option.hasAttribute("data-created-source-option")) return;
-		const choice = option.closest(".statistics-source-choice");
-		if (choice instanceof HTMLElement) choice.dataset.createdSource = option.value;
+		if (!(option instanceof HTMLInputElement) || !option.hasAttribute("data-statistics-lens-option")) return;
+		lens = option.value;
+		root.innerHTML = statisticsHTML(payload, lens);
+		// The radio that was just clicked no longer exists. Without this the
+		// focus ring lands back on <body> and a keyboard user loses their place
+		// in a control they are likely to try more than once.
+		const restored = root.querySelector(`[data-statistics-lens-option][value="${CSS.escape(lens)}"]`);
+		if (restored instanceof HTMLElement) restored.focus();
 	});
 }
 

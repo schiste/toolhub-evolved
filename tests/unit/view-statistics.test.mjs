@@ -38,10 +38,6 @@ const payload = {
 	},
 	distributions: {
 		createdByYear: [{ key: "2025", label: "2025", count: 500 }],
-		createdByYearBySource: {
-			catalog: [{ key: "2025", label: "2025", count: 320 }],
-			wiki: [{ key: "2025", label: "2025", count: 180 }]
-		},
 		modifiedByYear: [{ key: "2026", label: "2026", count: 700 }],
 		modifiedRecency: [{ key: "last30Days", label: "Last 30 days", count: 300 }],
 		toolTypes: [{ key: "web-app", label: "Web app", count: 1200 }]
@@ -53,6 +49,29 @@ const payload = {
 		dateBasis: "Canonical date definition"
 	}
 };
+
+// A lens is a whole document, not a slice of one: the counts narrow, and so do
+// the percentages, which is why the page cannot re-derive one lens from another.
+/** @param {number} totalTools @param {number} percent @param {number} created */
+const lens = (totalTools, percent, created) => {
+	const verified = Math.round((totalTools * percent) / 100);
+	const coverage = { count: verified, missingCount: totalTools - verified, percent };
+	return {
+		...payload,
+		catalog: {
+			totalTools,
+			unresolvedAuthorTools: 0,
+			verifiedAuthors: coverage,
+			listedAuthors: coverage,
+			verifiedMaintainers: coverage,
+			coreMetadataComplete: coverage
+		},
+		metadata: [{ key: "title", label: "Title", ...coverage }],
+		distributions: { ...payload.distributions, createdByYear: [{ key: "2025", label: "2025", count: created }] }
+	};
+};
+
+payload.lenses = { catalog: lens(2000, 45, 320), wiki: lens(1000, 4, 180) };
 
 beforeEach(() => {
 	document.body.innerHTML = "";
@@ -114,50 +133,66 @@ test("the wait is a skeleton of the ledger, announced but not written out", () =
 	assert.equal(region.querySelector(".spinner"), null);
 });
 
-test("the creation histogram offers all three lanes and starts on the combined one", () => {
+test("the page opens on the combined reading and offers each lane as a whole page", () => {
 	document.body.innerHTML = statisticsHTML(payload);
-	const choice = document.querySelector(".statistics-source-choice");
-	assert.equal(choice.dataset.createdSource, "all");
+	const report = document.querySelector(".statistics-report");
+	assert.equal(report.dataset.statisticsLens, "all");
 	assert.deepEqual(
-		[...choice.querySelectorAll("[data-created-source-option]")].map((input) => input.value),
+		[...document.querySelectorAll("[data-statistics-lens-option]")].map((input) => input.value),
 		["all", "catalog", "wiki"]
 	);
-	assert.equal(choice.querySelector("[data-created-source-option]:checked").value, "all");
-	// Every panel is drawn up front, so switching lane cannot leave the figure
-	// empty and a reader without scripting still sees the combined series.
-	assert.deepEqual(
-		[...choice.querySelectorAll(".statistics-source-choice__panel")].map((panel) => panel.dataset.source),
-		["all", "catalog", "wiki"]
-	);
-	const counts = [...choice.querySelectorAll(".statistics-source-choice__panel")].map((panel) =>
-		panel.textContent.replaceAll(/\s+/g, " ")
-	);
-	assert.match(counts[0], /500/);
-	assert.match(counts[1], /320/);
-	assert.match(counts[2], /180/);
+	assert.equal(document.querySelector("[data-statistics-lens-option]:checked").value, "all");
+	// The control sits in the report itself, ahead of the first section, so it
+	// reads as governing the page rather than the block it happens to precede.
+	assert.ok(report.querySelector(".statistics-lens"));
 });
 
-test("choosing a lane records the choice on the group rather than redrawing the chart", async () => {
+test("a lens redraws every figure on the page, not only the chart it came from", () => {
+	const wiki = statisticsHTML(payload, "wiki");
+	// The ledger, the coverage meter, and the histogram are three different
+	// blocks; all three have to move together or the page reads as a mix.
+	assert.match(wiki, /1,000/);
+	assert.match(wiki, /<meter min="0" max="100" value="4">4%<\/meter>/);
+	assert.match(wiki, /180/);
+	// Nothing from the combined document leaks through: the wiki lane's own
+	// total is what the ledger shows, and the whole-catalog figure is gone.
+	assert.doesNotMatch(wiki, /3,000/);
+	const registered = statisticsHTML(payload, "catalog");
+	assert.match(registered, /2,000/);
+	assert.match(registered, /<meter min="0" max="100" value="45">45%<\/meter>/);
+	assert.match(registered, /320/);
+});
+
+test("the snapshot timestamp stays the payload's, because all three lenses share it", () => {
+	for (const name of ["all", "catalog", "wiki"]) {
+		assert.match(statisticsHTML(payload, name), /datetime="2026-08-13T12:00:00Z"/);
+	}
+});
+
+test("choosing a lane redraws the report from the document already in memory", async () => {
 	h.backendGetJson.mockResolvedValue(payload);
 	const view = viewStatistics();
 	document.body.innerHTML = view.html;
 	view.mount();
-	await vi.waitFor(() => assert.ok(document.querySelector(".statistics-source-choice")));
-	const wiki = document.querySelector('[data-created-source-option][value="wiki"]');
+	await vi.waitFor(() => assert.ok(document.querySelector(".statistics-lens")));
+	const wiki = document.querySelector('[data-statistics-lens-option][value="wiki"]');
 	wiki.checked = true;
 	wiki.dispatchEvent(new window.Event("change", { bubbles: true }));
-	assert.equal(document.querySelector(".statistics-source-choice").dataset.createdSource, "wiki");
-	// The panels stay where they were: only CSS decides which one is visible.
-	assert.equal(document.querySelectorAll(".statistics-source-choice__panel").length, 3);
+	assert.equal(document.querySelector(".statistics-report").dataset.statisticsLens, "wiki");
+	assert.match(document.body.textContent, /1,000/);
+	// No second request: every lens arrived in the first response.
+	assert.equal(h.backendGetJson.mock.calls.length, 1);
+	// The radio the reader just used was replaced along with the rest of the
+	// report, so focus is put back on its successor rather than left on <body>.
+	assert.equal(document.activeElement.value, "wiki");
+	assert.equal(document.querySelector("[data-statistics-lens-option]:checked").value, "wiki");
 });
 
-test("a report rendered before the split existed still draws the combined series", () => {
-	const older = { ...payload, distributions: { ...payload.distributions, createdByYearBySource: undefined } };
+test("a snapshot cached before lenses existed is drawn without offering the choice", () => {
+	const older = { ...payload, lenses: undefined };
 	document.body.innerHTML = statisticsHTML(older);
-	const panels = document.querySelectorAll(".statistics-source-choice__panel");
-	assert.equal(panels.length, 3);
-	assert.match(panels[0].textContent, /500/);
-	// The lane panels draw empty rather than repeating the combined numbers,
-	// which would read as a split that had been measured.
-	assert.equal(panels[1].querySelectorAll("li").length, 0);
+	// Withheld rather than falling back: a "wiki" option that quietly showed
+	// whole-catalog numbers would be worse than no option at all.
+	assert.equal(document.querySelector(".statistics-lens"), null);
+	assert.match(document.body.textContent, /3,000/);
 });

@@ -153,8 +153,9 @@ def _created_histogram(source=None):
             source=SOURCE_WIKI_USERSCRIPT,
         )
         session.flush()
-        distributions = catalog_statistics.build_snapshot(session, now=now)["distributions"]
-    series = distributions["createdByYear"] if source is None else distributions["createdByYearBySource"][source]
+        payload = catalog_statistics.build_snapshot(session, now=now)
+    document = payload if source is None else payload["lenses"][source]
+    series = document["distributions"]["createdByYear"]
     return {bucket["key"]: bucket["count"] for bucket in series if bucket["count"]}
 
 
@@ -578,8 +579,9 @@ def _seed_every_branch(session, now):
         },
     )
     _tool(session, "undated", {"title": "Undated", "created_date": "not-a-date"})
-    # Sourced from a wiki so the by-source split is pinned with both lanes
-    # populated; every other counter reads a record field and ignores source.
+    # Sourced from a wiki so both lens documents are pinned with something in
+    # them; source is what decides which lens a record is counted under, and
+    # every other counter reads a record field and ignores it.
     _tool(
         session,
         "ancient",
@@ -738,6 +740,103 @@ def test_the_snapshot_payload_matches_the_recorded_golden_document():
         GOLDEN_SNAPSHOT.write_text(json.dumps(payload, indent="\t", sort_keys=True) + "\n")
 
     assert payload == json.loads(GOLDEN_SNAPSHOT.read_text())
+
+
+def _every_lens():
+    """The three documents built from the golden seed, keyed by lens name."""
+    now = datetime(2026, 8, 25, 12, tzinfo=UTC)
+    with db.session_scope() as session:
+        _seed_every_branch(session, now)
+        payload = catalog_statistics.build_snapshot(session, now=now)
+    return {"all": payload, "catalog": payload["lenses"]["catalog"], "wiki": payload["lenses"]["wiki"]}
+
+
+def test_the_two_lanes_partition_the_catalog_rather_than_overlapping_it():
+    """Every tool is counted once in `all` and once in exactly one lane.
+
+    A record's lane comes from its source column, so the two narrow documents
+    have to add back up to the wide one. If they ever stop, a tool has either
+    been dropped from both lanes or double-counted in one.
+    """
+    lenses = _every_lens()
+    assert lenses["catalog"]["catalog"]["totalTools"] + lenses["wiki"]["catalog"]["totalTools"] == (
+        lenses["all"]["catalog"]["totalTools"]
+    )
+    assert lenses["catalog"]["identities"]["unresolvedTools"] + lenses["wiki"]["identities"]["unresolvedTools"] == (
+        lenses["all"]["identities"]["unresolvedTools"]
+    )
+
+
+def test_a_lens_recomputes_coverage_instead_of_reporting_the_whole_catalogs():
+    """Percentages are the reason a lens cannot be a client-side filter.
+
+    Sums narrow by addition; a coverage ratio does not. The registered lane
+    describes four of its five tools where the wiki lane describes none of
+    its one, and neither number can be recovered from the combined 33%.
+    """
+    lenses = _every_lens()
+    assert lenses["all"]["catalog"]["coreMetadataComplete"] == {"count": 2, "missingCount": 4, "percent": 33}
+    assert lenses["catalog"]["catalog"]["coreMetadataComplete"] == {"count": 2, "missingCount": 3, "percent": 40}
+    assert lenses["wiki"]["catalog"]["coreMetadataComplete"] == {"count": 0, "missingCount": 1, "percent": 0}
+    per_lens = {name: {row["key"]: row["percent"] for row in document["metadata"]} for name, document in lenses.items()}
+    assert per_lens["all"]["description"] == 33
+    assert per_lens["catalog"]["description"] == 40
+    assert per_lens["wiki"]["description"] == 0
+
+
+def test_a_lens_recounts_verified_relationships_against_its_own_tools():
+    """Relationship evidence is looked up per lens, not sliced afterwards.
+
+    The seeded verified author and maintainer both sit on registered tools,
+    so the wiki lane has to report zero of each and count its publishable
+    people as identity-only -- they hold no relationship to anything it shows.
+    """
+    lenses = _every_lens()
+    assert lenses["catalog"]["catalog"]["verifiedAuthors"]["count"] == 1
+    assert lenses["catalog"]["catalog"]["verifiedMaintainers"]["count"] == 1
+    assert lenses["wiki"]["catalog"]["verifiedAuthors"] == {"count": 0, "missingCount": 1, "percent": 0}
+    assert lenses["wiki"]["catalog"]["verifiedMaintainers"] == {"count": 0, "missingCount": 1, "percent": 0}
+    assert lenses["wiki"]["relationshipMetrics"]["rows"] == {"stale": 0, "total": 0, "verified": 0}
+    assert lenses["wiki"]["relationshipMetrics"]["people"]["identityOnly"] == (
+        lenses["wiki"]["identities"]["publishablePeople"]
+    )
+
+
+def test_a_lens_narrows_the_unresolved_vocabulary_to_the_tools_it_shows():
+    """The funnel follows the labels, and labels arrive attached to tools.
+
+    Every seeded author token sits on a registered tool, so the wiki lane's
+    funnel is empty rather than a copy of the combined one. `sourceBindings`
+    is the documented exception: a binding names a feed, never a tool.
+    """
+    lenses = _every_lens()
+    assert lenses["catalog"]["attribution"]["distinctLabels"] == 5
+    assert lenses["wiki"]["attribution"]["distinctLabels"] == 0
+    assert lenses["wiki"]["attribution"]["noLocalMatch"] == 0
+    assert lenses["wiki"]["identities"]["unresolvedLabels"] == 0
+    assert lenses["wiki"]["attribution"]["sourceBindings"] == lenses["all"]["attribution"]["sourceBindings"]
+
+
+def test_a_label_on_a_tool_the_catalog_no_longer_holds_is_left_out():
+    """An orphaned evidence row is backlog, not vocabulary.
+
+    The seed carries a label for `vanished`, a tool no lens contains. It used
+    to inflate the combined funnel because the label branch was the one place
+    that ignored the catalog; both lanes agreeing to drop it is what makes
+    their counts add up to the wide document's.
+    """
+    lenses = _every_lens()
+    assert lenses["all"]["identities"]["unresolvedLabels"] == 5
+    labels = lenses["catalog"]["attribution"]["distinctLabels"] + lenses["wiki"]["attribution"]["distinctLabels"]
+    assert labels == lenses["all"]["attribution"]["distinctLabels"]
+
+
+def test_the_definitions_read_the_same_under_every_lens():
+    """Narrowing the catalog changes the numbers, never what they are called."""
+    lenses = _every_lens()
+    assert lenses["catalog"]["definitions"] == lenses["all"]["definitions"]
+    assert lenses["wiki"]["definitions"] == lenses["all"]["definitions"]
+    assert lenses["wiki"]["sources"] == lenses["all"]["sources"]
 
 
 def test_a_request_serves_a_stale_snapshot_rather_than_rebuilding_it():

@@ -1,11 +1,11 @@
 {
 	"attribution": {
 		"ambiguousToolhubAccount": 1,
-		"distinctLabels": 6,
+		"distinctLabels": 5,
 		"exactToolhubAccount": 1,
-		"noLocalMatch": 3,
+		"noLocalMatch": 2,
 		"noLocalMatchHandleShaped": 1,
-		"noLocalMatchNameShaped": 2,
+		"noLocalMatchNameShaped": 1,
 		"sourceBindingMethods": {
 			"handle": 1
 		},
@@ -88,42 +88,6 @@
 				"label": "Date unavailable"
 			}
 		],
-		"createdByYearBySource": {
-			"catalog": [
-				{
-					"count": 1,
-					"key": "2021",
-					"label": "2021"
-				},
-				{
-					"count": 1,
-					"key": "2022",
-					"label": "2022"
-				},
-				{
-					"count": 1,
-					"key": "2023",
-					"label": "2023"
-				},
-				{
-					"count": 1,
-					"key": "2024",
-					"label": "2024"
-				},
-				{
-					"count": 1,
-					"key": "unknown",
-					"label": "Date unavailable"
-				}
-			],
-			"wiki": [
-				{
-					"count": 1,
-					"key": "2015",
-					"label": "2015"
-				}
-			]
-		},
 		"modifiedByYear": [
 			{
 				"count": 1,
@@ -206,8 +170,499 @@
 		"handlePeople": 1,
 		"publishablePeople": 3,
 		"stablePeople": 2,
-		"unresolvedLabels": 6,
+		"unresolvedLabels": 5,
 		"unresolvedTools": 6
+	},
+	"lenses": {
+		"catalog": {
+			"attribution": {
+				"ambiguousToolhubAccount": 1,
+				"distinctLabels": 5,
+				"exactToolhubAccount": 1,
+				"noLocalMatch": 2,
+				"noLocalMatchHandleShaped": 1,
+				"noLocalMatchNameShaped": 1,
+				"sourceBindingMethods": {
+					"handle": 1
+				},
+				"sourceBindings": {
+					"bound": 1,
+					"unresolved": 1
+				},
+				"verifiedHandleOnly": 1
+			},
+			"catalog": {
+				"activeTools": 4,
+				"coreMetadataComplete": {
+					"count": 2,
+					"missingCount": 3,
+					"percent": 40
+				},
+				"deprecatedTools": 1,
+				"experimentalTools": 1,
+				"listedAuthors": {
+					"count": 2,
+					"missingCount": 3,
+					"percent": 40
+				},
+				"totalTools": 5,
+				"unresolvedAuthorTools": 5,
+				"verifiedAuthors": {
+					"count": 1,
+					"missingCount": 4,
+					"percent": 20
+				},
+				"verifiedMaintainers": {
+					"count": 1,
+					"missingCount": 4,
+					"percent": 20
+				}
+			},
+			"definitions": {
+				"coreMetadata": "Title, description, tool URL, and at least one listed author are present.",
+				"dateBasis": "Dates are canonical Toolhub catalog record dates; unavailable values remain visible.",
+				"exactToolhubAccount": "Unresolved labels matching exactly one official Toolhub username.",
+				"handleShaped": "Unreachable labels shaped like a chosen handle, which a public registry could resolve.",
+				"identityOnly": "A publishable person identity with no current author or maintainer relationship.",
+				"listedAuthor": "The canonical Toolhub record contains at least one author attribution.",
+				"nameShaped": "Unreachable labels indistinguishable from a person name, never resolved from text alone.",
+				"newlyVerifiedTool": "A canonical tool whose current relationship first became verified in the window.",
+				"noLocalMatch": "Unresolved labels no current rule can reach, so the remaining limit is the rules.",
+				"verifiedAuthor": "A current author relationship backed by stable identity evidence.",
+				"verifiedMaintainer": "A current maintainer relationship backed by confirmed access evidence."
+			},
+			"distributions": {
+				"createdByYear": [
+					{
+						"count": 1,
+						"key": "2021",
+						"label": "2021"
+					},
+					{
+						"count": 1,
+						"key": "2022",
+						"label": "2022"
+					},
+					{
+						"count": 1,
+						"key": "2023",
+						"label": "2023"
+					},
+					{
+						"count": 1,
+						"key": "2024",
+						"label": "2024"
+					},
+					{
+						"count": 1,
+						"key": "unknown",
+						"label": "Date unavailable"
+					}
+				],
+				"modifiedByYear": [
+					{
+						"count": 1,
+						"key": "2021",
+						"label": "2021"
+					},
+					{
+						"count": 1,
+						"key": "2025",
+						"label": "2025"
+					},
+					{
+						"count": 2,
+						"key": "2026",
+						"label": "2026"
+					},
+					{
+						"count": 1,
+						"key": "unknown",
+						"label": "Date unavailable"
+					}
+				],
+				"modifiedRecency": [
+					{
+						"count": 1,
+						"key": "last30Days",
+						"label": "Last 30 days"
+					},
+					{
+						"count": 0,
+						"key": "days31To90",
+						"label": "31-90 days"
+					},
+					{
+						"count": 2,
+						"key": "days91To365",
+						"label": "91 days-1 year"
+					},
+					{
+						"count": 0,
+						"key": "years1To3",
+						"label": "1-3 years"
+					},
+					{
+						"count": 1,
+						"key": "older",
+						"label": "More than 3 years"
+					},
+					{
+						"count": 1,
+						"key": "unknown",
+						"label": "Date unavailable"
+					}
+				],
+				"toolTypes": [
+					{
+						"count": 2,
+						"key": "unspecified",
+						"label": "Unspecified"
+					},
+					{
+						"count": 2,
+						"key": "web-app",
+						"label": "web app"
+					},
+					{
+						"count": 1,
+						"key": "bot",
+						"label": "bot"
+					}
+				]
+			},
+			"identities": {
+				"handlePeople": 1,
+				"publishablePeople": 3,
+				"stablePeople": 2,
+				"unresolvedLabels": 5,
+				"unresolvedTools": 5
+			},
+			"metadata": [
+				{
+					"count": 5,
+					"key": "title",
+					"label": "Title",
+					"missingCount": 0,
+					"percent": 100
+				},
+				{
+					"count": 2,
+					"key": "description",
+					"label": "Description",
+					"missingCount": 3,
+					"percent": 40
+				},
+				{
+					"count": 2,
+					"key": "url",
+					"label": "Url",
+					"missingCount": 3,
+					"percent": 40
+				},
+				{
+					"count": 3,
+					"key": "tool_type",
+					"label": "Tool Type",
+					"missingCount": 2,
+					"percent": 60
+				},
+				{
+					"count": 1,
+					"key": "repository",
+					"label": "Repository",
+					"missingCount": 4,
+					"percent": 20
+				},
+				{
+					"count": 1,
+					"key": "user_docs_url",
+					"label": "User Docs Url",
+					"missingCount": 4,
+					"percent": 20
+				}
+			],
+			"relationshipMetrics": {
+				"evidenceFreshness": {
+					"active": 2,
+					"expired": 1,
+					"expiringWithin72Hours": 1,
+					"withdrawn": 1
+				},
+				"newlyVerifiedTools": {
+					"last24Hours": {
+						"all": 1,
+						"authors": 1,
+						"maintainers": 0
+					},
+					"last7Days": {
+						"all": 2,
+						"authors": 1,
+						"maintainers": 1
+					}
+				},
+				"people": {
+					"identityOnly": 1,
+					"verifiedAuthors": 1,
+					"verifiedMaintainers": 1,
+					"withAnyCurrentRelationship": 2,
+					"withAnyVerifiedRelationship": 1
+				},
+				"rows": {
+					"stale": 1,
+					"total": 4,
+					"verified": 2
+				},
+				"tools": {
+					"verifiedAuthors": 1,
+					"verifiedMaintainers": 1
+				}
+			},
+			"relationships": {
+				"authors": {
+					"stale": 1,
+					"unverified": 1,
+					"verified": 1
+				},
+				"maintainers": {
+					"verified": 1
+				}
+			},
+			"sources": {
+				"classifications": {
+					"community": 1,
+					"notChecked": 1,
+					"official": 1
+				},
+				"items": 15,
+				"statuses": {
+					"notChecked": 1,
+					"unverified": 1,
+					"verified": 1
+				},
+				"total": 3,
+				"validFeeds": 2
+			}
+		},
+		"wiki": {
+			"attribution": {
+				"ambiguousToolhubAccount": 0,
+				"distinctLabels": 0,
+				"exactToolhubAccount": 0,
+				"noLocalMatch": 0,
+				"noLocalMatchHandleShaped": 0,
+				"noLocalMatchNameShaped": 0,
+				"sourceBindingMethods": {
+					"handle": 1
+				},
+				"sourceBindings": {
+					"bound": 1,
+					"unresolved": 1
+				},
+				"verifiedHandleOnly": 0
+			},
+			"catalog": {
+				"activeTools": 1,
+				"coreMetadataComplete": {
+					"count": 0,
+					"missingCount": 1,
+					"percent": 0
+				},
+				"deprecatedTools": 0,
+				"experimentalTools": 0,
+				"listedAuthors": {
+					"count": 0,
+					"missingCount": 1,
+					"percent": 0
+				},
+				"totalTools": 1,
+				"unresolvedAuthorTools": 0,
+				"verifiedAuthors": {
+					"count": 0,
+					"missingCount": 1,
+					"percent": 0
+				},
+				"verifiedMaintainers": {
+					"count": 0,
+					"missingCount": 1,
+					"percent": 0
+				}
+			},
+			"definitions": {
+				"coreMetadata": "Title, description, tool URL, and at least one listed author are present.",
+				"dateBasis": "Dates are canonical Toolhub catalog record dates; unavailable values remain visible.",
+				"exactToolhubAccount": "Unresolved labels matching exactly one official Toolhub username.",
+				"handleShaped": "Unreachable labels shaped like a chosen handle, which a public registry could resolve.",
+				"identityOnly": "A publishable person identity with no current author or maintainer relationship.",
+				"listedAuthor": "The canonical Toolhub record contains at least one author attribution.",
+				"nameShaped": "Unreachable labels indistinguishable from a person name, never resolved from text alone.",
+				"newlyVerifiedTool": "A canonical tool whose current relationship first became verified in the window.",
+				"noLocalMatch": "Unresolved labels no current rule can reach, so the remaining limit is the rules.",
+				"verifiedAuthor": "A current author relationship backed by stable identity evidence.",
+				"verifiedMaintainer": "A current maintainer relationship backed by confirmed access evidence."
+			},
+			"distributions": {
+				"createdByYear": [
+					{
+						"count": 1,
+						"key": "2015",
+						"label": "2015"
+					}
+				],
+				"modifiedByYear": [
+					{
+						"count": 1,
+						"key": "2015",
+						"label": "2015"
+					}
+				],
+				"modifiedRecency": [
+					{
+						"count": 0,
+						"key": "last30Days",
+						"label": "Last 30 days"
+					},
+					{
+						"count": 0,
+						"key": "days31To90",
+						"label": "31-90 days"
+					},
+					{
+						"count": 0,
+						"key": "days91To365",
+						"label": "91 days-1 year"
+					},
+					{
+						"count": 0,
+						"key": "years1To3",
+						"label": "1-3 years"
+					},
+					{
+						"count": 1,
+						"key": "older",
+						"label": "More than 3 years"
+					},
+					{
+						"count": 0,
+						"key": "unknown",
+						"label": "Date unavailable"
+					}
+				],
+				"toolTypes": [
+					{
+						"count": 1,
+						"key": "unspecified",
+						"label": "Unspecified"
+					}
+				]
+			},
+			"identities": {
+				"handlePeople": 1,
+				"publishablePeople": 3,
+				"stablePeople": 2,
+				"unresolvedLabels": 0,
+				"unresolvedTools": 1
+			},
+			"metadata": [
+				{
+					"count": 1,
+					"key": "title",
+					"label": "Title",
+					"missingCount": 0,
+					"percent": 100
+				},
+				{
+					"count": 0,
+					"key": "description",
+					"label": "Description",
+					"missingCount": 1,
+					"percent": 0
+				},
+				{
+					"count": 0,
+					"key": "url",
+					"label": "Url",
+					"missingCount": 1,
+					"percent": 0
+				},
+				{
+					"count": 0,
+					"key": "tool_type",
+					"label": "Tool Type",
+					"missingCount": 1,
+					"percent": 0
+				},
+				{
+					"count": 0,
+					"key": "repository",
+					"label": "Repository",
+					"missingCount": 1,
+					"percent": 0
+				},
+				{
+					"count": 0,
+					"key": "user_docs_url",
+					"label": "User Docs Url",
+					"missingCount": 1,
+					"percent": 0
+				}
+			],
+			"relationshipMetrics": {
+				"evidenceFreshness": {
+					"active": 0,
+					"expired": 0,
+					"expiringWithin72Hours": 0,
+					"withdrawn": 0
+				},
+				"newlyVerifiedTools": {
+					"last24Hours": {
+						"all": 0,
+						"authors": 0,
+						"maintainers": 0
+					},
+					"last7Days": {
+						"all": 0,
+						"authors": 0,
+						"maintainers": 0
+					}
+				},
+				"people": {
+					"identityOnly": 3,
+					"verifiedAuthors": 0,
+					"verifiedMaintainers": 0,
+					"withAnyCurrentRelationship": 0,
+					"withAnyVerifiedRelationship": 0
+				},
+				"rows": {
+					"stale": 0,
+					"total": 0,
+					"verified": 0
+				},
+				"tools": {
+					"verifiedAuthors": 0,
+					"verifiedMaintainers": 0
+				}
+			},
+			"relationships": {
+				"authors": {},
+				"maintainers": {}
+			},
+			"sources": {
+				"classifications": {
+					"community": 1,
+					"notChecked": 1,
+					"official": 1
+				},
+				"items": 15,
+				"statuses": {
+					"notChecked": 1,
+					"unverified": 1,
+					"verified": 1
+				},
+				"total": 3,
+				"validFeeds": 2
+			}
+		}
 	},
 	"metadata": [
 		{
