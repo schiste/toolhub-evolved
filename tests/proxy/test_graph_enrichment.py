@@ -387,3 +387,87 @@ def test_status_summary_counts_by_status_and_flags_stale_versions():
     assert summary[graph_enrichment.STATUS_ENRICHED] == 1
     assert summary[graph_enrichment.STATUS_NO_METADATA] == 1
     assert summary["stale_version"] == 1
+
+
+def _selects_from(statements, table, column):
+    """Statements that read one column of one table, however SQLAlchemy quoted it."""
+    return [
+        text
+        for text in statements
+        if table in text.lower() and column in text.lower() and text.lstrip().upper().startswith("SELECT")
+    ]
+
+
+def test_the_candidate_scan_never_reads_the_enrichment_payload_columns():
+    """The repair scan decides from four scalars; the facets it would rebuild are not among them.
+
+    `refresh_candidates` reads the canonical `record` because it ranks by which
+    facets are missing, but on the enrichment side it only needs the name, the
+    deferral, the version and the status. Selecting the entity also loaded
+    `facets`, `provenance` and `source_timestamps` for every materialized tool
+    -- on top of every canonical record -- which OOM-killed this job on every
+    hourly tick for a day once discovery opened up to every Wikimedia project.
+
+    Asserted with nothing due, so the only reads are the scan itself.
+    """
+    from sqlalchemy import event
+
+    with db.session_scope() as s:
+        s.add(_canonical("current"))
+        s.add(
+            GraphToolEnrichment(
+                tool_name="current",
+                enrichment_version=graph_enrichment.ENRICHMENT_VERSION,
+                status=graph_enrichment.STATUS_ENRICHED,
+            )
+        )
+
+    seen = []
+
+    def record(_conn, _cursor, statement, *_rest):
+        seen.append(statement)
+
+    engine = db.engine()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        summary = graph_enrichment.refresh_candidates(limit=10)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert summary["candidates"] == 0, "fixture must leave nothing due, or the repair reads facets legitimately"
+    for column in ("facets", "provenance", "source_timestamps", "last_error"):
+        offenders = _selects_from(seen, "graph_tool_enrichment", column)
+        assert not offenders, f"candidate scan read {column}: {offenders[:1]}"
+
+
+def test_the_status_summary_counts_without_reading_the_facets_it_counts():
+    """A tally of two columns must not load the blob attached to each row."""
+    from sqlalchemy import event
+
+    with db.session_scope() as s:
+        s.add(_canonical("c1"))
+        s.add(
+            GraphToolEnrichment(
+                tool_name="c1",
+                enrichment_version=graph_enrichment.ENRICHMENT_VERSION,
+                status=graph_enrichment.STATUS_ENRICHED,
+                facets={"tool_type": "bot"},
+            )
+        )
+
+    seen = []
+
+    def record(_conn, _cursor, statement, *_rest):
+        seen.append(statement)
+
+    engine = db.engine()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        summary = graph_enrichment.status_summary()
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert summary["materialized"] == 1
+    for column in ("facets", "provenance", "source_timestamps", "last_error"):
+        offenders = _selects_from(seen, "graph_tool_enrichment", column)
+        assert not offenders, f"status summary read {column}: {offenders[:1]}"

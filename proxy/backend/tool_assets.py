@@ -25,6 +25,8 @@ ALLOWED_CONTENT_TYPES = {
     "image/webp": ".webp",
 }
 MAX_CANDIDATES = 200
+# Rows per fetch for the projection scan; see `refresh_candidates`.
+STREAM_BATCH_SIZE = 500
 # Toolhub's toolinfo schema asks for a Wikimedia Commons file page as a tool's
 # icon -- https://commons.wikimedia.org/wiki/File:Adiutor_icon.svg and the like
 # -- so the URL a well-formed record declares is a description page, which is
@@ -105,7 +107,13 @@ def _fetch_icon(session: requests.Session, url: str) -> tuple[outbound.BoundedRe
     return response, _content_suffix(response.content_type)
 
 
-def _icon_source(row: CatalogToolProjection) -> tuple[str, str]:
+def _icon_source(row: Any) -> tuple[str, str]:  # noqa: ANN401 - projection entity or a two-column Row
+    """Resolve a projection's declared icon URL and which source supplied it.
+
+    Typed loosely because `refresh_candidates` hands this a `Row` of just
+    `effective_record` and `provenance` rather than the whole entity; both
+    expose the two attributes this reads by the same names.
+    """
     record = row.effective_record if isinstance(row.effective_record, dict) else {}
     url = str(record.get("icon") or "").strip()
     evidence = row.provenance.get("icon", []) if isinstance(row.provenance, dict) else []
@@ -188,22 +196,50 @@ def refresh_tool(tool_name: str, *, session: requests.Session | None = None) -> 
 
 
 def refresh_candidates(limit: int = MAX_CANDIDATES) -> dict[str, int]:
+    """Count every tool whose cached icon is missing, stale, or due a retry."""
     bounded = max(1, min(MAX_CANDIDATES, int(limit or 1)))
-    with db.session_scope() as s:
-        projections = list(s.execute(select(CatalogToolProjection).order_by(CatalogToolProjection.tool_name)).scalars())
-        assets = {row.tool_name: row for row in s.execute(select(ToolAssetCache)).scalars()}
     candidates = []
-    for projection in projections:
-        url, _source = _icon_source(projection)
-        asset = assets.get(projection.tool_name)
-        retry_ready = asset is not None and (asset.next_attempt_at is None or asset.next_attempt_at <= utcnow())
-        if (
-            asset is None
-            or asset.source_url != url
-            or asset.status == "pending"
-            or (asset.status == "error" and retry_ready)
-        ):
-            candidates.append(projection.tool_name)
+    with db.session_scope() as s:
+        # Columns, not entities, and the projection scan streams. This loop
+        # keeps only tool names, but selecting `CatalogToolProjection` loaded
+        # four JSON blobs and `search_text` per row -- ~10KB each -- and
+        # `ToolAssetCache` whole on top of it. Once discovery opened up to
+        # every Wikimedia project the projection table outgrew the job's
+        # memory, and every hourly tick was OOM-killed for a day. `yield_per`
+        # keeps peak memory at one batch of projections however far the
+        # catalogue grows; the asset side stays a dict because the loop needs
+        # random access to it.
+        assets = {
+            row.tool_name: row
+            for row in s.execute(
+                select(
+                    ToolAssetCache.tool_name,
+                    ToolAssetCache.source_url,
+                    ToolAssetCache.status,
+                    ToolAssetCache.next_attempt_at,
+                )
+            )
+        }
+        projections = s.execute(
+            select(
+                CatalogToolProjection.tool_name,
+                CatalogToolProjection.effective_record,
+                CatalogToolProjection.provenance,
+            )
+            .order_by(CatalogToolProjection.tool_name)
+            .execution_options(yield_per=STREAM_BATCH_SIZE)
+        )
+        for projection in projections:
+            url, _source = _icon_source(projection)
+            asset = assets.get(projection.tool_name)
+            retry_ready = asset is not None and (asset.next_attempt_at is None or asset.next_attempt_at <= utcnow())
+            if (
+                asset is None
+                or asset.source_url != url
+                or asset.status == "pending"
+                or (asset.status == "error" and retry_ready)
+            ):
+                candidates.append(projection.tool_name)
     ready = errors = 0
     http = requests.Session()
     for name in candidates[:bounded]:

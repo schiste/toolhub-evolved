@@ -172,3 +172,47 @@ def test_refresh_candidates_bounds_processing_by_limit(monkeypatch):
     summary = catalog_validation.refresh_candidates(limit=1)
 
     assert summary == {"candidates": 2, "processed": 1, "reachable": 1, "errors": 0}
+
+
+def _selects_from(statements, table, column):
+    """Statements that read one column of one table, however SQLAlchemy quoted it."""
+    return [
+        text
+        for text in statements
+        if table in text.lower() and column in text.lower() and text.lstrip().upper().startswith("SELECT")
+    ]
+
+
+def test_the_candidate_scan_never_reads_the_projection_columns_it_does_not_use():
+    """The scan reads two JSON blobs per row, and must not drag the other three along.
+
+    `_candidate_rows` needs `effective_record` to find URLs and `validation` to
+    tell which are still fresh. A projection row also carries `provenance`,
+    `source_timestamps` and `search_text`, averaging ~10KB together in
+    production. Selecting the entity loaded all of it across 82,911 candidate
+    URLs, which OOM-killed this job on every hourly tick for a day.
+
+    Checking the emitted SQL rather than memory keeps this honest on SQLite,
+    where the rows are far too small to OOM anything.
+    """
+    from sqlalchemy import event
+
+    with db.session_scope() as s:
+        s.add(CatalogToolProjection(tool_name="alpha", effective_record={"url": "https://alpha.example"}))
+
+    seen = []
+
+    def record(_conn, _cursor, statement, *_rest):
+        seen.append(statement)
+
+    engine = db.engine()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        total, _candidates = catalog_validation._candidate_rows(10)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert total == 1
+    for column in ("provenance", "source_timestamps", "search_text"):
+        offenders = _selects_from(seen, "catalog_tool_projection", column)
+        assert not offenders, f"candidate scan read {column}: {offenders[:1]}"

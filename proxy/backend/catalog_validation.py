@@ -15,6 +15,8 @@ from backend.models import CatalogToolProjection, utcnow
 
 MAX_CHECKS = 200
 FRESH_FOR = timedelta(days=7)
+# Rows per fetch for the candidate scan; see `_candidate_rows`.
+STREAM_BATCH_SIZE = 500
 CALLER = outbound.Caller(
     user_agent="toolhub-evolved/0.2 (https://toolhub-evolved.toolforge.org)",
     accept="*/*",
@@ -35,21 +37,41 @@ def _parsed(value: Any) -> datetime | None:  # noqa: ANN401
 
 
 def _candidate_rows(limit: int) -> tuple[int, list[tuple[str, str, str]]]:
+    """Count every URL due for a probe and return the first `limit` of them.
+
+    Three columns, not the row, and streamed rather than materialized. The scan
+    reads only the effective record and its recorded validation state, but a
+    projection row also carries `provenance`, `source_timestamps` and
+    `search_text`; selecting the entity dragged all of it in. Combined with a
+    candidate pool that went from ~20,000 URLs to 82,911 when discovery opened
+    up to every Wikimedia project, that OOM-killed this job on every hourly
+    tick for a day. `yield_per` is what actually bounds it: the loop keeps only
+    the small `(name, field, url)` tuples, so peak memory is a batch of rows
+    rather than the whole table, whatever the catalogue grows to next.
+    """
     now = utcnow()
-    with db.session_scope() as s:
-        rows = list(s.execute(select(CatalogToolProjection).order_by(CatalogToolProjection.tool_name)).scalars())
     candidates = []
-    for row in rows:
-        record = row.effective_record if isinstance(row.effective_record, dict) else {}
-        validation = row.validation if isinstance(row.validation, dict) else {}
-        for field in sorted(URL_FIELDS):
-            value = _text(record.get(field))
-            if not value:
-                continue
-            state = validation.get(field) if isinstance(validation.get(field), dict) else {}
-            checked = _parsed(state.get("checkedAt"))
-            if state.get("checkedValue") != value or checked is None or checked + FRESH_FOR <= now:
-                candidates.append((row.tool_name, field, value))
+    with db.session_scope() as s:
+        rows = s.execute(
+            select(
+                CatalogToolProjection.tool_name,
+                CatalogToolProjection.effective_record,
+                CatalogToolProjection.validation,
+            )
+            .order_by(CatalogToolProjection.tool_name)
+            .execution_options(yield_per=STREAM_BATCH_SIZE)
+        )
+        for row in rows:
+            record = row.effective_record if isinstance(row.effective_record, dict) else {}
+            validation = row.validation if isinstance(row.validation, dict) else {}
+            for field in sorted(URL_FIELDS):
+                value = _text(record.get(field))
+                if not value:
+                    continue
+                state = validation.get(field) if isinstance(validation.get(field), dict) else {}
+                checked = _parsed(state.get("checkedAt"))
+                if state.get("checkedValue") != value or checked is None or checked + FRESH_FOR <= now:
+                    candidates.append((row.tool_name, field, value))
     return len(candidates), candidates[:limit]
 
 

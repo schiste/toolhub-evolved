@@ -24,6 +24,8 @@ from backend.sync import REVIEW_APPROVED
 
 ENRICHMENT_VERSION = 1
 MAX_REFRESH_TOOLS = 1000
+# Rows per fetch for the two full-table scans; see `refresh_candidates`.
+STREAM_BATCH_SIZE = 500
 LIST_FIELDS = ("for_wikis", "technology_used", "tasks", "audiences", "available_ui_languages")
 SCALAR_FIELDS = ("tool_type",)
 FACET_FIELDS = (*LIST_FIELDS, *SCALAR_FIELDS)
@@ -247,22 +249,44 @@ def refresh_candidates(limit: int = 500) -> dict[str, int]:
     """Repair missing, failed, or old-version enrichment rows in priority order."""
     bounded = max(1, min(MAX_REFRESH_TOOLS, int(limit or 1)))
     now = utcnow()
-    with db.session_scope() as s:
-        canonical = list(s.execute(select(CanonicalToolCache)).scalars())
-        existing = {row.tool_name: row for row in s.execute(select(GraphToolEnrichment)).scalars()}
     candidates = []
-    for row in canonical:
-        enrichment = existing.get(row.tool_name)
-        if enrichment is not None and enrichment.next_attempt_at is not None and enrichment.next_attempt_at > now:
-            continue
-        stale = enrichment is None or enrichment.enrichment_version != ENRICHMENT_VERSION
-        failed = enrichment is not None and enrichment.status == STATUS_ERROR
-        if not stale and not failed:
-            continue
-        record = row.record if isinstance(row.record, dict) else {}
-        graph_eligible = bool(_values(record.get("keywords")) or _values(record.get("tasks")))
-        missing = sum(not _values(record.get(field)) for field in FACET_FIELDS)
-        candidates.append((not graph_eligible, -missing, row.tool_name))
+    with db.session_scope() as s:
+        # Columns, not entities, and the canonical scan streams. The
+        # scheduling side reads four scalars, so loading `GraphToolEnrichment`
+        # whole also dragged in its `facets` blob for every tool; the canonical
+        # side genuinely needs `record`, which is why it is the one that gets
+        # `yield_per` -- only a batch of payloads is resident at a time, and
+        # the loop keeps just the small priority tuples. Loading both tables
+        # whole is what OOM-killed this job on every hourly tick for a day
+        # once discovery opened up to every Wikimedia project.
+        existing = {
+            row.tool_name: row
+            for row in s.execute(
+                select(
+                    GraphToolEnrichment.tool_name,
+                    GraphToolEnrichment.next_attempt_at,
+                    GraphToolEnrichment.enrichment_version,
+                    GraphToolEnrichment.status,
+                )
+            )
+        }
+        canonical = s.execute(
+            select(CanonicalToolCache.tool_name, CanonicalToolCache.record).execution_options(
+                yield_per=STREAM_BATCH_SIZE
+            )
+        )
+        for row in canonical:
+            enrichment = existing.get(row.tool_name)
+            if enrichment is not None and enrichment.next_attempt_at is not None and enrichment.next_attempt_at > now:
+                continue
+            stale = enrichment is None or enrichment.enrichment_version != ENRICHMENT_VERSION
+            failed = enrichment is not None and enrichment.status == STATUS_ERROR
+            if not stale and not failed:
+                continue
+            record = row.record if isinstance(row.record, dict) else {}
+            graph_eligible = bool(_values(record.get("keywords")) or _values(record.get("tasks")))
+            missing = sum(not _values(record.get(field)) for field in FACET_FIELDS)
+            candidates.append((not graph_eligible, -missing, row.tool_name))
     names = [name for _eligible, _missing, name in sorted(candidates)[:bounded]]
     return {"candidates": len(candidates), **refresh_tool_names(names)}
 
@@ -305,12 +329,20 @@ def merge_cached_records(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def status_summary() -> dict[str, int]:
     """Return compact operational counts for the repair/audit job."""
+    counts: dict[str, int] = defaultdict(int)
+    materialized = 0
     with db.session_scope() as s:
         canonical = s.query(CanonicalToolCache).count()
-        rows = list(s.execute(select(GraphToolEnrichment)).scalars())
-    counts: dict[str, int] = defaultdict(int)
-    for row in rows:
-        counts[row.status or "pending"] += 1
-        if row.enrichment_version != ENRICHMENT_VERSION:
-            counts["stale_version"] += 1
-    return {"canonical": canonical, "materialized": len(rows), **dict(sorted(counts.items()))}
+        # Two columns, streamed: this only tallies, and a `GraphToolEnrichment`
+        # row carries a `facets` blob none of these counters look at.
+        rows = s.execute(
+            select(GraphToolEnrichment.status, GraphToolEnrichment.enrichment_version).execution_options(
+                yield_per=STREAM_BATCH_SIZE
+            )
+        )
+        for row in rows:
+            materialized += 1
+            counts[row.status or "pending"] += 1
+            if row.enrichment_version != ENRICHMENT_VERSION:
+                counts["stale_version"] += 1
+    return {"canonical": canonical, "materialized": materialized, **dict(sorted(counts.items()))}

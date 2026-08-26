@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import tool_assets as tool_assets_job  # noqa: E402
 from backend import db, outbound, tool_assets  # noqa: E402
-from backend.models import CatalogToolProjection, ToolAssetCache  # noqa: E402
+from backend.models import CatalogToolProjection, ToolAssetCache, utcnow  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -325,3 +325,104 @@ def test_an_icon_that_is_not_on_a_wiki_is_not_retried_twice(monkeypatch):
 
     assert tool_assets.refresh_tool("alpha")["status"] == "error"
     assert asked == ["https://alpha.example/icon.png"]
+
+
+def _selects_from(statements, table, column):
+    """Statements that read one column of one table, however SQLAlchemy quoted it."""
+    return [
+        text
+        for text in statements
+        if table in text.lower() and column in text.lower() and text.lstrip().upper().startswith("SELECT")
+    ]
+
+
+def test_the_candidate_scan_reads_only_the_columns_it_decides_from():
+    """Two tables scanned whole, and the loop keeps nothing but tool names.
+
+    It needs `effective_record` and `provenance` to resolve the declared icon,
+    and four scalars off the cache to tell whether that icon is missing, stale
+    or due a retry. Selecting the entities pulled the projection's other three
+    JSON blobs and `search_text` plus every cache row's stored bytes metadata,
+    which OOM-killed this job hourly once discovery opened up to every
+    Wikimedia project.
+
+    Asserted with nothing due, so the only reads are the scan itself: a real
+    candidate is *supposed* to have its projection loaded by `refresh_tool`.
+    """
+    from sqlalchemy import event
+
+    with db.session_scope() as s:
+        s.add(
+            CatalogToolProjection(
+                tool_name="alpha",
+                effective_record={"name": "alpha", "icon": "https://alpha.example/icon.png"},
+            )
+        )
+        s.add(
+            ToolAssetCache(
+                tool_name="alpha",
+                source_url="https://alpha.example/icon.png",
+                status="ready",
+            )
+        )
+
+    seen = []
+
+    def record(_conn, _cursor, statement, *_rest):
+        seen.append(statement)
+
+    engine = db.engine()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        summary = tool_assets.refresh_candidates()
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert summary["candidates"] == 0, "fixture must leave nothing due, or refresh loads projections legitimately"
+    for column in ("validation", "source_timestamps", "search_text"):
+        offenders = _selects_from(seen, "catalog_tool_projection", column)
+        assert not offenders, f"candidate scan read projection {column}: {offenders[:1]}"
+    for column in ("cached_path", "sha256", "content_type", "last_error"):
+        offenders = _selects_from(seen, "tool_asset_cache", column)
+        assert not offenders, f"candidate scan read asset {column}: {offenders[:1]}"
+
+
+def test_the_narrowed_candidate_scan_still_sees_every_reason_to_refresh(monkeypatch):
+    """Narrowing must not quietly change who is judged due.
+
+    Each branch keys off a different column, so a select that dropped one would
+    still return rows -- just the wrong ones, silently. One tool per reason: no
+    cache row at all, a changed source URL, a pending fetch, an error whose
+    backoff has expired, and an error still deferred that must be skipped.
+    """
+    with db.session_scope() as s:
+        for name in ("uncached", "moved", "pending", "retryable", "deferred"):
+            s.add(
+                CatalogToolProjection(
+                    tool_name=name,
+                    effective_record={"name": name, "icon": f"https://{name}.example/icon.png"},
+                )
+            )
+        s.add(ToolAssetCache(tool_name="moved", source_url="https://old.example/icon.png", status="ready"))
+        s.add(ToolAssetCache(tool_name="pending", source_url="https://pending.example/icon.png", status="pending"))
+        s.add(
+            ToolAssetCache(
+                tool_name="retryable",
+                source_url="https://retryable.example/icon.png",
+                status="error",
+                next_attempt_at=utcnow() - timedelta(hours=1),
+            )
+        )
+        s.add(
+            ToolAssetCache(
+                tool_name="deferred",
+                source_url="https://deferred.example/icon.png",
+                status="error",
+                next_attempt_at=utcnow() + timedelta(hours=1),
+            )
+        )
+
+    # Counting is the assertion; stub the fetch so no candidate is dialled.
+    monkeypatch.setattr(tool_assets, "refresh_tool", lambda name, **_kwargs: {"toolName": name, "status": "ready"})
+
+    assert tool_assets.refresh_candidates(limit=1)["candidates"] == 4
