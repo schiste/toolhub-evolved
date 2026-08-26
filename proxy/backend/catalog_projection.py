@@ -700,7 +700,25 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
     now = utcnow()
     with db.session_scope() as s:
         canonical = list(s.execute(select(CanonicalToolCache.tool_name)).scalars())
-        existing = {row.tool_name: row for row in s.execute(select(CatalogToolProjection)).scalars()}
+        # Five scalar columns, not whole rows: the candidate loop below reads
+        # only these, but a projection row also carries four JSON blobs and
+        # `search_text`, averaging ~10KB. Selecting the entity loaded all of it
+        # -- 28,000 rows, ~285MB on the wire and several times that once MySQL
+        # JSON is deserialized into dicts -- which OOM-killed the deploy's
+        # migrate job before it printed a line. Row supports attribute access
+        # by column name, so the loop reads the same way it always did.
+        existing = {
+            row.tool_name: row
+            for row in s.execute(
+                select(
+                    CatalogToolProjection.tool_name,
+                    CatalogToolProjection.projection_version,
+                    CatalogToolProjection.status,
+                    CatalogToolProjection.refreshed_at,
+                    CatalogToolProjection.next_attempt_at,
+                )
+            )
+        }
         # Fetch latest report timestamps to detect newly-analyzed tools (lightweight query)
         latest_report_times = _latest_report_times(s)
         analyzer_facet_tools = set(

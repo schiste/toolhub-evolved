@@ -7,13 +7,14 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import catalog_projection, catalog_validation, db, graph_enrichment, outbound  # noqa: E402
-from backend.catalog_projection import STATUS_READY  # noqa: E402
+from backend.catalog_projection import STATUS_ERROR, STATUS_READY  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
     CatalogCuration,
@@ -1584,3 +1585,81 @@ def test_every_projection_source_has_a_display_label(view, marker):
     missing = sorted(source for source in catalog_projection.SOURCE_CONFIDENCE if f"{source}:" not in block)
 
     assert not missing, f"{view} has no label for: {', '.join(missing)}"
+
+
+def _selects_from(statements, table, column):
+    """Statements that read one column of one table, however SQLAlchemy quoted it."""
+    return [
+        text
+        for text in statements
+        if table in text.lower() and column in text.lower() and text.lstrip().upper().startswith("SELECT")
+    ]
+
+
+def test_the_candidate_scan_never_reads_the_projection_payload_columns():
+    """The scan decides from scheduling columns, so it must not drag payloads along.
+
+    `refresh_candidates` needs five scalars per row -- name, version, status and
+    the two timestamps -- to decide who is due. A projection row also carries
+    four JSON blobs and `search_text`, averaging ~10KB in production across
+    28,000 rows. Selecting the entity loaded every byte of that to read five
+    fields, which is what OOM-killed the deploy's migrate job.
+
+    Asserted with everything up to date, so the only reads are the scan itself:
+    a candidate that genuinely needs re-projecting is *supposed* to have its
+    payload read, and mixing the two phases would make the assertion untrue for
+    the wrong reason. Checking the emitted SQL rather than memory keeps this
+    honest on SQLite, where the rows are far too small to OOM anything.
+    """
+    from sqlalchemy import event
+
+    with db.session_scope() as s:
+        for name in ("alpha", "beta", "gamma"):
+            s.add(_canonical(name))
+    catalog_projection.refresh_tool_names(["alpha", "beta", "gamma"])
+
+    seen = []
+
+    def record(_conn, _cursor, statement, *_rest):
+        seen.append(statement)
+
+    engine = db.engine()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        summary = catalog_projection.refresh_candidates()
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert summary["candidates"] == 0, "fixture must leave nothing due, or refresh reads payloads legitimately"
+    for column in ("effective_record", "provenance", "validation", "source_timestamps", "search_text"):
+        offenders = _selects_from(seen, "catalog_tool_projection", column)
+        assert not offenders, f"candidate scan read {column}: {offenders[:1]}"
+
+
+def test_the_candidate_scan_still_sees_every_scheduling_column():
+    """Narrowing the select must not quietly change who is judged due.
+
+    Each branch of the loop keys off a different column, so a select that
+    dropped one would still return rows -- just the wrong ones, silently. This
+    pins one tool per reason: a stale version, a recorded error, and a deferral
+    that is still in the future and must therefore be skipped.
+    """
+    now = utcnow()
+    with db.session_scope() as s:
+        for name in ("stale", "broken", "deferred", "current"):
+            s.add(_canonical(name))
+    catalog_projection.refresh_tool_names(["stale", "broken", "deferred", "current"])
+    with db.session_scope() as s:
+        s.get(CatalogToolProjection, "stale").projection_version = catalog_projection.PROJECTION_VERSION - 1
+        s.get(CatalogToolProjection, "broken").status = catalog_projection.STATUS_ERROR
+        s.get(CatalogToolProjection, "deferred").next_attempt_at = now + timedelta(hours=1)
+
+    with db.session_scope() as s:
+        due = {
+            row.tool_name
+            for row in s.execute(select(CatalogToolProjection)).scalars()
+            if not (row.next_attempt_at is not None and row.next_attempt_at > now)
+            and (row.projection_version != catalog_projection.PROJECTION_VERSION or row.status == STATUS_ERROR)
+        }
+    assert due == {"stale", "broken"}
+    assert catalog_projection.refresh_candidates()["candidates"] == 2
