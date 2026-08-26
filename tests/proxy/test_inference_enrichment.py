@@ -325,3 +325,30 @@ def test_the_model_still_fills_a_field_the_upstream_record_left_empty():
     assert record["description"] == "Classifies links."
     assert record["keywords"][:3] == ["links", "classification", "css"]
     assert credited(evidence, "keywords") == catalog_projection.SOURCE_INFERENCE
+
+
+# --- the answer has to reach the page somebody reads ------------------------
+
+
+def sweep_with(answer, monkeypatch):
+    """Drive `sweep`, capturing the tool names it asks the projection to rebuild."""
+    rebuilt = []
+    monkeypatch.setattr(enrichment, "liftwing_caller", lambda: answer)
+    monkeypatch.setattr(enrichment, "configured_model", lambda: "llm-qwen36-27b")
+    monkeypatch.setattr(catalog_projection, "refresh_tool_names", lambda names: rebuilt.extend(names) or {})
+    return enrichment.sweep(limit=enrichment.BATCH), rebuilt
+
+
+def test_a_sweep_rebuilds_the_projection_for_what_it_filled(monkeypatch):
+    # catalog_projection's own sweep is a 500-an-hour backstop, so without this
+    # the answer sits in the table for days before anybody could read it.
+    store("User:Anomie/linkclassifier.js")
+    _result, rebuilt = sweep_with(lambda payload: reply(REAL_REPLY), monkeypatch)
+    assert rebuilt == [TOOL]
+
+
+def test_a_sweep_that_filled_nothing_rebuilds_nothing(monkeypatch):
+    store("User:Anomie/linkclassifier.js")
+    result, rebuilt = sweep_with(lambda payload: reply(REAL_REFUSAL), monkeypatch)
+    assert rebuilt == []
+    assert result["projection"] == {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}

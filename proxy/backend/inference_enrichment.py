@@ -324,8 +324,8 @@ def ask_one(
     *,
     model: str,
     counts: dict[str, int],
-) -> None:
-    """Ask about one page and store the outcome. Never raises.
+) -> str:
+    """Ask about one page, store the outcome, and return its status. Never raises.
 
     A failure for one page is recorded against that page and counted, per
     `backend.job_contract`: a per-item failure is a durable observation, not a
@@ -339,11 +339,12 @@ def ask_one(
     except Exception as exc:  # noqa: BLE001 - one page's outage must not end the sweep
         record(session, candidate, Outcome(STATUS_ERROR, {}, f"{type(exc).__name__}: {exc}"), model=model)
         counts["error"] += 1
-        return
+        return STATUS_ERROR
     accepted = accept(parse_json(model_text(response)))
     status = STATUS_READY if accepted else STATUS_REJECTED
     record(session, candidate, Outcome(status, accepted), model=model)
     counts["ready" if accepted else "rejected"] += 1
+    return status
 
 
 def infer(
@@ -421,10 +422,30 @@ def sweep(limit: int = BATCH) -> dict[str, Any]:
     counts = _counts()
     with db.session_scope() as session:
         candidates = pending(session, limit=limit)
+    enriched: list[str] = []
     for candidate in candidates:
         with db.session_scope() as session:
-            ask_one(session, candidate, ask, model=model, counts=counts)
-    return {"counts": counts, "model": model, "coverage": coverage()}
+            if ask_one(session, candidate, ask, model=model, counts=counts) == STATUS_READY:
+                enriched.append(candidate.tool_name)
+    return {"counts": counts, "model": model, "coverage": coverage(), "projection": _republish(enriched)}
+
+
+def _republish(tool_names: list[str]) -> dict[str, int]:
+    """Rebuild the projection for the tools this sweep just filled a gap on.
+
+    Nothing else will do it soon enough. `catalog_projection.refresh_candidates`
+    is a bounded backstop -- 500 tools an hour against a catalogue of tens of
+    thousands -- so a description stored here would sit unread for days before
+    the sweep happened to reach its tool. Every other producer refreshes what it
+    changed; this is that call, made late because the import has to be, and
+    kept out of the per-page loop so one rebuild failure cannot lose an answer
+    the sweep already paid Lift Wing for.
+    """
+    if not tool_names:
+        return {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}
+    from backend import catalog_projection  # noqa: PLC0415 - deferred; that module imports from this one
+
+    return catalog_projection.refresh_tool_names(tool_names)
 
 
 def coverage() -> dict[str, int]:
