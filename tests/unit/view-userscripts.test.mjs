@@ -328,3 +328,66 @@ test("the default wiki is one that has actually been projected", async () => {
 	assert.match(h.fetchRead.mock.calls[1][0], /wiki=fr\.wikipedia\.org/);
 	assert.match(view.html, /<option value="fr.wikipedia.org" selected>/);
 });
+
+/**
+ * A roster the way the census now hands one over: alphabetical, opening on a
+ * tiny wiki that holds a single archived page, with the wikis a reader actually
+ * wants further down. This is the shape that broke the page.
+ */
+const roster = {
+	count: 4,
+	results: [
+		{ ...coverage, wiki: "aa.wikibooks.org", pages: 3, active: 0, archive: 1 },
+		{ ...coverage, wiki: "ab.wikipedia.org", pages: 9, active: 0, archive: 13 },
+		{ ...coverage, wiki: "en.wikipedia.org", pages: 14331, active: 3277, archive: 4021 },
+		{ ...coverage, wiki: "fr.wikipedia.org", active: 412, archive: 983 }
+	]
+};
+
+test("an unqualified visit opens on the busiest wiki, not the alphabetically first", async () => {
+	// The old rule was "the first wiki holding anything", which was fr.wikipedia
+	// while three wikis were configured and is aa.wikibooks.org across all of
+	// them -- one archived page, and nothing in the tier this page opens on. The
+	// reader got an empty table and no way to tell it from a broken one.
+	respond({ wikiList: roster });
+	const view = await viewUserScripts();
+	assert.match(view.html, /<option value="en.wikipedia.org" selected>/);
+	assert.doesNotMatch(view.html, /<option value="aa.wikibooks.org" selected>/);
+	const asked = h.fetchRead.mock.calls.map(([path]) => path).find((path) => path.includes("/directory/"));
+	assert.match(asked, /wiki=en.wikipedia.org/);
+});
+
+test("the default wiki answers the tier being shown, not always the first one", async () => {
+	// ?tier=archive with no wiki used to pick for `active` and then render
+	// `archive`, which can land on a wiki that has nothing in the tier on screen.
+	window.history.replaceState({}, "", "/userscripts?tier=archive");
+	const archives = {
+		count: 2,
+		results: [
+			{ ...coverage, wiki: "aa.wikibooks.org", active: 5, archive: 1 },
+			{ ...coverage, wiki: "ab.wikipedia.org", active: 0, archive: 900 }
+		]
+	};
+	respond({ wikiList: archives });
+	const view = await viewUserScripts();
+	assert.match(view.html, /<option value="ab.wikipedia.org" selected>/);
+});
+
+test("a roster where no wiki has been projected yet still picks a wiki", async () => {
+	// Every wiki swept, none projected: counts are all zero and neither rule
+	// fires. Falling through to the first listed keeps the controls usable
+	// instead of rendering the "no wiki has been swept" dead end.
+	respond({
+		wikiList: {
+			count: 2,
+			results: [
+				{ ...coverage, wiki: "aa.wikibooks.org", active: 0, archive: 0 },
+				{ ...coverage, wiki: "ab.wikipedia.org", active: 0, archive: 0 }
+			]
+		},
+		directory: { ...listing, count: 0, total: 0, results: [] }
+	});
+	const view = await viewUserScripts();
+	assert.match(view.html, /<option value="aa.wikibooks.org" selected>/);
+	assert.doesNotMatch(view.html, /No wiki has been swept/);
+});

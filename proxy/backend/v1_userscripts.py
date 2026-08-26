@@ -12,6 +12,7 @@ scripts" -- and a reader who cannot tell those apart will draw exactly the wrong
 conclusion from a quiet result.
 """
 
+from datetime import datetime
 from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
@@ -92,6 +93,22 @@ def coverage(s: Session, wiki: str) -> dict[str, Any]:
     computed = s.execute(
         select(func.max(UserScriptDirectoryEntry.computed_at)).where(UserScriptDirectoryEntry.wiki == wiki)
     ).scalar()
+    return _coverage_row(wiki, state, pages, counts, computed)
+
+
+def _coverage_row(
+    wiki: str,
+    state: UserScriptCensusState | None,
+    pages: int,
+    counts: dict[str, int],
+    computed: datetime | None,
+) -> dict[str, Any]:
+    """Assemble one wiki's coverage from parts already read.
+
+    Split out so the one-wiki reader and the whole-roster reader below cannot
+    drift: they disagree about how to *fetch* the parts, and must not disagree
+    about what a coverage record is.
+    """
     return {
         "wiki": wiki,
         "pages": pages,
@@ -102,9 +119,59 @@ def coverage(s: Session, wiki: str) -> dict[str, Any]:
         "enumerated": bool(state.enumeration_complete) if state else True,
         "enumeratedBy": (state.enumeration_source or "") if state else "",
         "computedAt": common.iso(computed),
-        "active": counts[directory.TIER_ACTIVE],
-        "archive": counts[directory.TIER_ARCHIVE],
+        "active": counts.get(directory.TIER_ACTIVE, 0),
+        "archive": counts.get(directory.TIER_ARCHIVE, 0),
     }
+
+
+def _all_coverage(s: Session) -> list[dict[str, Any]]:
+    """Every touched wiki's coverage, in a fixed number of queries.
+
+    `coverage()` costs four queries, which is the right shape for one wiki and
+    the wrong one for a thousand. This endpoint used to call it per wiki: at the
+    three wikis the census was configured for that was twelve queries and nobody
+    noticed, and across every Wikimedia project it is four thousand -- one of
+    them a COUNT over a quarter-million-row table, per wiki. The endpoint stayed
+    correct and grew to fourteen seconds, which is past the browser's read
+    timeout, so the directory page stopped rendering at all.
+
+    Grouping the same four reads costs four queries whatever the roster grows
+    to. The wikis are still the union of "has census state" and "has directory
+    entries", because a wiki can have been swept without projecting anything and
+    a projection can outlive the state row that produced it.
+    """
+    states = {row.wiki: row for row in s.execute(select(UserScriptCensusState)).scalars()}
+    pages = {
+        wiki: int(total)
+        for wiki, total in s.execute(
+            select(UserScriptPage.wiki, func.count(UserScriptPage.id))
+            .where(UserScriptPage.deleted_at.is_(None))
+            .group_by(UserScriptPage.wiki)
+        )
+    }
+    counts: dict[str, dict[str, int]] = {}
+    for wiki, tier, total in s.execute(
+        select(
+            UserScriptDirectoryEntry.wiki,
+            UserScriptDirectoryEntry.tier,
+            func.count(UserScriptDirectoryEntry.id),
+        ).group_by(UserScriptDirectoryEntry.wiki, UserScriptDirectoryEntry.tier)
+    ):
+        counts.setdefault(wiki, {})[tier] = int(total)
+    # `.all()` rather than the Result itself: a Result carries `keys()`, so
+    # `dict()` reads it as a mapping and fails instead of consuming the rows.
+    computed = dict(
+        s.execute(
+            select(
+                UserScriptDirectoryEntry.wiki,
+                func.max(UserScriptDirectoryEntry.computed_at),
+            ).group_by(UserScriptDirectoryEntry.wiki)
+        ).all()
+    )
+    return [
+        _coverage_row(wiki, states.get(wiki), pages.get(wiki, 0), counts.get(wiki, {}), computed.get(wiki))
+        for wiki in sorted(set(states) | set(counts))
+    ]
 
 
 def _entry(row: UserScriptDirectoryEntry) -> dict[str, Any]:
@@ -135,11 +202,7 @@ def v1_userscripts_wikis() -> Response | tuple[Response, int]:
     if security.read_rate_limited(request.remote_addr):
         return jsonify({"error": "rate limited, retry later"}), 429
     with db.session_scope() as s:
-        wikis = sorted(
-            set(s.execute(select(UserScriptCensusState.wiki)).scalars())
-            | set(s.execute(select(UserScriptDirectoryEntry.wiki).distinct()).scalars())
-        )
-        results = [coverage(s, wiki) for wiki in wikis]
+        results = _all_coverage(s)
     return jsonify({"count": len(results), "results": results})
 
 

@@ -61,10 +61,28 @@ async function readJson(path) {
 	return { ok: response.ok, data };
 }
 
-/** @param {Array<any>} wikis */
-function defaultWiki(wikis) {
-	const swept = wikis.find((entry) => Number(entry?.active || 0) + Number(entry?.archive || 0) > 0);
-	return String(swept?.wiki || wikis[0]?.wiki || "");
+/**
+ * Which wiki the directory opens on when the reader has not named one.
+ *
+ * "The first wiki holding anything" was a fair answer while the census covered
+ * three wikis, all of them large. Across every Wikimedia project the listing is
+ * alphabetical and opens at aa.wikibooks.org, which holds one archived page and
+ * nothing at all in the tier this page shows first -- so an unqualified visit
+ * landed on an empty directory that read as a broken one.
+ *
+ * Pick the busiest wiki in the tier actually being shown. It is what an
+ * unqualified visit is asking for, it stays right as the roster grows, and it
+ * honours `?tier=archive` rather than choosing for one tier and rendering the
+ * other. Ties keep the first listed, so the choice is stable between reads.
+ * @param {Array<any>} wikis @param {string} tier
+ */
+function defaultWiki(wikis, tier) {
+	/** @param {(entry: any) => number} score */
+	const busiest = (score) =>
+		wikis.reduce((chosen, entry) => (score(entry) > score(chosen || {}) ? entry : chosen), null);
+	const inTier = busiest((entry) => Number(entry?.[tier] || 0));
+	const anywhere = busiest((entry) => Number(entry?.active || 0) + Number(entry?.archive || 0));
+	return String(inTier?.wiki || anywhere?.wiki || wikis[0]?.wiki || "");
 }
 
 /** @param {string} wiki @param {string} title */
@@ -263,7 +281,7 @@ export async function viewUserScripts() {
 	} catch {
 		failed = true;
 	}
-	const state = { ...requested, wiki: requested.wiki || defaultWiki(wikis) };
+	const state = { ...requested, wiki: requested.wiki || defaultWiki(wikis, requested.tier) };
 	/** @type {string} */
 	let body;
 	let coverage = wikis.find((entry) => entry.wiki === state.wiki) || null;

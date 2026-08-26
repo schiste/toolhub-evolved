@@ -319,3 +319,91 @@ def test_every_read_endpoint_is_rate_limited(app, client, monkeypatch):
         f"/v1/userscripts/script/?wiki={FRWIKI}&title=x",
     ):
         assert client.get(path).status_code == 429
+
+
+def counted_queries():
+    """Count the SELECTs one block of work issues, on the engine under test."""
+    from sqlalchemy import event
+
+    engine = db.engine()
+    seen: list[str] = []
+
+    def record(_conn, _cursor, statement, *_rest):
+        if statement.lstrip().upper().startswith("SELECT"):
+            seen.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record)
+    return seen, lambda: event.remove(engine, "before_cursor_execute", record)
+
+
+def swept(wiki, *, sweeps=1):
+    """A wiki the census has touched, with one page and one directory entry."""
+    page("User:Aaa/only.js", wiki=wiki)
+    with db.session_scope() as session:
+        session.add(UserScriptCensusState(wiki=wiki, sweeps_completed=sweeps))
+    projection.project(wiki)
+
+
+def test_the_wiki_listing_costs_the_same_number_of_queries_at_any_roster_size(app, client):
+    """The listing must not read per wiki.
+
+    It used to call `coverage()` once per wiki -- four queries each, one of them
+    a COUNT over every stored script page. That was twelve queries while the
+    census covered three wikis. Across every Wikimedia project it was four
+    thousand and fourteen seconds, which is past the browser's read timeout, so
+    the page that consumes this endpoint stopped rendering entirely. Correctness
+    never moved, which is exactly why only a cost assertion catches it.
+    """
+    with app.app_context():
+        for index in range(3):
+            swept(f"w{index}.wikipedia.org")
+        seen, stop = counted_queries()
+        try:
+            small = client.get("/v1/userscripts/wikis/").get_json()
+            few = len(seen)
+            seen.clear()
+            for index in range(3, 30):
+                swept(f"w{index}.wikipedia.org")
+            seen.clear()
+            large = client.get("/v1/userscripts/wikis/").get_json()
+            many = len(seen)
+        finally:
+            stop()
+    assert small["count"] == 3
+    assert large["count"] == 30
+    # Ten times the wikis, the same reads. The absolute number is not the point
+    # and is left loose; that it does not grow with the roster is the point.
+    assert many == few
+    assert few <= 6
+
+
+def test_the_wiki_listing_keeps_each_wikis_numbers_with_its_own_wiki(app, client):
+    """Grouped reads must not smear one wiki's counts across another.
+
+    Four separate grouped queries are stitched back together in Python, so the
+    failure this guards against is a join by position rather than by wiki --
+    which a single-wiki fixture cannot show.
+    """
+    with app.app_context():
+        corpus()
+        swept(ENWIKI, sweeps=7)
+        page("User:Ggg/extra.js", wiki=ENWIKI)
+        projection.project(ENWIKI)
+    rows = {row["wiki"]: row for row in client.get("/v1/userscripts/wikis/").get_json()["results"]}
+    assert set(rows) == {ENWIKI, FRWIKI}
+    assert rows[ENWIKI]["sweepsCompleted"] == 7
+    assert rows[FRWIKI]["sweepsCompleted"] == 0
+    assert rows[ENWIKI]["pages"] == 2
+    assert rows[FRWIKI]["pages"] == 4
+    assert rows[FRWIKI]["active"] > 0
+
+
+def test_the_wiki_listing_agrees_with_the_per_wiki_coverage_it_replaced(app, client):
+    """The bulk reader and the one-wiki reader must describe a wiki identically."""
+    with app.app_context():
+        corpus()
+        swept(ENWIKI, sweeps=2)
+    listed = {row["wiki"]: row for row in client.get("/v1/userscripts/wikis/").get_json()["results"]}
+    for wiki in (ENWIKI, FRWIKI):
+        alone = client.get(f"/v1/userscripts/directory/?wiki={wiki}").get_json()["coverage"]
+        assert listed[wiki] == alone
