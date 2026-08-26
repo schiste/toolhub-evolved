@@ -19,7 +19,7 @@ import pytest
 from flask import Flask
 from sqlalchemy import inspect, select, text
 from sqlalchemy.dialects import mysql
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
@@ -7919,3 +7919,111 @@ def test_card_view_keeps_an_absent_maintainer_absent():
     """A missing maintainer must not become an empty-but-present one."""
     card = tool_summaries.card_view({"health": {"score": 10}})
     assert "maintainer" not in card
+
+
+def _lock_wait_timeout() -> OperationalError:
+    """The error MariaDB raises after waiting out `innodb_lock_wait_timeout`."""
+    return OperationalError("INSERT INTO tool_summary_cache", {}, Exception(1205, "Lock wait timeout exceeded"))
+
+
+def _seed_summary_rows(names):
+    db.configure("sqlite://")
+    db.init_schema()
+    now = utcnow()
+    with db.session_scope() as s:
+        for name in names:
+            s.add(
+                ToolSummaryCache(
+                    tool_name=name,
+                    summary={"toolName": name, "health": {"score": 1}},
+                    computed_at=now - timedelta(hours=1),
+                    expires_at=now - timedelta(minutes=1),
+                    stale_until=now + timedelta(hours=1),
+                )
+            )
+
+
+def test_one_tool_losing_a_lock_race_does_not_drop_the_tools_queued_behind_it(monkeypatch):
+    # A batch is unrelated tools that happen to share a worker. Ending it on the
+    # first 1205 loses builds that never contended for anything -- and because
+    # `_refresh_worker` stamps every name it was handed, it also labels them
+    # with an error they never hit.
+    _seed_summary_rows(("alpha", "beta", "gamma"))
+    attempted = []
+
+    def build_one(name, _build_summary):
+        attempted.append(name)
+        if name == "beta":
+            raise _lock_wait_timeout()
+
+    monkeypatch.setattr(tool_summaries, "_build_one", build_one)
+    monkeypatch.setattr(db, "LOCK_RETRY_BACKOFF_SECONDS", 0)
+
+    assert tool_summaries.refresh(["alpha", "beta", "gamma"], lambda _s, _n: {}) == 2
+    # Retried before being given up on, and the tools behind it still ran.
+    assert attempted.count("beta") == db.DEFAULT_LOCK_RETRIES
+    assert attempted[0] == "alpha"
+    assert attempted[-1] == "gamma"
+
+    with db.session_scope() as s:
+        errors = {row.tool_name: row.last_error for row in s.execute(select(ToolSummaryCache)).scalars()}
+    assert errors["alpha"] is None
+    assert errors["gamma"] is None
+    assert "1205" in errors["beta"]
+
+
+def test_a_failure_that_is_not_a_lock_race_still_stops_the_batch(monkeypatch):
+    # Absorbing every error per tool would turn a broken builder into a silent
+    # no-op repeated once per name. Only a lost lock is evidence about one tool.
+    _seed_summary_rows(("alpha", "beta", "gamma"))
+    attempted = []
+
+    def build_one(name, _build_summary):
+        attempted.append(name)
+        if name == "beta":
+            raise RuntimeError("the builder is broken")
+
+    monkeypatch.setattr(tool_summaries, "_build_one", build_one)
+    with pytest.raises(RuntimeError):
+        tool_summaries.refresh(["alpha", "beta", "gamma"], lambda _s, _n: {})
+    assert attempted == ["alpha", "beta"]
+
+
+def test_invalidating_the_graph_keeps_a_copy_to_serve_while_it_rebuilds(client, monkeypatch):
+    # Deleting the row put the next visitor on the full synchronous build --
+    # about 3.8s in production -- every time an enrichment pass changed a facet.
+    # Retiring it instead hands them the previous graph and rebuilds behind them.
+    graph_payload._CACHE.clear()
+    graph_payload._REFRESHING.clear()
+    api_cache.clear()
+    old = {"nodes": [{"id": "old"}], "edges": [], "generatedAt": "old"}
+    url = graph_payload._cache_url(250, "similarity")
+    api_cache.put_success(
+        url,
+        api_cache.CacheableResponse(status=200, content_type="application/json", body=dumps(old).encode()),
+        fresh_seconds=3600,
+        stale_if_error_seconds=86400,
+    )
+
+    assert api_cache.invalidate_graph() == 1
+    # The body survives the invalidation; only its fresh window ended.
+    retired = api_cache.get(url, allow_stale=True)
+    assert retired is not None
+    assert retired.stale is True
+    assert api_cache.get(url) is None
+
+    builds = []
+    monkeypatch.setattr(graph_payload, "build", lambda **_kwargs: builds.append(True) or {"nodes": [], "edges": []})
+    queued = []
+
+    class RecordingExecutor:
+        def submit(self, _fn, *args):
+            queued.append(args)
+
+    monkeypatch.setattr(graph_payload, "_EXECUTOR", RecordingExecutor())
+
+    assert graph_payload.payload() == old
+    # Nothing was built to answer the request; the rebuild was handed to a worker.
+    assert builds == []
+    assert len(queued) == 1
+    graph_payload._REFRESHING.clear()

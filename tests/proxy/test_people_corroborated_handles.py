@@ -626,3 +626,64 @@ def test_reconvergence_drops_the_cached_summary_of_a_tool_it_recredited():
         assert _author_person_ids(session, "toolx") == {ada.id}
         session.flush()
         assert session.execute(select(ToolSummaryCache)).scalars().all() == []
+
+
+def test_a_chunked_pass_covers_the_same_backlog_as_one_transaction():
+    # Chunking exists to move the commit boundary, not to change the answer.
+    # Whatever a single transaction over the batch would have decided, the same
+    # rows decided one chunk at a time must decide identically.
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada", "42", wiki_username="Ada")
+        for tool in ("toola", "toolb", "toolc"):
+            _canonical_author_label(session, tool, "Ada")
+            _verified_maintainer_edge(session, tool, "Ada")
+
+    assert people_reconcile.reconverge_in_chunks(limit=10, chunk=1) == {
+        "examined": 3,
+        "promoted": 3,
+        "tools": 3,
+    }
+    with db.session_scope() as session:
+        for tool in ("toola", "toolb", "toolc"):
+            assert _author_person_ids(session, tool) == {ada.id}
+
+
+def test_a_chunk_boundary_is_a_commit_so_earlier_work_survives_a_later_failure(monkeypatch):
+    # The whole point of the chunk boundary: the locks a chunk took are released
+    # there. A pass that kept them to the end could not survive its own failure
+    # either, so proving the first chunk's promotion is durable proves the locks
+    # behind it are gone.
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada", "42", wiki_username="Ada")
+        for tool in ("toola", "toolb"):
+            _canonical_author_label(session, tool, "Ada")
+            _verified_maintainer_edge(session, tool, "Ada")
+
+    real = people_reconcile._reconverge_batch  # noqa: SLF001 - the boundary under test
+    calls = []
+
+    def fail_on_the_second(session, *, batch_size):
+        calls.append(batch_size)
+        if len(calls) > 1:
+            raise RuntimeError("chunk two died")
+        return real(session, batch_size=batch_size)
+
+    monkeypatch.setattr(people_reconcile, "_reconverge_batch", fail_on_the_second)
+    with pytest.raises(RuntimeError):
+        people_reconcile.reconverge_in_chunks(limit=10, chunk=1)
+
+    with db.session_scope() as session:
+        assert _author_person_ids(session, "toola") == {ada.id}
+        assert _author_person_ids(session, "toolb") == set()
+
+
+def test_a_chunked_pass_stops_at_the_tail_instead_of_re_reading_the_head():
+    # `_reconverge_batch` resets the cursor to the head on a short batch, so a
+    # loop that did not stop there would spin over the same rows until it hit
+    # its ceiling -- examining far more rows than the backlog holds.
+    with db.session_scope() as session:
+        _stable_person(session, "Ada", "42", wiki_username="Ada")
+        _canonical_author_label(session, "toola", "Ada")
+        _verified_maintainer_edge(session, "toola", "Ada")
+
+    assert people_reconcile.reconverge_in_chunks(limit=500, chunk=25)["examined"] == 1

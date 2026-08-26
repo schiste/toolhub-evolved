@@ -9,7 +9,7 @@ from hashlib import sha256
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from sqlalchemy import and_, delete, or_, select
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
@@ -444,9 +444,40 @@ def invalidate_list_collection() -> int:
     return _delete_where(ApiCache.path.in_([_LIST_COLLECTION_PATH, _RECENT_COLLECTION_PATH]))
 
 
+def _expire_where(clause: ColumnElement[bool] | None) -> int:
+    """End the fresh window of matching rows, leaving their bodies servable as stale.
+
+    The counterpart to `_delete_where` for a payload this service builds itself
+    rather than fetches. Deleting an upstream copy is free -- the next request
+    refetches it. Deleting a derived one throws away the only copy there is, and
+    the next visitor pays the whole build with the page open in front of them.
+    """
+    if clause is None:
+        return 0
+    try:
+        with db.session_scope() as s:
+            return int(s.execute(update(ApiCache).where(clause).values(expires_at=utcnow())).rowcount or 0)
+    except SQLAlchemyError:
+        return 0
+
+
 def invalidate_graph() -> int:
-    """Invalidate all versioned derived graph payloads after facet changes."""
-    return _delete_where(ApiCache.path == _GRAPH_PATH)
+    """Retire all versioned derived graph payloads after facet changes.
+
+    Expired rather than deleted, which is the difference between a visitor
+    waiting on a rebuild and never noticing one happened. The graph takes about
+    3.8 seconds to build from the catalog; `graph_payload.payload` is already
+    built to serve a stale copy instantly and rebuild in the background, but it
+    can only do that if a copy still exists. Deleting the row here removed the
+    one thing that path needs, so every facet change -- routine, and frequent --
+    put the next request on a cold synchronous build.
+
+    The cost is that a graph can now be up to `GRAPH_STALE_SECONDS` behind the
+    facets, where before it was never behind them by more than one build. That
+    is the trade this service already makes for the same payload on the error
+    path, and the background refresh normally closes the gap within seconds.
+    """
+    return _expire_where(ApiCache.path == _GRAPH_PATH)
 
 
 def invalidate_url(url: str) -> int:

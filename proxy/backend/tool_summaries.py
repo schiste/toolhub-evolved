@@ -11,6 +11,7 @@ from threading import Lock
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.util import was_deleted
 
@@ -278,19 +279,48 @@ def summaries_for(
     return SummaryRead(results=results, cache_meta=cache_meta)
 
 
+def _build_one(name: str, build_summary: SummaryBuilder) -> None:
+    """One tool's rebuild, owning its transaction so a lock retry can repeat it."""
+    now = utcnow()
+    with db.session_scope() as s:
+        row = s.get(ToolSummaryCache, name)
+        _build_and_store(s, tool_name=name, row=row, build_summary=build_summary, now=now)
+
+
+def _record_lock_failure(name: str, error: BaseException) -> None:
+    """Note on one tool that it lost its lock race, without touching the others."""
+    with db.session_scope() as s:
+        row = s.get(ToolSummaryCache, name)
+        if row is not None:
+            row.last_error = clean_error(str(error))
+
+
 def refresh(names: list[str], build_summary: SummaryBuilder) -> int:
-    """Rebuild and store summaries for the supplied tool names.
+    """Rebuild and store summaries for the supplied tool names, returning the count built.
 
     One transaction per tool: a build takes write locks, so batching the whole
     queue into a single transaction would hold them for the length of the batch.
+
+    A tool that loses a lock race is retried and then skipped, rather than being
+    allowed to end the batch. The names behind it are unrelated tools whose
+    builds would otherwise be dropped untried -- and worse than dropped, since
+    `_refresh_worker` stamps `last_error` on every name it was given, so a
+    single 1205 on the third tool labelled the rest with an error they never
+    hit. Only transient lock errors are absorbed here; anything else still
+    stops the batch, because it is not evidence about one tool alone.
     """
     ordered_names = tuple(dict.fromkeys(names))
+    built = 0
     for name in ordered_names:
-        now = utcnow()
-        with db.session_scope() as s:
-            row = s.get(ToolSummaryCache, name)
-            _build_and_store(s, tool_name=name, row=row, build_summary=build_summary, now=now)
-    return len(ordered_names)
+        try:
+            db.run_with_lock_retry(lambda name=name: _build_one(name, build_summary))
+        except SQLAlchemyError as error:
+            if not db.is_transient_lock_error(error):
+                raise
+            _record_lock_failure(name, error)
+            continue
+        built += 1
+    return built
 
 
 def _refresh_worker(names: tuple[str, ...], build_summary: SummaryBuilder) -> None:

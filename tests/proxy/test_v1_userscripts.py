@@ -600,3 +600,44 @@ def test_the_wiki_listing_agrees_with_the_per_wiki_coverage_it_replaced(app, cli
     for wiki in (ENWIKI, FRWIKI):
         alone = client.get(f"/v1/userscripts/directory/?wiki={wiki}").get_json()["coverage"]
         assert listed[wiki] == alone
+
+
+def test_serving_a_stored_roster_never_waits_on_the_refresh_lock(app, client, monkeypatch):
+    """The ordinary read takes no lock, because the census holds that lock for its rebuild.
+
+    `refresh()` holds `userscript-coverage-refresh` for the length of the
+    census's own rebuild -- 25 seconds against production. A read that took the
+    lock before looking at the stored row therefore waited out the full
+    two-second timeout during every census run, only to be handed the copy it
+    had all along. The page fetches this before anything else, so that wait was
+    the whole page's time-to-first-content.
+    """
+    taken = []
+    real = db.advisory_lock
+    monkeypatch.setattr(db, "advisory_lock", lambda *args, **kwargs: taken.append(args) or real(*args, **kwargs))
+
+    with app.app_context():
+        swept("w0.wikipedia.org")
+        stored = userscript_coverage.refresh()
+        assert stored["stored"] is True
+        # The census took it, which is what makes the reader's silence meaningful.
+        assert len(taken) == 1
+        taken_by_the_census = len(taken)
+        body = client.get("/v1/userscripts/wikis/").get_json()
+
+    assert body["count"] == 1
+    assert len(taken) == taken_by_the_census
+
+
+def test_a_request_that_must_rebuild_still_takes_the_lock(app, client, monkeypatch):
+    """Nothing stored means a real rebuild, and rebuilds are still one at a time."""
+    taken = []
+    real = db.advisory_lock
+    monkeypatch.setattr(db, "advisory_lock", lambda *args, **kwargs: taken.append(args) or real(*args, **kwargs))
+
+    with app.app_context():
+        swept("w0.wikipedia.org")
+        body = client.get("/v1/userscripts/wikis/").get_json()
+
+    assert body["count"] == 1
+    assert len(taken) == 1

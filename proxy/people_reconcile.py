@@ -133,8 +133,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.retirements:
             return people_reconcile.drain_queue(reason="canonical_retired")
         if args.reconverge:
-            with db.session_scope() as session:
-                return people_reconcile.reconverge_attributions(session, limit=args.reconverge_limit)
+            # Chunked, so the pass does not hold `tool_summary_cache` gap locks
+            # across the whole batch: see `reconverge_in_chunks`.
+            return people_reconcile.reconverge_in_chunks(limit=args.reconverge_limit)
         if args.queue:
             return people_reconcile.process_queue(
                 limit=int(os.environ.get("PEOPLE_RECONCILE_QUEUE_LIMIT", people_reconcile.DEFAULT_QUEUE_LIMIT))

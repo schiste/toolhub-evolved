@@ -196,21 +196,33 @@ def snapshot(*, force: bool = False) -> dict[str, Any]:
     dead census can freeze the page. The shared lock keeps that to one worker;
     the rest go on serving what they have rather than turning cache contention
     into half a dozen concurrent full scans.
+
+    Only a request that might rebuild touches that lock. Taking it first, as
+    this did, put a `GET_LOCK` round trip in front of every read -- and, because
+    `refresh()` holds the same lock for the length of the census rebuild, made
+    every reader during a census run wait the full two-second timeout before
+    being handed the copy it had all along. The page fetches this before it
+    fetches anything else, so that wait was the whole page's. Reading the row
+    first costs a request that does need to rebuild one extra read, which is
+    nothing next to the scan it is about to run.
     """
     now = utcnow()
+    if not force:
+        with db.session_scope() as session:
+            cached = _cached(session)
+        if cached is not None and cached[1] >= now - SNAPSHOT_STALE_LIMIT:
+            return cached[0]
     with db.advisory_lock("userscript-coverage-refresh", timeout_seconds=2) as acquired:
         with db.session_scope() as session:
-            cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
-            cached_payload: dict[str, Any] | None = None
-            if cached is not None:
-                try:
-                    decoded = json.loads(cached.value)
-                except json.JSONDecodeError:
-                    decoded = None
-                cached_payload = decoded if isinstance(decoded, dict) else None
-            serve_stale = cached is not None and (cached.updated_at >= now - SNAPSHOT_STALE_LIMIT or not acquired)
-            if cached_payload is not None and not force and serve_stale:
-                return cached_payload
+            cached = _cached(session)
+            # Re-read under the lock: whoever was holding it may have stored a
+            # roster while this request waited. A request that lost the lock
+            # outright is better off with whatever is stored, however old, than
+            # running the full scan alongside the rebuild that beat it to it.
+            if cached is not None and not force:
+                stored_payload, stored_at = cached
+                if stored_at >= now - SNAPSHOT_STALE_LIMIT or not acquired:
+                    return stored_payload
             payload = _payload(build_roster(session), now)
         # Still under the lock, so a racing rebuild cannot overwrite this with
         # an older roster -- but no longer inside the read's transaction, and
@@ -218,6 +230,23 @@ def snapshot(*, force: bool = False) -> dict[str, Any]:
         if acquired:
             _remember(payload, now)
         return payload
+
+
+def _cached(session: Session) -> tuple[dict[str, Any], datetime] | None:
+    """Return the stored roster and when it was stored, or None if there is nothing to serve.
+
+    A row that will not parse is reported the same way as a missing one, since
+    neither leaves a caller anything to answer with, and the caller then has one
+    case to handle rather than a payload and a timestamp that can disagree.
+    """
+    row = session.get(ApiCacheMeta, SNAPSHOT_KEY)
+    if row is None:
+        return None
+    try:
+        decoded = json.loads(row.value)
+    except json.JSONDecodeError:
+        return None
+    return (decoded, row.updated_at) if isinstance(decoded, dict) else None
 
 
 def _payload(results: list[dict[str, Any]], now: datetime) -> dict[str, Any]:

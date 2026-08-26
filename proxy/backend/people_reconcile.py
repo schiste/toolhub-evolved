@@ -1048,7 +1048,18 @@ def reconverge_attributions(s: Session, *, limit: int = DEFAULT_RECONVERGE_LIMIT
     that resumes where the last pass stopped and wraps at the tail, so a
     permanently unresolvable row cannot starve the ones behind it.
     """
-    batch_size = max(1, int(limit))
+    examined, promoted, tools = _reconverge_batch(s, batch_size=max(1, int(limit)))
+    return {"examined": examined, "promoted": promoted, "tools": len(tools)}
+
+
+def _reconverge_batch(s: Session, *, batch_size: int) -> tuple[int, int, set[str]]:
+    """One bounded pass: rows examined, rows promoted, and the tools they touched.
+
+    Split out from the public entry point so a chunked caller can union the tool
+    names across chunks rather than sum per-chunk counts, which keeps `tools` a
+    count of distinct tools however the backlog happens to distribute across
+    chunk boundaries.
+    """
     now = utcnow()
     # Mirrors corroborated_handle_person's candidate query. Mirroring it exactly
     # is the correctness condition: a looser filter wastes work, a tighter one
@@ -1096,7 +1107,53 @@ def reconverge_attributions(s: Session, *, limit: int = DEFAULT_RECONVERGE_LIMIT
     # head. Coverage is therefore complete over successive passes without any
     # pass having to read the whole backlog.
     _store_reconverge_cursor(s, 0 if len(rows) < batch_size else rows[-1].id)
-    return {"examined": len(rows), "promoted": promoted, "tools": len(promoted_tools)}
+    return len(rows), promoted, promoted_tools
+
+
+DEFAULT_RECONVERGE_CHUNK = 25
+
+
+def reconverge_in_chunks(
+    *, limit: int = DEFAULT_RECONVERGE_LIMIT, chunk: int = DEFAULT_RECONVERGE_CHUNK
+) -> dict[str, int]:
+    """Reconverge a bounded backlog in committed chunks instead of one transaction.
+
+    Identical work and the same rolling cursor as `reconverge_attributions`; the
+    only difference is where the commits fall, and that is the entire point.
+    Promoting an observation deletes the tool's `tool_summary_cache` row, and
+    under REPEATABLE-READ a DELETE holds a next-key lock over the gap it emptied
+    until the transaction commits -- so one transaction over the whole batch
+    blocks inserts into that table for as long as the batch runs. The continuous
+    repository scan inserts into exactly that table, waits the full
+    `innodb_lock_wait_timeout` of 50 seconds, and logs 1205.
+
+    Retrying cannot rescue a waiter whose holder outlives the timeout, which is
+    why the retry helper wrapped around several of the victims did not stop
+    this. Committing sooner can, and it costs nothing here: each chunk is
+    already an independently correct pass over its own cursor range, so a chunk
+    boundary is a place this pass could have stopped anyway.
+
+    Only the standalone job takes this path. `run()` reconverges inside the
+    weekly rebuild's own transaction, where a separate commit boundary would
+    break the atomicity that pass is built on.
+    """
+    ceiling = max(1, int(limit))
+    batch = max(1, min(ceiling, int(chunk)))
+    examined = promoted = 0
+    tools: set[str] = set()
+    while examined < ceiling:
+        remaining = min(batch, ceiling - examined)
+        with db.session_scope() as s:
+            seen, made, names = _reconverge_batch(s, batch_size=remaining)
+        examined += seen
+        promoted += made
+        tools |= names
+        # A short chunk is the tail, and `_reconverge_batch` has already reset
+        # the cursor to the head. Continuing would re-read the rows this pass
+        # just judged rather than make progress.
+        if seen < remaining:
+            break
+    return {"examined": examined, "promoted": promoted, "tools": len(tools)}
 
 
 def build_plan(s: Session) -> dict[str, Any]:
