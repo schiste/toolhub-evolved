@@ -196,6 +196,15 @@
   image: python3.13
   schedule: "55 * * * *"
   timeout: 300
+  # 2Gi, up from the 512Mi default. `graph_enrichment` loads the whole
+  # canonical-tool and enrichment tables as entities before it bounds anything,
+  # and both grew when discovery opened up to every Wikimedia project. Every
+  # tick since 2026-08-25 20:55 was OOM-killed: SIGKILL skips job_guard.sh's
+  # exit trap, so the breaker never armed and the job died silently for a day.
+  # A stopgap, not the fix -- the query should read the columns it uses, the
+  # way `catalog_projection.refresh_candidates` now does. Deleting this line
+  # again is how that lands.
+  mem: 2Gi
   emails: onfailure
 
 - name: catalog-projection
@@ -214,6 +223,16 @@
   image: python3.13
   schedule: "7 * * * *"
   timeout: 600
+  # 2Gi, up from the 512Mi default. `tool_assets` loads the whole projection
+  # and asset-cache tables as entities before it bounds anything, and the
+  # projection grew from ~20,000 candidate URLs to 82,911 when discovery opened
+  # up to every Wikimedia project. Every tick since 2026-08-25 19:07 was
+  # OOM-killed: SIGKILL skips job_guard.sh's exit trap, so the breaker never
+  # armed and the job died silently for a day. A stopgap, not the fix -- the
+  # query should read the columns it uses, the way
+  # `catalog_projection.refresh_candidates` now does. Deleting this line again
+  # is how that lands.
+  mem: 2Gi
   emails: onfailure
 
 - name: catalog-validation
@@ -223,6 +242,16 @@
   image: python3.13
   schedule: "3 * * * *"
   timeout: 600
+  # 2Gi, up from the 512Mi default. `catalog_validation` loads the whole
+  # projection table as entities just to count candidates and slice the first
+  # `limit`, and that table grew from ~20,000 candidate URLs to 82,911 when
+  # discovery opened up to every Wikimedia project. Every tick since
+  # 2026-08-25 19:06 was OOM-killed: SIGKILL skips job_guard.sh's exit trap, so
+  # the breaker never armed and the job died silently for a day. A stopgap, not
+  # the fix -- the query should read the columns it uses, the way
+  # `catalog_projection.refresh_candidates` now does. Deleting this line again
+  # is how that lands.
+  mem: 2Gi
   emails: onfailure
 
 - name: people-reconcile
