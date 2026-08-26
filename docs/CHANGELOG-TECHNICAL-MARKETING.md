@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: directory-opens-again -->
 <!-- Release title: The Directory Opens Again -->
-<!-- Source range: a136925d..4078c267 (1 commit) -->
+<!-- Source range: a136925d..0f7a1ac4 (2 commits) -->
 
 # Technical and Marketing Notes
 
@@ -12,3 +12,5 @@
 - The cost test asserts the listing issues the same number of queries at 3 wikis and at 30. Against the previous implementation that is 14 and 122; a third test pins the bulk reader's output against the per-wiki `coverage()` it replaced, wiki by wiki, since four grouped reads stitched by key can fail in ways one wiki cannot show.
 - `defaultWiki()` chose the first entry with `active + archive > 0`. That was `fr.wikipedia.org` at three configured wikis and is `aa.wikibooks.org` at 1,015 -- one archived page and zero in the tier the page opens on. It now ranks by the tier being rendered, falls back to the busiest wiki overall, then to the first listed, and takes the tier as an argument so `?tier=archive` no longer selects for `active`.
 - Both defects share one root: a rule that was correct for a hand-written three-entry list and silently wrong for a self-maintaining roster of a thousand. Neither surfaced in tests because both fixtures were single-wiki; the new tests are multi-wiki on purpose.
+- The deploy carrying the above aborted at `migrate`: OOMKilled, exit 137, dead in 8s with the log file still empty. `refresh_candidates()` opened by loading every `CatalogToolProjection` as an ORM entity to read five scheduling scalars. Production holds 28,278 rows averaging ~10KB -- four JSON blobs and `search_text` -- so the scan pulled ~285MB, and several times that as deserialized dicts, into a pod whose baseline RSS is 38MB. Selecting the five columns fixes it; the loop is unchanged, since a Row answers by column name.
+- The third instance of one pattern in one release: a read that names an entity when it wants a few columns, correct at every size the tests use and fatal at the size production reached. Migrate runs before the restart under `set -eu`, so the failure left the old code serving rather than half-deploying -- the abort worked exactly as designed, and `/userscripts` stayed broken until this shipped alongside it.
