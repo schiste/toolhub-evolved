@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-page-beside-it -->
 <!-- Release title: The Page Beside It -->
-<!-- Source range: c53f5a9a..e57d6898 (5 commits) -->
+<!-- Source range: c53f5a9a..23d322ed (8 commits) -->
 
 # Technical and Marketing Notes
 
@@ -12,5 +12,5 @@
 - `inference_enrichment` is the first job that writes a value nobody asserted. It sends a user script's own source to Lift Wing and stores a description and keywords for the 37,791 scripts that have neither. Selection is a SQL left join on `(page_id, source_fingerprint)`, so an enriched corpus reads an index instead of the 1.8 GB body column, and a script whose fingerprint moved is re-inferred automatically.
 - The gap-only guarantee is structural, not procedural. `_assemble` resolves scalars first-writer-wins and union-merges lists, so a late-ordered source could still slip a keyword into a curated list. `FILL_ONLY_SOURCES` is sorted last unconditionally instead, which makes it order-independent and covers list fields — human curation, Toolhub canonical records, and toolinfo.json cannot be reached at all.
 - Two fields, not twelve, and self-reported confidence is discarded. `tool_type`, `technology_used`, and `for_wikis` are already deterministic at 100% on the wiki lanes, so a guess there could only contradict a known-true value. The model returned 0.9 on an `audience` it got wrong, so acceptance is checkable shape rules only: length bounds, character class, no URLs, refusal-opener rejection.
-- 200 pages an hour at `:41`, session-per-page so a killed pod keeps the answers already paid for. Unset `LIFTWING_API_URL` or `LIFTWING_MODEL` and the sweep fails loudly rather than recording 200 identical errors against 200 innocent pages. At that rate the backlog clears in about eight days and then costs almost nothing.
+- 200 pages an hour at `:41`, session-per-page so a killed pod keeps the answers already paid for. Each pass ends by calling `catalog_projection.refresh_tool_names` on exactly the tools it filled — the projection's own sweep is a 500-an-hour backstop, so without that call a stored description would sit unread for days. Unset `LIFTWING_API_URL` or `LIFTWING_MODEL` and the sweep fails loudly rather than recording 200 identical errors against 200 innocent pages. At that rate the backlog clears in about eight days and then costs almost nothing.
 - Validation: 3,293 proxy tests pass, 25 skipped. New coverage proves an upstream description wins while the model's stays visible as non-effective evidence, and that the model still fills a field the upstream record left empty. Fixtures are verbatim real Lift Wing replies, including a fenced one carrying an unsolicited `confidence` key. ruff check/format, cspell, jscpd, prettier and js-quality all clean.
