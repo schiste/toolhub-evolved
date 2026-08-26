@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: ten-rows-and-a-full-scan -->
 <!-- Release title: Ten Rows and a Full Scan -->
-<!-- Source range: 6f7b54a0..f1356a84 (1 promoted commit) -->
+<!-- Source range: 6f7b54a0..532ad723 (1 commit) -->
 
 # Technical and Marketing Notes
 
