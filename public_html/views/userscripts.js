@@ -62,27 +62,43 @@ async function readJson(path) {
 }
 
 /**
- * Which wiki the directory opens on when the reader has not named one.
+ * The roster read as one directory rather than as a thousand.
  *
- * "The first wiki holding anything" was a fair answer while the census covered
- * three wikis, all of them large. Across every Wikimedia project the listing is
- * alphabetical and opens at aa.wikibooks.org, which holds one archived page and
- * nothing at all in the tier this page shows first -- so an unqualified visit
- * landed on an empty directory that read as a broken one.
+ * An unqualified visit shows every wiki at once, and the coverage strip above it
+ * then has to describe a thousand sweeps with one set of numbers. Only some of
+ * those numbers survive being merged. Counts add up: pages seen, scripts filed.
+ * Dates do not -- a mean of a thousand timestamps describes no wiki -- so both
+ * are taken at their oldest and labelled as the floor they are. `sweptAt` is
+ * dropped entirely: "the last wiki finished sweeping at" answers a question
+ * nobody asked, and `currentTo` already carries the freshness claim that matters.
  *
- * Pick the busiest wiki in the tier actually being shown. It is what an
- * unqualified visit is asking for, it stays right as the roster grows, and it
- * honours `?tier=archive` rather than choosing for one tier and rendering the
- * other. Ties keep the first listed, so the choice is stable between reads.
- * @param {Array<any>} wikis @param {string} tier
+ * The two partial-coverage notices become counts for the same reason. One wiki
+ * saying "these counts are a floor" is a fact about what you are reading; a
+ * thousand wikis saying it is a fact about how much of the roster is provisional.
+ * @param {Array<any>} wikis
  */
-function defaultWiki(wikis, tier) {
-	/** @param {(entry: any) => number} score */
-	const busiest = (score) =>
-		wikis.reduce((chosen, entry) => (score(entry) > score(chosen || {}) ? entry : chosen), null);
-	const inTier = busiest((entry) => Number(entry?.[tier] || 0));
-	const anywhere = busiest((entry) => Number(entry?.active || 0) + Number(entry?.archive || 0));
-	return String(inTier?.wiki || anywhere?.wiki || wikis[0]?.wiki || "");
+function aggregateCoverage(wikis) {
+	/** @param {string} key */
+	const sum = (key) => wikis.reduce((total, entry) => total + Number(entry?.[key] || 0), 0);
+	// ISO-8601 in UTC sorts lexicographically, so the first is the oldest. Wikis
+	// that have no such date yet are never-swept ones, disclosed by their own count.
+	const oldest = (/** @type {string} */ key) =>
+		wikis
+			.map((entry) => String(entry?.[key] || ""))
+			.filter(Boolean)
+			.sort()[0] || "";
+	return {
+		wiki: "",
+		wikis: wikis.filter((entry) => Number(entry?.active || 0) + Number(entry?.archive || 0) > 0).length,
+		roster: wikis.length,
+		pages: sum("pages"),
+		active: sum("active"),
+		archive: sum("archive"),
+		neverSwept: wikis.filter((entry) => !Number(entry?.sweepsCompleted || 0)).length,
+		notEnumerated: wikis.filter((entry) => entry?.enumerated === false).length,
+		currentTo: oldest("currentTo"),
+		computedAt: oldest("computedAt")
+	};
 }
 
 /** @param {string} wiki @param {string} title */
@@ -137,6 +153,40 @@ function coverageStrip(coverage) {
 	</div>`;
 }
 
+/**
+ * The same disclosure as `coverageStrip`, for a reading that spans every wiki.
+ * @param {any} summary
+ */
+function rosterStrip(summary) {
+	if (!summary) return "";
+	const notices = [];
+	if (summary.neverSwept > 0) {
+		notices.push(
+			t(
+				"userscripts.someNeverSwept",
+				"$1 of these wikis have no finished sweep yet, so their scripts are a floor rather than a total.",
+				fmt(summary.neverSwept)
+			)
+		);
+	}
+	if (summary.notEnumerated > 0) {
+		notices.push(
+			t(
+				"userscripts.someNotEnumerated",
+				"$1 hold more user-space script pages than one search pass can list, so only part of their user space has been read.",
+				fmt(summary.notEnumerated)
+			)
+		);
+	}
+	const notice = notices.map((line) => `<p class="empty" role="status">${esc(line)}</p>`).join("");
+	return `${notice}<div class="detail__meta">
+		${metaItem(t("userscripts.pagesSeen", "Script pages seen"), fmt(Number(summary.pages || 0)))}
+		${metaItem(t("userscripts.wikisCovered", "Wikis holding scripts"), esc(t("userscripts.wikisOf", "$1 of $2", fmt(Number(summary.wikis || 0)), fmt(Number(summary.roster || 0)))))}
+		${metaItem(t("userscripts.oldestCurrentTo", "Every wiki current to at least"), timeTag(summary.currentTo))}
+		${metaItem(t("userscripts.oldestComputedAt", "Oldest directory rebuild"), timeTag(summary.computedAt))}
+	</div>`;
+}
+
 /** @param {ReturnType<typeof userScriptState>} state @param {any} coverage */
 function tierTabs(state, coverage) {
 	const counts = {
@@ -156,12 +206,13 @@ function tierTabs(state, coverage) {
 
 /** @param {ReturnType<typeof userScriptState>} state @param {Array<any>} wikis */
 function controls(state, wikis) {
-	const options = wikis
-		.map(
+	const options = [
+		`<option value=""${state.wiki ? "" : " selected"}>${esc(t("userscripts.allWikis", "All wikis"))}</option>`,
+		...wikis.map(
 			(entry) =>
 				`<option value="${esc(entry.wiki)}"${entry.wiki === state.wiki ? " selected" : ""}>${esc(entry.wiki)}</option>`
 		)
-		.join("");
+	].join("");
 	return `<form class="userscripts__controls" data-userscript-search>
 		<label class="userscripts__field">
 			<span class="userscripts__field-label">${esc(t("userscripts.wikiLabel", "Wiki"))}</span>
@@ -175,12 +226,22 @@ function controls(state, wikis) {
 	</form>`;
 }
 
-/** @param {any} entry @param {ReturnType<typeof userScriptState>} state */
-function directoryRow(entry, state) {
-	const detail = userScriptHref(state, { script: entry.title, page: 1 });
+/**
+ * @param {any} entry @param {ReturnType<typeof userScriptState>} state @param {number} rank
+ */
+function directoryRow(entry, state, rank) {
+	// The script link must name the wiki even when the reading does not, because
+	// a script page is only ever a page on one wiki. The owner link deliberately
+	// does not: asking for one person across every wiki is the more useful read,
+	// and the wiki column is right there to narrow it.
+	const detail = userScriptHref(state, { wiki: String(entry.wiki || state.wiki), script: entry.title, page: 1 });
 	const owner = userScriptHref(state, { owner: entry.owner, page: 1, script: "" });
+	const wikiCell = state.wiki
+		? ""
+		: `<td><a href="${esc(userScriptHref(state, { wiki: String(entry.wiki || ""), page: 1, script: "" }))}" dir="auto">${esc(entry.wiki)}</a></td>`;
 	return `<tr>
-		<td>${fmt(Number(entry.position || 0))}</td>
+		<td>${fmt(rank)}</td>
+		${wikiCell}
 		<td><a href="${esc(detail)}" dir="auto">${esc(entry.basename || entry.title)}</a></td>
 		<td><a href="${esc(owner)}" dir="auto">${esc(entry.owner)}</a></td>
 		<td>${fmt(Number(entry.demand || 0))}</td>
@@ -200,17 +261,28 @@ function directoryTable(listing, state) {
 	}
 	const total = Number(listing?.total || results.length);
 	const pages = Math.ceil(total / USER_SCRIPT_PAGE_SIZE);
+	// `position` ranks a script inside its own wiki, so every wiki has a row at 1.
+	// Across wikis the rank has to be counted off the page instead.
+	const offset = (state.page - 1) * USER_SCRIPT_PAGE_SIZE;
+	const caption = state.wiki
+		? t("userscripts.tableCaption", "User scripts, most demanded first")
+		: t("userscripts.tableCaptionAll", "User scripts across every wiki, most demanded first");
 	return `<p class="userscripts__count">${esc(t("userscripts.showing", "Showing $1 of $2 scripts.", fmt(results.length), fmt(total)))}</p>
 	<table class="runs">
-		<caption class="skip-label">${esc(t("userscripts.tableCaption", "User scripts, most demanded first"))}</caption>
+		<caption class="skip-label">${esc(caption)}</caption>
 		<thead><tr>
 			<th scope="col">${esc(t("userscripts.rank", "Rank"))}</th>
+			${state.wiki ? "" : `<th scope="col">${esc(t("userscripts.wikiLabel", "Wiki"))}</th>`}
 			<th scope="col">${esc(t("userscripts.script", "Script"))}</th>
 			<th scope="col">${esc(t("userscripts.owner", "Owner"))}</th>
 			<th scope="col">${esc(t("userscripts.demand", "Users loading it"))}</th>
 			<th scope="col">${esc(t("userscripts.instances", "Pages filed under it"))}</th>
 		</tr></thead>
-		<tbody>${results.map((/** @type {any} */ entry) => directoryRow(entry, state)).join("")}</tbody>
+		<tbody>${results
+			.map((/** @type {any} */ entry, /** @type {number} */ index) =>
+				directoryRow(entry, state, state.wiki ? Number(entry.position || 0) : offset + index + 1)
+			)
+			.join("")}</tbody>
 	</table>
 	<div class="pager" data-userscript-pager>${renderPager(state.page, pages)}</div>`;
 }
@@ -281,15 +353,21 @@ export async function viewUserScripts() {
 	} catch {
 		failed = true;
 	}
-	const state = { ...requested, wiki: requested.wiki || defaultWiki(wikis, requested.tier) };
+	// No wiki named means every wiki, not "pick one for me". The census covers
+	// close to a thousand projects and no single one of them is the obvious place
+	// to open; a reader who wants one narrows to it from the roster above.
+	const state = { ...requested };
 	/** @type {string} */
 	let body;
-	let coverage = wikis.find((entry) => entry.wiki === state.wiki) || null;
+	let coverage = state.wiki ? wikis.find((entry) => entry.wiki === state.wiki) || null : aggregateCoverage(wikis);
 	if (failed) {
 		body = requestError();
-	} else if (!state.wiki) {
+	} else if (wikis.length === 0) {
 		body = `<p class="empty" role="status">${esc(t("userscripts.noWikis", "No wiki has been swept for user scripts yet."))}</p>`;
-	} else if (state.script) {
+	} else if (state.script && state.wiki) {
+		// A script page belongs to exactly one wiki, so `?script=` without a
+		// `?wiki=` cannot be answered; every link this view writes carries both,
+		// and a hand-edited URL that drops the wiki falls back to the directory.
 		try {
 			const response = await readJson(
 				`/v1/userscripts/script/?wiki=${encodeURIComponent(state.wiki)}&title=${encodeURIComponent(state.script)}`
@@ -302,9 +380,12 @@ export async function viewUserScripts() {
 	} else {
 		try {
 			const offset = (state.page - 1) * USER_SCRIPT_PAGE_SIZE;
+			const wikiParam = state.wiki ? `wiki=${encodeURIComponent(state.wiki)}&` : "";
 			const response = await readJson(
-				`/v1/userscripts/directory/?wiki=${encodeURIComponent(state.wiki)}&tier=${encodeURIComponent(state.tier)}&owner=${encodeURIComponent(state.owner)}&limit=${USER_SCRIPT_PAGE_SIZE}&offset=${offset}`
+				`/v1/userscripts/directory/?${wikiParam}tier=${encodeURIComponent(state.tier)}&owner=${encodeURIComponent(state.owner)}&limit=${USER_SCRIPT_PAGE_SIZE}&offset=${offset}`
 			);
+			// A cross-wiki read discloses no coverage of its own -- there is no one
+			// sweep to describe -- so the roster summary computed above stands.
 			coverage = response.data?.coverage || coverage;
 			body = response.ok ? `${tierTabs(state, coverage)}${directoryTable(response.data, state)}` : requestError();
 		} catch {
@@ -316,9 +397,19 @@ export async function viewUserScripts() {
 		title: t("userscripts.docTitle", "User scripts — Toolhub"),
 		html: `<div class="container page userscripts-page">
 			<h1 class="page__title">${esc(t("userscripts.heading", "User script directory"))}</h1>
-			<p class="page__intro">${esc(t("userscripts.intro", "Every user-space script this wiki publishes, collapsed so each distinct script appears once, ranked by how many people load it."))}</p>
+			<p class="page__intro">${esc(
+				state.wiki
+					? t(
+							"userscripts.intro",
+							"Every user-space script this wiki publishes, collapsed so each distinct script appears once, ranked by how many people load it."
+						)
+					: t(
+							"userscripts.introAll",
+							"Every user-space script the census has read, across every wiki it covers, collapsed so each distinct script appears once and ranked by how many people load it."
+						)
+			)}</p>
 			${wikis.length > 0 ? controls(state, wikis) : ""}
-			${coverageStrip(coverage)}
+			${state.wiki ? coverageStrip(coverage) : rosterStrip(coverage)}
 			<div data-userscript-results>${body}</div>
 		</div>`,
 		mount() {

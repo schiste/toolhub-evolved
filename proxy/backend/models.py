@@ -1726,6 +1726,12 @@ class UserScriptDirectoryEntry(Base):
         UniqueConstraint("wiki", "title"),
         # The directory is read one tier at a time, already ordered.
         Index("ix_user_script_directory_position", "wiki", "tier", "position"),
+        # And across every wiki at once, where `position` -- a rank within one
+        # wiki -- means nothing and the order has to come from `demand` itself.
+        # The tiebreak columns are in the index so the whole ORDER BY is served
+        # by a backward scan of it: without them MariaDB has to sort every row
+        # in the tier -- 36k in the archive today -- to answer for 25.
+        Index("ix_user_script_directory_demand", "tier", "demand", "wiki", "title"),
         # And one script at a time, by the identity that outlives the rebuild.
         Index("ix_user_script_directory_script", "script_id"),
     )

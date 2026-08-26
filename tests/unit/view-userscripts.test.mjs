@@ -69,7 +69,7 @@ function respond({ script = null, directory = listing, wikiList = wikis } = {}) 
 }
 
 beforeEach(() => {
-	window.history.replaceState({}, "", "/userscripts");
+	window.history.replaceState({}, "", "/userscripts?wiki=fr.wikipedia.org");
 	document.body.innerHTML = "";
 	h.fetchRead.mockReset();
 });
@@ -314,25 +314,10 @@ test("choosing another wiki drops the previous wiki's filters", async () => {
 	assert.equal(params.get("owner"), "Od1n");
 });
 
-test("the default wiki is one that has actually been projected", async () => {
-	respond({
-		wikiList: {
-			count: 2,
-			results: [
-				{ ...coverage, wiki: "es.wikipedia.org", active: 0, archive: 0 },
-				{ ...coverage, wiki: "fr.wikipedia.org" }
-			]
-		}
-	});
-	const view = await viewUserScripts();
-	assert.match(h.fetchRead.mock.calls[1][0], /wiki=fr\.wikipedia\.org/);
-	assert.match(view.html, /<option value="fr.wikipedia.org" selected>/);
-});
-
 /**
  * A roster the way the census now hands one over: alphabetical, opening on a
  * tiny wiki that holds a single archived page, with the wikis a reader actually
- * wants further down. This is the shape that broke the page.
+ * wants further down. Picking a wiki out of this shape is what broke the page.
  */
 const roster = {
 	count: 4,
@@ -344,50 +329,144 @@ const roster = {
 	]
 };
 
-test("an unqualified visit opens on the busiest wiki, not the alphabetically first", async () => {
-	// The old rule was "the first wiki holding anything", which was fr.wikipedia
-	// while three wikis were configured and is aa.wikibooks.org across all of
-	// them -- one archived page, and nothing in the tier this page opens on. The
-	// reader got an empty table and no way to tell it from a broken one.
-	respond({ wikiList: roster });
+/**
+ * What `/v1/userscripts/directory/` answers when no wiki is named: rows from
+ * different wikis ranked against each other by demand, each still carrying the
+ * position it holds inside its own wiki, and no `coverage` record -- there is no
+ * single sweep for a cross-wiki reading to describe.
+ */
+const crossWiki = {
+	wiki: "",
+	tier: "active",
+	count: 2,
+	total: 45679,
+	limit: 25,
+	offset: 0,
+	results: [
+		{
+			wiki: "en.wikipedia.org",
+			title: "User:Writer/navpop.js",
+			owner: "Writer",
+			basename: "navpop.js",
+			tier: "active",
+			demand: 9102,
+			instances: 41,
+			position: 1
+		},
+		{
+			wiki: "fr.wikipedia.org",
+			title: "Utilisateur:Zebulon84/xpatrol.js",
+			owner: "Zebulon84",
+			basename: "xpatrol.js",
+			tier: "active",
+			demand: 188,
+			instances: 13,
+			position: 1
+		}
+	],
+	coverage: null
+};
+
+test("an unqualified visit reads every wiki rather than choosing one", async () => {
+	// The page used to pick a wiki for you. Which one it picked was a guess about
+	// what you wanted, and no guess is right across a thousand projects -- so it
+	// asks for all of them and lets the ranking say where the scripts are.
+	window.history.replaceState({}, "", "/userscripts");
+	respond({ wikiList: roster, directory: crossWiki });
 	const view = await viewUserScripts();
-	assert.match(view.html, /<option value="en.wikipedia.org" selected>/);
-	assert.doesNotMatch(view.html, /<option value="aa.wikibooks.org" selected>/);
+
 	const asked = h.fetchRead.mock.calls.map(([path]) => path).find((path) => path.includes("/directory/"));
-	assert.match(asked, /wiki=en.wikipedia.org/);
+	assert.doesNotMatch(asked, /wiki=/);
+	assert.match(view.html, /<option value="" selected>All wikis<\/option>/);
+	assert.doesNotMatch(view.html, /<option value="[^"]+" selected>/);
 });
 
-test("the default wiki answers the tier being shown, not always the first one", async () => {
-	// ?tier=archive with no wiki used to pick for `active` and then render
-	// `archive`, which can land on a wiki that has nothing in the tier on screen.
-	window.history.replaceState({}, "", "/userscripts?tier=archive");
-	const archives = {
-		count: 2,
+test("the cross-wiki ranking numbers its own rows and names each row's wiki", async () => {
+	// Every wiki has a script at position 1, so the per-wiki rank cannot be shown
+	// here: a reader would see three rows all claiming first place. The rank is
+	// counted off the page instead, and continues across pages.
+	window.history.replaceState({}, "", "/userscripts");
+	respond({ wikiList: roster, directory: crossWiki });
+	let view = await viewUserScripts();
+	assert.match(view.html, /<td>1<\/td>\s*<td><a[^>]*>en\.wikipedia\.org/);
+	assert.match(view.html, /<td>2<\/td>\s*<td><a[^>]*>fr\.wikipedia\.org/);
+	assert.match(view.html, /<th scope="col">Wiki<\/th>/);
+	// The script link carries the row's own wiki; a script page belongs to one.
+	assert.match(view.html, /wiki=en\.wikipedia\.org&amp;script=User%3AWriter%2Fnavpop\.js/);
+
+	window.history.replaceState({}, "", "/userscripts?page=2");
+	respond({ wikiList: roster, directory: { ...crossWiki, offset: 25 } });
+	view = await viewUserScripts();
+	assert.match(view.html, /<td>26<\/td>/);
+	assert.match(view.html, /<td>27<\/td>/);
+});
+
+test("one wiki keeps its own rank and drops the wiki column", async () => {
+	respond();
+	const view = await viewUserScripts();
+	assert.doesNotMatch(view.html, /<th scope="col">Wiki<\/th>/);
+	assert.match(view.html, /<option value="fr.wikipedia.org" selected>/);
+	assert.match(h.fetchRead.mock.calls[1][0], /wiki=fr\.wikipedia\.org&tier=active/);
+});
+
+test("the roster summary adds up what adds up and floors what does not", async () => {
+	// Counts merge; dates do not. A mean of a thousand timestamps describes no
+	// wiki, so the oldest is shown and labelled as the floor it is.
+	window.history.replaceState({}, "", "/userscripts");
+	const stale = {
+		count: 3,
 		results: [
-			{ ...coverage, wiki: "aa.wikibooks.org", active: 5, archive: 1 },
-			{ ...coverage, wiki: "ab.wikipedia.org", active: 0, archive: 900 }
+			{ ...coverage, wiki: "aa.wikibooks.org", pages: 3, active: 0, archive: 1 },
+			{
+				...coverage,
+				wiki: "en.wikipedia.org",
+				pages: 100,
+				active: 20,
+				archive: 30,
+				currentTo: "2026-07-02T00:00:00Z"
+			},
+			{ ...coverage, wiki: "fr.wikipedia.org", pages: 50, active: 5, archive: 4 }
 		]
 	};
-	respond({ wikiList: archives });
+	respond({ wikiList: stale, directory: { ...crossWiki, coverage: null } });
 	const view = await viewUserScripts();
-	assert.match(view.html, /<option value="ab.wikipedia.org" selected>/);
+
+	assert.match(view.html, /Script pages seen<\/div><div class="meta__v"[^>]*>153</);
+	assert.match(view.html, /Wikis holding scripts<\/div><div class="meta__v"[^>]*>3 of 3</);
+	assert.match(view.html, /Every wiki current to at least/);
+	assert.match(view.html, /datetime="2026-07-02T00:00:00\.000Z"/);
+	// A per-wiki sweep date is not a fact about a cross-wiki reading.
+	assert.doesNotMatch(view.html, /Last full sweep/);
+	assert.match(view.html, /In use \(25\)/);
+	assert.match(view.html, /Archive \(35\)/);
 });
 
-test("a roster where no wiki has been projected yet still picks a wiki", async () => {
-	// Every wiki swept, none projected: counts are all zero and neither rule
-	// fires. Falling through to the first listed keeps the controls usable
-	// instead of rendering the "no wiki has been swept" dead end.
+test("a roster only partly swept says how much of it is provisional", async () => {
+	window.history.replaceState({}, "", "/userscripts");
 	respond({
 		wikiList: {
-			count: 2,
+			count: 3,
 			results: [
-				{ ...coverage, wiki: "aa.wikibooks.org", active: 0, archive: 0 },
-				{ ...coverage, wiki: "ab.wikipedia.org", active: 0, archive: 0 }
+				{ ...coverage, wiki: "aa.wikibooks.org", sweepsCompleted: 0 },
+				{ ...coverage, wiki: "ab.wikipedia.org", sweepsCompleted: 0 },
+				{ ...coverage, wiki: "en.wikipedia.org", enumerated: false }
 			]
 		},
-		directory: { ...listing, count: 0, total: 0, results: [] }
+		directory: { ...crossWiki, coverage: null }
 	});
 	const view = await viewUserScripts();
-	assert.match(view.html, /<option value="aa.wikibooks.org" selected>/);
-	assert.doesNotMatch(view.html, /No wiki has been swept/);
+	assert.match(view.html, /2 of these wikis have no finished sweep yet/);
+	assert.match(view.html, /1 hold more user-space script pages/);
+});
+
+test("choosing All wikis from the picker widens the reading", async () => {
+	respond();
+	const view = await viewUserScripts();
+	document.body.innerHTML = view.html;
+	view.mount();
+
+	const select = /** @type {HTMLSelectElement} */ (document.querySelector('[name="wiki"]'));
+	select.value = "";
+	select.dispatchEvent(new Event("change"));
+	assert.equal(new URLSearchParams(location.search).has("wiki"), false);
 });

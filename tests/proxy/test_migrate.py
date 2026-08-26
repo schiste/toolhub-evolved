@@ -122,6 +122,20 @@ def test_catalog_index_migration_retires_redundant_single_column_indexes(configu
     assert migrate._ensure_catalog_read_indexes() == 0
 
 
+def test_the_cross_wiki_directory_index_reaches_a_table_that_predates_it(configured_db):
+    # `create_all` skips a table that already exists, indexes included, so an
+    # index added to a shipped model only ever reaches production through this
+    # step. The directory table has been in production for weeks; dropping the
+    # index here is what a production database looks like before the migration.
+    with db.engine().begin() as connection:
+        connection.exec_driver_sql("DROP INDEX ix_user_script_directory_demand")
+
+    assert migrate._ensure_catalog_read_indexes() == 1
+    names = {item["name"] for item in db.inspect(db.engine()).get_indexes("user_script_directory")}
+    assert "ix_user_script_directory_demand" in names
+    assert migrate._ensure_catalog_read_indexes() == 0
+
+
 def test_digest_render_columns_compile_to_mysql_mediumtext(configured_db):
     for name in ("rendered_html", "rendered_wikitext", "rendered_text"):
         column = DigestEdition.__table__.columns[name]

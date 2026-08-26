@@ -58,6 +58,7 @@ from backend.models import (
     ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
     User,
+    UserScriptDirectoryEntry,
     UserScriptImport,
     UserScriptPage,
     utcnow,
@@ -166,6 +167,7 @@ def _ensure_catalog_read_indexes() -> int:
         (CanonicalToolCache.__table__, "ix_canonical_tool_cache_modified_at_sort"),
         (CatalogFacetValue.__table__, "ix_catalog_facet_values_field_value_tool"),
         (UserScriptImport.__table__, "ix_user_script_imports_target_page"),
+        (UserScriptDirectoryEntry.__table__, "ix_user_script_directory_demand"),
     )
     created = 0
     for table, name in targets:

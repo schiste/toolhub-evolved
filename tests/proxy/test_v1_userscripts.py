@@ -71,8 +71,80 @@ def corpus():
     projection.project(FRWIKI)
 
 
-def test_listing_requires_a_wiki(client):
-    assert client.get("/v1/userscripts/directory/").status_code == 400
+def two_wikis():
+    """Two wikis, including a script on each that ties the other on demand."""
+    corpus()
+    page("User:Zzz/popular.js", rank=0, wiki=ENWIKI)
+    page("User:Www/tied.js", rank=1, wiki=ENWIKI)
+    page("User:Yyy/mid.js", rank=2, wiki=ENWIKI)
+    for who in ["Ggg", "Hhh", "Iii"]:
+        loads(f"User:{who}/common.js", "User:Zzz/popular.js", wiki=ENWIKI)
+    for who in ["Kkk", "Lll"]:
+        loads(f"User:{who}/common.js", "User:Www/tied.js", wiki=ENWIKI)
+    loads("User:Jjj/common.js", "User:Yyy/mid.js", wiki=ENWIKI)
+    projection.project(ENWIKI)
+
+
+def test_omitting_the_wiki_reads_every_wiki_at_once(app, client):
+    # A wiki used to be required. It is optional now because the directory covers
+    # close to a thousand projects and no single one of them is the obvious place
+    # for an unqualified visit to open.
+    with app.app_context():
+        two_wikis()
+    body = client.get("/v1/userscripts/directory/").get_json()
+    assert body["wiki"] == ""
+    assert {row["wiki"] for row in body["results"]} == {FRWIKI, ENWIKI}
+    assert body["total"] == len(body["results"]) == 4
+
+
+def test_a_cross_wiki_reading_is_ranked_by_demand_not_by_per_wiki_position(app, client):
+    # Every wiki has a script at position 1, so ordering the union by `position`
+    # would interleave one ladder per wiki. The order has to come from `demand`.
+    with app.app_context():
+        two_wikis()
+    body = client.get("/v1/userscripts/directory/").get_json()
+    assert [(row["wiki"], row["demand"]) for row in body["results"]] == [
+        (ENWIKI, 3),
+        (FRWIKI, 2),
+        (ENWIKI, 2),
+        (ENWIKI, 1),
+    ]
+    # Each wiki's own ranking is still reported, and is exactly what could not
+    # have produced this order: two rows here both hold first place at home.
+    assert [row["position"] for row in body["results"]] == [1, 1, 2, 3]
+
+
+def test_cross_wiki_paging_does_not_repeat_or_skip_a_row(app, client):
+    # Ties on `demand` are broken by wiki then title, so a row cannot drift
+    # between pages the way an order with ties can.
+    with app.app_context():
+        two_wikis()
+    walked = []
+    for offset in range(0, 4):
+        page_body = client.get(f"/v1/userscripts/directory/?limit=1&offset={offset}").get_json()
+        walked += [(row["wiki"], row["title"]) for row in page_body["results"]]
+    assert len(set(walked)) == 4
+    whole = client.get("/v1/userscripts/directory/").get_json()
+    assert walked == [(row["wiki"], row["title"]) for row in whole["results"]]
+
+
+def test_a_cross_wiki_reading_still_answers_tier_and_owner(app, client):
+    with app.app_context():
+        two_wikis()
+    archive = client.get("/v1/userscripts/directory/?tier=archive").get_json()
+    assert [row["title"] for row in archive["results"]] == ["User:Ddd/quiet.js"]
+    owned = client.get("/v1/userscripts/directory/?owner=Zzz").get_json()
+    assert [(row["wiki"], row["owner"]) for row in owned["results"]] == [(ENWIKI, "Zzz")]
+
+
+def test_a_cross_wiki_reading_discloses_no_single_wiki_coverage(app, client):
+    # There is no one sweep to describe, and averaging a thousand of them would
+    # state something true of no wiki. Say nothing rather than say something
+    # invented; the caller already holds the per-wiki records from /wikis/.
+    with app.app_context():
+        two_wikis()
+    assert client.get("/v1/userscripts/directory/").get_json()["coverage"] is None
+    assert client.get(f"/v1/userscripts/directory/?wiki={FRWIKI}").get_json()["coverage"]["wiki"] == FRWIKI
 
 
 def test_listing_rejects_an_unknown_tier(client):

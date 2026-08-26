@@ -208,31 +208,61 @@ def v1_userscripts_wikis() -> Response | tuple[Response, int]:
 
 @v1_userscripts_bp.route("/v1/userscripts/directory/")
 def v1_userscripts_directory() -> Response | tuple[Response, int]:
-    """One tier of one wiki's directory, in its own ranked order."""
+    """One tier of the directory: a single wiki's, or every wiki's at once.
+
+    Omitting `wiki` asks for the whole census rather than one project, which is
+    what an unqualified visit wants -- the directory covers 897 wikis holding
+    entries, and no single one of them is the obvious place to start.
+
+    The two are ranked by different columns because only one of them can be.
+    `position` is a rank *within* a wiki, so every wiki has a row at position 1
+    and ordering the union by it would interleave 897 unrelated ladders. Across
+    wikis the order has to come from `demand` itself, with `wiki` and `title`
+    breaking ties so that paging is stable rather than merely sorted.
+
+    A cross-wiki row keeps its own `wiki`, so a caller can still follow any
+    entry back to the project that publishes it; the same script name on two
+    wikis stays two rows, because they are two scripts -- different code,
+    different owner, different readers.
+    """
     if security.read_rate_limited(request.remote_addr):
         return jsonify({"error": "rate limited, retry later"}), 429
     wiki = str(request.args.get("wiki") or "").strip()
-    if not wiki:
-        return jsonify({"error": "wiki is required"}), 400
     tier = str(request.args.get("tier") or directory.TIER_ACTIVE).strip()
     if tier not in TIERS:
         return jsonify({"error": f"tier must be one of {list(TIERS)}"}), 400
     owner = str(request.args.get("owner") or "").strip()
     limit, offset = _limit(request.args.get("limit", "")), _offset(request.args.get("offset", ""))
     with db.session_scope() as s:
-        where = [UserScriptDirectoryEntry.wiki == wiki, UserScriptDirectoryEntry.tier == tier]
+        where = [UserScriptDirectoryEntry.tier == tier]
+        if wiki:
+            where.append(UserScriptDirectoryEntry.wiki == wiki)
         if owner:
             where.append(UserScriptDirectoryEntry.owner == owner)
+        order = (
+            [UserScriptDirectoryEntry.position]
+            if wiki
+            else [
+                UserScriptDirectoryEntry.demand.desc(),
+                # Descending like `demand`, not because the tiebreak wants that
+                # order -- it exists only so paging is stable -- but because one
+                # index can be scanned in one direction. Mixing the two would
+                # make the tiebreak columns unusable and put a filesort over the
+                # whole tier in front of every page.
+                UserScriptDirectoryEntry.wiki.desc(),
+                UserScriptDirectoryEntry.title.desc(),
+            ]
+        )
         total = int(s.execute(select(func.count(UserScriptDirectoryEntry.id)).where(*where)).scalar() or 0)
         rows = s.execute(
-            select(UserScriptDirectoryEntry)
-            .where(*where)
-            .order_by(UserScriptDirectoryEntry.position)
-            .limit(limit)
-            .offset(offset)
+            select(UserScriptDirectoryEntry).where(*where).order_by(*order).limit(limit).offset(offset)
         ).scalars()
         results = [_entry(row) for row in rows]
-        disclosed = coverage(s, wiki)
+        # A cross-wiki read has no single coverage record to disclose, and
+        # inventing one by merging 897 of them here would duplicate what the
+        # caller already holds from `/v1/userscripts/wikis/`. Say nothing rather
+        # than say something averaged.
+        disclosed = coverage(s, wiki) if wiki else None
     return jsonify(
         {
             "wiki": wiki,
