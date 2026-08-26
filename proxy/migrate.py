@@ -131,7 +131,7 @@ def migrations() -> Iterator[MigrationResult]:
     output and no way to tell how far it got. `run_once` keeps the eager
     contract its name promises -- a generator nobody iterates runs nothing.
     """
-    yield MigrationResult("digest render MEDIUMTEXT", _widen_digest_render_columns())
+    yield MigrationResult("text columns widened to MEDIUMTEXT", _widen_text_columns())
     yield MigrationResult("digest email subscriptions activated", _confirm_legacy_email_subscriptions())
     yield MigrationResult("out-of-scope digest editions retired", _retire_out_of_scope_digest_editions())
     yield MigrationResult("api_cache index columns", api_cache.backfill_index_columns())
@@ -347,25 +347,50 @@ def _backfill_userscript_sketches() -> int:
                     written += 1
 
 
-def _widen_digest_render_columns() -> int:
-    """Widen existing MariaDB digest bodies beyond TEXT's 64 KiB ceiling."""
+#: Columns declared `LARGE_TEXT` in models.py that shipped as plain TEXT, and so
+#: exist in production with a 65,535-byte ceiling the model no longer respects.
+#: Two entries from two separate incidents: a digest body and, after precomputed
+#: snapshots moved into `api_cache_meta`, a ~300 KiB user-script roster written
+#: into a column sized for a cursor. Both failed the same way -- error 1406 on
+#: the write, in production only, because SQLite ignores declared widths and no
+#: test against the test database can reach this.
+WIDENED_TEXT_COLUMNS = (
+    ("digest_editions", ("rendered_html", "rendered_text", "rendered_wikitext")),
+    ("api_cache_meta", ("value",)),
+)
+
+
+def _widen_text_columns() -> int:
+    """Carry existing MariaDB columns past TEXT's 64 KiB ceiling to MEDIUMTEXT.
+
+    Nullability is read back from the column rather than assumed, because
+    `MODIFY COLUMN` restates the whole definition: naming the wrong one here
+    would silently rewrite a nullable column as NOT NULL, or drop a NOT NULL
+    that something else depends on, while appearing to do only a widening.
+    """
     engine = db.engine()
     if engine.dialect.name not in {"mysql", "mariadb"}:
         return 0
     inspector = inspect(engine)
-    if "digest_editions" not in inspector.get_table_names():
-        return 0
-    render_columns = {"rendered_html", "rendered_wikitext", "rendered_text"}
-    current = {column["name"]: column["type"] for column in inspector.get_columns("digest_editions")}
-    pending = [
-        name
-        for name in sorted(render_columns)
-        if name in current and not isinstance(current[name], (MEDIUMTEXT, LONGTEXT))
-    ]
-    with engine.begin() as connection:
-        for name in pending:
-            connection.exec_driver_sql(f"ALTER TABLE digest_editions MODIFY COLUMN {name} MEDIUMTEXT NOT NULL")
-    return len(pending)
+    tables = set(inspector.get_table_names())
+    widened = 0
+    for table, columns in WIDENED_TEXT_COLUMNS:
+        if table not in tables:
+            continue
+        current = {column["name"]: column for column in inspector.get_columns(table)}
+        pending = [
+            name
+            for name in columns
+            if name in current and not isinstance(current[name]["type"], (MEDIUMTEXT, LONGTEXT))
+        ]
+        if not pending:
+            continue
+        with engine.begin() as connection:
+            for name in pending:
+                null = "NULL" if current[name].get("nullable") else "NOT NULL"
+                connection.exec_driver_sql(f"ALTER TABLE {table} MODIFY COLUMN {name} MEDIUMTEXT {null}")
+        widened += len(pending)
+    return widened
 
 
 def _initialize_source_attestation_rules() -> int:

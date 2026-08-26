@@ -43,7 +43,13 @@ from backend.sync import (
 
 # Bound on the denormalized canonical search haystack (see CanonicalToolCache).
 SEARCH_TEXT_MAX_CHARS = 4000
-DIGEST_RENDER_TEXT = Text().with_variant(MEDIUMTEXT(), "mysql").with_variant(MEDIUMTEXT(), "mariadb")
+# Anything that can exceed TEXT's 65,535-*byte* ceiling on MariaDB. SQLite has
+# no such ceiling and ignores the declared width, so an oversized value is not
+# something any test against the test database can fail on -- it surfaces only
+# in production, as a write that raises 1406 mid-request. Declaring the type is
+# the only place that ceiling can be respected; `migrate._widen_text_columns`
+# carries an existing column across.
+LARGE_TEXT = Text().with_variant(MEDIUMTEXT(), "mysql").with_variant(MEDIUMTEXT(), "mariadb")
 
 # Public catalog cards need only this stable Toolhub subset. Keeping a derived
 # JSON projection avoids reading and serializing detail-only fields (and large
@@ -154,9 +160,9 @@ class DigestEdition(Base):
     status: Mapped[str] = mapped_column(String(32), default="generating", index=True)
     title: Mapped[str] = mapped_column(String(500), default="")
     introduction: Mapped[str] = mapped_column(Text, default="")
-    rendered_html: Mapped[str] = mapped_column(DIGEST_RENDER_TEXT, default="")
-    rendered_wikitext: Mapped[str] = mapped_column(DIGEST_RENDER_TEXT, default="")
-    rendered_text: Mapped[str] = mapped_column(DIGEST_RENDER_TEXT, default="")
+    rendered_html: Mapped[str] = mapped_column(LARGE_TEXT, default="")
+    rendered_wikitext: Mapped[str] = mapped_column(LARGE_TEXT, default="")
+    rendered_text: Mapped[str] = mapped_column(LARGE_TEXT, default="")
     source_hash: Mapped[str] = mapped_column(String(64), default="")
     prompt_version: Mapped[str] = mapped_column(String(64), default="")
     model_name: Mapped[str] = mapped_column(String(255), default="")
@@ -315,11 +321,21 @@ class ApiCache(Base):
 
 
 class ApiCacheMeta(Base):
-    """Small persistent state used by the anonymous Toolhub API cache."""
+    """Keyed persistent state: cursors, attestations, and precomputed snapshots.
+
+    Named for the anonymous Toolhub API cache it was built for, and since grown
+    into the general place a module parks one value it wants to survive a
+    restart. A snapshot lives here rather than in a table of its own because
+    what it holds is one opaque document under one key, which is exactly this
+    table.
+    """
 
     __tablename__ = "api_cache_meta"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    value: Mapped[str] = mapped_column(Text)
+    # "Small" was true of the cursors and etags this started with and stopped
+    # being true when precomputed snapshots moved in: the user-script roster is
+    # ~300 KiB across 1028 wikis, which TEXT rejects outright.
+    value: Mapped[str] = mapped_column(LARGE_TEXT)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

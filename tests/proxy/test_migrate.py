@@ -22,6 +22,7 @@ import migrate  # noqa: E402
 from backend import api_cache, canonical_tools, db, digests, maintainer_index, userscripts  # noqa: E402
 from backend.models import (  # noqa: E402
     ApiCache,
+    ApiCacheMeta,
     Base,
     DigestEdition,
     DigestSubscription,
@@ -65,7 +66,7 @@ def test_migrate_backfills_both_caches_and_is_idempotent(configured_db, capsys):
     # Asserted per migration rather than as a whole set, so adding a migration
     # extends this rather than breaking it.
     first = {result.name: result.rows for result in migrate.run_once()}
-    assert first["digest render MEDIUMTEXT"] == 0
+    assert first["text columns widened to MEDIUMTEXT"] == 0
     assert first["api_cache index columns"] == 1
     assert first["canonical search_text"] == 1
     # search_text repair reassigns the same record and therefore fills every
@@ -402,7 +403,45 @@ def test_migrate_backfills_stable_person_slugs_idempotently(configured_db):
         }
 
 
-def test_digest_render_migration_is_mysql_idempotent(monkeypatch):
+def test_a_snapshot_column_is_declared_past_the_text_ceiling():
+    """The only place MariaDB's 64 KiB limit can be caught before production.
+
+    The test database is SQLite, which ignores declared widths entirely: a
+    value that MariaDB rejects with error 1406 is stored without complaint by
+    every other test in this suite. So no behavioural test can reach this, and
+    the compiled DDL is what has to be asserted instead.
+
+    `api_cache_meta.value` is named because it is the one that got this wrong:
+    a column sized for a cursor, holding a ~300 KiB precomputed roster.
+    """
+    ddl = ApiCacheMeta.__table__.c.value.type.compile(mysql.dialect())
+    assert ddl == "MEDIUMTEXT"
+
+
+def test_the_widening_list_names_only_columns_the_models_still_declare_wide():
+    """A column drops off this list by being narrowed, which must not pass quietly.
+
+    The list is deliberately not every wide column -- one born MEDIUMTEXT never
+    needed carrying across -- so this is a subset check, not equality.
+    """
+    wide = {
+        (table.name, column.name)
+        for table in Base.metadata.tables.values()
+        for column in table.columns
+        if column.type.compile(mysql.dialect()) in {"MEDIUMTEXT", "LONGTEXT"}
+    }
+    listed = {(table, column) for table, columns in migrate.WIDENED_TEXT_COLUMNS for column in columns}
+    assert listed <= wide
+
+
+def test_widening_reaches_every_shipped_text_column_once(monkeypatch):
+    """Both tables get MODIFY-ed, and a second run does nothing.
+
+    Asserting the exact DDL rather than a count, because `MODIFY COLUMN`
+    restates a column's whole definition: a run that widened the type and
+    dropped a NOT NULL would satisfy any count-based assertion while quietly
+    changing what the column accepts.
+    """
     statements = []
 
     class Connection:
@@ -426,26 +465,64 @@ def test_digest_render_migration_is_mysql_idempotent(monkeypatch):
             self.widened = widened
 
         def get_table_names(self):
-            return ["digest_editions"]
+            return ["digest_editions", "api_cache_meta", "unrelated"]
 
-        def get_columns(self, _table):
+        def get_columns(self, table):
             column_type = MEDIUMTEXT() if self.widened else Text()
-            return [
-                {"name": name, "type": column_type} for name in ("rendered_html", "rendered_wikitext", "rendered_text")
-            ]
+            names = ("value",) if table == "api_cache_meta" else ("rendered_html", "rendered_wikitext", "rendered_text")
+            return [{"name": name, "type": column_type, "nullable": False} for name in names]
 
     engine = Engine()
     monkeypatch.setattr(migrate.db, "engine", lambda: engine)
     monkeypatch.setattr(migrate, "inspect", lambda _engine: Inspector())
-    assert migrate._widen_digest_render_columns() == 3  # noqa: SLF001 - exact DDL regression
+    assert migrate._widen_text_columns() == 4  # noqa: SLF001 - exact DDL regression
     assert statements == [
         "ALTER TABLE digest_editions MODIFY COLUMN rendered_html MEDIUMTEXT NOT NULL",
         "ALTER TABLE digest_editions MODIFY COLUMN rendered_text MEDIUMTEXT NOT NULL",
         "ALTER TABLE digest_editions MODIFY COLUMN rendered_wikitext MEDIUMTEXT NOT NULL",
+        "ALTER TABLE api_cache_meta MODIFY COLUMN value MEDIUMTEXT NOT NULL",
     ]
 
     monkeypatch.setattr(migrate, "inspect", lambda _engine: Inspector(widened=True))
-    assert migrate._widen_digest_render_columns() == 0  # noqa: SLF001 - idempotency regression
+    assert migrate._widen_text_columns() == 0  # noqa: SLF001 - idempotency regression
+
+
+def test_widening_preserves_a_nullable_column(monkeypatch):
+    """A nullable column stays nullable across the widening.
+
+    The DDL has to restate nullability, and every column this migration
+    currently touches is NOT NULL -- so nothing else in the suite would notice
+    if the clause were hardcoded rather than read back from the column.
+    """
+    statements = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def exec_driver_sql(self, statement):
+            statements.append(statement)
+
+    class Engine:
+        dialect = type("Dialect", (), {"name": "mysql"})()
+
+        def begin(self):
+            return Connection()
+
+    class Inspector:
+        def get_table_names(self):
+            return ["api_cache_meta"]
+
+        def get_columns(self, _table):
+            return [{"name": "value", "type": Text(), "nullable": True}]
+
+    monkeypatch.setattr(migrate.db, "engine", lambda: Engine())
+    monkeypatch.setattr(migrate, "inspect", lambda _engine: Inspector())
+    assert migrate._widen_text_columns() == 1  # noqa: SLF001 - exact DDL regression
+    assert statements == ["ALTER TABLE api_cache_meta MODIFY COLUMN value MEDIUMTEXT NULL"]
 
 
 def test_schema_setup_does_no_row_level_work(configured_db):
@@ -1075,7 +1152,7 @@ def test_run_once_reports_the_migrations_that_finished_before_one_failed(configu
     with pytest.raises(RuntimeError):
         for result in migrate.migrations():
             reported.append(result.name)
-    assert "digest render MEDIUMTEXT" in reported
+    assert "text columns widened to MEDIUMTEXT" in reported
     assert "user-script loads resolved to pages" not in reported
 
 

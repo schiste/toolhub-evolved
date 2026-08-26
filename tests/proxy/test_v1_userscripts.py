@@ -5,6 +5,7 @@ from datetime import datetime
 
 import pytest
 from flask import Flask
+from sqlalchemy.exc import OperationalError
 
 import backend
 from backend import (
@@ -515,6 +516,45 @@ def test_an_empty_store_is_built_on_demand_rather_than_served_as_no_wikis(app, c
         swept("w0.wikipedia.org")
         body = client.get("/v1/userscripts/wikis/").get_json()
     assert body["count"] == 1
+
+
+def test_a_roster_that_cannot_be_stored_is_still_served(app, client, monkeypatch):
+    """A failed cache write degrades the endpoint to slow, never to broken.
+
+    This shipped sharing the request's transaction, so the first production
+    request rebuilt the roster correctly and then died committing it: 300 KiB
+    into a column MariaDB caps at 65,535 bytes. The answer was in hand and the
+    caller got a 500. Storing is an optimization for the next reader and has to
+    fail like one.
+    """
+
+    def refuse(*_args, **_kwargs):
+        raise OperationalError("INSERT", {}, Exception("Data too long for column 'value'"))
+
+    with app.app_context():
+        swept("w0.wikipedia.org")
+        monkeypatch.setattr(userscript_coverage, "_store", refuse)
+        response = client.get("/v1/userscripts/wikis/")
+    assert response.status_code == 200
+    assert response.get_json()["count"] == 1
+
+
+def test_the_census_still_fails_when_it_cannot_store_the_roster(app, monkeypatch):
+    """The read path swallows a failed store; the job that exists to store must not.
+
+    Same failure, opposite handling, and a test on each side because the two
+    are one `_store` call apart and the sweep reports `stored=no` from an
+    exception it can only see if this one propagates.
+    """
+
+    def refuse(*_args, **_kwargs):
+        raise OperationalError("INSERT", {}, Exception("Data too long for column 'value'"))
+
+    with app.app_context():
+        swept("w0.wikipedia.org")
+        monkeypatch.setattr(userscript_coverage, "_store", refuse)
+        with pytest.raises(OperationalError):
+            userscript_coverage.refresh()
 
 
 def test_a_returning_reader_revalidates_the_roster_instead_of_refetching_it(app, client):

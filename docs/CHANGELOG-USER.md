@@ -1,13 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: ten-rows-and-a-full-scan -->
-<!-- Release title: Ten Rows and a Full Scan -->
-<!-- Source range: 6f7b54a0..532ad723 (1 commit) -->
+<!-- Release id: a-column-sized-for-a-cursor -->
+<!-- Release title: A Column Sized for a Cursor -->
+<!-- Source range: f6ae78d4..ab3a2c27 (1 commit) -->
 
 # What's New for Users
 
-- The user script directory now opens instead of intermittently failing to. Loading the list of wikis took up to 24 seconds, and the page waits for that list before it draws anything, so past a certain point browsers gave up and the page showed "the request failed" over a directory that was entirely fine.
-- Almost all of that time went on a single count: how many script pages each wiki has, skipping deleted ones. The database had no quick way to tell which pages were deleted, so it opened all 478,189 of them to check. Ten are deleted.
-- The database now keeps that answer to hand, and the wiki list itself is worked out once by the hourly census and then simply handed to visitors, rather than recalculated from scratch inside every page load.
-- The list is therefore up to an hour behind the very latest sweep. Each wiki still reports its own three dates — when it was last swept, last checked, and how far into recent changes the reader has got — so how current it is stays visible on the page rather than assumed.
-- Coming back to the page a second time now usually transfers nothing at all: the browser asks whether the list has changed and is told it has not.
+- The user script directory works again. The previous release made the wiki list fast by working it out once an hour instead of on every page load — but the place it was saved to could not hold it, so saving it failed and took the whole answer down with it. The page returned an error every time.
+- The list is about 300 KB across 1,028 wikis, and the space it was being saved into holds 64 KB. That space was sized years ago for short bookmarks, and nothing had needed more until this.
+- It now has room, and the saving step has been separated from the answering step. If saving ever fails again the page falls back to working the list out on the spot: slower, but it still opens.

@@ -16,10 +16,12 @@ both happen, and the coverage record is domain vocabulary rather than routing.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend import db
 from backend import userscript_directory as directory
@@ -34,6 +36,8 @@ from backend.models import (
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+_log = logging.getLogger(__name__)
 
 SNAPSHOT_KEY = "userscript_coverage_v1"
 #: How long a stored roster is advertised as fresh. The census runs hourly and
@@ -194,24 +198,25 @@ def snapshot(*, force: bool = False) -> dict[str, Any]:
     into half a dozen concurrent full scans.
     """
     now = utcnow()
-    with (
-        db.advisory_lock("userscript-coverage-refresh", timeout_seconds=2) as acquired,
-        db.session_scope() as session,
-    ):
-        cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
-        cached_payload: dict[str, Any] | None = None
-        if cached is not None:
-            try:
-                decoded = json.loads(cached.value)
-            except json.JSONDecodeError:
-                decoded = None
-            cached_payload = decoded if isinstance(decoded, dict) else None
-        serve_stale = cached is not None and (cached.updated_at >= now - SNAPSHOT_STALE_LIMIT or not acquired)
-        if cached_payload is not None and not force and serve_stale:
-            return cached_payload
-        payload = _payload(build_roster(session), now)
+    with db.advisory_lock("userscript-coverage-refresh", timeout_seconds=2) as acquired:
+        with db.session_scope() as session:
+            cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
+            cached_payload: dict[str, Any] | None = None
+            if cached is not None:
+                try:
+                    decoded = json.loads(cached.value)
+                except json.JSONDecodeError:
+                    decoded = None
+                cached_payload = decoded if isinstance(decoded, dict) else None
+            serve_stale = cached is not None and (cached.updated_at >= now - SNAPSHOT_STALE_LIMIT or not acquired)
+            if cached_payload is not None and not force and serve_stale:
+                return cached_payload
+            payload = _payload(build_roster(session), now)
+        # Still under the lock, so a racing rebuild cannot overwrite this with
+        # an older roster -- but no longer inside the read's transaction, and
+        # best-effort besides: see `_remember`.
         if acquired:
-            _store(session, payload, now)
+            _remember(payload, now)
         return payload
 
 
@@ -227,6 +232,27 @@ def _payload(results: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
         "results": results,
         "generatedAt": common.iso(now.replace(tzinfo=None)),
     }
+
+
+def _remember(payload: dict[str, Any], now: datetime) -> None:
+    """Store a rebuilt roster without letting a failed store fail the answer.
+
+    The reader's job is to answer; storing the answer is an optimization for
+    the next reader. Sharing the request's transaction meant a write that
+    raised took the successfully computed payload down with it -- which is
+    exactly how this shipped and returned 500 for a roster that was 4.7x over
+    `api_cache_meta.value`'s TEXT ceiling. The endpoint should have degraded to
+    what it did before the cache existed: correct, and slow.
+
+    Loud, though. A store that keeps failing means every request rebuilds, and
+    the rebuild is the 25-second scan this exists to avoid, so the log line is
+    the only warning before the page goes back to timing out.
+    """
+    try:
+        with db.session_scope() as session:
+            _store(session, payload, now)
+    except SQLAlchemyError:
+        _log.exception("userscript coverage roster could not be stored; serving rebuilt copy")
 
 
 def _store(session: Session, payload: dict[str, Any], now: datetime) -> None:
@@ -246,6 +272,11 @@ def refresh() -> dict[str, Any]:
     should stop rather than spend the whole rebuild on a payload it is not
     allowed to store, and because the caller reports whether the stored copy
     moved.
+
+    A failed store raises here, unlike on the read path, and deliberately: a
+    reader that cannot cache its answer still has an answer, while a job whose
+    only product is the stored row has produced nothing. `userscript_sweep`
+    catches it and reports it as the run's own failure.
     """
     now = utcnow()
     with (
