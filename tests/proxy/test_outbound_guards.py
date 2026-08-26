@@ -44,6 +44,17 @@ FIXED_TARGET_FETCHERS = {
         "generate_editorial",
     ): "operator endpoint is restricted to the fixed api.wikimedia.org Lift Wing prediction path",
     (
+        "backend/inference_enrichment.py",
+        "liftwing_caller",
+    ): (
+        "same clean_liftwing_endpoint restriction as digests: the operator endpoint is pinned to the "
+        "fixed api.wikimedia.org Lift Wing chat-completions path before `ask` is built"
+    ),
+    (
+        "backend/inference_enrichment.py",
+        "ask",
+    ): "closes over the endpoint clean_liftwing_endpoint already validated in liftwing_caller",
+    (
         "backend/wikimedia_delivery.py",
         "request",
     ): "Action API host is restricted by clean_wiki_domain to Wikimedia-operated project domains",

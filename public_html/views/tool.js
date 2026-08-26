@@ -403,7 +403,8 @@ const CATALOG_SOURCE_LABELS = {
 	repository_analysis: "Repository analysis",
 	wikimedia_user_script: "Wikimedia user script page",
 	evolved_curation: "Reviewed Evolved correction",
-	wiki_gadget_definition: "Wiki gadget definition"
+	wiki_gadget_definition: "Wiki gadget definition",
+	llm_inference: "Inferred from source code"
 };
 
 /** @param {unknown} value */

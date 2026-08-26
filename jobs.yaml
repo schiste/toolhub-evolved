@@ -489,3 +489,25 @@
   schedule: "23 * * * *"
   mem: 2Gi
   emails: onfailure
+
+- name: inference-enrichment
+  # The only job that writes a value nobody asserted. It reads a user script's
+  # own source through Lift Wing and stores a description and keywords for the
+  # 37,791 scripts that have neither, because no wiki page states them and no
+  # further crawling will produce one. Everything it produces is fill-only:
+  # catalog_projection.FILL_ONLY_SOURCES stops it reaching any field a person,
+  # Toolhub, or a toolinfo.json already spoke for.
+  #
+  # 200 an hour, not the whole corpus: Lift Wing is a shared Wikimedia service
+  # and this is the least urgent thing on it. At that rate the backlog clears in
+  # about eight days and then the job costs almost nothing, because a page whose
+  # fingerprint has not moved is never sent twice.
+  #
+  # Unset LIFTWING_API_URL or LIFTWING_MODEL and the sweep fails loudly rather
+  # than recording 200 identical errors against 200 innocent pages.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name inference-enrichment --stale-after 4200 -- /usr/bin/env INFERENCE_ENRICHMENT_LIMIT=200 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/inference_enrichment.py
+  image: python3.13
+  schedule: "41 * * * *"
+  timeout: 2100
+  mem: 512Mi
+  emails: onfailure

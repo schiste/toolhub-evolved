@@ -13,7 +13,8 @@ from urllib.parse import urlparse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend import catalog_facets, db, facet_names, wikimedia_urls
+from backend import catalog_facets, db, facet_names, wiki_sources, wikimedia_urls
+from backend.inference_enrichment import STATUS_READY as INFERENCE_READY
 from backend.models import (
     CanonicalToolCache,
     CatalogCuration,
@@ -22,9 +23,11 @@ from backend.models import (
     RepositoryAnalysisState,
     SourceAnalysisReport,
     ToolAssetCache,
+    ToolInference,
     ToolinfoDiscovery,
     ToolinfoSource,
     ToolinfoSourceItem,
+    UserScriptPage,
     utcnow,
 )
 from backend.sync import REVIEW_APPROVED, SOURCE_WIKI_GADGET
@@ -49,6 +52,18 @@ SOURCE_REPOSITORY = "repository_analysis"
 SOURCE_WIKIMEDIA_USER_SCRIPT = "wikimedia_user_script"
 SOURCE_CURATION = "evolved_curation"
 SOURCE_GADGET = "wiki_gadget_definition"
+SOURCE_INFERENCE = "llm_inference"
+
+# Sources that may only fill a gap. A fill-only source contributes a field
+# when no other source established one, and is otherwise evidence and nothing
+# more -- it can never replace, and for a list field can never extend, what
+# somebody else already said.
+#
+# Scalars are gap-only for every source already, because `_assemble` keeps the
+# first writer. Lists are not: they union, so an inferred keyword would land in
+# a list a human curated. Naming the constraint here rather than relying on
+# where the source happens to be appended keeps it true if that order changes.
+FILL_ONLY_SOURCES = frozenset({SOURCE_INFERENCE})
 
 # A canonical row records where it came from, and the projection must report
 # that rather than assume. Labelling a synthesized gadget record
@@ -108,6 +123,10 @@ SOURCE_CONFIDENCE = {
     # gadget definition states deployment facts and never claims to describe
     # what the tool is for.
     SOURCE_GADGET: 90,
+    # Read off source code by a language model. Lowest of any source on
+    # purpose: it is the only one that produces a value nobody ever asserted,
+    # and `FILL_ONLY_SOURCES` already stops it reaching a field that has one.
+    SOURCE_INFERENCE: 40,
 }
 
 # Report section -> CatalogFacetValue.field for signals detected in source.
@@ -273,6 +292,37 @@ def _latest_report_times(s: Session) -> dict[str, datetime]:
     return {row.tool_name: row.latest_timestamp for row in rows if row.tool_name}
 
 
+def _add_inference_sources(s: Session, names: list[str], sources: dict[str, list[dict[str, Any]]]) -> None:
+    """Add what a model read off each tool's source, where the reading still holds.
+
+    Its own function rather than another block in `_sources_by_tool`: every
+    other source there is a transcription that can be re-checked against what it
+    transcribed, and this one carries a freshness rule none of them needs.
+
+    Appended last for readability only. `_assemble` sorts fill-only sources to
+    the end itself, so nothing depends on where this lands.
+    """
+    inferences = s.execute(
+        select(ToolInference, UserScriptPage)
+        .join(UserScriptPage, ToolInference.page_id == UserScriptPage.id)
+        .where(ToolInference.tool_name.in_(names), ToolInference.status == INFERENCE_READY)
+    ).all()
+    for row, page in inferences:
+        # A payload that no longer matches the page's current bytes is dropped
+        # rather than shown as stale. A reading of source code that has since
+        # changed can only be re-taken, and until it is there is nothing to stand
+        # behind. The row stays, so the sweep still knows the page was tried.
+        if isinstance(row.payload, dict) and row.payload and row.source_fingerprint == page.fingerprint:
+            sources[row.tool_name].append(
+                {
+                    "payload": row.payload,
+                    "source": SOURCE_INFERENCE,
+                    "url": wiki_sources.page_url(page.wiki, page.title),
+                    "observed": row.checked_at,
+                }
+            )
+
+
 def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
     s: Session, names: list[str], reports: dict[str, SourceAnalysisReport] | None = None
 ) -> dict[str, list[dict[str, Any]]]:
@@ -365,6 +415,8 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
                     "observed": row.reviewed_at or row.modified_at,
                 }
             )
+
+    _add_inference_sources(s, names, sources)
     return sources
 
 
@@ -389,9 +441,16 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
     source_timestamps: dict[str, str] = {}
     curations: dict[str, Any] = {}
 
-    for source_row in sources:
+    # Every asserting source is read before any fill-only one. `effective` keeps
+    # the first writer of a scalar, so a fill-only source read early would win a
+    # field an asserting source was about to state -- the ordering is the
+    # guarantee, not a property of where callers happen to append.
+    ordered = sorted(sources, key=lambda row: row["source"] in FILL_ONLY_SOURCES)
+
+    for source_row in ordered:
         payload = _lift_purpose_annotations(source_row["payload"])
         source = source_row["source"]
+        fill_only = source in FILL_ONLY_SOURCES
         observed = _iso(source_row.get("observed"))
         if observed:
             source_timestamps[source] = max(observed, source_timestamps.get(source, ""))
@@ -413,6 +472,10 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
                 evidence[field].append(entry)
             if source == SOURCE_CURATION:
                 curations[field] = payload.get(field)
+            elif fill_only and _values(effective.get(field)):
+                # Somebody already said something here. The value stays in
+                # `evidence` so the tool page can still show what was inferred.
+                continue
             elif field in LIST_FIELDS:
                 merged = {_clean_text(item).casefold(): item for item in _values(effective.get(field))}
                 for value in field_values:

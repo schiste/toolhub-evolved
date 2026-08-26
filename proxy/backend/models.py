@@ -2090,3 +2090,48 @@ class WikiLaneState(Base):
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
     runs: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ToolInference(Base):
+    """What a language model said one tool does, read off that tool's own source.
+
+    This is the only table in the catalogue holding a value nobody asserted.
+    Every other source transcribes something -- a Toolhub record, a toolinfo.json,
+    a gadget definition, a human's correction -- and can be checked against what
+    it transcribed. A row here can only be checked against the source code it was
+    read from, which is why `page_id` and `source_fingerprint` are stored beside
+    the payload rather than just a timestamp: they say exactly which bytes were
+    read, so a re-read is possible and a stale row can be spotted.
+
+    Rows are kept for outcomes that produced nothing, too. `status` distinguishes
+    "asked, and the answer failed validation" from "asked, and the model was
+    unreachable" from "never asked", and without the first two every sweep would
+    re-ask the same unanswerable pages ahead of pages nobody has tried.
+
+    `catalog_projection.FILL_ONLY_SOURCES` is what keeps this table subordinate:
+    a payload here reaches the projection only where no other source said
+    anything, and can never replace or extend what one did.
+    """
+
+    __tablename__ = "tool_inference"
+    __table_args__ = (
+        # The sweep's whole selection is "pages with no current inference", as a
+        # join on these two columns. Without the index that join reads the table.
+        Index("ix_tool_inference_page_fingerprint", "page_id", "source_fingerprint"),
+    )
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    # Only the fields validation accepted, under their toolinfo names, so the
+    # projection can treat this payload exactly like any other source's.
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    # The page this was read from, in the lane that produced it -- today only
+    # `user_script_pages`. A second lane would need its own join column here
+    # rather than reusing this one, since the ids are not comparable.
+    page_id: Mapped[int] = mapped_column(Integer, default=0)
+    # The body's fingerprint at the time it was read. A page whose fingerprint
+    # still matches is never re-sent: the source has not moved, so neither would
+    # the answer, and re-sending 37,791 unchanged scripts is the entire cost.
+    source_fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    model: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(16), default="")
+    detail: Mapped[str] = mapped_column(Text, default="")
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

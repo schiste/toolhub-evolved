@@ -1663,3 +1663,81 @@ def test_the_candidate_scan_still_sees_every_scheduling_column():
         }
     assert due == {"stale", "broken"}
     assert catalog_projection.refresh_candidates()["candidates"] == 2
+
+
+def _row(source, payload, url="https://example.invalid/evidence"):
+    return {"payload": payload, "source": source, "url": url, "observed": utcnow()}
+
+
+def test_inference_fills_a_scalar_no_other_source_asserted():
+    effective, evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-a",
+        [
+            _row(catalog_projection.SOURCE_CANONICAL, {"title": "Tool A"}),
+            _row(catalog_projection.SOURCE_INFERENCE, {"description": "Inferred summary."}),
+        ],
+    )
+    assert effective["description"] == "Inferred summary."
+    assert [item["source"] for item in evidence["description"]] == [catalog_projection.SOURCE_INFERENCE]
+
+
+def test_inference_never_replaces_a_scalar_another_source_asserted():
+    effective, evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-b",
+        [
+            _row(catalog_projection.SOURCE_CANONICAL, {"description": "What Toolhub says."}),
+            _row(catalog_projection.SOURCE_INFERENCE, {"description": "What the model guessed."}),
+        ],
+    )
+    assert effective["description"] == "What Toolhub says."
+    # The rejected inference stays visible as evidence rather than disappearing.
+    inferred = [item for item in evidence["description"] if item["source"] == catalog_projection.SOURCE_INFERENCE]
+    assert len(inferred) == 1
+    assert inferred[0]["effective"] is False
+
+
+def test_inference_never_extends_a_list_another_source_asserted():
+    """The union merge that every other list source gets must not apply here."""
+    effective, _evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-c",
+        [
+            _row(catalog_projection.SOURCE_CANONICAL, {"keywords": ["citations"]}),
+            _row(catalog_projection.SOURCE_INFERENCE, {"keywords": ["links", "css"]}),
+        ],
+    )
+    assert effective["keywords"] == ["citations"]
+
+
+def test_inference_fills_a_list_nobody_asserted():
+    effective, _evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-d",
+        [
+            _row(catalog_projection.SOURCE_CANONICAL, {"title": "Tool D"}),
+            _row(catalog_projection.SOURCE_INFERENCE, {"keywords": ["links", "css"]}),
+        ],
+    )
+    assert effective["keywords"] == ["links", "css"]
+
+
+def test_human_curation_still_outranks_inference():
+    effective, _evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-e",
+        [
+            _row(catalog_projection.SOURCE_INFERENCE, {"description": "Model text."}),
+            _row(catalog_projection.SOURCE_CURATION, {"description": "Reviewed text."}),
+        ],
+    )
+    assert effective["description"] == "Reviewed text."
+
+
+def test_inference_is_gap_only_regardless_of_append_order():
+    """The guarantee must not depend on the inference row being appended last."""
+    effective, _evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-f",
+        [
+            _row(catalog_projection.SOURCE_INFERENCE, {"description": "Model text.", "keywords": ["a"]}),
+            _row(catalog_projection.SOURCE_CANONICAL, {"description": "Canonical text.", "keywords": ["b"]}),
+        ],
+    )
+    assert effective["description"] == "Canonical text."
+    assert effective["keywords"] == ["b"]

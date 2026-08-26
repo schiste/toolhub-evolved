@@ -39,7 +39,8 @@ const DERIVED_LABELS = {
 	wikimedia_user_script: () => t("sourceMark.userScript", "read from the wiki page beside the script"),
 	wiki_gadget_definition: () => t("sourceMark.gadget", "read from the wiki's gadget definition"),
 	repository_analysis: () => t("sourceMark.repository", "read from the tool's repository"),
-	evolved_curation: () => t("sourceMark.curation", "a reviewed Toolhub Evolved correction")
+	evolved_curation: () => t("sourceMark.curation", "a reviewed Toolhub Evolved correction"),
+	llm_inference: () => t("sourceMark.inference", "read off the source code by a language model")
 };
 
 /**
