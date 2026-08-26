@@ -244,13 +244,15 @@ def v1_userscripts_directory() -> Response | tuple[Response, int]:
             if wiki
             else [
                 UserScriptDirectoryEntry.demand.desc(),
-                # Descending like `demand`, not because the tiebreak wants that
-                # order -- it exists only so paging is stable -- but because one
-                # index can be scanned in one direction. Mixing the two would
-                # make the tiebreak columns unusable and put a filesort over the
-                # whole tier in front of every page.
-                UserScriptDirectoryEntry.wiki.desc(),
-                UserScriptDirectoryEntry.title.desc(),
+                # A tiebreak so paging is stable rather than merely sorted, and
+                # `id` rather than anything meaningful because the index has to
+                # carry it: (wiki, title) is 3068 bytes under utf8mb4 and puts
+                # the key over MariaDB's limit. Descending like `demand`, since
+                # one index is scanned in one direction and mixing the two would
+                # put a filesort over the whole tier in front of every page.
+                # Which row wins a tie is arbitrary either way -- what matters
+                # is that it wins it the same way on every page of one reading.
+                UserScriptDirectoryEntry.id.desc(),
             ]
         )
         total = int(s.execute(select(func.count(UserScriptDirectoryEntry.id)).where(*where)).scalar() or 0)

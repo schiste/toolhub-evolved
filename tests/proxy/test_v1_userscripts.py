@@ -103,15 +103,16 @@ def test_a_cross_wiki_reading_is_ranked_by_demand_not_by_per_wiki_position(app, 
     with app.app_context():
         two_wikis()
     body = client.get("/v1/userscripts/directory/").get_json()
-    assert [(row["wiki"], row["demand"]) for row in body["results"]] == [
-        (ENWIKI, 3),
-        (FRWIKI, 2),
-        (ENWIKI, 2),
-        (ENWIKI, 1),
-    ]
+    assert [row["demand"] for row in body["results"]] == [3, 2, 2, 1]
+    assert {row["wiki"] for row in body["results"]} == {ENWIKI, FRWIKI}
+    # The two rows tied at 2 sit on different wikis, and which of them wins the
+    # tie is arbitrary. What is not arbitrary is that it wins it every time --
+    # otherwise a reader paging through would see one row twice and miss one.
+    again = client.get("/v1/userscripts/directory/").get_json()
+    assert [row["title"] for row in again["results"]] == [row["title"] for row in body["results"]]
     # Each wiki's own ranking is still reported, and is exactly what could not
     # have produced this order: two rows here both hold first place at home.
-    assert [row["position"] for row in body["results"]] == [1, 1, 2, 3]
+    assert sorted(row["position"] for row in body["results"]) == [1, 1, 2, 3]
 
 
 def test_cross_wiki_paging_does_not_repeat_or_skip_a_row(app, client):

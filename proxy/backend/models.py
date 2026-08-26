@@ -1728,10 +1728,14 @@ class UserScriptDirectoryEntry(Base):
         Index("ix_user_script_directory_position", "wiki", "tier", "position"),
         # And across every wiki at once, where `position` -- a rank within one
         # wiki -- means nothing and the order has to come from `demand` itself.
-        # The tiebreak columns are in the index so the whole ORDER BY is served
-        # by a backward scan of it: without them MariaDB has to sort every row
-        # in the tier -- 36k in the archive today -- to answer for 25.
-        Index("ix_user_script_directory_demand", "tier", "demand", "wiki", "title"),
+        # `id` is in the index so the whole ORDER BY is served by a backward
+        # scan of it: without a tiebreak column MariaDB has to sort every row in
+        # the tier -- 36k in the archive today -- to answer for 25. `id` and not
+        # (wiki, title), which is the tiebreak this first shipped with: under
+        # utf8mb4 those two are 3068 bytes on their own and the index came to
+        # 3136, over MariaDB's 3072-byte key limit. SQLite has no such limit, so
+        # the tests passed and `migrate` failed in production.
+        Index("ix_user_script_directory_demand", "tier", "demand", "id"),
         # And one script at a time, by the identity that outlives the rebuild.
         Index("ix_user_script_directory_script", "script_id"),
     )

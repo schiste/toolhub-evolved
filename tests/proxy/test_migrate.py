@@ -10,7 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Text, inspect, select
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, inspect, select
 from sqlalchemy.dialects import mysql
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, mariadb
 
@@ -21,6 +21,7 @@ import migrate  # noqa: E402
 from backend import api_cache, canonical_tools, db, digests, maintainer_index, userscripts  # noqa: E402
 from backend.models import (  # noqa: E402
     ApiCache,
+    Base,
     DigestEdition,
     DigestSubscription,
     Person,
@@ -134,6 +135,62 @@ def test_the_cross_wiki_directory_index_reaches_a_table_that_predates_it(configu
     names = {item["name"] for item in db.inspect(db.engine()).get_indexes("user_script_directory")}
     assert "ix_user_script_directory_demand" in names
     assert migrate._ensure_catalog_read_indexes() == 0
+
+
+# What one column of each type costs in a MariaDB key, under the utf8mb4
+# charset production uses -- four bytes per character, not one.
+_KEY_BYTES = {
+    String: lambda column: (column.type.length or 0) * 4,
+    Integer: lambda _column: 4,
+    DateTime: lambda _column: 5,
+    Boolean: lambda _column: 1,
+}
+# MariaDB's limit for an InnoDB key under the DYNAMIC row format.
+_MAX_KEY_BYTES = 3072
+# Indexes that are over the limit and already deployed, so failing on them here
+# would describe nothing anyone can act on. Both are single-column: MariaDB cut
+# the first down to a 768-character prefix rather than refusing it, and the
+# second predates the ALTER that widened its column, which MariaDB does not
+# recheck. Neither escape is available to a new multi-column index -- that one
+# is refused outright, which is how this test came to exist.
+_GRANDFATHERED = {
+    "ix_toolhub_account_projection_groups_search",
+    "ix_toolinfo_sources_url",
+}
+
+
+def _key_bytes(column):
+    for kind, cost in _KEY_BYTES.items():
+        if isinstance(column.type, kind):
+            return cost(column)
+    # A type nobody has indexed before: fail rather than wave it through, since
+    # the whole point of this test is that it is the only place the limit is checked.
+    raise AssertionError(f"no key size known for {column.table.name}.{column.name} ({column.type!r})")
+
+
+def test_no_index_declares_a_key_longer_than_mariadb_accepts():
+    """SQLite has no key-length limit, so no other test in this suite can catch this.
+
+    `create_all` and `_ensure_catalog_read_indexes` both run against MariaDB in
+    production and against SQLite here. An index that is fine locally and 3136
+    bytes on Toolforge fails at deploy time, inside migrate, which aborts the
+    deploy and leaves the old code serving -- which is exactly what
+    ix_user_script_directory_demand did when it still carried (wiki, title).
+
+    Only `Index` declarations are checked, not unique constraints. Production
+    holds several of those that are over the limit today -- ux_user_script_imports_edge
+    is 15284 bytes -- because they were created while their columns were narrower
+    and MariaDB does not recheck a key when a later ALTER widens a column. They
+    survive because they already exist, so asserting on them here would fail on
+    the deployed schema rather than describe it.
+    """
+    oversized = []
+    for table in Base.metadata.tables.values():
+        for index in table.indexes:
+            size = sum(_key_bytes(column) for column in index.columns)
+            if size > _MAX_KEY_BYTES and index.name not in _GRANDFATHERED:
+                oversized.append(f"{index.name}: {size} bytes")
+    assert oversized == []
 
 
 def test_digest_render_columns_compile_to_mysql_mediumtext(configured_db):
