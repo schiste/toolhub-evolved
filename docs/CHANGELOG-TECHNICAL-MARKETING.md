@@ -1,16 +1,16 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-silent-hour -->
-<!-- Release title: The Silent Hour -->
-<!-- Source range: 226fa989..491fbf56 (1 commit) -->
+<!-- Release id: reading-only-what-it-needs -->
+<!-- Release title: Reading Only What It Needs -->
+<!-- Source range: f55d94aa..9a980b2b (1 commit) -->
 
 # Technical and Marketing Notes
 
-- `catalog-validation`, `tool-assets` and `graph-enrichment` produced no stdout after 2026-08-25 19:06, 19:07 and 20:55 respectively. Each was OOM-killed within seconds of every hourly start at the Toolforge 512Mi default; reproduced as one-off jobs at exit 137 in 11s, 3s and 9s.
-- Root cause is whole-entity table loads that predate the catalogue's growth: `catalog_validation.py:40` materializes all of `CatalogToolProjection` to count candidates and slice `[:limit]`, `tool_assets.py:193-194` adds `ToolAssetCache`, and `graph_enrichment.py:251-252,310` does the same with `CanonicalToolCache` and `GraphToolEnrichment`. The all-projects discovery promoted on 2026-08-25 took `catalog-validation`'s candidate pool from 20,302 to 26,655 to 82,911 across two days.
-- Memory was isolated as the only variable: the identical `catalog_validation` command at `--mem 2Gi` completed and returned `{"candidates": 82911, "processed": 5, "reachable": 5}`.
-- The failure was undetectable by design accident. OOM is SIGKILL, which skips `job_guard.sh`'s `trap cleanup 0`, so no state was written and the three-consecutive-failure breaker never armed — all three state files still read `failure_streak=0 disabled=0 last_exit=0` last modified on Aug 25. SIGKILL also discards block-buffered stdout, since these jobs run without `-u`.
-- The only surviving signal was the abandoned `$HOME/.toolhub-job-guard/.<job>.lock` directory and the hourly `job-guard: reclaiming <job> lock abandoned 3600s ago` line on stderr, which reads as routine reclaim rather than a job that has never once exited cleanly.
-- `jobs.yaml` now sets `mem: 2Gi` on the three jobs, each with an in-block note recording the measured cause, the date the job went silent, and that deleting the line again is the signal the query fix landed.
-- This is deliberately a stopgap. Session 165 fixed the same defect class in `catalog_projection.refresh_candidates` this morning by selecting five scalar columns instead of the entity — the projection row carries four JSON blobs and `search_text`, ~10KB each — and the same treatment is queued for these three as a separate release.
-- Validation: `jobs.yaml` parses to 32 jobs; `tests/tools/test_continuous_jobs.py`, `test_job_command_signals.py` and `test_service_template.py` pass (12). Broker gates `pytest-tools` and `prettier` passed on tree `a49748dff378`.
+- Five whole-entity scans across three jobs now select only the columns their loops read. `catalog_validation._candidate_rows` takes `tool_name`, `effective_record` and `validation`; `tool_assets.refresh_candidates` takes those first two plus `provenance` from the projection and four scalars from `ToolAssetCache`; `graph_enrichment.refresh_candidates` takes `tool_name` and `record` from `CanonicalToolCache` and four scalars from `GraphToolEnrichment`; `status_summary` takes two.
+- The three scans that still carry a JSON payload stream at `yield_per=500` rather than materializing. Narrowing alone would have fixed the current numbers while leaving peak memory proportional to the table, so the next growth step would have reproduced the outage; batching bounds it regardless of catalogue size. Same pattern `catalog_statistics._stream` already used.
+- Loop bodies are unchanged: a SQLAlchemy `Row` exposes attribute access by column name. `_icon_source` is typed loosely because `refresh_candidates` now hands it a two-column `Row` instead of the entity, and `status_summary` increments a counter as it streams instead of measuring a materialized list. `merge_cached_records` was left alone; it is already bounded by an explicit name list.
+- Three cost-regression tests attach a `before_cursor_execute` listener and assert the emitted SQL never names the columns each scan does not use. All three fail against the pre-change sources and pass after, checked by restoring the previous files from git rather than by inspection.
+- A fourth test pins that narrowing `tool_assets` did not change who is judged due: one tool per branch of the eligibility check, including a deferred error that must be skipped. Each branch keys off a different column, so a select that dropped one would still return rows, just the wrong ones, silently.
+- The `mem: 2Gi` lines from the previous release stay. They come out in a follow-up once the rewritten jobs are observed inside the 512Mi default in production, not on the assumption that they fit.
+- This completes the defect class opened in `0f7a1ac4`, where session 165 gave `catalog_projection.refresh_candidates` the same treatment. Four call sites in this codebase have now scaled memory with the catalogue; the measured cause is recorded at each one so the next reader does not re-derive it.
+- Validation: full proxy suite 3300 passed, 25 skipped locally; `ruff check` and `ruff format` clean on `proxy/`. Broker gates `jscpd-python`, `ruff-check`, `ruff-format`, `cspell`, `prettier` and `pytest-proxy` all passed on tree `aed5338b1fae`.

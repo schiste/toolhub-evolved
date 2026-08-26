@@ -1,13 +1,13 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-silent-hour -->
-<!-- Release title: The Silent Hour -->
-<!-- Source range: 226fa989..491fbf56 (1 commit) -->
+<!-- Release id: reading-only-what-it-needs -->
+<!-- Release title: Reading Only What It Needs -->
+<!-- Source range: f55d94aa..9a980b2b (1 commit) -->
 
 # What's New for Users
 
-- Three background jobs had been dead for a day and are running again. Between Tuesday evening and Wednesday afternoon the catalogue stopped fetching tool icons, stopped checking whether tool links still resolve, and stopped refreshing the technology facets you filter by. Nothing on the site said so — pages kept loading, they were just quietly going stale.
-- What you should notice: icons appearing again on tools registered since Tuesday, link checks resuming, and the facet filters picking up tools added in the meantime. Nothing that was already published changed or was lost; the jobs only ever add and refresh.
-- The cause was the catalogue outgrowing them. Opening user-script and gadget discovery to every Wikimedia project multiplied what these jobs sweep — one of them went from about twenty thousand items to eighty-three thousand in two days — and each ran out of the memory it had been given, mid-run, every hour.
-- They failed in the worst way available: killed outright rather than crashing, which left no error to report and no record to trip the automatic disable-and-alert that exists for exactly this. The only trace was a stray line in a log that read like routine housekeeping.
-- This release gives them the room they now need. A second release will make them stop needing it, by having them read only the handful of fields they actually use instead of loading every record whole.
+- The three background jobs revived yesterday now do the same work in a fraction of the memory. Each used to pull every record of a table into memory in full, then read two or three fields off it; they now ask the database for those fields and nothing else, and walk the table in small batches instead of holding it all at once.
+- You should notice nothing at all. Icon fetching, link checking and facet refreshing behave exactly as they did this morning — the change is entirely in what the jobs load to decide what to work on.
+- What it buys is that they stop getting more expensive as the catalogue grows. Yesterday's release bought room; this one removes the reason they needed it. The next time discovery opens to a new set of wikis, these three will not quietly run out of memory again.
+- The fix is pinned by tests that watch the actual database queries and fail if any of the three ever starts reading a field it does not use. That is the part that decays silently, so it is the part now under guard.
+- The extra memory granted yesterday stays in place for one more release. It comes out once the rewritten jobs have been observed running inside the standard allowance in production, rather than on the assumption that they will.
