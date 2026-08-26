@@ -16,6 +16,7 @@ import repository_scan  # noqa: E402
 from backend import db  # noqa: E402
 from backend import job_catalog  # noqa: E402
 from backend import source_analyzer  # noqa: E402
+from backend import source_hosts  # noqa: E402
 from backend import wiki_sources  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
@@ -2032,7 +2033,7 @@ def _catalog_row(tool_name, **fields):
     )
 
 
-def _analyzed_state(tool_name, *, checked=None):
+def _analyzed_state(tool_name, *, checked=None, provider="github"):
     """Seed one catalog row and the analyzed state row a past scan would have left."""
     with db.session_scope() as s:
         s.add(_catalog_row(tool_name))
@@ -2040,7 +2041,7 @@ def _analyzed_state(tool_name, *, checked=None):
             RepositoryAnalysisState(
                 tool_name=tool_name,
                 repository_url=f"https://github.com/example/{tool_name}",
-                provider="github",
+                provider=provider,
                 commit_sha="a" * 40,
                 status="analyzed",
                 report_id=None,
@@ -2080,3 +2081,17 @@ def test_the_authorship_backfill_shrinks_as_it_goes(monkeypatch):
 
     assert (scanned, first["analyzed"]) == (["one"], 1)
     assert [name for name, _record in repository_scan.authorship_backlog(50)] == ["two"]
+
+
+def test_the_authorship_backfill_leaves_the_wiki_lane_alone():
+    """A page set has no tree and no commits, so re-reading one cannot answer this.
+
+    It is not free, either: the only way to re-read a page set is to fetch it,
+    and a wiki API that answers `maxlag` during that fetch turns an analyzed
+    row into an error one. Excluded, so the backfill spends its clones where a
+    signal is possible at all.
+    """
+    _analyzed_state("git-hosted")
+    _analyzed_state("wiki-hosted", provider=source_hosts.PROVIDER_MEDIAWIKI_WIKIMEDIA)
+
+    assert [name for name, _record in repository_scan.authorship_backlog(10)] == ["git-hosted"]

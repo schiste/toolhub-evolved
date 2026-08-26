@@ -1108,6 +1108,16 @@ def authorship_backlog(limit: int) -> list[tuple[str, dict[str, Any]]]:
     backfill leaves `analyzed` on its way to `error`, which is what makes the
     selection shrink monotonically and the backfill terminate.
 
+    The wiki lane is excluded, and it is 95% of the catalog. A gadget's source
+    is a set of wiki pages: there is no tree to list and no commit to read an
+    identity from, so re-reading one cannot produce a signal at any price. The
+    price is not nothing either -- a page set has no cheap head, so the only
+    way to re-read it is to fetch it, and a transient `maxlag` from the wiki
+    API during that fetch would demote a row that was analyzed to `error`. So
+    the exclusion is not a shortcut past 27,000 slow rows; it is a refusal to
+    spend 27,000 API reads and risk 27,000 demotions for a column that would
+    still read "not known" afterwards, exactly as it does now.
+
     Selection, ordering and the limit are all one statement, and it names the
     two columns it reads rather than selecting the entities: this walks the
     whole catalog, and `select(Entity)` here would cost the width of both
@@ -1121,6 +1131,7 @@ def authorship_backlog(limit: int) -> list[tuple[str, dict[str, Any]]]:
                 .where(
                     RepositoryAnalysisState.status == "analyzed",
                     RepositoryAnalysisState.llm_checked_at.is_(None),
+                    RepositoryAnalysisState.provider != source_hosts.PROVIDER_MEDIAWIKI_WIKIMEDIA,
                 )
                 .order_by(CanonicalToolCache.tool_name)
                 .limit(max(1, limit))
