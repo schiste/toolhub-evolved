@@ -1903,3 +1903,180 @@ def test_a_run_stays_quiet_when_every_declared_right_is_described(capsys):
     for report in ({"wikiPage": {"gadgetUnknownRights": []}}, {"wikiPage": {}}, {}):
         repository_scan._report_unknown_rights("tool", report)
     assert capsys.readouterr().err == ""
+
+
+def _init_repository(destination, files, *, message):
+    """Build a real one-commit repository, because the authorship read parses git."""
+    import shutil
+    import subprocess
+
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("git is unavailable")
+    destination.mkdir(parents=True)
+    for name, content in files.items():
+        path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    run = lambda args: subprocess.run(  # noqa: E731 - one local helper, not a name worth a def
+        [git, "-c", "user.name=Ada Lovelace", "-c", "user.email=ada@example.org", *args],
+        cwd=destination,
+        check=True,
+        capture_output=True,
+    )
+    run(["init", "-q", "-b", "main"])
+    run(["add", "-A"])
+    run(["commit", "-q", "-m", message])
+    return subprocess.run(
+        [git, "rev-parse", "HEAD"], cwd=destination, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def _authorship_scan(monkeypatch, files, *, message, read_tree=None):
+    """Scan one tool against a real local repository and return its state row."""
+    head = {}
+
+    def fake_checkout(_url, destination):
+        head["sha"] = _init_repository(destination, files, message=message)
+        return head["sha"]
+
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: "0" * 40)
+    monkeypatch.setattr(repository_scan, "clone_repository", fake_checkout)
+    if read_tree is not None:
+        monkeypatch.setattr(repository_scan, "_read_repository_tree", read_tree)
+    monkeypatch.setattr(repository_scan, "_local_git_context", lambda _paths: {})
+    monkeypatch.setattr(repository_scan.tool_summaries, "refresh", lambda *_args: 1)
+
+    result = repository_scan.scan_tool("example-tool", {"repository": "https://github.com/example/tool"})
+
+    with db.session_scope() as s:
+        state = s.get(RepositoryAnalysisState, "example-tool")
+        report = s.execute(
+            select(SourceAnalysisReport).where(SourceAnalysisReport.tool_name == "example-tool")
+        ).scalar_one()
+        return result, state.llm_assisted, state.llm_provider, state.llm_model, report.report["repositoryContext"]
+
+
+def test_scan_tool_records_the_assistant_a_clone_signed_its_commit_with(monkeypatch):
+    result, assisted, provider, model, context = _authorship_scan(
+        monkeypatch,
+        {"README.md": "A tool.\n", "CLAUDE.md": "Build with npm.\n"},
+        message="feat: first\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n",
+    )
+
+    assert result == "analyzed"
+    assert (assisted, provider, model) == (True, "anthropic", "Claude Opus 5")
+    # The columns answer "which tool, which model"; the report keeps what those
+    # two words were read off, so a reader can disagree with the verdict.
+    evidence = [signal["evidence"] for signal in context["authorship"]["signals"]]
+    assert "CLAUDE.md" in evidence
+    assert any(item.endswith("co-author Claude Opus 5 <noreply@anthropic.com>") for item in evidence)
+
+
+def test_a_marker_outside_the_read_budget_is_still_found(monkeypatch):
+    # The whole reason the detection reads the tree listing rather than the
+    # files that were analyzed: MAX_FILES caps the read set and orders it by
+    # analysis value, so a repository of a few thousand files can push its
+    # CLAUDE.md out of it entirely. The listing has no such cap and costs no
+    # blob read.
+    result, assisted, provider, _model, _context = _authorship_scan(
+        monkeypatch,
+        {"README.md": "A tool.\n", "CLAUDE.md": "Build with npm.\n"},
+        message="feat: first\n",
+        read_tree=lambda _repo: [{"path": "README.md", "content": "A tool."}],
+    )
+
+    assert result == "analyzed"
+    assert (assisted, provider) == (True, "anthropic")
+
+
+def test_a_repository_with_no_traces_is_recorded_as_unknown_not_as_no(monkeypatch):
+    result, assisted, provider, model, context = _authorship_scan(
+        monkeypatch, {"README.md": "A tool.\n"}, message="feat: first\n"
+    )
+
+    assert result == "analyzed"
+    # NULL rather than False, and `status` is what separates this from a tool
+    # nobody has scanned. An assistant used through an editor commits nothing
+    # about itself, so "found no traces" is not "written by a person".
+    assert assisted is None
+    assert (provider, model) == ("", "")
+    assert context["authorship"]["signals"] == []
+    with db.session_scope() as s:
+        # The stamp is what carries "we looked", since the verdict cannot: the
+        # backfill selects on this being absent, and without it this row would
+        # be re-cloned by every backfill run forever.
+        assert s.get(RepositoryAnalysisState, "example-tool").llm_checked_at is not None
+
+
+def test_clone_authorship_survives_a_checkout_git_cannot_read(tmp_path):
+    # Not a repository, so both reads fail. Authorship is one extra fact about
+    # a tool; failing to establish it must not cost the analysis of its code.
+    empty = tmp_path / "not-a-repository"
+    empty.mkdir()
+
+    result = repository_scan._clone_authorship(empty)
+
+    assert result["llmAssisted"] is None
+    assert result["signals"] == []
+
+
+def _catalog_row(tool_name, **fields):
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    return CanonicalToolCache(
+        tool_name=tool_name,
+        record={"name": tool_name, "repository": f"https://github.com/example/{tool_name}"},
+        expires_at=now + timedelta(days=1),
+        stale_until=now + timedelta(days=2),
+        **fields,
+    )
+
+
+def _analyzed_state(tool_name, *, checked=None):
+    """Seed one catalog row and the analyzed state row a past scan would have left."""
+    with db.session_scope() as s:
+        s.add(_catalog_row(tool_name))
+        s.add(
+            RepositoryAnalysisState(
+                tool_name=tool_name,
+                repository_url=f"https://github.com/example/{tool_name}",
+                provider="github",
+                commit_sha="a" * 40,
+                status="analyzed",
+                report_id=None,
+                llm_checked_at=checked,
+            )
+        )
+
+
+def test_the_authorship_backfill_selects_only_what_it_has_never_read():
+    _analyzed_state("never-read")
+    _analyzed_state("already-read", checked=datetime(2026, 8, 1, tzinfo=UTC))
+    with db.session_scope() as s:
+        # Never scanned at all: the ordinary lane will read its authorship the
+        # first time it analyzes it, so cloning it here as well is wasted work.
+        s.add(_catalog_row("never-scanned"))
+
+    assert [name for name, _record in repository_scan.authorship_backlog(50)] == ["never-read"]
+
+
+def test_the_authorship_backfill_shrinks_as_it_goes(monkeypatch):
+    _analyzed_state("one")
+    _analyzed_state("two")
+    scanned = []
+
+    def fake_scan(tool_name, _record, *, force):
+        # Forced, always: every row in this backlog is at a commit that has not
+        # moved, so an unforced scan would skip all of them.
+        assert force is True
+        scanned.append(tool_name)
+        with db.session_scope() as s:
+            s.get(RepositoryAnalysisState, tool_name).llm_checked_at = repository_scan.utcnow()
+        return "analyzed"
+
+    monkeypatch.setattr(repository_scan, "scan_tool", fake_scan)
+
+    first = repository_scan.run_authorship_backfill(1)
+
+    assert (scanned, first["analyzed"]) == (["one"], 1)
+    assert [name for name, _record in repository_scan.authorship_backlog(50)] == ["two"]

@@ -2210,3 +2210,44 @@ def test_the_definition_page_is_trusted_like_a_manifest() -> None:
     # metadata without needing a second file to agree.
     report = _gadget_report("Twinkle.js")
     assert "rollback" in report["suggestions"]["evolvedMetadata"]["access_rights"]
+
+
+def test_repository_context_reports_authorship_from_the_paths_it_was_given():
+    report = analyze_source_files(
+        [
+            {"path": "CLAUDE.md", "content": "Run npm test before committing."},
+            {"path": "src/app.js", "content": "console.log('hi');"},
+        ],
+        tool_name="example-tool",
+        source_label="https://github.com/example/tool",
+    )
+
+    authorship = report["repositoryContext"]["authorship"]
+    assert authorship["llmAssisted"] is True
+    assert authorship["provider"] == "anthropic"
+
+
+def test_a_caller_cannot_assert_authorship_through_the_supplied_context():
+    # This lane analyzes files supplied in a request body, so a caller already
+    # chooses the input. What it must not get is a way to state the conclusion
+    # directly: "this tool was written by an LLM" is a claim about somebody
+    # else's tool, and no file here supports it.
+    report = analyze_source_files(
+        [{"path": "src/app.js", "content": "console.log('hi');"}],
+        tool_name="example-tool",
+        source_label="https://github.com/example/tool",
+        repository_context={
+            "repository": {"url": "https://github.com/example/tool"},
+            "authorship": {
+                "llmAssisted": True,
+                "provider": "anthropic",
+                "model": "Claude Opus 5",
+                "signals": [{"kind": "marker", "provider": "anthropic", "evidence": "invented"}],
+            },
+        },
+    )
+
+    authorship = report["repositoryContext"]["authorship"]
+    assert authorship["llmAssisted"] is None
+    assert authorship["provider"] == ""
+    assert authorship["signals"] == []

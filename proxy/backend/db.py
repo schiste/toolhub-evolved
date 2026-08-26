@@ -301,6 +301,13 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",
+            # Nullable with no default, deliberately: every existing row starts
+            # as "not yet looked for", and a DEFAULT would silently declare
+            # several thousand not-yet-read tools assistant-free.
+            "llm_assisted": "BOOLEAN NULL",
+            "llm_provider": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "llm_model": "VARCHAR(128) NOT NULL DEFAULT ''",
+            "llm_checked_at": "DATETIME NULL",
         },
         "person_reconciliation_queue": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",

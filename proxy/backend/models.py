@@ -1420,6 +1420,31 @@ class RepositoryAnalysisState(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+    #: True when the scan found a coding assistant's own traces -- a marker
+    #: file it defines, or a commit it signed. NULL when it found none, which
+    #: is not the same claim as False: an assistant used from an editor, with
+    #: nothing about it committed, leaves nothing for a deterministic layer to
+    #: find. `status` already separates "scanned and found nothing" from "never
+    #: scanned", so nothing is lost by never writing False here -- and a lot
+    #: would be lost by writing it, because a reader would take it for proof
+    #: that a person wrote every line. backend.source_authorship holds the
+    #: evidence rules; the signals behind a True are in the stored report.
+    llm_assisted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    #: The vendor of the assistant, when the evidence names one and does not
+    #: contradict itself. Empty for a bare `AGENTS.md`, which names no vendor
+    #: at all, and empty when markers name two -- the report's signal list can
+    #: say "both", where one column cannot.
+    llm_provider: Mapped[str] = mapped_column(String(32), default="")
+    #: The model, which in practice only Claude Code's `Co-Authored-By` trailer
+    #: ever states outright. Empty everywhere else rather than inferred from
+    #: the assistant, because an assistant is not a model and runs as several.
+    llm_model: Mapped[str] = mapped_column(String(128), default="")
+    #: When this layer last looked. The only way to tell "looked and found
+    #: nothing" -- llm_assisted NULL, this set -- from "never looked", which is
+    #: both NULL, and the difference the backfill selects on. Without it the
+    #: two are indistinguishable and a backfill either re-clones the whole
+    #: catalog every run or never terminates.
+    llm_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class RepositoryHostMetadata(Base):

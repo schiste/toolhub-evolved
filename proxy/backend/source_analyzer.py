@@ -15,7 +15,7 @@ import tomllib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from backend import source_endpoints, wiki_sources
+from backend import source_authorship, source_endpoints, wiki_sources
 from backend.source_analysis_assessments import (
     _assessment_summary,
     _assessments,
@@ -2250,6 +2250,14 @@ def _repository_context_from_files(
         "health": _sorted_context_items(indexes["health"]),
         "accessibility": _sorted_context_items(indexes["accessibility"]),
         "dependencySources": _dependency_source_context(report),
+        # Derived from the paths of the files actually analyzed, and set
+        # *before* the caller-supplied context is merged in, so that no
+        # request body can assert a tool was or was not written by an
+        # assistant. What a caller can still do is name a file `CLAUDE.md`
+        # -- which is the same latitude it has over every other conclusion
+        # this analyzer draws from files it was handed, and is why that
+        # lane stores its reports for review.
+        "authorship": source_authorship.detect([source_file.path for source_file in files]),
     }
     context.update(external)
     maintenance = _repository_maintenance_context(context.get("repository"))

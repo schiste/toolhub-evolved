@@ -40,6 +40,7 @@ from backend import (
     job_runner,
     job_runs,
     outbound,
+    source_authorship,
     source_hosts,
     tool_summaries,
     wiki_api,
@@ -399,6 +400,13 @@ class _Source:
     head: str
     files: list[dict[str, str]]
     context: dict[str, Any]
+    #: What the acquisition itself saw of coding-assistant involvement, which
+    #: is more than the analyzer can see from the files it was handed: the
+    #: whole path listing rather than the budgeted read set, plus the commit
+    #: metadata, which only exists for a clone. Empty for a wiki page set --
+    #: those have neither a tree nor commits, and an empty result there means
+    #: "nothing to read", exactly as it does for a repository with no markers.
+    authorship: dict[str, Any] = field(default_factory=dict)
     #: The wiki page this came from, with its kind settled by what was fetched,
     #: or None for a clone. Carried because acquisition is the only step that
     #: reads the gadget definition, and the type suggestion depends on it.
@@ -562,12 +570,66 @@ def _acquire_wiki(source: wiki_sources.WikiSource) -> _Source:
     )
 
 
+#: How many commits the authorship read looks at. A --depth 1 clone holds
+#: one, so this is a ceiling and not a count: it is written for however many
+#: are there, so that deepening the clone one day needs no change here.
+AUTHORSHIP_COMMITS = 50
+
+#: Field and record separators for the commit read. ASCII 0x1f and 0x1e, which
+#: cannot occur in a commit message -- a newline can, and %B is multi-line, so
+#: a line-oriented format would split one commit into several.
+_FIELD_SEP = "\x1f"
+_RECORD_SEP = "\x1e"
+
+_COMMIT_FIELDS = ("sha", "authorName", "authorEmail", "committerName", "committerEmail", "message")
+
+
+def _head_commits(repo: Path) -> list[dict[str, str]]:
+    """Read the identities and messages of the commits this clone actually has."""
+    template = _FIELD_SEP.join(["%H", "%an", "%ae", "%cn", "%ce", "%B"]) + _RECORD_SEP
+    listing = _git(["log", f"--max-count={AUTHORSHIP_COMMITS}", f"--format={template}"], cwd=repo)
+    commits: list[dict[str, str]] = []
+    for record in listing.split(_RECORD_SEP):
+        fields = record.strip("\n").split(_FIELD_SEP)
+        if len(fields) != len(_COMMIT_FIELDS):
+            continue
+        commits.append(dict(zip(_COMMIT_FIELDS, fields, strict=True)))
+    return commits
+
+
+def _clone_authorship(repo: Path) -> dict[str, Any]:
+    """Detect assistant involvement from the whole tree, not the analyzed subset.
+
+    Reads the listing itself rather than taking the files `_read_repository_tree`
+    returned, because that set is capped at MAX_FILES and ordered for analysis
+    value: a repository of a few thousand files can push its `CLAUDE.md` out of
+    it entirely. That means one more `ls-tree` per clone, which walks a pack
+    that is already on disk and opens no blob -- unmeasurable beside the fetch
+    that preceded it, and worth it to keep this function self-contained.
+
+    Self-contained because of what it must never do. Every read here is inside
+    the try: authorship is an extra fact about a repository, and no failure to
+    establish it is a reason to lose the analysis of the code itself.
+    """
+    try:
+        paths = [path for _oid, path in _tree_entries(repo)]
+        commits = _head_commits(repo)
+    except (RepositoryScanError, OSError):
+        return source_authorship.detect([])
+    return source_authorship.detect(paths, commits)
+
+
 def _acquire_clone(url: str) -> _Source:
     """Read one repository from a bounded clone that is discarded immediately."""
     with tempfile.TemporaryDirectory(prefix="toolhub-repository-") as workspace:
         checkout = Path(workspace) / "checkout"
         head = clone_repository(git_target(url), checkout)
-        return _Source(head=head, files=_read_repository_tree(checkout), context=_local_git_context([checkout]))
+        return _Source(
+            head=head,
+            files=_read_repository_tree(checkout),
+            context=_local_git_context([checkout]),
+            authorship=_clone_authorship(checkout),
+        )
 
 
 def _tool_repository(record: dict[str, Any]) -> str:
@@ -875,6 +937,7 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
             ),
         )
         _report_unknown_rights(tool_name, report)
+        authorship = _merge_authorship(report, acquired.authorship)
         with db.session_scope() as s:
             user = _scanner_user(s)
             stored = SourceAnalysisReport(
@@ -917,6 +980,12 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
             state.last_error = None
             state.source = SOURCE_REPOSITORY_SCAN
             state.sync_status = SYNC_EVOLVED_REAL
+            state.llm_assisted = authorship["llmAssisted"]
+            state.llm_provider = authorship["provider"]
+            state.llm_model = authorship["model"]
+            # Stamped whatever the verdict, including the unknown one: this
+            # records that the layer looked, not what it concluded.
+            state.llm_checked_at = utcnow()
     except (RepositoryScanError, OSError, SourceAnalysisError, ValueError) as exc:
         _save_failure(tool_name, url, provider, str(exc))
         return "error"
@@ -929,6 +998,26 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
         # `{"analyzed": 0, "candidates": 1, "error": 1}` over a stored report
         # that had already reached the live projection.
         return "analyzed" if _refresh_caches(tool_name) else CACHES_STALE
+
+
+def _merge_authorship(report: dict[str, Any], acquired: dict[str, Any]) -> dict[str, Any]:
+    """Combine what the analyzer saw with what the clone saw, and store the union.
+
+    Two partial views of one repository. The analyzer reads the paths of the
+    files it was given, which is how the same detection reaches the
+    /v1/source-analysis lane, where there is no clone at all. The clone sees
+    the whole tree and the commits. Neither contains the other, so the verdict
+    is re-derived from both sets of signals rather than taken from whichever
+    was computed second -- and the merged result is written back into the
+    report, so the evidence is stored beside the analysis it belongs to and not
+    only as three columns on a state row.
+    """
+    context = report.get("repositoryContext")
+    if not isinstance(context, dict):
+        return source_authorship.merge(acquired)
+    merged = source_authorship.merge(context.get("authorship"), acquired)
+    context["authorship"] = merged
+    return merged
 
 
 #: Analyzed, but the caches derived from the new report did not refresh. Not a
@@ -1008,6 +1097,52 @@ def candidate_tools(limit: int, tool_name: str | None = None) -> list[tuple[str,
         and _raw_tool_repository(row.record if isinstance(row.record, dict) else {})
     ]
     return sorted(candidates, key=lambda item: (*_scan_order(states.get(item[0])), item[0]))[: max(1, limit)]
+
+
+def authorship_backlog(limit: int) -> list[tuple[str, dict[str, Any]]]:
+    """Return analyzed tools whose repository the authorship layer never read.
+
+    Only `analyzed` rows. A tool that has never been scanned at all will pick
+    up its authorship the first time it is, through the ordinary lane; putting
+    it here too would just clone it twice. And a tool that fails during this
+    backfill leaves `analyzed` on its way to `error`, which is what makes the
+    selection shrink monotonically and the backfill terminate.
+
+    Selection, ordering and the limit are all one statement, and it names the
+    two columns it reads rather than selecting the entities: this walks the
+    whole catalog, and `select(Entity)` here would cost the width of both
+    tables to answer a question about two columns of them.
+    """
+    with db.session_scope() as s:
+        rows = list(
+            s.execute(
+                select(CanonicalToolCache.tool_name, CanonicalToolCache.record)
+                .join(RepositoryAnalysisState, RepositoryAnalysisState.tool_name == CanonicalToolCache.tool_name)
+                .where(
+                    RepositoryAnalysisState.status == "analyzed",
+                    RepositoryAnalysisState.llm_checked_at.is_(None),
+                )
+                .order_by(CanonicalToolCache.tool_name)
+                .limit(max(1, limit))
+            )
+        )
+    return [(name, record if isinstance(record, dict) else {}) for name, record in rows]
+
+
+def run_authorship_backfill(limit: int = 100) -> dict[str, int]:
+    """Re-scan the tools analyzed before the authorship layer existed.
+
+    Forced, necessarily. The ordinary re-check lane compares HEAD and skips a
+    repository that has not moved, which is every repository in this backlog --
+    what changed is this code, not the tool. So the clone has to happen again,
+    and since it does, the whole analysis is redone with it rather than the
+    authorship read being bolted on beside it: one pass, one report, one
+    consistent record per tool.
+    """
+    results = _new_results()
+    for name, record in authorship_backlog(limit):
+        _scan_one(name, record, results, force=True)
+    return results
 
 
 def _new_results() -> dict[str, int]:
@@ -1279,6 +1414,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true", default=os.environ.get("REPOSITORY_SCAN_FORCE") == "1")
     parser.add_argument("--tool-name", default=os.environ.get("REPOSITORY_SCAN_TOOL_NAME", ""))
     parser.add_argument(
+        "--authorship-backfill",
+        action="store_true",
+        default=os.environ.get("REPOSITORY_SCAN_AUTHORSHIP_BACKFILL") == "1",
+        help="re-scan only the analyzed tools whose repository the authorship layer has never read",
+    )
+    parser.add_argument(
         "--continuous",
         action="store_true",
         default=os.environ.get("REPOSITORY_SCAN_CONTINUOUS") == "1",
@@ -1316,6 +1457,14 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.limit <= 0:
         parser.error("--limit must be positive")
+    if args.authorship_backfill:
+        if args.tool_name.strip():
+            parser.error("--tool-name scans one repository, which --authorship-backfill does not do")
+        # Recorded under the scanner's own job name rather than a new one. It
+        # is the same lane doing the same work on a different selection, and
+        # job_catalog knows the names in jobs.yaml -- a name that appears only
+        # in job_runs would read as a job nobody scheduled.
+        return job_runner.run_job("repository-analysis", lambda: run_authorship_backfill(args.limit))
     return job_runner.run_job(
         "repository-analysis",
         lambda: run(args.limit, force=args.force, tool_name=args.tool_name.strip() or None),
