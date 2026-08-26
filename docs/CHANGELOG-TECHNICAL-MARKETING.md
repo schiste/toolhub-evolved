@@ -1,14 +1,15 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: where-the-clones-go -->
-<!-- Release title: Where the Clones Go -->
-<!-- Source range: 0e226079..1f4da052 (1 promoted commit) -->
+<!-- Release id: ten-rows-and-a-full-scan -->
+<!-- Release title: Ten Rows and a Full Scan -->
+<!-- Source range: 6f7b54a0..f1356a84 (1 promoted commit) -->
 
 # Technical and Marketing Notes
 
-- `authorship_backlog` now excludes `PROVIDER_MEDIAWIKI_WIKIMEDIA`. That provider is 26,972 of the 28,324 analyzed rows, so the selection the previous release shipped was 95% work that could not produce a result: `_acquire_wiki` yields no tree to list and no commits to read identities from, and the detector reads exactly those two things.
-- The exclusion is about cost as much as yield. A page set has no cheap head — a gadget's file list lives in a page of its own — so the only way to re-read one is to fetch it. That is ~27,000 MediaWiki API reads to leave a column reading "not known", and `_save_failure` turns any transient `maxlag` during the fetch into a row that was `analyzed` becoming `error`.
-- This was found by running it, not by reading it. A 50-candidate batch in production returned 35 analyzed and 15 errors, and grouping `last_error` over the window showed all 15 were the identical `wiki API refused the query: maxlag` — a lane-shaped failure, not fifteen dead repositories.
-- Wiki rows keep `llm_checked_at` NULL rather than being stamped as looked-at. The column means the layer read the source; asserting it for a source that was never fetched would put a false answer where an honest absent one belongs. Ordinary wiki scans still stamp it, because those did fetch.
-- The remaining backlog is 1,352 rows: 722 github, 510 gitlab-wikimedia, 38 gerrit-wikimedia, 31 codeberg, 30 gitlab, 6 bitbucket. That is one bounded run rather than a multi-day one, and it is entirely composed of sources where a marker file or a commit identity can exist.
-- Validation: 119 tests across `test_repository_scan.py` and `test_source_authorship.py`, including a new one that seeds one git-hosted and one wiki-hosted analyzed row and asserts the backlog returns only the git one. Full `pytest-proxy` gate passed on the merged tree in 125s.
+- `/v1/userscripts/wikis/` was measured at 24.4s and 23.0s in the uWSGI access log, against a 1.4s median. `views/userscripts.js` awaits it before issuing any other request, so that was the page's time-to-first-content and, past the browser's read timeout, the view's `catch` branch — an intermittent hard failure presenting as a slow page.
+- One of the endpoint's four aggregates was ~25s of the ~25.5s: `COUNT(id) WHERE deleted_at IS NULL GROUP BY wiki`. `EXPLAIN` reported `type: index`, `Using where` with no `Using index` — `deleted_at` is in no index, so MariaDB fetched all 478,189 rows from a 1.8 GB clustered index to evaluate it. The same GROUP BY without the filter, which an existing index covers, runs in 2.2s. Exactly 10 rows have `deleted_at` set.
+- `ix_user_script_pages_wiki_deleted` makes that count covering. `migrate._ensure_catalog_read_indexes` gained a general supersession step and retires the shipped bare `wiki` index — a strict prefix of the new one — but only on a run where the replacement is confirmed present, so a create that does not land cannot leave the table worse than it found it.
+- The roster is now precomputed into an `ApiCacheMeta` row, following `catalog_statistics`: `snapshot()` reads one row and serves it past its nominal max age, and `userscript_sweep` calls `refresh()` at the end of any run that covered a wiki. Every table the roster reads is written only by the census lane, so that is the sole moment the answer can change — the refresh is neither late nor speculative.
+- The index and the snapshot fix different halves. The index alone leaves every visitor paying ~2.5s for four aggregate scans; the snapshot alone moves a 1.8 GB read onto an hourly job on a database already logging error 1205 across ten jobs (66 in maintainer-backfill, 41 in repository-analysis). Together the endpoint is one primary-key read and the rebuild is a covering scan.
+- The endpoint returns `public_json_response(..., max_age=300)`, so the roster now carries an ETag and repeat readers revalidate to 304 rather than refetching the whole document.
+- Validation: 3,210 proxy tests, 1,331 frontend tests, ruff check/format, cspell and prettier all pass; broker gates passed on the merged tree in 158s. The roster-cost assertion moved from the endpoint onto `build_roster`, since a regression to per-wiki reads is no longer observable from the outside and would surface only as an hourly job growing to fourteen seconds.

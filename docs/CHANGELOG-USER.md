@@ -1,13 +1,13 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: where-the-clones-go -->
-<!-- Release title: Where the Clones Go -->
-<!-- Source range: 0e226079..1f4da052 (1 promoted commit) -->
+<!-- Release id: ten-rows-and-a-full-scan -->
+<!-- Release title: Ten Rows and a Full Scan -->
+<!-- Source range: 6f7b54a0..f1356a84 (1 promoted commit) -->
 
 # What's New for Users
 
-- The one-time re-read that fills in assistant traces for already-analyzed tools now skips gadgets and user scripts, which are 26,972 of the 28,324 tools it would otherwise have visited.
-- Skipping them costs nothing, because there was nothing there to find. A gadget's source is a set of wiki pages: no repository, no commit history, nothing for this check to read. Re-reading one would have left the answer exactly where it already is — "not known".
-- Visiting them would have cost something, though. A page set can only be re-read by fetching it, so this would have made about 27,000 requests to the wikis, and every one the wiki declined for lag would have marked a tool as failing when nothing was wrong with it.
-- A 50-tool trial run found precisely that: 15 of the 50 came back as wiki lag errors rather than results, which is what prompted the change before the full run.
-- What remains is the 1,352 tools that are actually kept in a repository, which is the whole of the work that can answer the question.
+- The user script directory now opens instead of intermittently failing to. Loading the list of wikis took up to 24 seconds, and the page waits for that list before it draws anything, so past a certain point browsers gave up and the page showed "the request failed" over a directory that was entirely fine.
+- Almost all of that time went on a single count: how many script pages each wiki has, skipping deleted ones. The database had no quick way to tell which pages were deleted, so it opened all 478,189 of them to check. Ten are deleted.
+- The database now keeps that answer to hand, and the wiki list itself is worked out once by the hourly census and then simply handed to visitors, rather than recalculated from scratch inside every page load.
+- The list is therefore up to an hour behind the very latest sweep. Each wiki still reports its own three dates — when it was last swept, last checked, and how far into recent changes the reader has got — so how current it is stays visible on the page rather than assumed.
+- Coming back to the page a second time now usually transfers nothing at all: the browser asks whether the list has changed and is told it has not.
