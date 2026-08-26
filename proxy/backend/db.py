@@ -286,6 +286,13 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # predates it -- see `proxy/migrate.py`, which fills them in from
             # the bodies already stored rather than waiting for another sweep.
             "sketch": "VARCHAR(1024) NOT NULL DEFAULT ''",
+            # Empty until `backend.userscript_docs` asks the wiki whether the
+            # page beside this one exists. Empty and never-asked look the same
+            # in this column on purpose -- `docs_checked_at` carries that
+            # difference, and NULL there is what makes an existing deployment's
+            # every row pending rather than settled as undocumented.
+            "docs_title": "VARCHAR(512) NOT NULL DEFAULT ''",
+            "docs_checked_at": "DATETIME NULL",
         },
         "wiki_gadgets": {
             # Empty until a census reaches the Wiki Replicas, exactly as for

@@ -10,6 +10,7 @@ from backend import (
     job_runner,
     userscript_coverage,
     userscript_creation_dates,
+    userscript_docs,
     userscript_projection,
     userscript_sweep,
     userscript_toolinfo,
@@ -152,6 +153,14 @@ def main() -> int:
     dated, and everything ingested before this field existed would stay blank
     forever. One replica query per wiki dates the whole corpus instead, and
     writes only where the answer moved something forward.
+
+    Documentation pages are looked up last of the things that read a wiki, and
+    are the one step here with a cap on how much it may read. Every other step
+    finishes its wiki or fails; this one asks about as many pages as its request
+    budget allows and leaves the rest for the next run, because an answer that
+    arrives an hour later costs nothing and a run that spends its whole hour on
+    one corpus starves the next thousand. `USERSCRIPT_DOCS_REQUESTS=0` turns it
+    off entirely for a run that needs its budget elsewhere.
     """
     full = os.environ.get("USERSCRIPT_SWEEP", "").strip().lower() in {"1", "true", "yes"}
     limit = _int_env("USERSCRIPT_LIMIT", 0)
@@ -159,6 +168,7 @@ def main() -> int:
     watch_windows = (
         _int_env("USERSCRIPT_WATCH_WINDOWS", userscript_sweep.WATCH_WINDOWS) or userscript_sweep.WATCH_WINDOWS
     )
+    docs_limit = _int_env("USERSCRIPT_DOCS_REQUESTS", userscript_docs.MAX_REQUESTS)
 
     def cover(client: WikimediaClient, entry: wiki_schedule.Due, connect: wiki_replica.Connect) -> bool:
         """Bring one wiki up to date and report what that took, in five lines.
@@ -213,6 +223,20 @@ def main() -> int:
             "userscript-edit-dates: "
             f"wiki={wiki} replica={'yes' if wiki in edited else 'no'} "
             f"stamped={edited.get(wiki, 0)}\n",
+        )
+        # Capped per run rather than run to completion. A wiki nobody has asked
+        # before has tens of thousands of pages to ask about, and this is the
+        # least urgent thing in the run: it converges over a few hours instead
+        # of spending one run's whole budget on the wiki that happened to be
+        # first. `checked` is the number that says it is converging -- `asked`
+        # counts the rows this run looked at, and the two differ exactly when
+        # the cap or a refusal cut a batch short.
+        documented = userscript_docs.resolve(client.request, wiki, limit=docs_limit)
+        sys.stdout.write(
+            "userscript-docs: "
+            f"wiki={wiki} asked={documented['asked']} checked={documented['checked']} "
+            f"found={documented['found']} written={documented['written']} "
+            f"requests={documented['requests']}\n",
         )
         ranked = userscript_projection.project(wiki)
         sys.stdout.write(

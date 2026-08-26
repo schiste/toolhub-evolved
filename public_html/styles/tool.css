@@ -98,6 +98,15 @@
 	color: var(--color-success);
 }
 
+/* A footnote dagger beside a field no maintainer published, and nothing more:
+   the value beside it keeps its own weight and colour, and the mark is a size
+   down and dimmed so that a page full of them still reads as the values. */
+.source-mark {
+	color: var(--color-text-muted);
+	cursor: help;
+	font-size: var(--fs-micro);
+	margin-inline-start: var(--space-1);
+}
 .catalog-evidence__warning {
 	color: var(--color-warning-text);
 	font-size: var(--fs-small);

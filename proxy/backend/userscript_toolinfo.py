@@ -39,6 +39,11 @@ under, `url` is the page. There is no description: a user script's documentation
 lives wherever its author chose to put it, and this lane does not read prose. A
 missing description is a gap somebody can fill; an inferred one is this codebase
 putting words in an author's mouth.
+
+`user_docs_url` is where that documentation turned out to live, which is a
+different question and one the wiki answers itself: `backend.userscript_docs`
+asks whether the page beside the script exists and follows any redirect. This
+module only publishes the answer, and publishes nothing where there was none.
 """
 
 from __future__ import annotations
@@ -123,7 +128,7 @@ def _languages(basename: str, content_model: str) -> list[str]:
     return [language for suffix, language in LANGUAGE_BY_SUFFIX if folded.endswith(suffix)]
 
 
-def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "") -> dict[str, Any]:
+def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "", docs_title: str = "") -> dict[str, Any]:
     """Return the toolinfo one directory entry amounts to.
 
     Every field is a transcription of something the wiki already says. `author`
@@ -143,6 +148,11 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "") ->
     nothing orders by it, so an undated page publishes no date rather than
     borrowing one from when this catalogue last read the wiki.
 
+    `user_docs_url` is the page beside the script, when `backend.userscript_docs`
+    found one there. It is a transcription too -- the wiki was asked whether that
+    page exists and said yes -- and it is omitted, never guessed at, for the
+    scripts whose authors documented them somewhere else or not at all.
+
     `_lifecycle` is the exception, and is marked as one by its underscore: it is
     Evolved's reading of the directory's tier rather than anything the wiki
     published.
@@ -160,6 +170,8 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "") ->
         record["created_date"] = created
     if touched := wiki_replica.iso_timestamp(entry.touched_at_wiki or ""):
         record["modified_date"] = touched
+    if docs_title:
+        record["user_docs_url"] = wiki_sources.page_url(entry.wiki, docs_title)
     if entry.owner:
         record["author"] = [{"name": entry.owner, "wiki_username": entry.owner}]
     if languages := _languages(entry.basename, content_model):
@@ -187,8 +199,28 @@ def _content_models(session: Session, wiki: str) -> dict[str, str]:
     return {title: model or "" for title, model in rows}
 
 
+def _docs_titles(session: Session, wiki: str) -> dict[str, str]:
+    """Return the documentation page found beside each of one wiki's script pages.
+
+    Only the pages that have one. A page the wiki was asked about and had no
+    answer for is stored as an empty string, and is left out here so that the
+    record builder sees the same absence for "asked, and there is none" as for
+    "never asked" -- both publish no `user_docs_url`, which is the only correct
+    thing to publish in either case.
+    """
+    rows = session.execute(
+        select(UserScriptPage.title, UserScriptPage.docs_title).where(
+            UserScriptPage.wiki == wiki, UserScriptPage.docs_title != ""
+        )
+    ).all()
+    return {title: docs for title, docs in rows if docs}
+
+
 def _wanted(
-    entries: list[UserScriptDirectoryEntry], models: dict[str, str], counts: dict[str, int]
+    entries: list[UserScriptDirectoryEntry],
+    models: dict[str, str],
+    docs: dict[str, str],
+    counts: dict[str, int],
 ) -> dict[str, dict[str, Any]]:
     """Return the record each catalogue name should hold."""
     wanted: dict[str, dict[str, Any]] = {}
@@ -210,7 +242,7 @@ def _wanted(
             # rather than silently absorbed.
             counts["duplicate"] += 1
         else:
-            wanted[name] = toolinfo_record(entry, model)
+            wanted[name] = toolinfo_record(entry, model, docs.get(entry.title, ""))
     return wanted
 
 
@@ -218,7 +250,7 @@ def _write(
     session: Session, wiki: str, entries: list[UserScriptDirectoryEntry], now: datetime
 ) -> tuple[dict[str, int], list[str]]:
     counts = dict.fromkeys(COUNT_FIELDS, 0)
-    wanted = _wanted(entries, _content_models(session, wiki), counts)
+    wanted = _wanted(entries, _content_models(session, wiki), _docs_titles(session, wiki), counts)
     prefix = canonical_tools.escape_like(wiki_prefix(wiki))
     ours = {
         row.tool_name: row

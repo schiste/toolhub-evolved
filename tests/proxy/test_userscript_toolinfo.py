@@ -42,11 +42,14 @@ def a_script(
     demand=3,
     created="",
     touched="",
+    docs="",
 ):
     """Store one directory entry and the page it was projected from."""
     title = f"User:{owner}/{basename}"
     with db.session_scope() as session:
-        session.add(UserScriptPage(wiki=wiki, title=title, owner=owner, basename=basename, content_model=model))
+        session.add(
+            UserScriptPage(wiki=wiki, title=title, owner=owner, basename=basename, content_model=model, docs_title=docs)
+        )
         session.add(
             UserScriptDirectoryEntry(
                 wiki=wiki,
@@ -71,6 +74,31 @@ def catalogued():
 def lifecycles():
     with db.session_scope() as session:
         return {row.tool_name: row.lifecycle for row in session.execute(select(CanonicalToolCache)).scalars()}
+
+
+# --- the documentation page the census found ---
+
+
+def test_a_script_with_a_documentation_page_publishes_a_link_to_it():
+    """The wiki was asked whether that page exists, so the link is a fact."""
+    a_script(docs="User:Lupin/popups")
+    userscript_toolinfo.synchronize(FRWIKI)
+    record = catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
+    assert record["user_docs_url"] == "https://fr.wikipedia.org/wiki/User:Lupin/popups"
+
+
+def test_a_documentation_page_that_moved_is_published_where_it_moved_to():
+    a_script(docs="Wikipédia:Outils/Navigation popups")
+    userscript_toolinfo.synchronize(FRWIKI)
+    record = catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
+    assert record["user_docs_url"] == "https://fr.wikipedia.org/wiki/Wikipédia:Outils/Navigation_popups"
+
+
+def test_a_script_with_no_documentation_page_publishes_no_field_at_all():
+    """Absent, not empty: a `user_docs_url` is a link somebody will click."""
+    a_script()
+    userscript_toolinfo.synchronize(FRWIKI)
+    assert "user_docs_url" not in catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
 
 
 # --- what becomes a tool ---

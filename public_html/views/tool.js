@@ -31,6 +31,7 @@ import { completenessList, completenessMeter, endorsementChip, fitChip, statusBa
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
+import { sourceMark } from "../lib/atoms/source-mark.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
 import { fieldProvenance, syncStatusPanel } from "../lib/molecules/sync-status.js";
@@ -574,7 +575,8 @@ function catalogProvenancePanel(projection, repository) {
 		icon: t("tool.provenanceIconField", "Icon"),
 		tool_type: t("tool.provenanceTypeField", "Tool type"),
 		for_wikis: t("tool.provenanceWikisField", "Wikis"),
-		technology_used: t("tool.provenanceTechnologyField", "Technologies")
+		technology_used: t("tool.provenanceTechnologyField", "Technologies"),
+		user_docs_url: t("tool.provenanceUserDocsField", "User documentation")
 	};
 	const sections = Object.entries(labels)
 		.map(([field, label]) => {
@@ -946,15 +948,21 @@ export async function viewTool(name) {
 		health: evolvedSummary?.health?.score ?? null
 	}));
 	const { provTags, syncPanels, reconciliationNotice } = toolSyncUi(tool, name);
+	// Where each displayed field came from, for the fields a maintainer's
+	// toolinfo.json is not always the answer for. `sourceMark` returns "" for
+	// every field one did publish, which is most of them on most tools.
+	const projection = tool.catalogProjection;
+	const mark = (/** @type {string} */ field) => sourceMark(field, projection);
+	const description = renderMarkdown(tool.description);
 	const tags = keywordTags(tool, { empty: "—" });
 	const authors = authorInlineList(tool, peopleSummary);
 	const openToolUrl = safeHttpUrl(tool.url);
 
 	// REAL links — render only the ones present on the record.
 	const actions = [
-		linkOut(t("tool.sourceCode", "Source code"), tool.repository),
+		linkOut(t("tool.sourceCode", "Source code"), tool.repository) + (tool.repository ? mark("repository") : ""),
 		linkOut(t("tool.apiLabel", "API"), tool.apiUrl),
-		linkOut(t("tool.userDocs", "User docs"), tool.userDocs),
+		linkOut(t("tool.userDocs", "User docs"), tool.userDocs) + (tool.userDocs ? mark("user_docs_url") : ""),
 		linkOut(t("tool.developerDocs", "Developer docs"), tool.devDocs),
 		linkOut(t("tool.reportABug", "Report a bug"), tool.bugtracker),
 		linkOut(t("tool.giveFeedback", "Give feedback"), tool.feedback),
@@ -1012,16 +1020,16 @@ export async function viewTool(name) {
 
 		<div class="toolpage__grid">
 			<div class="toolpage__main">
-				<div class="prose"${textAttrs(tool.description, tool.descriptionLanguage)}>${renderMarkdown(tool.description) || `<em>${t("tool.noDescription", "No description provided.")}</em>`}</div>
+				<div class="prose"${textAttrs(tool.description, tool.descriptionLanguage)}>${description ? description + mark("description") : `<em>${t("tool.noDescription", "No description provided.")}</em>`}</div>
 				<div class="tcard__tags toolpage__tags">${tags}</div>
 
 				<h2 class="toolpage__h2">${t("tool.detailsTitle", "Details")}</h2>
 				<div class="detail__meta">
-					${metaItem(t("tool.metaType", "Type"), esc(tool.toolType))}
+					${metaItem(t("tool.metaType", "Type"), esc(tool.toolType) + mark("tool_type"))}
 					${metaItem(t("tool.metaLicense", "License"), esc(tool.license))}
-					${metaItem(t("tool.metaWorksOn", "Works on"), wikiLabel(tool.forWikis))}
+					${metaItem(t("tool.metaWorksOn", "Works on"), wikiLabel(tool.forWikis) + mark("for_wikis"))}
 					${metaItem(t("tool.metaInterfaceLanguages", "Interface languages"), langLabel(tool.uiLanguages))}
-					${metaItem(t("tool.metaTechnology", "Technology"), technologyLabels(tool.technologyUsed, evolvedSummary?.health?.sourceHealth?.technologies))}
+					${metaItem(t("tool.metaTechnology", "Technology"), technologyLabels(tool.technologyUsed, evolvedSummary?.health?.sourceHealth?.technologies) + mark("technology_used"))}
 					${metaItem(t("tool.metaAudiences", "Audiences"), (tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 				</div>
 				${catalogProvenancePanel(tool.catalogProjection, evolvedSummary?.health?.sourceHealth?.repository)}

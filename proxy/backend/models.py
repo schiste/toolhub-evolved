@@ -1639,6 +1639,13 @@ class UserScriptPage(Base):
     # It is what the directory falls back to where `created_at_wiki` is empty, and
     # is free where a real date costs a request per page or a replica connection.
     discovery_rank: Mapped[int] = mapped_column(Integer, default=0)
+    # The page beside this one, where by wiki convention its author documents
+    # it -- `User:Lupin/popups` for `User:Lupin/popups.js`, resolved through any
+    # redirect. Empty means the wiki was asked and had no such page, which is
+    # indistinguishable here from never having been asked; `docs_checked_at` is
+    # what tells those apart, and what keeps every run from asking again.
+    docs_title: Mapped[str] = mapped_column(String(512), default="")
+    docs_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     # Set when a page the census knew about has gone. Kept rather than deleted:
