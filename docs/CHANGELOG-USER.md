@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: traces-left-behind -->
 <!-- Release title: Traces Left Behind -->
-<!-- Source range: e647ce66..17f0b52f (3 commits) -->
+<!-- Source range: e647ce66..7cc2da8a (1 promoted commit) -->
 
 # What's New for Users
 
