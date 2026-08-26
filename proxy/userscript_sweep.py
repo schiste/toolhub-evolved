@@ -8,6 +8,7 @@ import sys
 
 from backend import (
     job_runner,
+    userscript_coverage,
     userscript_creation_dates,
     userscript_projection,
     userscript_sweep,
@@ -103,6 +104,24 @@ def _queue() -> tuple[wiki_schedule.Due, ...]:
     if wiki_registry.projects():
         return ()
     return wiki_schedule.named([wiki.strip() for wiki in FALLBACK_WIKIS.split(",") if wiki.strip()])
+
+
+def _refresh_roster() -> None:
+    """Rebuild the public wiki roster from what the run just wrote.
+
+    Never raises. The roster is a read convenience rebuilt from tables that are
+    already durable, so a census that swept a hundred corpora has succeeded
+    whether or not the summary of them could be restored -- and failing the run
+    here would hand the job guard a reason to disable the census over a cache.
+    """
+    try:
+        stored = userscript_coverage.refresh()
+    except Exception as error:  # noqa: BLE001 - a census that swept is a census that succeeded
+        sys.stdout.write(f"userscript-coverage: refresh failed error={type(error).__name__}: {error}\n")
+    else:
+        sys.stdout.write(
+            f"userscript-coverage: stored={'yes' if stored['stored'] else 'no'} wikis={stored['wikis']}\n",
+        )
 
 
 def main() -> int:
@@ -286,6 +305,14 @@ def main() -> int:
             f"queued={len(queue)} covered={len(covered)} failed={len(failed)} "
             f"seconds={budget.spent():.0f} backlog={wiki_schedule.backlog(LANE)}\n",
         )
+        # The public roster is derived entirely from what this run just wrote,
+        # so this is the one moment it can have changed. Rebuilding it here
+        # rather than on a schedule of its own means the stored copy is never
+        # both stale and cheap to have refreshed; rebuilding it at all means no
+        # visitor pays for the aggregate, which took 25 seconds against
+        # production and cost the page its first render.
+        if covered:
+            _refresh_roster()
         if failed and not covered:
             message = f"census failed for every wiki attempted: {', '.join(failed)}"
             raise CensusIncompleteError(message)

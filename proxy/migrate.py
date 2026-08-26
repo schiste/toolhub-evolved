@@ -159,7 +159,13 @@ def migrations() -> Iterator[MigrationResult]:
 
 
 def _ensure_catalog_read_indexes() -> int:
-    """Create covering indexes and retire the single-column predecessors."""
+    """Create covering indexes and retire the single-column predecessors.
+
+    Retirement is conditional on the replacement being present, not on the
+    calendar: a run that fails to create the covering index must leave the
+    narrow one it supersedes in place, or the failure turns a slow read into a
+    whole-table scan.
+    """
     engine = db.engine()
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
@@ -168,6 +174,7 @@ def _ensure_catalog_read_indexes() -> int:
         (CatalogFacetValue.__table__, "ix_catalog_facet_values_field_value_tool"),
         (UserScriptImport.__table__, "ix_user_script_imports_target_page"),
         (UserScriptDirectoryEntry.__table__, "ix_user_script_directory_demand"),
+        (UserScriptPage.__table__, "ix_user_script_pages_wiki_deleted"),
     )
     created = 0
     for table, name in targets:
@@ -179,19 +186,39 @@ def _ensure_catalog_read_indexes() -> int:
         index = next(candidate for candidate in table.indexes if candidate.name == name)
         index.create(bind=engine)
         created += 1
-    obsolete = {
-        "ix_catalog_facet_values_tool_name",
-        "ix_catalog_facet_values_field",
-        "ix_catalog_facet_values_value",
-    }
-    existing_facet_indexes = {item["name"] for item in inspect(engine).get_indexes(CatalogFacetValue.__tablename__)}
-    with engine.begin() as connection:
-        for name in sorted(obsolete & existing_facet_indexes):
-            if engine.dialect.name in {"mysql", "mariadb"}:
-                connection.exec_driver_sql(f"DROP INDEX {name} ON {CatalogFacetValue.__tablename__}")
-            else:
-                connection.exec_driver_sql(f"DROP INDEX {name}")
-            created += 1
+    # Each entry reads "once `covering` exists, these are dead weight on writes".
+    # `ix_user_script_pages_wiki` is a strict prefix of the index that replaces
+    # it, so dropping it costs no read and spares a half-million-row table one
+    # index to maintain on every census write.
+    superseded = (
+        (
+            CatalogFacetValue.__tablename__,
+            "ix_catalog_facet_values_field_value_tool",
+            {
+                "ix_catalog_facet_values_tool_name",
+                "ix_catalog_facet_values_field",
+                "ix_catalog_facet_values_value",
+            },
+        ),
+        (
+            UserScriptPage.__tablename__,
+            "ix_user_script_pages_wiki_deleted",
+            {"ix_user_script_pages_wiki"},
+        ),
+    )
+    for table_name, covering, obsolete in superseded:
+        if table_name not in existing_tables:
+            continue
+        present = {item["name"] for item in inspect(engine).get_indexes(table_name)}
+        if covering not in present:
+            continue
+        with engine.begin() as connection:
+            for name in sorted(obsolete & present):
+                if engine.dialect.name in {"mysql", "mariadb"}:
+                    connection.exec_driver_sql(f"DROP INDEX {name} ON {table_name}")
+                else:
+                    connection.exec_driver_sql(f"DROP INDEX {name}")
+                created += 1
     return created
 
 

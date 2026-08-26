@@ -1588,9 +1588,19 @@ class UserScriptPage(Base):
         # basename before it groups by anything else.
         Index("ix_user_script_pages_wiki_role", "wiki", "role"),
         Index("ix_user_script_pages_wiki_basename", "wiki", "basename"),
+        # Every count of this table is per wiki and excludes deleted pages, and
+        # `deleted_at` in no index meant MariaDB read 478,189 whole rows out of
+        # a 1.8 GB table to evaluate it -- 25 seconds, to exclude the ten rows
+        # that are actually deleted. Carrying the column in the index makes the
+        # same count a covering scan. It supersedes the bare `wiki` index this
+        # column declares, which migrate.py retires once this one exists.
+        Index("ix_user_script_pages_wiki_deleted", "wiki", "deleted_at"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    wiki: Mapped[str] = mapped_column(String(255), index=True)
+    # No `index=True`: the composite above leads with this column and answers
+    # everything a bare index on it would, so declaring both would have a new
+    # database create an index the migration exists to retire.
+    wiki: Mapped[str] = mapped_column(String(255))
     title: Mapped[str] = mapped_column(String(512))
     owner: Mapped[str] = mapped_column(String(255), default="", index=True)
     basename: Mapped[str] = mapped_column(String(512), default="")

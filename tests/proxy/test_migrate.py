@@ -7,10 +7,11 @@ idempotent, and it refuses to silently migrate the wrong database.
 
 import sys
 from datetime import timedelta
+from unittest import mock
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, inspect, select
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, inspect, select
 from sqlalchemy.dialects import mysql
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, mariadb
 
@@ -135,6 +136,48 @@ def test_the_cross_wiki_directory_index_reaches_a_table_that_predates_it(configu
     names = {item["name"] for item in db.inspect(db.engine()).get_indexes("user_script_directory")}
     assert "ix_user_script_directory_demand" in names
     assert migrate._ensure_catalog_read_indexes() == 0
+
+
+def test_the_script_page_count_index_reaches_a_table_that_predates_it(configured_db):
+    """Counting a wiki's live pages must not have to open the rows.
+
+    `deleted_at` sat in no index, so MariaDB evaluated `WHERE deleted_at IS
+    NULL` by fetching all 478,189 rows of a 1.8 GB table -- 25 seconds, to
+    exclude the ten rows that are deleted. That count runs once per wiki in the
+    roster build and once more on every per-wiki read.
+    """
+    with db.engine().begin() as connection:
+        connection.exec_driver_sql("DROP INDEX ix_user_script_pages_wiki_deleted")
+        connection.exec_driver_sql("CREATE INDEX ix_user_script_pages_wiki ON user_script_pages (wiki)")
+
+    # One created, one retired.
+    assert migrate._ensure_catalog_read_indexes() == 2
+    names = {item["name"] for item in db.inspect(db.engine()).get_indexes("user_script_pages")}
+    assert "ix_user_script_pages_wiki_deleted" in names
+    # A strict prefix of the index that replaced it: keeping both would cost the
+    # census a second index to maintain on every write and buy no read.
+    assert "ix_user_script_pages_wiki" not in names
+    assert migrate._ensure_catalog_read_indexes() == 0
+
+
+def test_a_covering_index_that_did_not_land_leaves_its_predecessor_in_place(configured_db):
+    """Retirement is conditional on the replacement existing, not on the attempt.
+
+    Dropping the narrow index on a run where the covering one did not appear
+    would turn a slow per-wiki count into an unindexed table scan -- a worse
+    database than the one the migration started with, produced by the step
+    meant to improve it.
+    """
+    with db.engine().begin() as connection:
+        connection.exec_driver_sql("DROP INDEX ix_user_script_pages_wiki_deleted")
+        connection.exec_driver_sql("CREATE INDEX ix_user_script_pages_wiki ON user_script_pages (wiki)")
+
+    with mock.patch.object(Index, "create", lambda *_args, **_kwargs: None):
+        migrate._ensure_catalog_read_indexes()
+
+    names = {item["name"] for item in db.inspect(db.engine()).get_indexes("user_script_pages")}
+    assert "ix_user_script_pages_wiki_deleted" not in names
+    assert "ix_user_script_pages_wiki" in names
 
 
 # What one column of each type costs in a MariaDB key, under the utf8mb4

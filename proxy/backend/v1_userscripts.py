@@ -12,7 +12,6 @@ scripts" -- and a reader who cannot tell those apart will draw exactly the wrong
 conclusion from a quiet result.
 """
 
-from datetime import datetime
 from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
@@ -20,14 +19,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend import db, security
+from backend import userscript_coverage as coverage_index
 from backend import userscript_directory as directory
 from backend import userscript_projection as projection
 from backend import v1_common as common
 from backend.models import (
-    UserScriptCensusState,
     UserScriptDirectoryEntry,
     UserScriptDirectoryMember,
-    UserScriptPage,
 )
 
 v1_userscripts_bp = Blueprint("v1_userscripts", __name__)
@@ -51,127 +49,6 @@ def _offset(raw: str) -> int:
         return max(0, int(raw))
     except ValueError:
         return 0
-
-
-def coverage(s: Session, wiki: str) -> dict[str, Any]:
-    """Describe what this wiki's directory is built from, and how current it is.
-
-    Three timestamps, because a census can be stale in three unrelated ways and
-    only one of them is about the job still running. `checkedAt` is liveness --
-    the last run of any kind -- and it is the one that says nothing at all about
-    the data, since a watch stamps it every hour whether the wiki moved or not.
-    `sweptAt` is when this wiki's user space was last enumerated and walked, and
-    `currentTo` is the wiki's own clock: how far into recent changes the watch
-    has read. A directory can be an hour old by `checkedAt`, a month old by
-    `sweptAt`, and current to a fortnight ago by `currentTo`, all at once, and a
-    reader given only the first would call it fresh.
-
-    Two ways of being partial are reported separately, because they have
-    different remedies. `sweepsCompleted` at zero says no full sweep has ever
-    finished -- wait for one. `enumerated` being false says the wiki holds more
-    script pages than one search pass can walk, so no amount of waiting will
-    finish it. `enumeratedBy` names the road behind the counts, which is what
-    distinguishes an exact census from one that merely never hit a cap.
-    """
-    state = s.get(UserScriptCensusState, wiki)
-    pages = int(
-        s.execute(
-            select(func.count(UserScriptPage.id)).where(
-                UserScriptPage.wiki == wiki,
-                UserScriptPage.deleted_at.is_(None),
-            )
-        ).scalar()
-        or 0
-    )
-    counts = dict.fromkeys(TIERS, 0)
-    for tier, total in s.execute(
-        select(UserScriptDirectoryEntry.tier, func.count(UserScriptDirectoryEntry.id))
-        .where(UserScriptDirectoryEntry.wiki == wiki)
-        .group_by(UserScriptDirectoryEntry.tier)
-    ):
-        counts[tier] = int(total)
-    computed = s.execute(
-        select(func.max(UserScriptDirectoryEntry.computed_at)).where(UserScriptDirectoryEntry.wiki == wiki)
-    ).scalar()
-    return _coverage_row(wiki, state, pages, counts, computed)
-
-
-def _coverage_row(
-    wiki: str,
-    state: UserScriptCensusState | None,
-    pages: int,
-    counts: dict[str, int],
-    computed: datetime | None,
-) -> dict[str, Any]:
-    """Assemble one wiki's coverage from parts already read.
-
-    Split out so the one-wiki reader and the whole-roster reader below cannot
-    drift: they disagree about how to *fetch* the parts, and must not disagree
-    about what a coverage record is.
-    """
-    return {
-        "wiki": wiki,
-        "pages": pages,
-        "sweepsCompleted": int(state.sweeps_completed) if state else 0,
-        "sweptAt": common.iso(state.last_started_at) if state else "",
-        "currentTo": (state.changes_cursor or "") if state else "",
-        "checkedAt": common.iso(state.last_success_at) if state else "",
-        "enumerated": bool(state.enumeration_complete) if state else True,
-        "enumeratedBy": (state.enumeration_source or "") if state else "",
-        "computedAt": common.iso(computed),
-        "active": counts.get(directory.TIER_ACTIVE, 0),
-        "archive": counts.get(directory.TIER_ARCHIVE, 0),
-    }
-
-
-def _all_coverage(s: Session) -> list[dict[str, Any]]:
-    """Every touched wiki's coverage, in a fixed number of queries.
-
-    `coverage()` costs four queries, which is the right shape for one wiki and
-    the wrong one for a thousand. This endpoint used to call it per wiki: at the
-    three wikis the census was configured for that was twelve queries and nobody
-    noticed, and across every Wikimedia project it is four thousand -- one of
-    them a COUNT over a quarter-million-row table, per wiki. The endpoint stayed
-    correct and grew to fourteen seconds, which is past the browser's read
-    timeout, so the directory page stopped rendering at all.
-
-    Grouping the same four reads costs four queries whatever the roster grows
-    to. The wikis are still the union of "has census state" and "has directory
-    entries", because a wiki can have been swept without projecting anything and
-    a projection can outlive the state row that produced it.
-    """
-    states = {row.wiki: row for row in s.execute(select(UserScriptCensusState)).scalars()}
-    pages = {
-        wiki: int(total)
-        for wiki, total in s.execute(
-            select(UserScriptPage.wiki, func.count(UserScriptPage.id))
-            .where(UserScriptPage.deleted_at.is_(None))
-            .group_by(UserScriptPage.wiki)
-        )
-    }
-    counts: dict[str, dict[str, int]] = {}
-    for wiki, tier, total in s.execute(
-        select(
-            UserScriptDirectoryEntry.wiki,
-            UserScriptDirectoryEntry.tier,
-            func.count(UserScriptDirectoryEntry.id),
-        ).group_by(UserScriptDirectoryEntry.wiki, UserScriptDirectoryEntry.tier)
-    ):
-        counts.setdefault(wiki, {})[tier] = int(total)
-    # `.all()` rather than the Result itself: a Result carries `keys()`, so
-    # `dict()` reads it as a mapping and fails instead of consuming the rows.
-    computed = dict(
-        s.execute(
-            select(
-                UserScriptDirectoryEntry.wiki,
-                func.max(UserScriptDirectoryEntry.computed_at),
-            ).group_by(UserScriptDirectoryEntry.wiki)
-        ).all()
-    )
-    return [
-        _coverage_row(wiki, states.get(wiki), pages.get(wiki, 0), counts.get(wiki, {}), computed.get(wiki))
-        for wiki in sorted(set(states) | set(counts))
-    ]
 
 
 def _entry(row: UserScriptDirectoryEntry) -> dict[str, Any]:
@@ -198,12 +75,17 @@ def _entry(row: UserScriptDirectoryEntry) -> dict[str, Any]:
 
 @v1_userscripts_bp.route("/v1/userscripts/wikis/")
 def v1_userscripts_wikis() -> Response | tuple[Response, int]:
-    """Every wiki the census has touched, with what it has so far."""
+    """Every wiki the census has touched, with what it has so far.
+
+    Served from the roster the census stored at the end of its last run, not
+    rebuilt here: see `userscript_coverage.snapshot()` for why a request that
+    aggregates these tables itself is a request the page does not survive. The
+    payload is a validated public document, so a returning reader gets a 304
+    rather than sixty kilobytes of unchanged sweep counts.
+    """
     if security.read_rate_limited(request.remote_addr):
         return jsonify({"error": "rate limited, retry later"}), 429
-    with db.session_scope() as s:
-        results = _all_coverage(s)
-    return jsonify({"count": len(results), "results": results})
+    return common.public_json_response(coverage_index.snapshot(), max_age=300)
 
 
 @v1_userscripts_bp.route("/v1/userscripts/directory/")
@@ -264,7 +146,7 @@ def v1_userscripts_directory() -> Response | tuple[Response, int]:
         # inventing one by merging 897 of them here would duplicate what the
         # caller already holds from `/v1/userscripts/wikis/`. Say nothing rather
         # than say something averaged.
-        disclosed = coverage(s, wiki) if wiki else None
+        disclosed = coverage_index.coverage(s, wiki) if wiki else None
     return jsonify(
         {
             "wiki": wiki,
@@ -351,5 +233,5 @@ def v1_userscripts_script() -> Response | tuple[Response, int]:
             ).scalars()
         ]
         entry = _entry(row)
-        disclosed = coverage(s, wiki)
+        disclosed = coverage_index.coverage(s, wiki)
     return jsonify({**entry, "members": members, "coverage": disclosed})

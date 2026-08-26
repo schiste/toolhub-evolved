@@ -7,7 +7,13 @@ import pytest
 from flask import Flask
 
 import backend
-from backend import db, security, userscript_directory as directory, userscript_projection as projection
+from backend import (
+    db,
+    security,
+    userscript_coverage,
+    userscript_directory as directory,
+    userscript_projection as projection,
+)
 from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage, utcnow
 
 FRWIKI = "fr.wikipedia.org"
@@ -417,8 +423,8 @@ def swept(wiki, *, sweeps=1):
     projection.project(wiki)
 
 
-def test_the_wiki_listing_costs_the_same_number_of_queries_at_any_roster_size(app, client):
-    """The listing must not read per wiki.
+def test_building_the_roster_costs_the_same_number_of_queries_at_any_size(app):
+    """The roster build must not read per wiki.
 
     It used to call `coverage()` once per wiki -- four queries each, one of them
     a COUNT over every stored script page. That was twelve queries while the
@@ -426,28 +432,102 @@ def test_the_wiki_listing_costs_the_same_number_of_queries_at_any_roster_size(ap
     thousand and fourteen seconds, which is past the browser's read timeout, so
     the page that consumes this endpoint stopped rendering entirely. Correctness
     never moved, which is exactly why only a cost assertion catches it.
+
+    Asserted on the builder rather than the endpoint because the endpoint no
+    longer builds: it serves what the census stored. A regression to per-wiki
+    reads would be invisible from the outside and would surface as an hourly
+    job quietly growing to fourteen seconds instead.
     """
     with app.app_context():
         for index in range(3):
             swept(f"w{index}.wikipedia.org")
         seen, stop = counted_queries()
         try:
-            small = client.get("/v1/userscripts/wikis/").get_json()
+            with db.session_scope() as session:
+                small = userscript_coverage.build_roster(session)
             few = len(seen)
-            seen.clear()
             for index in range(3, 30):
                 swept(f"w{index}.wikipedia.org")
             seen.clear()
-            large = client.get("/v1/userscripts/wikis/").get_json()
+            with db.session_scope() as session:
+                large = userscript_coverage.build_roster(session)
             many = len(seen)
         finally:
             stop()
-    assert small["count"] == 3
-    assert large["count"] == 30
+    assert len(small) == 3
+    assert len(large) == 30
     # Ten times the wikis, the same reads. The absolute number is not the point
     # and is left loose; that it does not grow with the roster is the point.
     assert many == few
     assert few <= 6
+
+
+def test_the_wiki_listing_serves_what_the_census_stored_rather_than_rebuilding(app, client):
+    """A visitor must never pay for the aggregate.
+
+    This is the whole reason the roster is precomputed. Against production the
+    build reads 478,189 script-page rows and took 25 seconds; the page awaits
+    this endpoint before it requests anything else, so that was 25 seconds of
+    blank directory and, past the browser's patience, the view's "the request
+    failed" branch. Freshness is the thing traded away, deliberately: the
+    roster describes a census that runs hourly, and every record in it carries
+    its own timestamps so a reader can see how current it is.
+    """
+    with app.app_context():
+        swept("w0.wikipedia.org")
+        userscript_coverage.refresh()
+        # Swept after the store, so it can only appear if the request rebuilt.
+        swept("w1.wikipedia.org")
+        seen, stop = counted_queries()
+        try:
+            body = client.get("/v1/userscripts/wikis/").get_json()
+        finally:
+            stop()
+    assert [row["wiki"] for row in body["results"]] == ["w0.wikipedia.org"]
+    # One read of the stored row. Not "few queries" -- none of the four
+    # aggregates, which is a different claim and the one that matters.
+    assert not [statement for statement in seen if "user_script_pages" in statement]
+
+
+def test_the_census_refreshing_the_roster_is_what_publishes_a_new_wiki(app, client):
+    """The stored copy moves when the census run ends, and the endpoint follows."""
+    with app.app_context():
+        swept("w0.wikipedia.org")
+        userscript_coverage.refresh()
+        swept("w1.wikipedia.org")
+        assert client.get("/v1/userscripts/wikis/").get_json()["count"] == 1
+        stored = userscript_coverage.refresh()
+        assert stored["stored"] is True
+        assert stored["wikis"] == 2
+        listed = client.get("/v1/userscripts/wikis/").get_json()
+    assert [row["wiki"] for row in listed["results"]] == ["w0.wikipedia.org", "w1.wikipedia.org"]
+
+
+def test_an_empty_store_is_built_on_demand_rather_than_served_as_no_wikis(app, client):
+    """Nothing stored is not the same answer as nothing swept.
+
+    A fresh deployment has never run a census, and a roster that reported zero
+    wikis would render the view's "no wiki has been swept" message over a
+    database full of them. The absent-store case builds; only a store that
+    exists is trusted.
+    """
+    with app.app_context():
+        swept("w0.wikipedia.org")
+        body = client.get("/v1/userscripts/wikis/").get_json()
+    assert body["count"] == 1
+
+
+def test_a_returning_reader_revalidates_the_roster_instead_of_refetching_it(app, client):
+    """The roster changes hourly at most, so most requests for it should be 304s."""
+    with app.app_context():
+        swept("w0.wikipedia.org")
+        userscript_coverage.refresh()
+        first = client.get("/v1/userscripts/wikis/")
+        etag = first.headers["ETag"]
+        again = client.get("/v1/userscripts/wikis/", headers={"If-None-Match": etag})
+    assert first.status_code == 200
+    assert again.status_code == 304
+    assert again.get_data() == b""
 
 
 def test_the_wiki_listing_keeps_each_wikis_numbers_with_its_own_wiki(app, client):
