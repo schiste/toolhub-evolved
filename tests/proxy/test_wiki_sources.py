@@ -423,3 +423,28 @@ def test_an_inventory_gadget_set_is_bounded():
     files = "|".join(f"Part{index}.js" for index in range(wiki_sources.MAX_PAGES + 10))
     entry = wiki_sources.gadget_entries(f"* Big[RL]|{files}")[0]
     assert len(entry.pages) == wiki_sources.MAX_PAGES
+
+
+def test_a_localized_subpage_and_suffix_swap_are_collected_too():
+    source = wiki_sources.wiki_source(SCRIPT)
+    listed = ["Benutzer:Example/twinkle.js", "Benutzer:Example/twinkle.css", "Benutzer:Example/twinkle/core.js"]
+    assert wiki_sources.subpage_titles(source, listed) == (
+        "User:Example/twinkle.js",
+        "User:Example/twinkle.css",
+        "User:Example/twinkle/core.js",
+    )
+
+
+def test_a_page_name_holding_a_colon_keeps_it():
+    # The rewrite replaces the namespace label, not the first colon in the
+    # title: `a:b.js` is a page name, and losing half of it would send the
+    # scanner after a page that does not exist.
+    source = wiki_sources.wiki_source("https://de.wikipedia.org/wiki/User:Example/a:b.js")
+    assert wiki_sources.listed_title(source, "Benutzer:Example/a:b.js") == "User:Example/a:b.js"
+
+
+def test_a_canonical_listing_is_left_exactly_as_it_was():
+    # The English wikis were the only ones this path ever worked on, so they
+    # are the ones a change here must not move.
+    source = wiki_sources.wiki_source(SCRIPT)
+    assert wiki_sources.listed_title(source, "User:Example/twinkle.js") == "User:Example/twinkle.js"

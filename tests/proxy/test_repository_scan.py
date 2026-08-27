@@ -2095,3 +2095,54 @@ def test_the_authorship_backfill_leaves_the_wiki_lane_alone():
     _analyzed_state("wiki-hosted", provider=source_hosts.PROVIDER_MEDIAWIKI_WIKIMEDIA)
 
     assert [name for name, _record in repository_scan.authorship_backlog(10)] == ["git-hosted"]
+
+
+def test_a_wiki_that_names_its_namespace_in_its_own_language_is_still_readable(monkeypatch):
+    # The Action API answers in the wiki's language: de.wikisource lists the
+    # page the catalogue holds as `User:Example/twinkle.js` under `Benutzer:`.
+    # Filtering the listing against the canonical spelling by equality dropped
+    # every revision fetched and reported the page set as unreadable, so on
+    # every wiki that does not answer in English no user script could be
+    # analyzed at all -- 17,877 of them across roughly 800 wikis.
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("Benutzer:Example/twinkle.js"),
+                        _wiki_page("Benutzer:Example/twinkle/core.js", revid=2),
+                    ]
+                }
+            }
+        },
+    )
+
+    assert _scan_wiki(SCRIPT_URL) == "analyzed"
+    # Both pages, and reported under the spelling the wiki itself uses, which is
+    # the one a maintainer there can paste into a search box.
+    assert _stored_report()["analyzedPaths"] == [
+        "Benutzer:Example/twinkle.js",
+        "Benutzer:Example/twinkle/core.js",
+    ]
+
+
+def test_a_localized_listing_still_excludes_another_tool_by_the_same_author(monkeypatch):
+    # The namespace label is the only thing the match forgives. Rewriting it
+    # must not turn the prefix search's neighbours into part of this script.
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("Benutzer:Example/twinkle.js"),
+                        _wiki_page("Benutzer:Example/twinkleblock.js", revid=3),
+                    ]
+                }
+            }
+        },
+    )
+
+    assert _scan_wiki(SCRIPT_URL) == "analyzed"
+    assert _stored_report()["analyzedPaths"] == ["Benutzer:Example/twinkle.js"]

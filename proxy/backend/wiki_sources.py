@@ -137,9 +137,14 @@ class WikiSource:
         return _stem(self.title)
 
     @property
+    def namespace(self) -> str:
+        """Return the canonical namespace name this page is stored under."""
+        return self.title.partition(":")[0]
+
+    @property
     def namespace_id(self) -> int:
         """Return the namespace number list=allpages needs to search this page."""
-        return NAMESPACE_IDS[self.title.partition(":")[0]]
+        return NAMESPACE_IDS[self.namespace]
 
     @property
     def prefix(self) -> str:
@@ -413,6 +418,35 @@ def registered_gadget(source: WikiSource, definition: str) -> tuple[WikiSource, 
     return replace(source, kind=KIND_GADGET), pages
 
 
+def listed_title(source: WikiSource, listed: str) -> str:
+    """Return one canonical spelling of a title a wiki listed for `source`.
+
+    `canonical_title` on its own is not enough for a title that came back from
+    the Action API, because the API answers in the wiki's own language. The
+    page this service holds as `User:PDD/unsigned.js` is returned by
+    de.wikisource as `Benutzer:PDD/unsigned.js` and by fr.wikipedia as
+    `Utilisateur:PDD/unsigned.js`. `canonical_title` leaves those prefixes
+    alone, which is right when it is asked about a title from nowhere in
+    particular -- it cannot tell a namespace it has never heard of from a page
+    whose name simply contains a colon.
+
+    Here it can. The listing that produced this title was restricted to
+    `source.namespace_id`, a number, so every title in it is in that namespace
+    whatever the wiki calls it locally. Swapping the label is a rename between
+    two spellings of one namespace rather than a guess, and it is what lets a
+    localized title be compared with the canonical one this service stores.
+
+    Left alone when the labels already agree, so the English wikis -- where
+    this was the only behaviour for as long as the comparison was string
+    equality -- keep going through exactly the path they did before.
+    """
+    clean = canonical_title(listed)
+    namespace, separator, page = clean.partition(":")
+    if not separator or namespace == source.namespace:
+        return clean
+    return canonical_title(f"{source.namespace}:{page}")
+
+
 def subpage_titles(source: WikiSource, listed: list[str]) -> tuple[str, ...]:
     """Return the pages of `listed` that belong to this user script.
 
@@ -420,11 +454,17 @@ def subpage_titles(source: WikiSource, listed: list[str]) -> tuple[str, ...]:
     `Foo/twinkle` also returns `Foo/twinkleblock.js`, a different tool by the
     same author. Only an exact suffix swap (`.js` -> `.css`) or a real subpage
     (`Foo/twinkle/core.js`) is part of this one.
+
+    Answered in canonical spellings, including for the localized titles a
+    non-English wiki lists: see `listed_title`. A caller holding the wiki's own
+    spellings has to put them through `listed_title` too before looking them up
+    in this result, which is the whole reason that step is a named function
+    rather than something this one does inline.
     """
     stem = source.stem
     kept = [
         title
-        for title in (canonical_title(value) for value in listed)
+        for title in (listed_title(source, value) for value in listed)
         if _is_source_title(title) and (_stem(title) == stem or title.startswith(f"{stem}/"))
     ]
     ordered = [source.title, *sorted(set(kept) - {source.title})]

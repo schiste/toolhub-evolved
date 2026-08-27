@@ -459,8 +459,20 @@ def _wiki_revisions(
     # The prefix search is broader than the script -- it also returns the same
     # author's next tool -- so what it fetched still has to be filtered down to
     # the pages that actually belong to this one.
+    #
+    # Both sides of that comparison go through `listed_title`, because the wiki
+    # answers in its own language: de.wikisource lists this page as
+    # `Benutzer:PDD/unsigned.js` while the catalogue holds `User:PDD/unsigned.js`.
+    # Matching the raw title against the canonical one is equality between two
+    # spellings of the same page, so it held on the English wikis and failed on
+    # every localized one -- discarding every revision fetched and reporting the
+    # page set as unreadable, for 17,877 user scripts across 800-odd wikis.
     kept = set(wiki_sources.subpage_titles(source, [revision.title for revision in found]))
-    return tuple(revision for revision in found if revision.title in kept), source, None
+    return (
+        tuple(revision for revision in found if wiki_sources.listed_title(source, revision.title) in kept),
+        source,
+        None,
+    )
 
 
 #: A line this long was not typed by a person. Measured over the largest pages
