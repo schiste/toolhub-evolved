@@ -12,7 +12,7 @@ from backend import catalog_projection, job_runner
 def main() -> int:
     # Per backend.job_contract: individual projection errors are recorded in
     # the summary and stay eligible for the next bounded pass.
-    limit = max(1, int(os.getenv("CATALOG_PROJECTION_LIMIT", "500")))
+    limit = max(1, int(os.getenv("CATALOG_PROJECTION_LIMIT", str(catalog_projection.MAX_REFRESH_TOOLS))))
     return job_runner.run_job("catalog-projection", lambda: catalog_projection.refresh_candidates(limit=limit))
 
 

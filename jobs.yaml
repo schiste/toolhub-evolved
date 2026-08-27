@@ -192,10 +192,16 @@
   # Local-only repair and quality audit. Producer jobs materialize affected
   # tools immediately; this hourly sweep catches missed rows and rule-version
   # upgrades, then logs facet coverage and taxonomy regressions.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name graph-enrichment --stale-after 600 -- /usr/bin/env GRAPH_ENRICHMENT_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/graph_enrichment.py
+  #
+  # 20,000 tools, not 500. A tool costs 0.049s measured, so the old count was
+  # 24 seconds of the hour against 53,178 tools -- a full pass took four and a
+  # half days. This one stays a count rather than a deadline: it is pure
+  # database work at a stable per-row cost, which is the case a count can
+  # actually bound. The 1200s timeout is what those 20,000 have to fit inside.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name graph-enrichment --stale-after 2400 -- /usr/bin/env GRAPH_ENRICHMENT_LIMIT=20000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/graph_enrichment.py
   image: python3.13
   schedule: "55 * * * *"
-  timeout: 300
+  timeout: 1200
   # 2Gi, up from the 512Mi default. `graph_enrichment` loads the whole
   # canonical-tool and enrichment tables as entities before it bounds anything,
   # and both grew when discovery opened up to every Wikimedia project. Every
@@ -210,16 +216,27 @@
 - name: catalog-projection
   # Repair/version-upgrade the Evolved-local provenance projection. Producer
   # jobs refresh changed tools immediately; this bounded sweep is the backstop.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-projection --stale-after 600 -- /usr/bin/env CATALOG_PROJECTION_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_projection.py
+  #
+  # 20,000 tools, not 500. A tool costs 0.046s measured, so the old count was
+  # 23 seconds of the hour and a full repair pass took four and a half days,
+  # which is how long a rule-version upgrade took to reach the whole
+  # catalogue. A count still fits here -- pure database work, stable per-row
+  # cost -- and the 1200s timeout is the bound those 20,000 sit inside.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-projection --stale-after 2400 -- /usr/bin/env CATALOG_PROJECTION_LIMIT=20000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_projection.py
   image: python3.13
   schedule: "58 * * * *"
-  timeout: 300
+  timeout: 1200
   emails: onfailure
 
 - name: tool-assets
   # Fetch icons only in the background under outbound URL, type, and size
   # limits. The webservice serves cached bytes and never fetches on a read.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name tool-assets --stale-after 1200 -- /usr/bin/env TOOL_ASSET_LIMIT=100 TOOLHUB_ASSET_CACHE_DIR=/data/project/toolhub-evolved/data/icon-cache /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/tool_assets.py
+  #
+  # Five minutes of the hour, not 100 icons. A fetch costs 0.155s measured, so
+  # the count spent 16 seconds -- 0.4% of the interval -- against a queue of tens
+  # of thousands. Smaller slice than the wiki-only sweeps get, deliberately:
+  # these requests go to arbitrary third-party hosts.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name tool-assets --stale-after 1200 -- /usr/bin/env TOOL_ASSET_LIMIT=10000 TOOL_ASSET_BUDGET_SECONDS=300 TOOLHUB_ASSET_CACHE_DIR=/data/project/toolhub-evolved/data/icon-cache /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/tool_assets.py
   image: python3.13
   schedule: "7 * * * *"
   timeout: 600
@@ -238,10 +255,19 @@
 - name: catalog-validation
   # Probe effective public URLs under the shared SSRF/redirect guard. Results
   # are observations only; invalid official evidence remains preserved.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-validation --stale-after 1200 -- /usr/bin/env CATALOG_VALIDATION_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_validation.py
+  #
+  # Ten minutes of the hour, not 500 targets. A probe costs 0.151s measured, so
+  # the count spent 76 seconds and left the overdue pile climbing; the deadline
+  # covers the ~345/hr the 7-day FRESH_FOR cycle actually needs with room for the
+  # catalogue to keep growing. The limit is now only the runaway guard.
+  #
+  # The timeout is the deadline plus room, never the deadline itself: at 600
+  # and 600 it is a coin flip whether the run stops itself or the guard kills
+  # it mid-probe, and only one of those writes the verdict it just paid for.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-validation --stale-after 1800 -- /usr/bin/env CATALOG_VALIDATION_LIMIT=20000 CATALOG_VALIDATION_BUDGET_SECONDS=600 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_validation.py
   image: python3.13
   schedule: "3 * * * *"
-  timeout: 600
+  timeout: 900
   # 2Gi, up from the 512Mi default. `catalog_validation` loads the whole
   # projection table as entities just to count candidates and slice the first
   # `limit`, and that table grew from ~20,000 candidate URLs to 82,911 when
@@ -336,7 +362,7 @@
   # this job: on 2026-08-17 five consecutive attempts were skipped. Waiting adds
   # no concurrency, so the deadlock reasoning above is unaffected, and 120s is
   # well inside the 600s timeout below.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-attribution-reconverge --stale-after 1200 -- /usr/bin/env PEOPLE_RECONVERGE_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --reconverge
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-attribution-reconverge --stale-after 1200 -- /usr/bin/env PEOPLE_RECONVERGE_LIMIT=5000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --reconverge
   image: python3.13
   schedule: "21 * * * *"
   timeout: 600
@@ -535,16 +561,30 @@
   # catalog_projection.FILL_ONLY_SOURCES stops it reaching any field a person,
   # Toolhub, or a toolinfo.json already spoke for.
   #
-  # 200 an hour, not the whole corpus: Lift Wing is a shared Wikimedia service
-  # and this is the least urgent thing on it. At that rate the backlog clears in
-  # about eight days and then the job costs almost nothing, because a page whose
-  # fingerprint has not moved is never sent twice.
+  # Bounded by a deadline, not a count. Measured 2026-08-27, one Lift Wing call
+  # costs 2.1s and almost all of it is waiting, so 200 serial calls spent 428
+  # seconds of the hour -- 12% -- while ~48,700 pages queued behind it. The run
+  # now works for INFERENCE_ENRICHMENT_BUDGET_SECONDS with LIFTWING_CONCURRENCY
+  # calls in flight and stops between waves, so it self-tunes to whatever the
+  # endpoint costs today instead of to a number nobody remeasures.
+  #
+  # Concurrency 6 is deliberately modest: Lift Wing is a shared Wikimedia
+  # service, publishes no concurrency figure for the llm-* surface, and this is
+  # the least urgent thing on it. It is set here rather than in code so it can be
+  # raised or reverted without a deploy; backend.inference_enrichment caps it at
+  # 24 whatever this says. At 6 the backlog clears in about a day, after which
+  # the job costs almost nothing, because a page whose fingerprint has not moved
+  # is never sent twice.
   #
   # Unset LIFTWING_API_URL or LIFTWING_MODEL and the sweep fails loudly rather
   # than recording 200 identical errors against 200 innocent pages.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name inference-enrichment --stale-after 4200 -- /usr/bin/env INFERENCE_ENRICHMENT_LIMIT=200 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/inference_enrichment.py
+  #
+  # The 2700s timeout is the 2400s deadline plus the last wave and the
+  # projection republish that follows it. A timeout at the deadline would
+  # discard whichever wave was in flight when the two raced.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name inference-enrichment --stale-after 5400 -- /usr/bin/env INFERENCE_ENRICHMENT_LIMIT=20000 INFERENCE_ENRICHMENT_BUDGET_SECONDS=2400 LIFTWING_CONCURRENCY=6 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/inference_enrichment.py
   image: python3.13
   schedule: "41 * * * *"
-  timeout: 2100
+  timeout: 2700
   mem: 512Mi
   emails: onfailure

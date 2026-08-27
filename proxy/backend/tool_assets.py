@@ -14,7 +14,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 import requests
 from sqlalchemy import select
 
-from backend import db, outbound
+from backend import db, outbound, run_budget
 from backend.models import CatalogToolProjection, ToolAssetCache, utcnow
 
 ALLOWED_CONTENT_TYPES = {
@@ -24,7 +24,16 @@ ALLOWED_CONTENT_TYPES = {
     "image/svg+xml": ".svg",
     "image/webp": ".webp",
 }
-MAX_CANDIDATES = 200
+# Safety cap on icon downloads per run, not the bound that decides a run:
+# `DEFAULT_BUDGET` is. 200 was a guess, the job was given 100 of it, and the
+# measured cost of a fetch is 0.155s -- so it spent 16 seconds of its hour
+# while tens of thousands of tools waited. Set above anything one budgeted run
+# can reach, so it only ever catches icons that resolve instantly.
+MAX_CANDIDATES = 10_000
+# Five minutes of the hour between runs. Icons come from arbitrary third-party
+# hosts, so this is deliberately a smaller slice than the sweeps that only talk
+# to Wikimedia.
+DEFAULT_BUDGET = 300
 # Tools settled as "this tool declares no icon" per run. That verdict is decided
 # entirely from the projection the scan has already read -- no request is made
 # and no file is written -- so it does not belong under the fetch limit and
@@ -231,15 +240,21 @@ def _settle_missing(settlements: list[tuple[str, str]]) -> int:
     return written
 
 
-def refresh_candidates(limit: int = MAX_CANDIDATES) -> dict[str, int]:
+def refresh_candidates(limit: int = MAX_CANDIDATES, *, budget: run_budget.Budget | None = None) -> dict[str, int]:
     """Refresh what needs a request, and settle what does not, under separate bounds.
 
     `ready` counts icons actually fetched. It used to count `missing` too --
     `result["status"] in {"ready", "missing"}` -- which reported "ready: 100"
     every hour for a queue that was downloading nothing at all, and hid the
     fact that the limit was being spent on rows rather than requests.
+
+    The fetch loop stops when `budget` is spent. Settlements are not under it:
+    they are decided from columns already in memory and cost no request, so a
+    deadline sized for downloads would be the wrong bound for them -- which is
+    the same mistake as sharing the fetch limit, made in the other direction.
     """
     bounded = max(1, min(MAX_CANDIDATES, int(limit or 1)))
+    clock = budget or run_budget.Budget(DEFAULT_BUDGET)
     candidates: list[str] = []
     settlements: list[tuple[str, str]] = []
     with db.session_scope() as s:
@@ -292,20 +307,25 @@ def refresh_candidates(limit: int = MAX_CANDIDATES) -> dict[str, int]:
             else:
                 settlements.append((projection.tool_name, source))
     missing = _settle_missing(settlements[:MAX_SETTLEMENTS])
-    ready = errors = 0
+    ready = errors = processed = 0
     http = requests.Session()
     for name in candidates[:bounded]:
+        if not clock.remains():
+            break
+        processed += 1
         result = refresh_tool(name, session=http)
         ready += result["status"] == "ready"
         errors += result["status"] == "error"
     return {
         "candidates": len(candidates) + len(settlements),
         "fetches": len(candidates),
-        "processed": min(len(candidates), bounded),
+        "processed": processed,
         "ready": ready,
         "errors": errors,
         "settled": missing,
         "settlements": len(settlements),
+        "spentSeconds": round(clock.spent(), 1),
+        "budgeted": int(clock.seconds),
     }
 
 

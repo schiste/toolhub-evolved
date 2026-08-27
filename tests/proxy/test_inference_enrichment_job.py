@@ -25,7 +25,9 @@ def _sweep_result(**counts):
 def test_main_reports_what_the_pass_read(monkeypatch, capsys):
     seen = []
     monkeypatch.setenv("TOOLHUB_DB_URL", "sqlite://")
-    monkeypatch.setattr(job.enrichment, "sweep", lambda limit: seen.append(limit) or _sweep_result(asked=200, ready=196))
+    monkeypatch.setattr(
+        job.enrichment, "sweep", lambda limit, **_kwargs: seen.append(limit) or _sweep_result(asked=200, ready=196)
+    )
 
     assert job.main() == 0
     assert seen == [job.DEFAULT_LIMIT]
@@ -39,7 +41,9 @@ def test_pages_the_model_could_not_answer_do_not_fail_the_sweep(monkeypatch, cap
     # Per backend.job_contract: a per-item failure is a durable observation,
     # recorded against that page and retried later, not a failed sweep.
     monkeypatch.setenv("TOOLHUB_DB_URL", "sqlite://")
-    monkeypatch.setattr(job.enrichment, "sweep", lambda limit: _sweep_result(asked=5, ready=1, rejected=2, error=2))
+    monkeypatch.setattr(
+        job.enrichment, "sweep", lambda limit, **_kwargs: _sweep_result(asked=5, ready=1, rejected=2, error=2)
+    )
 
     assert job.main() == 0
     assert '"error": 2' in capsys.readouterr().out

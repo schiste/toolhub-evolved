@@ -22,6 +22,7 @@ fixture written to match the current prompt.
 """
 
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import catalog_projection, db, userscripts  # noqa: E402
+from backend import catalog_projection, db, run_budget, userscripts  # noqa: E402
 from backend import inference_enrichment as enrichment  # noqa: E402
 from backend.models import ToolInference, UserScriptDirectoryEntry, UserScriptPage, utcnow  # noqa: E402
 
@@ -409,3 +410,59 @@ def test_the_reported_denominator_is_the_one_the_sweep_actually_works_through():
     with db.session_scope() as session:
         considered = len(enrichment.pending(session))
     assert enrichment.coverage()["eligiblePages"] == considered == 1
+
+
+# --- how fast a run is allowed to go ----------------------------------------
+
+
+def test_a_wave_asks_about_several_pages_at_once(monkeypatch):
+    """Concurrency is what makes the backlog finishable, so assert it, not the count.
+
+    Six pages and a width of three: the endpoint must see three calls
+    overlapping. A barrier that all three have to reach before any returns is
+    the only way this passes serially -- it would deadlock instead.
+    """
+    for index in range(6):
+        store(f"User:Anomie/s{index}.js", basename=f"s{index}.js", fingerprint=f"f{index}")
+    monkeypatch.setenv("LIFTWING_CONCURRENCY", "3")
+    barrier = threading.Barrier(3, timeout=10)
+
+    def answer(_payload):
+        barrier.wait()
+        return reply(REAL_REPLY)
+
+    result, _rebuilt = sweep_with(answer, monkeypatch)
+
+    assert result["concurrency"] == 3
+    assert result["counts"]["asked"] == 6
+    assert result["counts"]["ready"] == 6
+
+
+def test_a_run_stops_between_waves_when_its_budget_is_spent(monkeypatch):
+    """The deadline bounds a scheduled run, and it never abandons a wave mid-flight.
+
+    Four pages, width two, and a clock that expires during the first wave. Both
+    of its pages are still stored -- a half-written wave would throw away
+    answers already paid for -- and the second wave is never started.
+    """
+    for index in range(4):
+        store(f"User:Anomie/s{index}.js", basename=f"s{index}.js", fingerprint=f"f{index}")
+    monkeypatch.setenv("LIFTWING_CONCURRENCY", "2")
+    ticks = iter([0.0, 0.0, 30.0, 30.0, 30.0])
+    monkeypatch.setattr(enrichment, "liftwing_caller", lambda: (lambda _payload: reply(REAL_REPLY)))
+    monkeypatch.setattr(enrichment, "configured_model", lambda: "llm-qwen36-27b")
+    monkeypatch.setattr(catalog_projection, "refresh_tool_names", lambda names: {})  # noqa: ARG005
+
+    result = enrichment.sweep(limit=enrichment.BATCH, budget=run_budget.Budget(1, clock=lambda: next(ticks)))
+
+    assert result["counts"]["asked"] == 2
+    assert len(rows()) == 2
+
+
+def test_a_nonsense_concurrency_setting_never_opens_more_sockets_than_the_cap(monkeypatch):
+    monkeypatch.setenv("LIFTWING_CONCURRENCY", "500")
+    assert enrichment.concurrency() == enrichment.MAX_CONCURRENCY
+    monkeypatch.setenv("LIFTWING_CONCURRENCY", "not a number")
+    assert enrichment.concurrency() == enrichment.DEFAULT_CONCURRENCY
+    monkeypatch.setenv("LIFTWING_CONCURRENCY", "0")
+    assert enrichment.concurrency() == 1

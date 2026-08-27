@@ -1034,7 +1034,10 @@ def discover_identity_candidates(
     return {"created": created, "linked": linked, "conflicts": conflicts}
 
 
-DEFAULT_RECONVERGE_LIMIT = 500
+# Measured 2026-08-27: 0.009s a label, so 500 was 4 seconds of the hour. Raised
+# to what the interval can actually absorb, which is what decides whether the
+# 1,171 unresolved bindings converge this week or next quarter.
+DEFAULT_RECONVERGE_LIMIT = 5_000
 RECONVERGE_CURSOR_KEY = "unresolved_reconverge_cursor"
 
 

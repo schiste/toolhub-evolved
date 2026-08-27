@@ -29,18 +29,17 @@ order of wikis the run had already committed to.
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func
 
-from backend import db, wiki_replica
+from backend import db, run_budget, wiki_replica
 from backend.models import WikiLaneState, WikiProject, utcnow
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
     from datetime import datetime
 
 USERSCRIPT_LANE = "userscript"
@@ -93,42 +92,10 @@ BACKOFF_BASE: int = 1_800
 BACKOFF_MAX: int = 604_800
 
 
-class Budget:
-    """How much wall-clock a run may still spend.
-
-    Held rather than passed around as a deadline so the loop reads as a question
-    about the run -- `while budget.remains()` -- and so tests can drive it with
-    a clock instead of sleeping.
-    """
-
-    def __init__(self, seconds: float, *, clock: Callable[[], float] = time.monotonic) -> None:
-        """Start the clock. `clock` is monotonic so a host clock step cannot end a run early."""
-        self._clock = clock
-        self._seconds = max(0.0, float(seconds))
-        self._started = clock()
-
-    @property
-    def seconds(self) -> float:
-        """The allowance this run began with."""
-        return self._seconds
-
-    def spent(self) -> float:
-        """How long the run has been going."""
-        return self._clock() - self._started
-
-    def left(self) -> float:
-        """How much of the allowance is unspent, never below zero."""
-        return max(0.0, self._seconds - self.spent())
-
-    def remains(self) -> bool:
-        """Whether there is any allowance left to start another wiki with.
-
-        Checked before a wiki rather than after, so the last wiki a run starts
-        is one it had time for. It may still overrun -- nothing here interrupts
-        a wiki mid-sweep, because a half-covered wiki is worse than a late run
-        -- but it will not start a wiki with nothing left.
-        """
-        return self.left() > 0
+#: Re-exported: the census lanes were where this started, and `wiki_schedule.Budget`
+#: is still how they spell it. The class itself is lane-agnostic and lives in
+#: `run_budget`, which every other bounded sweep now shares.
+Budget = run_budget.Budget
 
 
 @dataclass(frozen=True)

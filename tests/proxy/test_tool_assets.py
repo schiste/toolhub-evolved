@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import tool_assets as tool_assets_job  # noqa: E402
-from backend import db, outbound, tool_assets  # noqa: E402
+from backend import db, outbound, run_budget, tool_assets  # noqa: E402
 from backend.models import CatalogToolProjection, ToolAssetCache, utcnow  # noqa: E402
 
 
@@ -21,6 +21,11 @@ def database(tmp_path, monkeypatch):
     db.configure("sqlite://")
     db.init_schema()
     monkeypatch.setenv("TOOLHUB_ASSET_CACHE_DIR", str(tmp_path / "icons"))
+
+
+def _work(summary):
+    """The summary without its timing, which is a real clock and not an assertion."""
+    return {key: value for key, value in summary.items() if key not in {"spentSeconds", "budgeted"}}
 
 
 def test_refresh_icon_records_bounded_asset_and_serves_it(monkeypatch):
@@ -96,7 +101,7 @@ def test_job_keeps_per_tool_errors_as_data_quality_results(monkeypatch, capsys):
     monkeypatch.setattr(
         tool_assets,
         "refresh_candidates",
-        lambda limit: {"candidates": 3, "processed": 3, "ready": 1, "errors": 2},
+        lambda limit, **_kwargs: {"candidates": 3, "processed": 3, "ready": 1, "errors": 2},  # noqa: ARG005
     )
 
     assert tool_assets_job.main() == 0
@@ -220,7 +225,7 @@ def test_refresh_candidates_selects_eligible_rows_and_bounds_processing(monkeypa
     # Only a_new, b_pending, c_error_ready and f_changed qualify; the limit
     # of 2 must process just the first two in tool_name order.
     first = tool_assets.refresh_candidates(limit=2)
-    assert first == {
+    assert _work(first) == {
         "candidates": 4,
         "fetches": 4,
         "processed": 2,
@@ -233,7 +238,7 @@ def test_refresh_candidates_selects_eligible_rows_and_bounds_processing(monkeypa
     # a_new and b_pending are now ready with matching source URLs, so a
     # second sweep only picks up the untouched error and changed rows.
     second = tool_assets.refresh_candidates(limit=10)
-    assert second == {
+    assert _work(second) == {
         "candidates": 2,
         "fetches": 2,
         "processed": 2,
@@ -488,3 +493,38 @@ def test_tools_that_declare_no_icon_are_settled_outside_the_fetch_limit(monkeypa
     # And the settled rows are done: a second sweep finds nothing left to do
     # for them, rather than re-deciding the same verdict every hour.
     assert tool_assets.refresh_candidates(limit=1)["settlements"] == 0
+
+
+def test_the_budget_stops_downloads_but_never_the_settlements(monkeypatch):
+    """Settlements cost no request, so a deadline sized for downloads must not bound them.
+
+    Two tools declare an icon and two do not. The clock expires after the first
+    fetch, so the second icon waits for the next run -- but both iconless tools
+    are still settled, because deciding them takes two columns already in
+    memory and no network at all.
+    """
+    with db.session_scope() as s:
+        s.add(CatalogToolProjection(tool_name="a_icon", effective_record={"icon": "https://x.example/a.png"}))
+        s.add(CatalogToolProjection(tool_name="b_icon", effective_record={"icon": "https://x.example/b.png"}))
+        s.add(CatalogToolProjection(tool_name="c_bare", effective_record={"name": "c"}))
+        s.add(CatalogToolProjection(tool_name="d_bare", effective_record={"name": "d"}))
+
+    fetched = []
+
+    def record_fetch(_session, url, *, policy, caller):  # noqa: ARG001
+        fetched.append(url)
+        return outbound.BoundedResponse(
+            body=b"PNGDATA", url=url, content_type="image/png", etag=None, last_modified=None
+        )
+
+    monkeypatch.setattr(outbound, "fetch_bounded_response", record_fetch)
+    ticks = iter([0.0, 0.0, 9.0, 9.0, 9.0])
+    budget = run_budget.Budget(1, clock=lambda: next(ticks))
+
+    summary = tool_assets.refresh_candidates(limit=100, budget=budget)
+
+    assert len(fetched) == 1
+    assert summary["processed"] == 1
+    assert summary["fetches"] == 2
+    assert summary["settled"] == 2
+    assert summary["settlements"] == 2

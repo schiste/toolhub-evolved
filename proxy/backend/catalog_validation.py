@@ -11,7 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import requests
 from sqlalchemy import select
 
-from backend import db, outbound
+from backend import db, outbound, run_budget
 from backend.catalog_projection import URL_FIELDS
 from backend.models import CatalogToolProjection, utcnow
 
@@ -19,11 +19,19 @@ from backend.models import CatalogToolProjection, utcnow
 # was 4,508 tools; at 53,178 it stopped being a batch size and became a ceiling
 # below the refresh rate. `FRESH_FOR` asks for the whole corpus every 7 days --
 # about 58,000 distinct targets once `_probe_target` has folded the duplicates
-# -- which is 345 an hour. 200 an hour delivers a 22-day cycle and a candidate
-# count that climbs until every URL is permanently overdue, which is what 91,202
-# was. 500 leaves headroom for the catalog to keep growing without the cycle
-# silently lengthening again.
-MAX_CHECKS = 500
+# -- which is 345 an hour.
+#
+# What actually bounds a run is `DEFAULT_BUDGET`, not this. A count has to be
+# guessed from a per-item cost nobody measures again: 500 targets was set from
+# a guess, and the measured cost turned out to be 0.15s each, so the job spent
+# 76 seconds of its hour and left the backlog climbing. `MAX_CHECKS` stays as
+# the safety cap for the case the budget cannot catch -- targets that resolve
+# instantly, and a loop that would otherwise probe until the table is
+# exhausted -- and is set well above anything one budgeted run can reach.
+MAX_CHECKS = 20_000
+# Ten minutes of the hour between runs. The rest is left to the two dozen other
+# jobs that share this database and to the hosts on the other end of the probes.
+DEFAULT_BUDGET = 600
 FRESH_FOR = timedelta(days=7)
 # Rows per fetch for the candidate scan; see `_candidate_rows`.
 STREAM_BATCH_SIZE = 500
@@ -116,33 +124,60 @@ def _candidate_rows(limit: int) -> tuple[int, dict[str, list[tuple[str, str, str
     return len(targets), {target: due[target] for target in targets[:limit]}
 
 
-def _record(tool_name: str, field: str, value: str, result: dict[str, Any]) -> None:
+def _record(fields: list[tuple[str, str, str]], result: dict[str, Any]) -> int:
+    """Write one probe's verdict against every field that named its target.
+
+    One transaction for the whole target, not one per field. A wiki tool
+    publishes the same page as `url` and as `repository`, so the common case is
+    two writes that were two round trips to a database two dozen jobs share --
+    and at the throughput this job now runs at, that difference is thousands of
+    transactions an hour bought for nothing.
+    """
+    checked_at = utcnow().isoformat(timespec="seconds") + "Z"
+    written = 0
     with db.session_scope() as s:
-        row = s.get(CatalogToolProjection, tool_name)
-        if row is None or _text((row.effective_record or {}).get(field)) != value:
-            return
-        validation = dict(row.validation or {})
-        state = dict(validation.get(field) or {})
-        state.update(result)
-        state["checkedValue"] = value
-        state["checkedAt"] = utcnow().isoformat(timespec="seconds") + "Z"
-        validation[field] = state
-        row.validation = validation
+        for tool_name, field, value in fields:
+            row = s.get(CatalogToolProjection, tool_name)
+            if row is None or _text((row.effective_record or {}).get(field)) != value:
+                continue
+            validation = dict(row.validation or {})
+            state = dict(validation.get(field) or {})
+            state.update(result)
+            state["checkedValue"] = value
+            state["checkedAt"] = checked_at
+            validation[field] = state
+            row.validation = validation
+            written += 1
+    return written
 
 
-def refresh_candidates(limit: int = MAX_CHECKS, *, session: requests.Session | None = None) -> dict[str, int]:
+def refresh_candidates(
+    limit: int = MAX_CHECKS,
+    *,
+    session: requests.Session | None = None,
+    budget: run_budget.Budget | None = None,
+) -> dict[str, int]:
     """Probe each distinct target once and record the verdict on every field naming it.
 
     `candidates` and `processed` count targets, which is requests; `recorded`
     counts the validation states written from them. The two differ by exactly
     the duplication `_probe_target` folds, so the gap between them is the
     saving, visible in the job log rather than inferred from it.
+
+    The run stops when `budget` is spent, which is what a scheduled run is
+    really bounded by; `limit` is the safety cap. `spentSeconds` and `budgeted`
+    go into the summary so the next reader can see which of the two ended the
+    run, rather than having to infer it from a duration.
     """
     bounded = max(1, min(MAX_CHECKS, int(limit or 1)))
+    clock = budget or run_budget.Budget(DEFAULT_BUDGET)
     total, targets = _candidate_rows(bounded)
     http = session or requests.Session()
-    reachable = errors = recorded = 0
+    reachable = errors = recorded = processed = 0
     for target, fields in targets.items():
+        if not clock.remains():
+            break
+        processed += 1
         try:
             response = outbound.probe_reachable(http, target, caller=CALLER)
             result = {
@@ -156,13 +191,13 @@ def refresh_candidates(limit: int = MAX_CHECKS, *, session: requests.Session | N
         except (requests.RequestException, ValueError) as exc:
             result = {"reachable": False, "lastError": str(exc)[:1000]}
             errors += 1
-        for tool_name, field, value in fields:
-            _record(tool_name, field, value, result)
-            recorded += 1
+        recorded += _record(fields, result)
     return {
         "candidates": total,
-        "processed": len(targets),
+        "processed": processed,
         "recorded": recorded,
         "reachable": reachable,
         "errors": errors,
+        "spentSeconds": round(clock.spent(), 1),
+        "budgeted": int(clock.seconds),
     }

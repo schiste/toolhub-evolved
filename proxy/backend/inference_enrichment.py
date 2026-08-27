@@ -39,12 +39,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import requests
 from sqlalchemy import func, select
 
-from backend import db, digests, userscripts
+from backend import db, digests, run_budget, userscripts
 from backend.models import ToolInference, UserScriptDirectoryEntry, UserScriptPage, utcnow
 from backend.userscript_toolinfo import STYLESHEET_MODELS, tool_name
 
@@ -56,7 +58,23 @@ if TYPE_CHECKING:
 # One tool per request. Batching several tools into one prompt saves tokens and
 # reliably produces answers that describe the wrong tool, because nothing in
 # the response ties a description back to a name.
-BATCH = 200
+#
+# Several requests at once is a different thing and is safe, because each is
+# still about one tool. That is what `DEFAULT_CONCURRENCY` buys: the measured
+# cost of a call is 2.1s and almost all of it is waiting, so a serial run spent
+# 428 seconds of its hour and left ~48,700 pages queued behind it.
+BATCH = 2_000
+# How many Lift Wing calls are in flight at once. Wikimedia publishes no
+# concurrency figure for the `llm-*` surface, so this starts modest and is
+# tunable from the job definition rather than a deploy: raising it is a one-line
+# change to jobs.yaml that can be reverted the same way if the endpoint
+# complains. `MAX_CONCURRENCY` is there so a typo cannot open a hundred
+# sockets against a shared Wikimedia service.
+DEFAULT_CONCURRENCY = 6
+MAX_CONCURRENCY = 24
+# Forty minutes of the hour between runs, leaving the guard's --stale-after
+# 4200 a wide margin over a run that overruns its last wave.
+DEFAULT_BUDGET = 2_400
 
 # `body` is truncated rather than skipped. A 200 KB script is not more
 # informative than its first 24 KB for the purpose of saying what it does, and
@@ -339,6 +357,28 @@ def _counts() -> dict[str, int]:
     return {"asked": 0, "ready": 0, "rejected": 0, "error": 0}
 
 
+def _ask(
+    candidate: Candidate,
+    ask: Callable[[dict[str, Any]], Any],
+    *,
+    model: str,
+) -> Outcome:
+    """Ask about one page and return what to store. Never raises, never touches the database.
+
+    Split out from `ask_one` so it can run on a worker thread while every write
+    stays on the one that owns the session. A failure for one page is a durable
+    observation, not a reason to stop enriching the rest, per
+    `backend.job_contract` -- so it comes back as an `Outcome` to store rather
+    than as an exception to handle.
+    """
+    try:
+        response = ask(payload_for(model, candidate.wiki, candidate.title, candidate.body))
+    except Exception as exc:  # noqa: BLE001 - one page's outage must not end the sweep
+        return Outcome(STATUS_ERROR, {}, f"{type(exc).__name__}: {exc}")
+    accepted = accept(parse_json(model_text(response)))
+    return Outcome(STATUS_READY if accepted else STATUS_REJECTED, accepted)
+
+
 def ask_one(
     session: Session,
     candidate: Candidate,
@@ -349,24 +389,14 @@ def ask_one(
 ) -> str:
     """Ask about one page, store the outcome, and return its status. Never raises.
 
-    A failure for one page is recorded against that page and counted, per
-    `backend.job_contract`: a per-item failure is a durable observation, not a
-    reason to stop enriching the rest. It is stored rather than only logged so
-    the next sweep can see this page was tried, instead of retrying it ahead of
-    pages nobody has tried yet.
+    The outcome is stored rather than only logged so the next sweep can see this
+    page was tried, instead of retrying it ahead of pages nobody has tried yet.
     """
     counts["asked"] += 1
-    try:
-        response = ask(payload_for(model, candidate.wiki, candidate.title, candidate.body))
-    except Exception as exc:  # noqa: BLE001 - one page's outage must not end the sweep
-        record(session, candidate, Outcome(STATUS_ERROR, {}, f"{type(exc).__name__}: {exc}"), model=model)
-        counts["error"] += 1
-        return STATUS_ERROR
-    accepted = accept(parse_json(model_text(response)))
-    status = STATUS_READY if accepted else STATUS_REJECTED
-    record(session, candidate, Outcome(status, accepted), model=model)
-    counts["ready" if accepted else "rejected"] += 1
-    return status
+    outcome = _ask(candidate, ask, model=model)
+    record(session, candidate, outcome, model=model)
+    counts[outcome.status] += 1
+    return outcome.status
 
 
 def infer(
@@ -418,8 +448,18 @@ def liftwing_caller() -> Callable[[dict[str, Any]], Any]:
     }
     timeout = max(1, int(os.environ.get("LIFTWING_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)))
 
+    # One `requests.Session` per worker thread, held in thread-local storage.
+    # A bare `requests.post` reopens the connection -- TLS handshake included --
+    # for every page, which at this concurrency is most of what the endpoint
+    # sees; one shared Session across threads is the other way to get pooling
+    # and is not documented as safe. Thread-local is both.
+    local = threading.local()
+
     def ask(payload: dict[str, Any]) -> Any:  # noqa: ANN401 - the model's reply is untrusted JSON
-        response = requests.post(endpoint, json=payload, headers=headers, timeout=timeout)
+        http = getattr(local, "session", None)
+        if http is None:
+            http = local.session = requests.Session()
+        response = http.post(endpoint, json=payload, headers=headers, timeout=timeout)
         response.raise_for_status()
         return response.json()
 
@@ -431,25 +471,61 @@ def configured_model() -> str:
     return os.environ.get("LIFTWING_MODEL", "").strip()
 
 
-def sweep(limit: int = BATCH) -> dict[str, Any]:
+def concurrency() -> int:
+    """How many Lift Wing calls this run may have in flight, from the environment."""
+    try:
+        wanted = int(os.environ.get("LIFTWING_CONCURRENCY", "").strip() or DEFAULT_CONCURRENCY)
+    except ValueError:
+        wanted = DEFAULT_CONCURRENCY
+    return max(1, min(MAX_CONCURRENCY, wanted))
+
+
+def sweep(limit: int = BATCH, *, budget: run_budget.Budget | None = None) -> dict[str, Any]:
     """Run one enrichment pass and return counts plus stored coverage.
 
-    Committing per page rather than once at the end: a sweep of 200 pages is
-    several minutes of network, and a job killed partway through should keep the
-    answers it already paid for. Each page's row is independent, so there is no
-    consistency to preserve across them.
+    Waves rather than a single `map` over every candidate. A wave is
+    `concurrency()` calls in flight, and the run checks its deadline between
+    waves: a whole-batch map would have no point at which to stop, and the
+    budget is what stops a run overrunning the hour. It costs the tail of each
+    wave -- everyone waits for the slowest of six -- which at 2.1s a call is
+    worth the two properties it buys.
+
+    One transaction per wave, not per page and not one at the end. A sweep is
+    many minutes of network and a job killed partway through should keep the
+    answers it already paid Lift Wing for; a wave bounds what a kill can lose to
+    the handful still in flight. Every write stays on this thread -- the workers
+    only make the request -- so nothing here shares a session across threads.
     """
     ask = liftwing_caller()
     model = configured_model()
+    clock = budget or run_budget.Budget(DEFAULT_BUDGET)
+    width = concurrency()
     counts = _counts()
     with db.session_scope() as session:
         candidates = pending(session, limit=limit)
     enriched: list[str] = []
-    for candidate in candidates:
-        with db.session_scope() as session:
-            if ask_one(session, candidate, ask, model=model, counts=counts) == STATUS_READY:
-                enriched.append(candidate.tool_name)
-    return {"counts": counts, "model": model, "coverage": coverage(), "projection": _republish(enriched)}
+    with ThreadPoolExecutor(max_workers=width, thread_name_prefix="inference") as pool:
+        for start in range(0, len(candidates), width):
+            if not clock.remains():
+                break
+            wave = candidates[start : start + width]
+            outcomes = list(pool.map(lambda candidate: _ask(candidate, ask, model=model), wave))
+            with db.session_scope() as session:
+                for candidate, outcome in zip(wave, outcomes, strict=True):
+                    counts["asked"] += 1
+                    counts[outcome.status] += 1
+                    record(session, candidate, outcome, model=model)
+                    if outcome.status == STATUS_READY:
+                        enriched.append(candidate.tool_name)
+    return {
+        "counts": counts,
+        "model": model,
+        "concurrency": width,
+        "spentSeconds": round(clock.spent(), 1),
+        "budgeted": int(clock.seconds),
+        "coverage": coverage(),
+        "projection": _republish(enriched),
+    }
 
 
 def _republish(tool_names: list[str]) -> dict[str, int]:

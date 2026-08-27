@@ -8,8 +8,8 @@ import os
 from backend import graph_enrichment as enrichment
 from backend import graph_payload, job_runner
 
-DEFAULT_LIMIT = 500
-MAX_LIMIT = 1000
+DEFAULT_LIMIT = 5_000
+MAX_LIMIT = 20_000
 
 
 def _limit() -> int:

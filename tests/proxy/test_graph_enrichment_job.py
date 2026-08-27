@@ -2,6 +2,7 @@
 """Tests for the local Toolforge graph-enrichment repair job."""
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -9,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import graph_enrichment as job  # noqa: E402
+
+#: Measured on 2026-08-27 against the production catalogue: 53,178 tools, and
+#: the whole-catalogue repair pass timed end to end. Rounded up, because a
+#: bound built on an optimistic cost is not a bound.
+SECONDS_PER_TOOL = 0.05
 
 
 def _graph_payload():
@@ -44,7 +50,7 @@ def _graph_payload():
 def test_main_repairs_locally_and_emits_taxonomy_audit(monkeypatch, capsys):
     calls = []
     monkeypatch.setenv("TOOLHUB_DB_URL", "sqlite://")
-    monkeypatch.setenv("GRAPH_ENRICHMENT_LIMIT", "5000")
+    monkeypatch.setenv("GRAPH_ENRICHMENT_LIMIT", str(job.MAX_LIMIT * 10))
     monkeypatch.setattr(
         job.enrichment,
         "refresh_candidates",
@@ -83,10 +89,20 @@ def test_main_reports_materialization_errors_without_failing_the_sweep(monkeypat
     assert '"errors": 1' in capsys.readouterr().out
 
 
-def test_jobs_manifest_runs_graph_enrichment_under_job_guard():
-    manifest = (ROOT / "jobs.yaml").read_text()
+def test_the_manifest_asks_for_no_more_tools_than_the_timeout_can_pay_for():
+    """The declared limit, the guard and the timeout are one bound, not three.
 
-    assert "- name: graph-enrichment" in manifest
-    assert "job_guard.sh --job-name graph-enrichment" in manifest
-    assert "GRAPH_ENRICHMENT_LIMIT=500" in manifest
-    assert "timeout: 300" in manifest
+    A limit above what the timeout can reach is not a limit: the run is killed
+    part-way and the tail never happens. At 0.049s a tool, 20,000 is 980s of the
+    declared 1200. The assertion is on the arithmetic rather than on the two
+    numbers, so raising either one alone fails here instead of in production.
+    """
+    manifest = (ROOT / "jobs.yaml").read_text()
+    block = manifest.split("- name: graph-enrichment", 1)[1].split("\n- name: ", 1)[0]
+
+    assert "job_guard.sh --job-name graph-enrichment" in block
+    limit = int(re.search(r"GRAPH_ENRICHMENT_LIMIT=(\d+)", block).group(1))
+    timeout = int(re.search(r"^  timeout: (\d+)", block, re.MULTILINE).group(1))
+
+    assert limit <= job.MAX_LIMIT
+    assert limit * SECONDS_PER_TOOL < timeout

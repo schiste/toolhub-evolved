@@ -41,7 +41,11 @@ _log = logging.getLogger(__name__)
 # Version 3 was already used for Wikimedia user-script maintainership, so
 # existing version-3 rows must all re-project.
 PROJECTION_VERSION = 4
-MAX_REFRESH_TOOLS = 500
+# Measured 2026-08-27: this sweep costs 0.046s a tool and was capped at 500,
+# so it finished in 23 seconds of its hour against a catalogue of 53,178. The cap is
+# a safety rail against a runaway loop, not a throughput setting; sized here so
+# the whole catalogue is reachable within one run's share of the interval.
+MAX_REFRESH_TOOLS = 20_000
 STATUS_READY = "ready"
 STATUS_ERROR = "error"
 

@@ -23,7 +23,11 @@ from backend.models import (
 from backend.sync import REVIEW_APPROVED
 
 ENRICHMENT_VERSION = 1
-MAX_REFRESH_TOOLS = 1000
+# Measured 2026-08-27: this sweep costs 0.049s a tool and was capped at 500,
+# so it finished in 24 seconds of its hour against a catalogue of 53,178. The cap is
+# a safety rail against a runaway loop, not a throughput setting; sized here so
+# the whole catalogue is reachable within one run's share of the interval.
+MAX_REFRESH_TOOLS = 20_000
 # Rows per fetch for the two full-table scans; see `refresh_candidates`.
 STREAM_BATCH_SIZE = 500
 LIST_FIELDS = ("for_wikis", "technology_used", "tasks", "audiences", "available_ui_languages")

@@ -11,7 +11,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import catalog_validation, db, outbound  # noqa: E402
+from backend import catalog_validation, db, outbound, run_budget  # noqa: E402
 from backend.models import CatalogToolProjection  # noqa: E402
 
 
@@ -100,6 +100,11 @@ def test_candidate_rows_are_bounded_by_the_limit():
     assert len(candidates) == 1
 
 
+
+def _work(summary):
+    """The summary without its timing, which is a real clock and not an assertion."""
+    return {key: value for key, value in summary.items() if key not in {"spentSeconds", "budgeted"}}
+
 def test_record_ignores_a_projection_deleted_after_the_probe_started():
     with db.session_scope() as s:
         s.add(CatalogToolProjection(tool_name="alpha", effective_record={"url": "https://alpha.example"}))
@@ -107,7 +112,7 @@ def test_record_ignores_a_projection_deleted_after_the_probe_started():
         s.delete(s.get(CatalogToolProjection, "alpha"))
 
     # Must not raise even though the row is gone.
-    catalog_validation._record("alpha", "url", "https://alpha.example", {"reachable": True})
+    catalog_validation._record([("alpha", "url", "https://alpha.example")], {"reachable": True})
 
     with db.session_scope() as s:
         assert s.get(CatalogToolProjection, "alpha") is None
@@ -122,7 +127,7 @@ def test_record_ignores_a_field_value_that_moved_on_before_the_probe_returned():
         row = s.get(CatalogToolProjection, "alpha")
         row.effective_record = {"url": "https://alpha.example/moved"}
 
-    catalog_validation._record("alpha", "url", "https://alpha.example", {"reachable": True})
+    catalog_validation._record([("alpha", "url", "https://alpha.example")], {"reachable": True})
 
     with db.session_scope() as s:
         assert s.get(CatalogToolProjection, "alpha").validation == {}
@@ -149,7 +154,7 @@ def test_refresh_candidates_records_both_reachable_and_failed_probes(monkeypatch
 
     summary = catalog_validation.refresh_candidates()
 
-    assert summary == {"candidates": 2, "processed": 2, "recorded": 2, "reachable": 1, "errors": 1}
+    assert _work(summary) == {"candidates": 2, "processed": 2, "recorded": 2, "reachable": 1, "errors": 1}
     with db.session_scope() as s:
         row = s.get(CatalogToolProjection, "alpha")
         assert row.validation["url"]["reachable"] is True
@@ -171,7 +176,7 @@ def test_refresh_candidates_bounds_processing_by_limit(monkeypatch):
 
     summary = catalog_validation.refresh_candidates(limit=1)
 
-    assert summary == {"candidates": 2, "processed": 1, "recorded": 1, "reachable": 1, "errors": 0}
+    assert _work(summary) == {"candidates": 2, "processed": 1, "recorded": 1, "reachable": 1, "errors": 0}
 
 
 def _selects_from(statements, table, column):
@@ -283,3 +288,62 @@ def test_the_limit_bounds_requests_rather_than_recorded_fields():
     assert total == 2
     assert len(candidates) == 1
     assert len(next(iter(candidates.values()))) == 2
+
+
+def test_a_run_stops_when_its_budget_is_spent_not_when_the_count_runs_out(monkeypatch):
+    """The deadline is what bounds a scheduled run; the count is only the safety cap.
+
+    Two targets are due and the limit allows both. The clock expires after the
+    first, so the second must be left for the next run -- untouched, not
+    recorded as unreachable.
+    """
+    with db.session_scope() as s:
+        s.add(CatalogToolProjection(tool_name="alpha", effective_record={"url": "https://alpha.example"}))
+        s.add(CatalogToolProjection(tool_name="beta", effective_record={"url": "https://beta.example"}))
+
+    probed = []
+
+    def fake_probe(_session, url, *, caller):  # noqa: ARG001
+        probed.append(url)
+        return outbound.ProbeResponse(url=url, status_code=200, content_type="text/html")
+
+    monkeypatch.setattr(outbound, "probe_reachable", fake_probe)
+    ticks = iter([0.0, 0.0, 5.0, 5.0, 5.0])
+    budget = run_budget.Budget(1, clock=lambda: next(ticks))
+
+    summary = catalog_validation.refresh_candidates(limit=100, budget=budget)
+
+    assert probed == ["https://alpha.example"]
+    assert summary["processed"] == 1
+    assert summary["candidates"] == 2
+    with db.session_scope() as s:
+        assert s.get(CatalogToolProjection, "beta").validation in (None, {})
+
+
+def test_one_probe_writes_every_field_that_named_its_target_in_one_transaction(monkeypatch):
+    """A wiki tool publishes the same page twice, and that is one write, not two.
+
+    Counting transactions rather than trusting the shape: `_record` is called
+    once per target, and the two fields folded onto it come back as `recorded`
+    2 against `processed` 1.
+    """
+    with db.session_scope() as s:
+        s.add(
+            CatalogToolProjection(
+                tool_name="script",
+                effective_record={
+                    "url": "https://en.wikipedia.org/wiki/User:X/y.js",
+                    "repository": "https://en.wikipedia.org/wiki/User:X/y.js?action=raw",
+                },
+            )
+        )
+
+    monkeypatch.setattr(
+        outbound,
+        "probe_reachable",
+        lambda _session, url, *, caller: outbound.ProbeResponse(url=url, status_code=200, content_type="text/html"),  # noqa: ARG005
+    )
+
+    summary = catalog_validation.refresh_candidates()
+
+    assert _work(summary) == {"candidates": 1, "processed": 1, "recorded": 2, "reachable": 1, "errors": 0}
