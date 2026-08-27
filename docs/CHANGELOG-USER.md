@@ -1,12 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: a-repository-nobody-can-read -->
-<!-- Release title: A Repository Nobody Can Read -->
-<!-- Source range: 2904249c..77d147a6 (1 commit) -->
+<!-- Release id: the-dates-were-always-there -->
+<!-- Release title: The Dates Were Always There -->
+<!-- Source range: 8f89c124..PROMOTE_SHA (2 commits, promoted as one) -->
 
 # What's New for Users
 
-- A tool whose source code lives somewhere the site cannot reach now says so plainly, instead of looking like something that failed and might work next time. Sixty-nine tools were in that position: their repository is private, deleted, or has moved somewhere that asks for a password, and the site has no password to give it — by design, since it reads only what any member of the public can read.
-- Those tools were being re-checked once a month, forever, to get the same refusal every time. They are now marked as unreadable and left alone, which is the honest answer rather than a permanent maybe.
-- The error list gets shorter and more useful. What is left in it is genuinely worth looking at, rather than seventy entries describing a situation nobody can act on.
-- If a tool's record is later pointed at a repository anyone can read, it is picked up again automatically on the next pass. Nothing is written off permanently — the mark is attached to the address, not to the tool.
+- The statistics page said almost every tool in the catalog had no date. It reported 53,189 of 53,190 tools as "Date unavailable" for when they were created and when they were last changed. The catalog knows those dates for more than 52,000 of them, and the page now shows them.
+- The same page counted exactly one tool as having a named author. The catalog names authors for 46,714. The author and completeness figures were wrong by the same cause and are corrected by the same change.
+- The last-edit dates read from wiki pages, added in a recent release, were among the dates being dropped. They are now visible where they were meant to be, so a user script or gadget shows when its page was actually last touched.
+- Nothing was missing from the catalog and nothing needs re-collecting. The data was there the whole time; the page was reading past it. The figures correct themselves the next time the statistics page rebuilds.
