@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import requests
+from sqlalchemy import select
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
@@ -219,12 +220,28 @@ def test_refresh_candidates_selects_eligible_rows_and_bounds_processing(monkeypa
     # Only a_new, b_pending, c_error_ready and f_changed qualify; the limit
     # of 2 must process just the first two in tool_name order.
     first = tool_assets.refresh_candidates(limit=2)
-    assert first == {"candidates": 4, "processed": 2, "ready": 2, "errors": 0}
+    assert first == {
+        "candidates": 4,
+        "fetches": 4,
+        "processed": 2,
+        "ready": 2,
+        "errors": 0,
+        "settled": 0,
+        "settlements": 0,
+    }
 
     # a_new and b_pending are now ready with matching source URLs, so a
     # second sweep only picks up the untouched error and changed rows.
     second = tool_assets.refresh_candidates(limit=10)
-    assert second == {"candidates": 2, "processed": 2, "ready": 1, "errors": 1}
+    assert second == {
+        "candidates": 2,
+        "fetches": 2,
+        "processed": 2,
+        "ready": 1,
+        "errors": 1,
+        "settled": 0,
+        "settlements": 0,
+    }
     with db.session_scope() as s:
         assert s.get(ToolAssetCache, "c_error_ready").status == "error"
         assert s.get(ToolAssetCache, "f_changed").status == "ready"
@@ -426,3 +443,48 @@ def test_the_narrowed_candidate_scan_still_sees_every_reason_to_refresh(monkeypa
     monkeypatch.setattr(tool_assets, "refresh_tool", lambda name, **_kwargs: {"toolName": name, "status": "ready"})
 
     assert tool_assets.refresh_candidates(limit=1)["candidates"] == 4
+
+
+def test_tools_that_declare_no_icon_are_settled_outside_the_fetch_limit(monkeypatch):
+    """The wiki lane declares no icon, so it must not queue behind downloads.
+
+    Both lanes that discover wiki tools leave `icon` empty, so every one of
+    them was "due" forever and each took a slot from a limit sized for HTTP
+    fetches -- a hundred an hour to write rows that need no request at all.
+    """
+    with db.session_scope() as s:
+        for index in range(12):
+            s.add(
+                CatalogToolProjection(
+                    tool_name=f"wiki_{index:02d}",
+                    effective_record={"name": f"wiki_{index:02d}"},
+                    provenance={"icon": []},
+                )
+            )
+        s.add(CatalogToolProjection(tool_name="z_has_icon", effective_record={"icon": "https://x.example/z.png"}))
+
+    fetched = []
+
+    def record_fetch(_session, url, *, policy, caller):  # noqa: ARG001
+        fetched.append(url)
+        return outbound.BoundedResponse(body=b"PNGDATA", url=url, content_type="image/png", etag=None, last_modified=None)
+
+    monkeypatch.setattr(outbound, "fetch_bounded_response", record_fetch)
+
+    result = tool_assets.refresh_candidates(limit=1)
+    assert result["settlements"] == 12
+    assert result["settled"] == 12
+    # One request for the one tool that declares an icon, and none for the
+    # twelve that do not -- the limit bounds requests, not settlements.
+    assert fetched == ["https://x.example/z.png"]
+    assert result["fetches"] == 1
+
+    with db.session_scope() as s:
+        settled = s.execute(
+            select(ToolAssetCache.tool_name).where(ToolAssetCache.status == "missing").order_by(ToolAssetCache.tool_name)
+        )
+        assert [row.tool_name for row in settled] == [f"wiki_{index:02d}" for index in range(12)]
+
+    # And the settled rows are done: a second sweep finds nothing left to do
+    # for them, rather than re-deciding the same verdict every hour.
+    assert tool_assets.refresh_candidates(limit=1)["settlements"] == 0

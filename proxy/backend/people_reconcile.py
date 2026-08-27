@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
@@ -60,6 +60,19 @@ MAPPING_SPLIT = "split"
 MAPPING_DECISIONS = {MAPPING_CANDIDATE, MAPPING_AUTO_LINK, MAPPING_APPROVED, MAPPING_REJECTED, MAPPING_SPLIT}
 MAPPING_APPLIED_DECISIONS = people_policy.APPLIED_IDENTITY_MAPPING_DECISIONS
 CANDIDATE_RETRY_AFTER = timedelta(days=1)
+
+# How stale an unchanged conflict's `last_seen_at` may get before this job
+# refreshes it. Every hourly run re-derives the same conflicts, and rewriting
+# `run_id` and `last_seen_at` on rows whose `details` had not moved emitted an
+# UPDATE per conflict per hour whose entire content was two timestamps. On
+# 2026-08-27 that write deadlocked against `people-reconcile-incremental`, which
+# runs every minute and takes the same rows -- MySQL 1213, "Deadlock found when
+# trying to get lock", on the two-timestamp UPDATE -- and the job lost 21 hours
+# to it. Nothing reads either column -- they exist so
+# an operator reading the queue can see a conflict is still live -- so the
+# refresh only has to be recent, not current. Six hours is well inside how
+# often anyone looks and removes essentially every one of those writes.
+CONFLICT_REFRESH_AFTER = timedelta(hours=6)
 IDENTITY_RESOLUTION_VERSION = 4
 
 
@@ -549,11 +562,25 @@ def _record_stable_identity_conflict(
                 details=details,
             )
         )
-    else:
+    elif _conflict_moved(conflict, details, utcnow()):
         conflict.run_id = run_id
         conflict.details = details
         conflict.last_seen_at = utcnow()
     return True
+
+
+def _conflict_moved(conflict: PersonReconciliationConflict, details: dict[str, Any], now: datetime) -> bool:
+    """Whether an already-recorded conflict is worth writing again.
+
+    True when what the conflict says has changed, and otherwise only once
+    `CONFLICT_REFRESH_AFTER` has passed -- so an unchanged conflict costs one
+    write every six hours rather than one every hour, and a changed one is
+    still written the moment it changes.
+    """
+    if (conflict.details if isinstance(conflict.details, dict) else {}) != details:
+        return True
+    last_seen = conflict.last_seen_at
+    return last_seen is None or last_seen + CONFLICT_REFRESH_AFTER <= now
 
 
 def _record_account_binding_conflicts(s: Session, run_id: int) -> int:
@@ -593,7 +620,7 @@ def _record_account_binding_conflicts(s: Session, run_id: int) -> int:
                     details=details,
                 )
             )
-        else:
+        elif _conflict_moved(conflict, details, now):
             conflict.run_id = run_id
             conflict.details = details
             conflict.last_seen_at = now

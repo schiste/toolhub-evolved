@@ -14,6 +14,7 @@ from backend import db, people_index, people_policy
 from backend.models import (
     ApiCacheMeta,
     CanonicalToolCache,
+    CatalogToolProjection,
     Person,
     PersonIdentifier,
     ToolhubAccountProjection,
@@ -468,16 +469,33 @@ def _catalog_totals(session: Session, checked_at: datetime) -> dict[str, _Catalo
     re-read to decide. Accumulating the lenses together therefore costs one
     extra counter update per row, where filtering per lens would cost a
     second and third pass over the catalog.
+
+    The record measured is the *effective* one, not the canonical one. The
+    canonical row is what a source said; the projection is what the site
+    shows, and the two differ by every locally added field -- a reviewed
+    correction, a toolinfo record, an inferred description. Measuring the
+    canonical layer reported `description` at exactly the number of tools that
+    arrived from Toolhub with one, and no amount of local enrichment could ever
+    move it: 2,583 descriptions written by the inference sweep were live on the
+    site and absent from this number. The lens still comes from
+    `CanonicalToolCache.source`, because which lane a tool arrived through is a
+    fact about its origin and not about what has since been added to it, and
+    the outer join is on the canonical side so a tool with no projection yet is
+    still counted -- as its canonical record, which is all there is of it.
     """
     lenses = {name: _LensAccumulator(checked_at) for name in LENSES}
-    for tool_name, raw_record, source in _stream(
+    for tool_name, canonical_record, effective_record, source in _stream(
         session,
         select(
             CanonicalToolCache.tool_name,
             CanonicalToolCache.record,
+            CatalogToolProjection.effective_record,
             CanonicalToolCache.source,
-        ).order_by(CanonicalToolCache.tool_name),
+        )
+        .outerjoin(CatalogToolProjection, CatalogToolProjection.tool_name == CanonicalToolCache.tool_name)
+        .order_by(CanonicalToolCache.tool_name),
     ):
+        raw_record = effective_record if isinstance(effective_record, dict) else canonical_record
         record = raw_record if isinstance(raw_record, dict) else {}
         has_author = bool(author_assertions(record))
         lane = LENS_WIKI if source in WIKI_SOURCES else LENS_CATALOG

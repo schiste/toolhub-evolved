@@ -19,6 +19,7 @@ from backend import catalog_statistics, db, job_catalog, people_index  # noqa: E
 from backend.models import (  # noqa: E402
     ApiCacheMeta,
     CanonicalToolCache,
+    CatalogToolProjection,
     ToolhubAccountProjection,
     ToolinfoAuthorBinding,
     ToolinfoSource,
@@ -917,3 +918,47 @@ def test_the_refresh_job_is_scheduled_inside_the_freshness_window_it_promises():
 
     interval = timedelta(minutes=refresh_job.expected_interval_minutes)
     assert timedelta() < interval <= catalog_statistics.SNAPSHOT_MAX_AGE
+
+
+def _described(payload):
+    """How many tools the snapshot reports as carrying a description."""
+    return next(row["count"] for row in payload["metadata"] if row["key"] == "description")
+
+
+def test_completeness_is_measured_on_what_the_site_shows_not_on_what_a_source_said():
+    """Inferred and locally corrected fields must move these counts.
+
+    The scan read `CanonicalToolCache.record` alone, which is the upstream
+    payload before any local layer applies. Descriptions written by the
+    inference worker are published through the projection, so the described
+    count sat at exactly the number of tools that arrived with one and could
+    not move however many thousands the worker added -- the one number that
+    reports whether the worker is worth running was blind to it.
+    """
+    now = datetime(2026, 8, 13, 12, tzinfo=UTC)
+    with db.session_scope() as session:
+        _tool(session, "inferred", {"title": "Inferred"}, source=SOURCE_WIKI_USERSCRIPT)
+        _tool(session, "bare", {"title": "Bare"}, source=SOURCE_WIKI_USERSCRIPT)
+        session.add(
+            CatalogToolProjection(
+                tool_name="inferred",
+                effective_record={"name": "inferred", "title": "Inferred", "description": "Written by the worker"},
+            )
+        )
+        session.flush()
+        payload = catalog_statistics.build_snapshot(session, now=now)
+
+    assert payload["catalog"]["totalTools"] == 2
+    assert _described(payload) == 1
+
+
+def test_a_tool_with_no_projection_row_still_counts_from_its_canonical_record():
+    """The join is outer: a tool the projection has not reached is not erased."""
+    now = datetime(2026, 8, 13, 12, tzinfo=UTC)
+    with db.session_scope() as session:
+        _tool(session, "unprojected", {"title": "Unprojected", "description": "From upstream"})
+        session.flush()
+        payload = catalog_statistics.build_snapshot(session, now=now)
+
+    assert payload["catalog"]["totalTools"] == 1
+    assert _described(payload) == 1

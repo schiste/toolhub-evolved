@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 import backend  # noqa: E402
 from backend import catalog_projection, db, userscripts  # noqa: E402
 from backend import inference_enrichment as enrichment  # noqa: E402
-from backend.models import ToolInference, UserScriptPage, utcnow  # noqa: E402
+from backend.models import ToolInference, UserScriptDirectoryEntry, UserScriptPage, utcnow  # noqa: E402
 
 ENWIKI = "en.wikipedia.org"
 
@@ -78,13 +78,25 @@ def _database():
 BODY = "// a script long enough to be worth sending\n" + ("var x = 1;\n" * 20)
 
 
-def store(title, *, owner="Anomie", basename="linkclassifier.js", body=BODY, fingerprint="f1", **kwargs):
+def store(title, *, owner="Anomie", basename="linkclassifier.js", body=BODY, fingerprint="f1", original=True, **kwargs):
+    """Seed one page, and by default the directory entry that makes it askable.
+
+    `original=False` seeds the page alone, which is what a per-user copy looks
+    like in the database: the census stored it, and the collapse folded it onto
+    somebody else's script rather than giving it a directory row of its own.
+    """
     fields = {"role": userscripts.ROLE_SCRIPT, "deleted_at": None, "wiki": ENWIKI}
     fields.update(kwargs)
     with db.session_scope() as session:
         session.add(
             UserScriptPage(title=title, owner=owner, basename=basename, body=body, fingerprint=fingerprint, **fields)
         )
+        if original:
+            session.add(
+                UserScriptDirectoryEntry(
+                    wiki=fields["wiki"], title=title, owner=owner, basename=basename, tier="active"
+                )
+            )
 
 
 def names(candidates):
@@ -352,3 +364,48 @@ def test_a_sweep_that_filled_nothing_rebuilds_nothing(monkeypatch):
     result, rebuilt = sweep_with(lambda payload: reply(REAL_REFUSAL), monkeypatch)
     assert rebuilt == []
     assert result["projection"] == {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}
+
+
+def test_a_per_user_copy_is_never_paid_for():
+    """A page the collapse folded onto somebody else's script is not asked about.
+
+    This is the whole reason the directory join exists. `LiveRCparam.js` is the
+    real shape: hundreds of people keep their own settings under one filename,
+    every one of them is a `ROLE_SCRIPT` page the census stored, and exactly one
+    of them is a script anybody could publish a description for.
+    """
+    store("User:Anomie/linkclassifier.js")
+    store("User:Someone/LiveRCparam.js", owner="Someone", basename="LiveRCparam.js", original=False)
+    store("User:Another/LiveRCparam.js", owner="Another", basename="LiveRCparam.js", original=False)
+
+    with db.session_scope() as session:
+        assert names(enrichment.pending(session)) == ["User:Anomie/linkclassifier.js"]
+
+
+def test_a_user_stylesheet_is_never_paid_for():
+    """A CSS page is in the directory and is not a tool.
+
+    `userscript_toolinfo` drops it from the catalogue, so a description written
+    for it has nowhere to go. It is excluded here rather than after the model
+    has been paid, which is where the old filter left it.
+    """
+    store("User:Anomie/vector.css", basename="vector.css", content_model="sanitized-css")
+
+    with db.session_scope() as session:
+        assert names(enrichment.pending(session)) == []
+
+
+def test_the_reported_denominator_is_the_one_the_sweep_actually_works_through():
+    """`coverage` counts what `pending` would consider, not every stored page.
+
+    The two drifting apart is not cosmetic: a denominator that counts copies and
+    stylesheets reported 166,399 pages for 48,700 of work, which is the
+    difference between a lane three weeks from done and one seven weeks away.
+    """
+    store("User:Anomie/linkclassifier.js")
+    store("User:Someone/LiveRCparam.js", owner="Someone", basename="LiveRCparam.js", original=False)
+    store("User:Anomie/vector.css", basename="vector.css", content_model="sanitized-css")
+
+    with db.session_scope() as session:
+        considered = len(enrichment.pending(session))
+    assert enrichment.coverage()["eligiblePages"] == considered == 1

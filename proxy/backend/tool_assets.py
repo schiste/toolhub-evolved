@@ -25,6 +25,15 @@ ALLOWED_CONTENT_TYPES = {
     "image/webp": ".webp",
 }
 MAX_CANDIDATES = 200
+# Tools settled as "this tool declares no icon" per run. That verdict is decided
+# entirely from the projection the scan has already read -- no request is made
+# and no file is written -- so it does not belong under the fetch limit and
+# never did. Sharing that limit is what put the whole wiki lane behind a
+# hundred-an-hour queue sized for downloads: weeks to write rows that cost
+# nothing. Bounded anyway, at a size that drains the current backlog in a
+# morning, so one run stays a predictable unit of work on a database two dozen
+# other jobs share.
+MAX_SETTLEMENTS = 5000
 # Rows per fetch for the projection scan; see `refresh_candidates`.
 STREAM_BATCH_SIZE = 500
 # Toolhub's toolinfo schema asks for a Wikimedia Commons file page as a tool's
@@ -195,10 +204,44 @@ def refresh_tool(tool_name: str, *, session: requests.Session | None = None) -> 
     return {"toolName": name, "status": "ready", "bytes": len(response.body), "sha256": digest}
 
 
+def _settle_missing(settlements: list[tuple[str, str]]) -> int:
+    """Record "this tool declares no icon" for tools that need no request to decide.
+
+    `refresh_tool` reaches the same verdict, but it re-reads the projection to
+    do it and is called one tool at a time under the fetch limit. The scan
+    above has already read the only two columns the verdict depends on, so
+    these rows are written straight from it, in chunks rather than one
+    transaction, because a single statement over the whole wiki lane would hold
+    row locks across a table the projection refresh is also writing.
+    """
+    written = 0
+    for start in range(0, len(settlements), STREAM_BATCH_SIZE):
+        chunk = settlements[start : start + STREAM_BATCH_SIZE]
+        with db.session_scope() as s:
+            for name, source in chunk:
+                row = s.get(ToolAssetCache, name) or ToolAssetCache(tool_name=name)
+                s.add(row)
+                row.source_url = ""
+                row.source_type = source
+                row.status = "missing"
+                row.checked_at = utcnow()
+                row.next_attempt_at = None
+                row.last_error = None
+                written += 1
+    return written
+
+
 def refresh_candidates(limit: int = MAX_CANDIDATES) -> dict[str, int]:
-    """Count every tool whose cached icon is missing, stale, or due a retry."""
+    """Refresh what needs a request, and settle what does not, under separate bounds.
+
+    `ready` counts icons actually fetched. It used to count `missing` too --
+    `result["status"] in {"ready", "missing"}` -- which reported "ready: 100"
+    every hour for a queue that was downloading nothing at all, and hid the
+    fact that the limit was being spent on rows rather than requests.
+    """
     bounded = max(1, min(MAX_CANDIDATES, int(limit or 1)))
-    candidates = []
+    candidates: list[str] = []
+    settlements: list[tuple[str, str]] = []
     with db.session_scope() as s:
         # Columns, not entities, and the projection scan streams. This loop
         # keeps only tool names, but selecting `CatalogToolProjection` loaded
@@ -230,23 +273,40 @@ def refresh_candidates(limit: int = MAX_CANDIDATES) -> dict[str, int]:
             .execution_options(yield_per=STREAM_BATCH_SIZE)
         )
         for projection in projections:
-            url, _source = _icon_source(projection)
+            url, source = _icon_source(projection)
             asset = assets.get(projection.tool_name)
             retry_ready = asset is not None and (asset.next_attempt_at is None or asset.next_attempt_at <= utcnow())
-            if (
+            if not (
                 asset is None
                 or asset.source_url != url
                 or asset.status == "pending"
                 or (asset.status == "error" and retry_ready)
             ):
+                continue
+            # Which list decides whether this tool costs a request. Neither the
+            # user-script nor the gadget lane publishes an `icon`, so almost
+            # every wiki tool lands in `settlements` and is finished without
+            # touching the network.
+            if url:
                 candidates.append(projection.tool_name)
+            else:
+                settlements.append((projection.tool_name, source))
+    missing = _settle_missing(settlements[:MAX_SETTLEMENTS])
     ready = errors = 0
     http = requests.Session()
     for name in candidates[:bounded]:
         result = refresh_tool(name, session=http)
-        ready += result["status"] in {"ready", "missing"}
+        ready += result["status"] == "ready"
         errors += result["status"] == "error"
-    return {"candidates": len(candidates), "processed": min(len(candidates), bounded), "ready": ready, "errors": errors}
+    return {
+        "candidates": len(candidates) + len(settlements),
+        "fetches": len(candidates),
+        "processed": min(len(candidates), bounded),
+        "ready": ready,
+        "errors": errors,
+        "settled": missing,
+        "settlements": len(settlements),
+    }
 
 
 def cached_asset(tool_name: str) -> tuple[bytes, str, str] | None:

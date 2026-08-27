@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 from backend import db, userscript_docs as docs, userscripts  # noqa: E402
-from backend.models import UserScriptPage, utcnow  # noqa: E402
+from backend.models import UserScriptDirectoryEntry, UserScriptPage, utcnow  # noqa: E402
 
 ENWIKI = "en.wikipedia.org"
 
@@ -107,10 +107,18 @@ class Wiki:
 # --- helpers ---------------------------------------------------------------
 
 
-def store(*titles, wiki=ENWIKI, role=userscripts.ROLE_SCRIPT, deleted=None):
+def store(*titles, wiki=ENWIKI, role=userscripts.ROLE_SCRIPT, deleted=None, published=True):
+    """Seed pages, and by default the directory entries that make them askable.
+
+    `published=False` seeds the page alone, which is what a per-user copy of
+    somebody else's script looks like: the census holds it, the directory folds
+    it onto the original, and nothing ever publishes an answer for it.
+    """
     with db.session_scope() as session:
         for title in titles:
             session.add(UserScriptPage(wiki=wiki, title=title, role=role, deleted_at=deleted))
+            if published:
+                session.add(UserScriptDirectoryEntry(wiki=wiki, title=title, owner="", basename="", tier="active"))
 
 
 def stored(wiki=ENWIKI):
@@ -295,3 +303,38 @@ def test_another_wikis_pages_are_left_alone():
     store("Utilisateur:Tom/helper.js", wiki="fr.wikipedia.org")
     docs.resolve(Wiki({"User:Tom/helper", "Utilisateur:Tom/helper"}).request, ENWIKI)
     assert stored("fr.wikipedia.org") == {"Utilisateur:Tom/helper.js": ("", False)}
+
+
+def test_a_per_user_copy_is_never_asked_about():
+    """The catalogue publishes the original, so only the original is worth a request.
+
+    Most of a wiki's script pages are copies of somebody else's script sitting
+    in a personal common.js, and `userscript_toolinfo` reads `docs_title` off
+    the directory entry's title alone. An answer found for a copy is written and
+    never read, and it costs the same fiftieth of a request as a real one.
+    """
+    store("User:Lupin/popups.js")
+    store("User:Someone/popups.js", "User:Another/popups.js", published=False)
+    wiki = Wiki({"User:Lupin/popups"})
+
+    counts = docs.resolve(wiki.request, ENWIKI)
+
+    assert counts["asked"] == 1
+    assert counts["requests"] == 1
+    assert wiki.asked == [(ENWIKI, ("User:Lupin/popups",))]
+    assert stored()["User:Someone/popups.js"] == ("", False)
+
+
+def test_a_copy_the_directory_later_publishes_is_asked_about_then():
+    """Nothing is settled for a page that was never asked, so promotion is enough."""
+    store("User:Someone/popups.js", published=False)
+    wiki = Wiki({"User:Someone/popups"})
+    assert docs.resolve(wiki.request, ENWIKI)["asked"] == 0
+
+    with db.session_scope() as session:
+        session.add(
+            UserScriptDirectoryEntry(wiki=ENWIKI, title="User:Someone/popups.js", owner="", basename="", tier="active")
+        )
+
+    assert docs.resolve(wiki.request, ENWIKI)["found"] == 1
+    assert stored()["User:Someone/popups.js"] == ("User:Someone/popups", True)

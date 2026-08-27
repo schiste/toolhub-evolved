@@ -650,6 +650,23 @@ def _generated_edition(monkeypatch):
     return edition
 
 
+def _promptly_published_edition(monkeypatch, client=None):
+    """Publish the generated edition as if it had gone out an hour after its period.
+
+    `publish_edition` stamps `published_at` from the wall clock while the
+    fixture's period is a fixed calendar day, so every delivery test aged: on
+    2026-08-27 that gap crossed the fourteen-day lateness bound and four tests
+    began reporting zero deliveries for a reason none of them was about, while
+    the tests that expect zero started passing for the wrong one. Pinning the
+    gap keeps each of them measuring what its name says.
+    """
+    published = digests.publish_edition(_generated_edition(monkeypatch).id, client=client or FakeWiki())
+    with db.session_scope() as session:
+        edition = session.get(DigestEdition, published.id)
+        edition.published_at = edition.period_end + timedelta(hours=1)
+        return edition
+
+
 def _identity_provider(username="Example"):
     return SimpleNamespace(
         lookup=lambda global_id: SimpleNamespace(global_user_id=global_id, username=username, registration="")
@@ -757,9 +774,8 @@ def test_meta_archive_refuses_collisions_and_retries_without_new_editions(monkey
 def test_delivery_outbox_sends_email_and_talk_page_once(monkeypatch):
     monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
     monkeypatch.setenv("DIGEST_SIGNING_SECRET", "test-digest-secret")
-    edition = _generated_edition(monkeypatch)
     wiki = FakeWiki()
-    published = digests.publish_edition(edition.id, client=wiki)
+    published = _promptly_published_edition(monkeypatch, client=wiki)
     with db.session_scope() as session:
         user = User(wm_sub="7", username="Example", wikimedia_global_user_id="70")
         session.add(user)
@@ -772,7 +788,7 @@ def test_delivery_outbox_sends_email_and_talk_page_once(monkeypatch):
                     cadence="daily",
                     wiki_username="Example",
                     active=True,
-                    confirmed_at=datetime(2026, 8, 13),
+                    confirmed_at=published.period_end,
                 ),
                 DigestSubscription(
                     user_id=user.id,
@@ -781,7 +797,7 @@ def test_delivery_outbox_sends_email_and_talk_page_once(monkeypatch):
                     wiki_domain="fr.wikipedia.org",
                     wiki_username="Exemple",
                     active=True,
-                    confirmed_at=datetime(2026, 8, 13),
+                    confirmed_at=published.period_end,
                 ),
             ]
         )
@@ -807,8 +823,7 @@ def test_delivery_outbox_sends_email_and_talk_page_once(monkeypatch):
 def test_permanent_wikimedia_email_failure_suspends_only_that_subscription(monkeypatch):
     monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
     monkeypatch.setenv("DIGEST_SIGNING_SECRET", "test-digest-secret")
-    edition = _generated_edition(monkeypatch)
-    published = digests.publish_edition(edition.id, client=FakeWiki())
+    published = _promptly_published_edition(monkeypatch)
 
     class DisabledEmailWiki(FakeWiki):
         def email_user(self, *_args, **_kwargs):
@@ -825,7 +840,7 @@ def test_permanent_wikimedia_email_failure_suspends_only_that_subscription(monke
                 cadence="daily",
                 wiki_username="Example",
                 active=True,
-                confirmed_at=datetime(2026, 8, 13),
+                confirmed_at=published.period_end,
             )
         )
     digest_delivery.queue_deliveries(published.id)
@@ -843,7 +858,7 @@ def test_permanent_wikimedia_email_failure_suspends_only_that_subscription(monke
 def test_service_account_failure_retries_without_unsubscribing_user(monkeypatch):
     monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
     monkeypatch.setenv("DIGEST_SIGNING_SECRET", "test-digest-secret")
-    published = digests.publish_edition(_generated_edition(monkeypatch).id, client=FakeWiki())
+    published = _promptly_published_edition(monkeypatch)
 
     class MisconfiguredWiki(FakeWiki):
         def email_user(self, *_args, **_kwargs):
@@ -881,8 +896,7 @@ def test_service_account_failure_retries_without_unsubscribing_user(monkeypatch)
 
 def test_delivery_eligibility_is_measured_against_the_period_not_publication_time(monkeypatch):
     monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
-    edition = _generated_edition(monkeypatch)
-    published = digests.publish_edition(edition.id, client=FakeWiki())
+    published = _promptly_published_edition(monkeypatch)
     with db.session_scope() as session:
         user = User(wm_sub="late", username="Late", wikimedia_global_user_id="71")
         session.add(user)
@@ -906,8 +920,7 @@ def test_delivery_eligibility_is_measured_against_the_period_not_publication_tim
 
 def test_backfilled_editions_publish_everywhere_but_are_never_pushed(monkeypatch):
     monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
-    edition = _generated_edition(monkeypatch)
-    published = digests.publish_edition(edition.id, client=FakeWiki())
+    published = _promptly_published_edition(monkeypatch)
     with db.session_scope() as session:
         user = User(wm_sub="old", username="Old", wikimedia_global_user_id="74")
         session.add(user)
@@ -955,7 +968,7 @@ def test_publication_lateness_bound_is_configurable_and_rejects_nonsense(monkeyp
 def test_delivery_refreshes_renamed_wikimedia_identity(monkeypatch):
     monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
     monkeypatch.setenv("DIGEST_SIGNING_SECRET", "test-digest-secret")
-    published = digests.publish_edition(_generated_edition(monkeypatch).id, client=FakeWiki())
+    published = _promptly_published_edition(monkeypatch)
     with db.session_scope() as session:
         user = User(wm_sub="rename", username="Old", wikimedia_global_user_id="72")
         session.add(user)

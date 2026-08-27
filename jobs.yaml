@@ -238,7 +238,7 @@
 - name: catalog-validation
   # Probe effective public URLs under the shared SSRF/redirect guard. Results
   # are observations only; invalid official evidence remains preserved.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-validation --stale-after 1200 -- /usr/bin/env CATALOG_VALIDATION_LIMIT=200 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_validation.py
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-validation --stale-after 1200 -- /usr/bin/env CATALOG_VALIDATION_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_validation.py
   image: python3.13
   schedule: "3 * * * *"
   timeout: 600
@@ -305,7 +305,15 @@
   # 10 of them would have skipped and waited another silent hour. 3000 is
   # inspected at 3600 with 600s to spare, and 1500 is still nearly twice the
   # 803s worst completed run.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile --stale-after 3000 -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
+  #
+  # `python -u` for the reason the user-script census has it: this job is killed
+  # rather than ended. On 2026-08-27 the 03:43, 04:43, 05:43 and 06:43 runs each
+  # reclaimed the lock, ran, and produced no stdout and no stderr at all, while
+  # Kubernetes recorded a schedule for every one of them -- which reads like a
+  # job that never started and was a job whose whole account of itself died in
+  # an 8KB buffer when it was killed. Unbuffered, the last line printed is the
+  # last line that ran.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile --stale-after 3000 -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
   image: python3.13
   schedule: "43 * * * *"
   timeout: 1500

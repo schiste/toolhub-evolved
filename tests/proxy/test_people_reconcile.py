@@ -1740,3 +1740,52 @@ def test_run_marks_the_row_failed_and_reraises_on_an_unexpected_error(monkeypatc
         assert run_row.status == people_reconcile.RUN_FAILED
         assert run_row.error == "kaboom"
         assert run_row.completed_at is not None
+
+
+def test_an_unchanged_conflict_is_not_rewritten_on_every_run():
+    """A standing conflict must not cost a write each pass.
+
+    Every run rewrote `run_id` and `last_seen_at` on conflicts whose details
+    were byte-for-byte identical, so the same rows were updated hourly for
+    nothing. Two of those runs overlapping deadlocked on
+    `person_reconciliation_conflicts` -- MySQL 1213 on the timestamp UPDATE --
+    and the job stayed down until someone noticed. Nothing downstream reads
+    `last_seen_at` more finely than the throttle, so the write is skipped while
+    the conflict is unchanged and still refreshed once the interval passes.
+    """
+    _configure()
+    with db.session_scope() as s:
+        first = PersonReconciliationRun(mode="apply", status="completed")
+        second = PersonReconciliationRun(mode="apply", status="completed")
+        s.add_all([first, second])
+        s.flush()
+        people_index.ensure_person(s, display_name="Toolhub Owner", toolhub_user_id="1")
+        people_index.ensure_person(s, display_name="Wikimedia Owner", wikimedia_global_user_id="2")
+        account = ToolhubAccountProjection(
+            toolhub_user_id="1",
+            username="Someone",
+            normalized_username="someone",
+            wikimedia_global_user_id="2",
+        )
+        s.add(account)
+        s.flush()
+
+        people_reconcile._record_stable_identity_conflict(s, first.id, account)  # noqa: SLF001
+        s.flush()
+        conflict = s.query(PersonReconciliationConflict).one()
+        seen_at = conflict.last_seen_at
+        conflict.run_id = first.id
+
+        # Same details, same hour: the row is left exactly as it stands.
+        people_reconcile._record_stable_identity_conflict(s, second.id, account)  # noqa: SLF001
+        s.flush()
+        assert conflict.run_id == first.id
+        assert conflict.last_seen_at == seen_at
+
+        # Once the throttle has elapsed the row is refreshed again, so a
+        # conflict that has genuinely gone quiet is still distinguishable.
+        conflict.last_seen_at = seen_at - people_reconcile.CONFLICT_REFRESH_AFTER
+        people_reconcile._record_stable_identity_conflict(s, second.id, account)  # noqa: SLF001
+        s.flush()
+        assert conflict.run_id == second.id
+        assert conflict.last_seen_at > seen_at - people_reconcile.CONFLICT_REFRESH_AFTER

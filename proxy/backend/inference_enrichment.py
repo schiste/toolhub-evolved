@@ -45,8 +45,8 @@ import requests
 from sqlalchemy import func, select
 
 from backend import db, digests, userscripts
-from backend.models import ToolInference, UserScriptPage, utcnow
-from backend.userscript_toolinfo import tool_name
+from backend.models import ToolInference, UserScriptDirectoryEntry, UserScriptPage, utcnow
+from backend.userscript_toolinfo import STYLESHEET_MODELS, tool_name
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -246,6 +246,22 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
     The filter is "no inference for these bytes yet", not "no description in the
     projection". The projection is rebuilt from its sources, so reading it here
     would make what this worker asks about depend on when it last ran.
+
+    It is, however, restricted to pages the directory calls originals. Role
+    alone is 166,399 pages and the catalogue holds about 48,700 of them: the
+    difference is per-user copies and configuration files -- 472 people with
+    their own `LiveRCparam.js` -- which `userscript_directory.collapse` already
+    folds onto the page they are instances of. Asking the model about each copy
+    separately bought nothing that could ever be published, because only the
+    original gets a catalogue record for a description to land in, and it was
+    3.4x the corpus and 3.4x the Lift Wing spend. Stylesheets go for the same
+    reason `userscript_toolinfo` drops them: they belong to a directory of user
+    space, not to a catalogue of tools.
+
+    The join is on `(wiki, title)`, which is the directory's unique key. The
+    directory is rebuilt whole on every census run, so a page that is promoted
+    to original -- or demoted out of it -- changes what this sweep asks about
+    on the next tick, with no backfill.
     """
     stale = (
         select(
@@ -257,6 +273,11 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             UserScriptPage.body,
             UserScriptPage.fingerprint,
         )
+        .join(
+            UserScriptDirectoryEntry,
+            (UserScriptDirectoryEntry.wiki == UserScriptPage.wiki)
+            & (UserScriptDirectoryEntry.title == UserScriptPage.title),
+        )
         .outerjoin(
             ToolInference,
             (ToolInference.page_id == UserScriptPage.id)
@@ -265,6 +286,7 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
         .where(
             UserScriptPage.role == userscripts.ROLE_SCRIPT,
             UserScriptPage.deleted_at.is_(None),
+            UserScriptPage.content_model.not_in(STYLESHEET_MODELS),
             ToolInference.tool_name.is_(None),
         )
         .order_by(UserScriptPage.id)
@@ -449,7 +471,14 @@ def _republish(tool_names: list[str]) -> dict[str, int]:
 
 
 def coverage() -> dict[str, int]:
-    """Return how much of the user-script lane has been read, by outcome."""
+    """Return how much of the user-script lane has been read, by outcome.
+
+    `eligiblePages` counts exactly what `pending` would consider, copies and
+    stylesheets excluded. The two have to agree: a denominator wider than the
+    selection reports a sweep that can never finish, and this one read 166,399
+    while the work was 48,700 -- which is how a lane three weeks from done
+    looked like one that was seven weeks away.
+    """
     with db.session_scope() as session:
         by_status = dict(
             session.execute(select(ToolInference.status, func.count()).group_by(ToolInference.status)).all()
@@ -457,9 +486,15 @@ def coverage() -> dict[str, int]:
         eligible = session.execute(
             select(func.count())
             .select_from(UserScriptPage)
+            .join(
+                UserScriptDirectoryEntry,
+                (UserScriptDirectoryEntry.wiki == UserScriptPage.wiki)
+                & (UserScriptDirectoryEntry.title == UserScriptPage.title),
+            )
             .where(
                 UserScriptPage.role == userscripts.ROLE_SCRIPT,
                 UserScriptPage.deleted_at.is_(None),
+                UserScriptPage.content_model.not_in(STYLESHEET_MODELS),
             )
         ).scalar_one()
     return {

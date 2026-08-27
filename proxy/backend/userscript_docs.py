@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any, Final
 from sqlalchemy import or_, select
 
 from backend import db, userscripts
-from backend.models import UserScriptPage, utcnow
+from backend.models import UserScriptDirectoryEntry, UserScriptPage, utcnow
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -178,12 +178,30 @@ def pending(session: Session, wiki: str, after: int, stale_before: datetime) -> 
     somebody's one-line loader and has no documentation of its own, and a page
     that has been deleted has nothing left to document.
 
+    And only pages the directory publishes. `userscript_toolinfo.record` reads
+    `docs_title` off the directory entry's own title, so an answer found for any
+    other page is written and never read. Most of a wiki's script pages are
+    per-user copies of somebody else's script, folded onto the original by
+    `backend.userscript_directory`, and asking about all of them made this the
+    most expensive reader in the lane: a title that will never publish the
+    answer still cost its fiftieth of a request, and a re-ask every fortnight
+    forever. The join is what makes the cap a real bound rather than a rationing
+    of a queue that could not drain.
+
+    A copy promoted to original later has never been checked, so it enters this
+    query the first run after the directory names it.
+
     Ids and titles rather than rows, because the wiki is asked between reading
     this and writing the answer, and a request is not a thing to hold a
     transaction open across.
     """
     rows = session.execute(
         select(UserScriptPage.id, UserScriptPage.title)
+        .join(
+            UserScriptDirectoryEntry,
+            (UserScriptDirectoryEntry.wiki == UserScriptPage.wiki)
+            & (UserScriptDirectoryEntry.title == UserScriptPage.title),
+        )
         .where(
             UserScriptPage.wiki == wiki,
             UserScriptPage.role == userscripts.ROLE_SCRIPT,

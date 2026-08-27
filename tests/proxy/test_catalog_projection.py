@@ -234,7 +234,7 @@ def test_background_url_validation_survives_unchanged_projection_refresh(monkeyp
     summary = catalog_validation.refresh_candidates()
     catalog_projection.refresh_tool_names(["alpha"])
 
-    assert summary == {"candidates": 2, "processed": 2, "reachable": 2, "errors": 0}
+    assert summary == {"candidates": 2, "processed": 2, "recorded": 2, "reachable": 2, "errors": 0}
     payload = catalog_projection.projection_payload("alpha")
     assert payload["validation"]["url"]["reachable"] is True
     assert payload["validation"]["url"]["checkedValue"] == "https://alpha.example"

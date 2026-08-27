@@ -51,7 +51,7 @@ def test_a_recently_checked_url_is_not_a_candidate_but_an_unchecked_field_is():
     total, candidates = catalog_validation._candidate_rows(10)
 
     assert total == 1
-    assert candidates == [("alpha", "repository", "https://code.example/alpha")]
+    assert candidates == {"https://code.example/alpha": [("alpha", "repository", "https://code.example/alpha")]}
 
 
 def test_a_stale_check_and_a_changed_value_are_both_candidates():
@@ -83,7 +83,7 @@ def test_a_stale_check_and_a_changed_value_are_both_candidates():
     total, candidates = catalog_validation._candidate_rows(10)
 
     assert total == 2
-    assert {(field, value) for _tool, field, value in candidates} == {
+    assert {(field, value) for fields in candidates.values() for _tool, field, value in fields} == {
         ("repository", "https://code.example/alpha"),
         ("url", "https://alpha.example"),
     }
@@ -149,7 +149,7 @@ def test_refresh_candidates_records_both_reachable_and_failed_probes(monkeypatch
 
     summary = catalog_validation.refresh_candidates()
 
-    assert summary == {"candidates": 2, "processed": 2, "reachable": 1, "errors": 1}
+    assert summary == {"candidates": 2, "processed": 2, "recorded": 2, "reachable": 1, "errors": 1}
     with db.session_scope() as s:
         row = s.get(CatalogToolProjection, "alpha")
         assert row.validation["url"]["reachable"] is True
@@ -171,7 +171,7 @@ def test_refresh_candidates_bounds_processing_by_limit(monkeypatch):
 
     summary = catalog_validation.refresh_candidates(limit=1)
 
-    assert summary == {"candidates": 2, "processed": 1, "reachable": 1, "errors": 0}
+    assert summary == {"candidates": 2, "processed": 1, "recorded": 1, "reachable": 1, "errors": 0}
 
 
 def _selects_from(statements, table, column):
@@ -216,3 +216,70 @@ def test_the_candidate_scan_never_reads_the_projection_columns_it_does_not_use()
     for column in ("provenance", "source_timestamps", "search_text"):
         offenders = _selects_from(seen, "catalog_tool_projection", column)
         assert not offenders, f"candidate scan read {column}: {offenders[:1]}"
+
+
+def test_a_wiki_tools_page_and_its_raw_view_cost_one_request_between_them():
+    """The wiki lane publishes one page under two fields; it is probed once.
+
+    `userscript_toolinfo` builds `url` from the page and `repository` from the
+    same page with `?action=raw`. Probing both spent two requests per tool to
+    learn one fact, across 48,670 wiki tools, every seven days. Both fields
+    still get their own recorded verdict -- the saving is in the requests, not
+    in what is stored.
+    """
+    page = "https://en.wikipedia.org/wiki/User:Anomie/linkclassifier.js"
+    with db.session_scope() as s:
+        s.add(
+            CatalogToolProjection(
+                tool_name="userscript-en.wikipedia.org-anomie-linkclassifier.js",
+                effective_record={"url": page, "repository": f"{page}?action=raw"},
+            )
+        )
+
+    total, candidates = catalog_validation._candidate_rows(10)
+
+    assert total == 1
+    assert list(candidates) == [page]
+    assert {field for _tool, field, _value in candidates[page]} == {"url", "repository"}
+
+
+def test_a_query_string_that_is_not_action_raw_is_probed_on_its_own():
+    """Only `action=raw` is folded. Any other query may select another resource."""
+    base = "https://example.test/tool"
+    with db.session_scope() as s:
+        s.add(
+            CatalogToolProjection(
+                tool_name="alpha",
+                effective_record={"url": base, "repository": f"{base}?branch=main"},
+            )
+        )
+
+    total, candidates = catalog_validation._candidate_rows(10)
+
+    assert total == 2
+    assert sorted(candidates) == [base, f"{base}?branch=main"]
+
+
+def test_the_limit_bounds_requests_rather_than_recorded_fields():
+    """Two tools, one page each under two fields: one target fits, both its fields land.
+
+    The limit is what keeps the run inside its hour, and what costs an hour is
+    requests. Bounding recorded rows instead would have let a run make one
+    request and call it two units of work.
+    """
+    first = "https://en.wikipedia.org/wiki/User:A/one.js"
+    second = "https://en.wikipedia.org/wiki/User:B/two.js"
+    with db.session_scope() as s:
+        for name, page in (("alpha", first), ("beta", second)):
+            s.add(
+                CatalogToolProjection(
+                    tool_name=name,
+                    effective_record={"url": page, "repository": f"{page}?action=raw"},
+                )
+            )
+
+    total, candidates = catalog_validation._candidate_rows(1)
+
+    assert total == 2
+    assert len(candidates) == 1
+    assert len(next(iter(candidates.values()))) == 2
