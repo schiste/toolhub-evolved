@@ -295,6 +295,7 @@ def test_run_records_unexpected_tool_failure_and_continues(monkeypatch):
         "skipped": 1,
         "backoff": 0,
         "unsupported": 0,
+        "restricted": 0,
         "no_source": 0,
         "error": 1,
         "caches_stale": 0,
@@ -2146,3 +2147,147 @@ def test_a_localized_listing_still_excludes_another_tool_by_the_same_author(monk
 
     assert _scan_wiki(SCRIPT_URL) == "analyzed"
     assert _stored_report()["analyzedPaths"] == ["Benutzer:Example/twinkle.js"]
+
+
+# --- a repository nobody here can read ---------------------------------------
+
+
+PRIVATE_URL = "https://github.com/example/private"
+LOGIN_REFUSED = "fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+
+
+def _refuse_login(monkeypatch, message=LOGIN_REFUSED):
+    def refuse(_url):
+        raise repository_scan.RepositoryScanError(message)
+
+    monkeypatch.setattr(repository_scan, "repository_head", refuse)
+    monkeypatch.setattr(repository_scan, "clone_repository", lambda *_args: pytest.fail("must not clone"))
+
+
+def _cache(tool_name, url):
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name=tool_name,
+                record={"name": tool_name, "repository": url},
+                source_url=f"https://toolhub.example/{tool_name}",
+                expires_at=now + timedelta(days=1),
+                stale_until=now + timedelta(days=2),
+            )
+        )
+
+
+def test_a_repository_that_wants_a_login_settles_instead_of_retrying_forever(monkeypatch):
+    """69 production rows sat at the attempt ceiling re-confirming this monthly.
+
+    The refusal arrives from ls-remote, so it never cost a clone -- which is
+    why the doubling backoff never resolved it. What it did cost was a row
+    reading status "error", which every reader takes to mean the failure will
+    clear. This one cannot: the service holds no credentials for any forge, by
+    design, and GitHub answers private, deleted and moved identically.
+    """
+    _refuse_login(monkeypatch)
+
+    outcome = repository_scan.scan_tool("private", {"name": "private", "repository": PRIVATE_URL})
+
+    assert outcome == repository_scan.RESTRICTED
+    with db.session_scope() as s:
+        row = s.get(RepositoryAnalysisState, "private")
+        assert row.status == repository_scan.RESTRICTED
+        # No backoff left to expire, which is the whole point.
+        assert row.next_attempt_at is None
+        # The count still says what the verdict cost to reach.
+        assert row.attempts == 1
+        # Git's own words are kept: "restricted" is the verdict, not the evidence.
+        assert "could not read Username" in row.last_error
+
+
+def test_a_password_prompt_settles_the_same_way_as_a_username_prompt(monkeypatch):
+    _refuse_login(monkeypatch, "fatal: could not read Password for 'https://bitbucket.org': terminal prompts disabled")
+
+    assert (
+        repository_scan.scan_tool("private", {"name": "private", "repository": PRIVATE_URL})
+        == repository_scan.RESTRICTED
+    )
+
+
+def test_a_failure_that_is_not_a_login_refusal_still_gets_a_backoff(monkeypatch):
+    """The predicate matches git's wording, so it has to not match everything else.
+
+    A host having a bad afternoon must stay on the retry timer; settling it
+    would quietly drop a live repository out of the catalog for good.
+    """
+    _refuse_login(monkeypatch, "fatal: unable to access 'https://github.com/example/private/': HTTP 503")
+
+    assert repository_scan.scan_tool("private", {"name": "private", "repository": PRIVATE_URL}) == "error"
+    with db.session_scope() as s:
+        row = s.get(RepositoryAnalysisState, "private")
+        assert row.status == "error"
+        assert row.next_attempt_at is not None
+
+
+def test_a_restricted_verdict_keeps_the_row_out_of_the_backlog(monkeypatch):
+    _cache("private", PRIVATE_URL)
+    _refuse_login(monkeypatch)
+
+    assert (
+        repository_scan.scan_tool("private", {"name": "private", "repository": PRIVATE_URL})
+        == repository_scan.RESTRICTED
+    )
+    backlog, refresh = repository_scan.partition_candidates()
+
+    assert [name for name, _record in backlog] == []
+    # Not in refresh either: there is no HEAD to compare, so re-checking it
+    # would only ask the same question and be refused the same way.
+    assert [name for name, _record in refresh] == []
+
+
+def test_a_restricted_verdict_is_reconsidered_only_when_the_record_names_a_new_url():
+    """The URL is the key, so a tool that moves to a readable repository comes back.
+
+    Both halves in one test on purpose. Asserting only that the moved tool is
+    in the backlog would pass with the verdict ignored entirely -- it is the
+    tool that did *not* move being absent that shows the comparison happened.
+    """
+    _cache("still-private", PRIVATE_URL)
+    _cache("moved", "https://github.com/example/public")
+    with db.session_scope() as s:
+        for name in ("still-private", "moved"):
+            s.add(
+                RepositoryAnalysisState(
+                    tool_name=name,
+                    status=repository_scan.RESTRICTED,
+                    repository_url=PRIVATE_URL,
+                    next_attempt_at=None,
+                )
+            )
+
+    backlog, _refresh = repository_scan.partition_candidates()
+
+    assert [name for name, _record in backlog] == ["moved"]
+
+
+def test_an_explicit_rescan_still_reaches_a_restricted_row(monkeypatch):
+    """The settled verdict lives in the backlog lane only, so asking directly works.
+
+    That is the recovery path for the one case the automatic lane gives up on:
+    a private repository later made public, at a URL that never changed.
+    """
+    _cache("private", PRIVATE_URL)
+    with db.session_scope() as s:
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="private",
+                status=repository_scan.RESTRICTED,
+                repository_url=PRIVATE_URL,
+                next_attempt_at=None,
+            )
+        )
+    asked = []
+    monkeypatch.setattr(repository_scan, "repository_head", lambda url: asked.append(url) or "")
+
+    assert [name for name, _record in repository_scan.candidate_tools(10, "private")] == ["private"]
+    repository_scan.run(limit=1, tool_name="private", force=True)
+
+    assert asked == [PRIVATE_URL]

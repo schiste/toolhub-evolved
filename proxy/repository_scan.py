@@ -785,6 +785,61 @@ UNSUPPORTED_PATH = "repository URL names a known host but no project on it"
 NO_SOURCE = "no_source"
 NO_SOURCE_REASON = "repository has no files the analyzer can read"
 
+#: A repository the host refuses to show without a login this service does not
+#: have and should not have. Private, deleted, or moved behind an
+#: authenticating proxy -- GitHub answers all three identically, on purpose, so
+#: that asking cannot reveal which. Terminal for the same reason
+#: UNSUPPORTED_HOST is: it describes the URL, not the run that hit it.
+#:
+#: No fixed reason string beside it, unlike UNSUPPORTED_HOST and
+#: NO_SOURCE_REASON. Those two are verdicts this code reached on its own and
+#: had to word itself; this one has git's own sentence for it, naming the host
+#: that refused, and rewriting that would replace evidence with a paraphrase.
+RESTRICTED = "restricted"
+
+#: Git's own wording once GIT_TERMINAL_PROMPT=0 has stopped it asking. Matching
+#: the message rather than an exit status is deliberate: git reports this
+#: identically across every transport it speaks, exit 128 covers most of the
+#: other failures too, and _git_raw already reduces stderr to its first line.
+CREDENTIAL_PROMPTS = ("could not read username for", "could not read password for")
+
+
+def _needs_credentials(error: str) -> bool:
+    """Report whether this failure was git being refused a login."""
+    lowered = error.lower()
+    return any(marker in lowered for marker in CREDENTIAL_PROMPTS)
+
+
+def _save_restricted(tool_name: str, url: str, provider: str, error: str) -> None:
+    """Record that nothing this service can do will ever read this URL.
+
+    Settled rather than failed, like _save_unsupported and for the same reason,
+    but reached the opposite way round: an unsupported host is decided from the
+    record before any request, and this can only be learned by asking. It is
+    still an answer about the URL once it arrives.
+
+    The retry it replaces was not expensive -- the refusal comes back from
+    `ls-remote`, one round trip, long before a clone -- which is exactly why
+    the doubling backoff never resolved it. 69 rows sat at the attempt ceiling
+    re-confirming a permanent condition once a month each, and, worse, carried
+    status "error", which everything downstream reads as "transient, will
+    clear". It never would.
+
+    attempts is incremented rather than reset, so the row still says what the
+    verdict cost to reach.
+    """
+    with db.session_scope() as s:
+        row = _state(s, tool_name)
+        row.repository_url = url
+        row.provider = provider
+        row.status = RESTRICTED
+        row.attempts = (row.attempts or 0) + 1
+        row.checked_at = utcnow()
+        row.next_attempt_at = None
+        row.last_error = clean_error(error)
+        row.source = SOURCE_REPOSITORY_SCAN
+        row.sync_status = SYNC_ERROR
+
 
 def _save_unsupported(
     tool_name: str, raw_url: str, *, provider: str = "unsupported", reason: str = UNSUPPORTED_HOST
@@ -906,9 +961,9 @@ def _decide(tool_name: str, url: str, head: str, *, force: bool) -> tuple[str, s
 def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) -> str:
     """Scan one canonical tool, returning what became of it.
 
-    "analyzed", "skipped", "backoff", "unsupported", NO_SOURCE or "error" --
-    plus CACHES_STALE, which is an analysis whose derived caches did not
-    refresh.
+    "analyzed", "skipped", "backoff", "unsupported", RESTRICTED, NO_SOURCE or
+    "error" -- plus CACHES_STALE, which is an analysis whose derived caches did
+    not refresh.
     """
     raw_url = _raw_tool_repository(record)
     url = repository_url(raw_url)
@@ -999,8 +1054,14 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
             # records that the layer looked, not what it concluded.
             state.llm_checked_at = utcnow()
     except (RepositoryScanError, OSError, SourceAnalysisError, ValueError) as exc:
-        _save_failure(tool_name, url, provider, str(exc))
-        return "error"
+        # Git refusing to ask for a login is not a failure that will clear, so
+        # it settles instead of going back on the timer. Branching on the saver
+        # rather than returning early keeps this to one exit -- the two have
+        # the same signature precisely because they are alternatives here.
+        restricted = _needs_credentials(str(exc))
+        save = _save_restricted if restricted else _save_failure
+        save(tool_name, url, provider, str(exc))
+        return RESTRICTED if restricted else "error"
     else:
         # Deliberately outside the try above. These two refresh caches derived
         # from a report that is already committed, so their failure cannot mean
@@ -1170,7 +1231,8 @@ def run_authorship_backfill(limit: int = 100) -> dict[str, int]:
 
 def _new_results() -> dict[str, int]:
     return dict.fromkeys(
-        ("candidates", "analyzed", "skipped", "backoff", "unsupported", NO_SOURCE, "error", CACHES_STALE), 0
+        ("candidates", "analyzed", "skipped", "backoff", "unsupported", RESTRICTED, NO_SOURCE, "error", CACHES_STALE),
+        0,
     )
 
 
@@ -1219,6 +1281,21 @@ def _settled_unsupported(state: RepositoryAnalysisState | None, raw_url: str) ->
     return state is not None and state.status == "unsupported" and state.repository_url == raw_url
 
 
+def _settled_restricted(state: RepositoryAnalysisState | None, url: str) -> bool:
+    """Report whether this exact URL already answered "not without credentials".
+
+    The same URL comparison as _settled_unsupported, for the same reason: a
+    record edited to name a repository anyone can read is scanned again rather
+    than stuck behind the old verdict. What differs is the URL that does not
+    change -- a private repository later made public. The automatic lane will
+    not notice that, deliberately, because noticing costs a request per row per
+    tick to answer "still no" for rows that are overwhelmingly deleted rather
+    than merely private. An explicit `run(tool_name=..., force=True)` does not
+    come through here at all, so re-deciding one on request stays a one-liner.
+    """
+    return state is not None and state.status == RESTRICTED and state.repository_url == url
+
+
 def _settled_no_source(state: RepositoryAnalysisState | None) -> bool:
     """Report whether this row already answered "nothing to read" at some commit.
 
@@ -1261,7 +1338,7 @@ def partition_candidates(depth: int = QUEUE_DEPTH) -> tuple[list[tuple[str, dict
             if _has_report(state) or _settled_no_source(state):
                 refresh.append((_scan_order(state), row.tool_name, record))
                 continue
-            if _settled_unsupported(state, raw_url):
+            if _settled_unsupported(state, raw_url) or _settled_restricted(state, repository_url(raw_url)):
                 continue
             if state is not None and state.next_attempt_at is not None and state.next_attempt_at > now:
                 continue
