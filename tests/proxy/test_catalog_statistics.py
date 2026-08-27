@@ -920,6 +920,11 @@ def test_the_refresh_job_is_scheduled_inside_the_freshness_window_it_promises():
     assert timedelta() < interval <= catalog_statistics.SNAPSHOT_MAX_AGE
 
 
+def _year_count(payload, distribution, key):
+    rows = payload["distributions"][distribution]
+    return next((row["count"] for row in rows if row["key"] == key), 0)
+
+
 def _described(payload):
     """How many tools the snapshot reports as carrying a description."""
     return next(row["count"] for row in payload["metadata"] if row["key"] == "description")
@@ -950,6 +955,48 @@ def test_completeness_is_measured_on_what_the_site_shows_not_on_what_a_source_sa
 
     assert payload["catalog"]["totalTools"] == 2
     assert _described(payload) == 1
+
+
+def test_a_projection_that_omits_a_field_does_not_erase_the_canonical_one():
+    """The projection is a partial record, so it layers over -- never replaces.
+
+    `effective_record` carries only what the projection lane computes. In
+    production it held `modified_date`, `created_date` and `author` for none of
+    its 57,290 rows, so preferring it wholesale blanked all three for every
+    tool that had a projection: `modifiedByYear` reported 53,189 of 53,190 as
+    "Date unavailable" and `listedAuthors` counted 1. The projection's own
+    enrichment must still win where it speaks, which is why this asserts both
+    halves against one tool.
+    """
+    now = datetime(2026, 8, 13, 12, tzinfo=UTC)
+    with db.session_scope() as session:
+        _tool(
+            session,
+            "layered",
+            {
+                "title": "Layered",
+                "description": "From upstream",
+                "author": [{"name": "Ada"}],
+                "created_date": "2024-03-04T00:00:00Z",
+                "modified_date": "2026-02-05T00:00:00Z",
+            },
+        )
+        session.add(
+            CatalogToolProjection(
+                tool_name="layered",
+                effective_record={"name": "layered", "title": "Layered", "description": "Written by the worker"},
+            )
+        )
+        session.flush()
+        payload = catalog_statistics.build_snapshot(session, now=now)
+
+    # The overlay wins where it carries a value.
+    assert _described(payload) == 1
+    # The canonical fields the overlay is silent about survive it.
+    assert payload["catalog"]["listedAuthors"]["count"] == 1
+    assert _year_count(payload, "modifiedByYear", "2026") == 1
+    assert _year_count(payload, "createdByYear", "2024") == 1
+    assert _year_count(payload, "modifiedByYear", "unknown") == 0
 
 
 def test_a_tool_with_no_projection_row_still_counts_from_its_canonical_record():

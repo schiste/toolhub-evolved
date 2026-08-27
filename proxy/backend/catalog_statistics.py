@@ -482,6 +482,17 @@ def _catalog_totals(session: Session, checked_at: datetime) -> dict[str, _Catalo
     fact about its origin and not about what has since been added to it, and
     the outer join is on the canonical side so a tool with no projection yet is
     still counted -- as its canonical record, which is all there is of it.
+
+    The projection is layered *over* the canonical record rather than used in
+    its place, because it is a partial record: it carries only the fields the
+    projection lane computes. In production it held `title` for 54,937 tools
+    and `description` for 9,554 -- and `modified_date`, `created_date` and
+    `author` for exactly none of 57,290 rows. Substituting it therefore blanked
+    every date and every author the catalog had: `modifiedByYear` reported
+    53,189 of 53,190 tools as "Date unavailable" and `listedAuthors` counted 1,
+    the single tool with no projection row to lose them to. Merging keeps the
+    enrichment the substitution was introduced for and keeps the canonical
+    fields the projection is simply silent about.
     """
     lenses = {name: _LensAccumulator(checked_at) for name in LENSES}
     for tool_name, canonical_record, effective_record, source in _stream(
@@ -495,8 +506,9 @@ def _catalog_totals(session: Session, checked_at: datetime) -> dict[str, _Catalo
         .outerjoin(CatalogToolProjection, CatalogToolProjection.tool_name == CanonicalToolCache.tool_name)
         .order_by(CanonicalToolCache.tool_name),
     ):
-        raw_record = effective_record if isinstance(effective_record, dict) else canonical_record
-        record = raw_record if isinstance(raw_record, dict) else {}
+        canonical = canonical_record if isinstance(canonical_record, dict) else {}
+        overlay = effective_record if isinstance(effective_record, dict) else {}
+        record = {**canonical, **overlay} if overlay else canonical
         has_author = bool(author_assertions(record))
         lane = LENS_WIKI if source in WIKI_SOURCES else LENS_CATALOG
         lenses[LENS_ALL].add(tool_name, record, has_author=has_author)
