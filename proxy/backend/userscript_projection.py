@@ -115,6 +115,7 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
         UserScriptPage.discovery_rank,
         UserScriptPage.fingerprint,
         UserScriptPage.sketch,
+        UserScriptPage.first_author_wiki,
     ).filter(
         UserScriptPage.wiki == wiki,
         UserScriptPage.role == userscripts.ROLE_SCRIPT,
@@ -130,8 +131,19 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
             touched_at_wiki=touched_at_wiki,
             fingerprint=fingerprint,
             sketch=sketch,
+            first_author=first_author_wiki,
         )
-        for title, owner, basename, created_at_wiki, touched_at_wiki, discovery_rank, fingerprint, sketch in rows
+        for (
+            title,
+            owner,
+            basename,
+            created_at_wiki,
+            touched_at_wiki,
+            discovery_rank,
+            fingerprint,
+            sketch,
+            first_author_wiki,
+        ) in rows
     ]
 
 
@@ -262,6 +274,7 @@ def _write(
                     position=position,
                     created_at_wiki=origin.original.created_at_wiki,
                     touched_at_wiki=origin.original.touched_at_wiki,
+                    first_author_wiki=origin.original.first_author,
                     computed_at=now,
                 ),
             )

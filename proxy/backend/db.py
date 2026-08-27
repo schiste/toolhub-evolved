@@ -271,6 +271,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "created_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
             # Likewise rewritten whole by the next projection run.
             "touched_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
+            # Likewise. Blank until the projection that follows the first
+            # creation-date pass carrying authors, which is one run behind it.
+            "first_author_wiki": "VARCHAR(255) NOT NULL DEFAULT ''",
         },
         "user_script_directory_members": {
             "script_id": "INTEGER NULL",
@@ -293,6 +296,11 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # every row pending rather than settled as undocumented.
             "docs_title": "VARCHAR(512) NOT NULL DEFAULT ''",
             "docs_checked_at": "DATETIME NULL",
+            # Empty until the creation-date lane reaches the replicas again.
+            # Rows dated before authors were read keep their date and acquire a
+            # name on the next pass, which is why that lane asks for pages
+            # missing either field rather than only for undated ones.
+            "first_author_wiki": "VARCHAR(255) NOT NULL DEFAULT ''",
         },
         "wiki_gadgets": {
             # Empty until a census reaches the Wiki Replicas, exactly as for
@@ -305,6 +313,10 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # simply sorts as unknown, rather than being dated from the day this
             # catalogue happened to read the wiki.
             "touched_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
+            # Empty until a census reaches the replicas again. A gadget record
+            # published before this column existed carried no author at all, so
+            # filling it in only ever adds attribution and never revises one.
+            "first_author_wiki": "VARCHAR(255) NOT NULL DEFAULT ''",
         },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",

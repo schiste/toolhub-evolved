@@ -114,11 +114,19 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
     about -- description, licence, audiences, a bug tracker -- are absent
     rather than filled with a plausible guess.
 
-    `created_date` and `modified_date` are the two fields the declaration does
-    not carry itself: they come from the code pages' own history, stamped on the
-    inventory row by `backend.gadget_creation_dates` and `backend.wiki_edit_dates`.
-    Both are still transcriptions -- the wiki recorded those revisions -- and
-    both are omitted, never guessed, when blank.
+    `created_date`, `modified_date` and `author` are the fields the declaration
+    does not carry itself: they come from the code pages' own history, stamped
+    on the inventory row by `backend.gadget_creation_dates` and
+    `backend.wiki_edit_dates`. All three are still transcriptions -- the wiki
+    recorded those revisions -- and all three are omitted, never guessed, when
+    blank.
+
+    `author` has no equivalent of the user-script fallback, because a gadget has
+    no owner to fall back to: `MediaWiki:Gadget-HotCat.js` sits in a namespace
+    that belongs to the wiki, and its title names a namespace rather than a
+    person. Whoever created the oldest of its code pages is the only claim the
+    wiki makes, so a gadget no replica has answered for publishes no author --
+    which is what every gadget record did before this field existed.
     """
     pages = list(gadget.pages or [])
     record: dict[str, Any] = {
@@ -140,6 +148,13 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
         # that would report every gadget as updated on whatever schedule the
         # census happens to run.
         record["modified_date"] = touched
+    if gadget.first_author_wiki:
+        # Whoever created the code page that supplied `created_date` above. The
+        # gadget namespace is administrator-only, so this is reliably somebody
+        # who could write there rather than the wider set of people who have
+        # edited the gadget since -- the catalogue claims an author, not a
+        # contributor list.
+        record["author"] = [{"name": gadget.first_author_wiki, "wiki_username": gadget.first_author_wiki}]
     if pages:
         record["repository"] = wiki_sources.page_url(gadget.wiki, f"{wiki_sources.GADGET_PREFIX}{pages[0]}")
     if languages := _languages(pages):

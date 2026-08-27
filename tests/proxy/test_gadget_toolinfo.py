@@ -300,3 +300,18 @@ def test_the_projection_says_a_wiki_declared_this_not_toolhub():
     assert (
         facets[("tool_type", "gadget")] == catalog_projection.SOURCE_CONFIDENCE[catalog_projection.SOURCE_GADGET] * 100
     )
+
+
+# --- who wrote it ----------------------------------------------------------
+
+
+def test_a_gadget_is_credited_to_whoever_created_its_oldest_code_page():
+    """A gadget's title names a namespace, so its first revision is the only claim."""
+    record = gadget_toolinfo.toolinfo_record(a_gadget(first_author_wiki="Cacycle"))
+    assert record["author"] == [{"name": "Cacycle", "wiki_username": "Cacycle"}]
+
+
+def test_a_gadget_no_replica_has_answered_for_publishes_no_author():
+    """There is no owner to fall back to, and a namespace is not a person."""
+    record = gadget_toolinfo.toolinfo_record(a_gadget(first_author_wiki=""))
+    assert "author" not in record

@@ -39,7 +39,19 @@ def _database():
         yield
 
 
-def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=False, created="", touched="", body=""):
+def page(
+    title,
+    *,
+    rank=0,
+    role="script",
+    fingerprint="",
+    wiki=FRWIKI,
+    deleted=False,
+    created="",
+    touched="",
+    body="",
+    first_author="",
+):
     """Store one census page, filling in what the projection reads."""
     with db.session_scope() as session:
         session.add(
@@ -54,6 +66,7 @@ def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=F
                 discovery_rank=rank,
                 created_at_wiki=created,
                 touched_at_wiki=touched,
+                first_author_wiki=first_author,
                 deleted_at=utcnow() if deleted else None,
             ),
         )
@@ -617,3 +630,32 @@ def test_no_connection_is_held_while_the_corpus_is_folded():
     assert during == [0]
     # Released, and still a whole projection: the phases must not cost the result.
     assert summary["originals"] == 2
+
+
+def authors():
+    """The first-revision author each frwiki entry carries, keyed by title."""
+    with db.session_scope() as session:
+        rows = session.query(UserScriptDirectoryEntry).filter(UserScriptDirectoryEntry.wiki == FRWIKI).all()
+        return {row.title: row.first_author_wiki for row in rows}
+
+
+def test_the_entry_carries_the_author_the_wiki_reported():
+    """The census reads the name; only the projection can put it on an entry."""
+    page("User:Aaa/tool.js", rank=0, first_author="Dr Brains")
+    projection.project(FRWIKI)
+    assert authors() == {"User:Aaa/tool.js": "Dr Brains"}
+
+
+def test_an_entry_is_credited_to_its_original_and_not_to_whoever_forked_it():
+    """A near-copy is somebody else's file; folding it in does not transfer credit."""
+    page("User:Aaa/tool.js", rank=0, fingerprint="same", first_author="Aaa")
+    page("User:Bbb/tool.js", rank=1, fingerprint="same", first_author="Bbb")
+    projection.project(FRWIKI)
+    assert authors() == {"User:Aaa/tool.js": "Aaa"}
+
+
+def test_a_page_no_replica_has_named_an_author_for_carries_none():
+    """Blank rather than the owner: the substitution belongs to the toolinfo record."""
+    page("User:Aaa/tool.js", rank=0)
+    projection.project(FRWIKI)
+    assert authors() == {"User:Aaa/tool.js": ""}

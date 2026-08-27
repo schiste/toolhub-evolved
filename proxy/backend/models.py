@@ -1634,6 +1634,22 @@ class UserScriptPage(Base):
     # strings, and the directory's "earliest wins" rule only ever compares them.
     created_at_wiki: Mapped[str] = mapped_column(String(32), default="")
     touched_at_wiki: Mapped[str] = mapped_column(String(32), default="")
+    # Whoever signed the page's first revision, as the wiki spells their name.
+    # Read from the same replica row that dates the page, because the two are
+    # the same fact about the same edit.
+    #
+    # Usually, but not always, `owner` above. MediaWiki's title rules put
+    # `User:Lupin/popups.js` in Lupin's space and nowhere else, which is why
+    # `owner` is safe to derive from a title; they say nothing about who typed
+    # the first version into it. Measured on fr.wikipedia, 13,479 of 14,433
+    # script pages were first written by their owner and 954 by somebody else
+    # -- an administrator installing a script for a user, most often. Both
+    # facts are kept because they answer different questions: whose space this
+    # lives in, and who wrote it.
+    #
+    # Empty where no replica has answered for this page yet, or where MediaWiki
+    # has suppressed the author of that revision.
+    first_author_wiki: Mapped[str] = mapped_column(String(255), default="")
     # Creation order, not a timestamp: the order the census enumerated this page
     # in, which is creation order because the search sorts by create_timestamp_asc.
     # It is what the directory falls back to where `created_at_wiki` is empty, and
@@ -1824,6 +1840,12 @@ class UserScriptDirectoryEntry(Base):
     # script, and a near-copy somebody edited last night says nothing about
     # whether the script itself moved.
     touched_at_wiki: Mapped[str] = mapped_column(String(32), default="")
+    # The original page's first-revision author, copied from `UserScriptPage`
+    # at projection time alongside its dates and for the same reason: the
+    # toolinfo record is built from this row alone. The original's own author,
+    # not that of any near-copy folded onto it -- whoever forked a script did
+    # not write it.
+    first_author_wiki: Mapped[str] = mapped_column(String(255), default="")
     computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -1922,6 +1944,20 @@ class WikiGadget(Base):
     # gadget. Empty where no replica has answered, and published as
     # `modified_date` only when it is not.
     touched_at_wiki: Mapped[str] = mapped_column(String(32), default="")
+    # Whoever signed the first revision of the page that dates this gadget --
+    # the same page `created_at_wiki` above was taken from, so the name and the
+    # date describe one edit rather than two.
+    #
+    # A gadget has no owner the way a user script does. `MediaWiki:Gadget-HotCat.js`
+    # sits in a namespace only administrators can write and belongs to the wiki,
+    # so its title names nobody, and the definition line that declares it names
+    # nobody either. The first revision is the only evidence a wiki offers about
+    # who wrote a gadget, which is why this column exists on the gadget side at
+    # all: before it, gadget records were published with no author whatsoever.
+    #
+    # Empty where no replica has answered for this wiki, where the code lives on
+    # another wiki, or where MediaWiki has suppressed that revision's author.
+    first_author_wiki: Mapped[str] = mapped_column(String(255), default="")
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     # Set when a definition page no longer declares this gadget. Kept rather

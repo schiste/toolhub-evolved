@@ -43,6 +43,7 @@ def a_script(
     created="",
     touched="",
     docs="",
+    first_author="",
 ):
     """Store one directory entry and the page it was projected from."""
     title = f"User:{owner}/{basename}"
@@ -61,6 +62,7 @@ def a_script(
                 position=1,
                 created_at_wiki=created,
                 touched_at_wiki=touched,
+                first_author_wiki=first_author,
             )
         )
     return title
@@ -126,7 +128,8 @@ def test_the_record_transcribes_the_page_and_infers_nothing():
     assert record["tool_type"] == "user script"
     assert record["for_wikis"] == [FRWIKI]
     assert record["technology_used"] == ["JavaScript"]
-    # The owner is a fact about the title, not a guess about who wrote the code.
+    # No replica has named a first editor for this page, so the owner stands in
+    # -- which is exactly what this field published before authors were read.
     assert record["author"] == [{"name": "Lupin", "wiki_username": "Lupin"}]
     # The one field that is not a transcription, and it carries the underscore
     # that says so.
@@ -370,3 +373,32 @@ def test_one_wiki_never_retires_another_wikis_scripts():
 )
 def test_tool_name_is_built_from_wiki_owner_and_filename(owner, basename, expected):
     assert userscript_toolinfo.tool_name(FRWIKI, owner, basename) == expected
+
+
+# --- who wrote it ----------------------------------------------------------
+
+
+def test_the_author_is_whoever_wrote_the_pages_first_revision():
+    """Authorship is the first edit, not the user space the page happens to sit in."""
+    a_script(owner="Lupin", basename="popups.js", first_author="Dr Brains")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    record = catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
+    assert record["author"] == [{"name": "Dr Brains", "wiki_username": "Dr Brains"}]
+
+
+def test_the_tool_name_still_belongs_to_the_owner_whoever_wrote_the_script():
+    """The name is the page's address; crediting someone does not move the page."""
+    a_script(owner="Lupin", basename="popups.js", first_author="Dr Brains")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    assert "userscript-fr.wikipedia.org-lupin-popups.js" in catalogued()
+
+
+def test_a_page_whose_first_author_is_unknown_is_still_credited_to_its_owner():
+    """A host with no replica publishes the same author it always did."""
+    a_script(owner="Lupin", basename="popups.js", first_author="")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    record = catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
+    assert record["author"] == [{"name": "Lupin", "wiki_username": "Lupin"}]

@@ -100,16 +100,24 @@ class Replica:
 # --- helpers ---------------------------------------------------------------
 
 
-def store(*titles, wiki=FRWIKI, created=""):
+def store(*titles, wiki=FRWIKI, created="", author=""):
     with db.session_scope() as session:
         for title in titles:
-            session.add(UserScriptPage(wiki=wiki, title=title, created_at_wiki=created))
+            session.add(
+                UserScriptPage(wiki=wiki, title=title, created_at_wiki=created, first_author_wiki=author)
+            )
 
 
 def stamps(wiki=FRWIKI):
     with db.session_scope() as session:
         rows = session.query(UserScriptPage).filter(UserScriptPage.wiki == wiki).all()
         return {row.title: row.created_at_wiki for row in rows}
+
+
+def authors(wiki=FRWIKI):
+    with db.session_scope() as session:
+        rows = session.query(UserScriptPage).filter(UserScriptPage.wiki == wiki).all()
+        return {row.title: row.first_author_wiki for row in rows}
 
 
 # --- matching census titles to replica titles ------------------------------
@@ -119,7 +127,7 @@ def test_a_page_is_stamped_with_the_date_the_replica_reports():
     store("Utilisateur:Tom/monobook.js")
     written = creation.backfill(
         [FRWIKI],
-        connect=Replica({"frwiki": [("Tom/monobook.js", "20090412183000")]}).connect,
+        connect=Replica({"frwiki": [("Tom/monobook.js", "20090412183000", "Tom")]}).connect,
     )
     assert written == {FRWIKI: 1}
     assert stamps() == {"Utilisateur:Tom/monobook.js": "20090412183000"}
@@ -130,7 +138,7 @@ def test_a_title_whose_spaces_the_wiki_writes_as_underscores_still_matches():
     store("Utilisateur:Tom Smith/monobook.js")
     creation.backfill(
         [FRWIKI],
-        connect=Replica({"frwiki": [("Tom_Smith/monobook.js", "20080101000000")]}).connect,
+        connect=Replica({"frwiki": [("Tom_Smith/monobook.js", "20080101000000", "Tom Smith")]}).connect,
     )
     assert stamps() == {"Utilisateur:Tom Smith/monobook.js": "20080101000000"}
 
@@ -145,7 +153,7 @@ def test_a_page_the_replica_has_never_heard_of_is_left_blank():
 def test_one_missing_page_does_not_stop_the_rest_of_its_batch():
     """A wiki always has a few of these: pages deleted between sweep and stamp."""
     store("Utilisateur:Tom/monobook.js", "Utilisateur:Gone/deleted.js", "Utilisateur:Ann/vector.js")
-    rows = [("Tom/monobook.js", "20090412183000"), ("Ann/vector.js", "20140228120000")]
+    rows = [("Tom/monobook.js", "20090412183000", "Tom"), ("Ann/vector.js", "20140228120000", "Ann")]
     assert creation.backfill([FRWIKI], connect=Replica({"frwiki": rows}).connect) == {FRWIKI: 2}
     assert stamps() == {
         "Utilisateur:Tom/monobook.js": "20090412183000",
@@ -154,20 +162,64 @@ def test_one_missing_page_does_not_stop_the_rest_of_its_batch():
     }
 
 
-def test_a_page_that_already_has_a_date_is_not_asked_about_again():
-    """Re-reading is cheap, but rewriting every row on every hourly run is not."""
-    store("Utilisateur:Tom/monobook.js", created="20090412183000")
+def test_a_dated_page_keeps_its_date_even_when_the_replica_disagrees():
+    """A stamped date is settled; a later reading of it does not overwrite one."""
+    store("Utilisateur:Tom/monobook.js", created="20090412183000", author="Tom")
     written = creation.backfill(
         [FRWIKI],
-        connect=Replica({"frwiki": [("Tom/monobook.js", "29991231000000")]}).connect,
+        connect=Replica({"frwiki": [("Tom/monobook.js", "29991231000000", "Tom")]}).connect,
     )
     assert written == {FRWIKI: 0}
     assert stamps() == {"Utilisateur:Tom/monobook.js": "20090412183000"}
 
 
+def test_a_page_dated_before_authors_were_read_gains_one_without_losing_its_date():
+    """Every page in the table was stamped before this lane asked who wrote it."""
+    store("Utilisateur:Tom/monobook.js", created="20090412183000")
+    written = creation.backfill(
+        [FRWIKI],
+        connect=Replica({"frwiki": [("Tom/monobook.js", "20090412183000", "Dr Brains")]}).connect,
+    )
+    assert written == {FRWIKI: 1}
+    assert stamps() == {"Utilisateur:Tom/monobook.js": "20090412183000"}
+    assert authors() == {"Utilisateur:Tom/monobook.js": "Dr Brains"}
+
+
+def test_a_fully_stamped_page_costs_the_next_run_no_write_at_all():
+    """A timestamps-only UPDATE across the corpus is a lock wait that buys nothing."""
+    store("Utilisateur:Tom/monobook.js", created="20090412183000", author="Tom")
+    written = creation.backfill(
+        [FRWIKI],
+        connect=Replica({"frwiki": [("Tom/monobook.js", "20090412183000", "Tom")]}).connect,
+    )
+    assert written == {FRWIKI: 0}
+
+
+def test_the_first_editor_is_recorded_even_when_it_is_not_the_page_owner():
+    """954 of frwiki's 14,433 script pages were first written by somebody else."""
+    store("Utilisateur:Tom/monobook.js")
+    creation.backfill(
+        [FRWIKI],
+        connect=Replica({"frwiki": [("Tom/monobook.js", "20090412183000", "Dr Brains")]}).connect,
+    )
+    assert authors() == {"Utilisateur:Tom/monobook.js": "Dr Brains"}
+
+
+def test_a_page_whose_first_author_was_suppressed_is_still_dated():
+    """The edit happened; MediaWiki has withdrawn only the name on it."""
+    store("Utilisateur:Tom/monobook.js")
+    written = creation.backfill(
+        [FRWIKI],
+        connect=Replica({"frwiki": [("Tom/monobook.js", "20090412183000", "")]}).connect,
+    )
+    assert written == {FRWIKI: 1}
+    assert stamps() == {"Utilisateur:Tom/monobook.js": "20090412183000"}
+    assert authors() == {"Utilisateur:Tom/monobook.js": ""}
+
+
 def test_another_wikis_pages_are_not_stamped_from_this_wikis_replica():
     store("User:Tom/monobook.js", wiki=METAWIKI)
-    creation.backfill([FRWIKI], connect=Replica({"frwiki": [("Tom/monobook.js", "20090412183000")]}).connect)
+    creation.backfill([FRWIKI], connect=Replica({"frwiki": [("Tom/monobook.js", "20090412183000", "Tom")]}).connect)
     assert stamps(METAWIKI) == {"User:Tom/monobook.js": ""}
 
 
@@ -179,7 +231,7 @@ def test_more_pages_than_one_batch_are_all_stamped(monkeypatch):
     monkeypatch.setattr(creation, "BATCH", 2)
     titles = [f"Utilisateur:Tom/s{index}.js" for index in range(5)]
     store(*titles)
-    rows = [(f"Tom/s{index}.js", f"2009010{index}000000") for index in range(5)]
+    rows = [(f"Tom/s{index}.js", f"2009010{index}000000", "Tom") for index in range(5)]
     assert creation.backfill([FRWIKI], connect=Replica({"frwiki": rows}).connect) == {FRWIKI: 5}
     assert stamps() == {title: f"2009010{index}000000" for index, title in enumerate(titles)}
 
@@ -217,7 +269,7 @@ def test_one_wikis_outage_does_not_stop_the_next_wiki():
     store("Utilisateur:Tom/monobook.js")
     store("User:Tom/common.js", wiki=METAWIKI)
     replica = Replica(
-        {"metawiki": [("Tom/common.js", "20120101000000")]},
+        {"metawiki": [("Tom/common.js", "20120101000000", "Tom")]},
         unreachable={"frwiki"},
     )
     assert creation.backfill([FRWIKI, METAWIKI], connect=replica.connect) == {METAWIKI: 1}

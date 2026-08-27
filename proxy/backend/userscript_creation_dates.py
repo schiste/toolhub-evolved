@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Filling in when each user script page was actually created.
+"""Filling in when each user script page was created, and by whom.
 
 The census learns a page's title, body and last edit from the API, but not its
 birthday: `prop=revisions` will only walk a history oldest-first for one page at
@@ -15,14 +15,24 @@ downstream is written to tolerate a blank -- `backend.userscript_directory`
 falls back to discovery order -- because on a laptop, in CI, and on any host
 without `replica.my.cnf` there is no replica and never will be.
 
-Only page metadata is read: a title and the oldest revision timestamp. The
-`revision` table also carries actor ids and edit comments, and this module has
-no business with either.
+The same row answers a second question for free. A page's oldest revision has
+an author as well as a date, and that author is the person who wrote the script
+-- not merely the person whose user space it sits in. The two usually agree and
+sometimes do not: on fr.wikipedia 954 of 14,433 script pages were first written
+by somebody other than their owner, most often an administrator installing a
+script on a user's behalf. Both are kept, because `owner` says whose space a
+page occupies and this says who put the code there.
+
+Only page metadata is read: a title, the oldest revision's timestamp, and the
+name signed to it. Edit comments the `revision` table also carries are read by
+nothing here.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
+from sqlalchemy import or_
 
 from backend import db, wiki_replica
 from backend.models import UserScriptPage
@@ -39,12 +49,19 @@ BATCH: int = 500
 
 
 def pending(session: Session, wiki: str, after: int) -> tuple[UserScriptPage, ...]:
-    """Read the next batch of one wiki's pages that still have no creation date."""
+    """Read the next batch of one wiki's pages still missing a date or an author.
+
+    Either, not both. Every page stored before this lane read authors already
+    has its date, so a filter on the date alone would decide the whole corpus
+    was settled and no existing page would ever be attributed. Asking for rows
+    missing either field is what lets the same pass fill in the column behind
+    it, and costs nothing once it has: a fully stamped wiki matches no rows.
+    """
     return tuple(
         session.query(UserScriptPage)
         .filter(
             UserScriptPage.wiki == wiki,
-            UserScriptPage.created_at_wiki == "",
+            or_(UserScriptPage.created_at_wiki == "", UserScriptPage.first_author_wiki == ""),
             UserScriptPage.id > after,
         )
         .order_by(UserScriptPage.id)
@@ -53,27 +70,40 @@ def pending(session: Session, wiki: str, after: int) -> tuple[UserScriptPage, ..
     )
 
 
-def apply_dates(rows: Sequence[UserScriptPage], dates: dict[str, str]) -> int:
-    """Stamp every row the replica had a date for. Returns how many were stamped."""
+def apply_origins(rows: Sequence[UserScriptPage], origins: Mapping[str, wiki_replica.PageOrigin]) -> int:
+    """Stamp every row the replica knew. Returns how many rows moved.
+
+    Each field is written only where it is still empty, so a second pass over a
+    stamped wiki is a no-op rather than a rewrite of every row with the same
+    values -- a timestamps-only UPDATE is a lock wait that buys nothing. A row
+    counts as moved if either field was filled, which is why a page that gains
+    only an author still counts.
+    """
     written = 0
     for row in rows:
-        stamp = dates.get(wiki_replica.normalize_title(row.title))
-        if not stamp:
+        origin = origins.get(wiki_replica.normalize_title(row.title))
+        if origin is None:
             continue
-        row.created_at_wiki = stamp
-        written += 1
+        moved = False
+        if origin.stamp and not row.created_at_wiki:
+            row.created_at_wiki = origin.stamp
+            moved = True
+        if origin.author and not row.first_author_wiki:
+            row.first_author_wiki = origin.author
+            moved = True
+        written += moved
     return written
 
 
-def record(wiki: str, dates: dict[str, str]) -> int:
-    """Write `dates` onto every page of one wiki that is still missing one.
+def record(wiki: str, origins: Mapping[str, wiki_replica.PageOrigin]) -> int:
+    """Write `origins` onto every page of one wiki still missing part of one.
 
     Paged by id, not by re-asking what is still blank. A page the replica has no
     row for -- deleted since the sweep saw it, or moved -- stays blank forever,
     and would come back in every batch of a "what is still missing" loop; the
     loop would then never end. Advancing past the last id seen cannot repeat.
     """
-    if not dates:
+    if not origins:
         return 0
     written = 0
     after = 0
@@ -83,7 +113,7 @@ def record(wiki: str, dates: dict[str, str]) -> int:
             if not rows:
                 return written
             after = rows[-1].id
-            written += apply_dates(rows, dates)
+            written += apply_origins(rows, origins)
 
 
 def backfill(
@@ -109,8 +139,10 @@ def backfill(
         if address is None:
             continue
         try:
-            dates = wiki_replica.creation_dates_for(address.dbname, section=address.section, user=user, connect=connect)
+            origins = wiki_replica.creation_origins_for(
+                address.dbname, section=address.section, user=user, connect=connect
+            )
         except Exception:  # noqa: BLE001, S112 - one wiki's outage must not hide the others
             continue
-        written[wiki] = record(wiki, dates)
+        written[wiki] = record(wiki, origins)
     return written

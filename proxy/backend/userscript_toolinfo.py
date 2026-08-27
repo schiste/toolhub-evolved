@@ -34,8 +34,8 @@ the toolinfo `deprecated` flag, which is a maintainer saying "stop using my
 tool". Nothing here knows what any maintainer wants.
 
 Everything in the record itself is a transcription. `title` is the filename the
-page carries, `author` is the owner MediaWiki's own title rules put the page
-under, `url` is the page. There is no description: a user script's documentation
+page carries, `author` is whoever signed the page's first revision, `url` is the
+page. There is no description: a user script's documentation
 lives wherever its author chose to put it, and this lane does not read prose. A
 missing description is a gap somebody can fill; an inferred one is this codebase
 putting words in an author's mouth.
@@ -132,8 +132,19 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "", do
     """Return the toolinfo one directory entry amounts to.
 
     Every field is a transcription of something the wiki already says. `author`
-    is the page's owner, which is a fact rather than a guess: MediaWiki's own
-    title rules put `User:Lupin/popups.js` under Lupin and nowhere else.
+    is whoever wrote the page's first revision, which is a fact rather than a
+    guess: the wiki shows that name at the foot of the page history, and writing
+    the first version of a script is what authorship means here.
+
+    The page's owner is the fallback, not the first answer. MediaWiki's own
+    title rules do put `User:Lupin/popups.js` under Lupin and nowhere else, so
+    the owner is never wrong about whose space a script occupies -- but it is
+    not always right about who wrote it. On fr.wikipedia 954 of 14,433 script
+    pages were created by somebody other than their owner, usually an
+    administrator installing a script on a user's behalf, and crediting the
+    owner there credits the wrong person. The owner still stands in wherever no
+    replica has answered for the page, which is the only case that loses
+    nothing: it is the same name this published before.
     `repository` is the raw page, because for a user script the page *is* the
     source -- there is no forge behind it, which is the whole reason this census
     exists.
@@ -172,8 +183,8 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "", do
         record["modified_date"] = touched
     if docs_title:
         record["user_docs_url"] = wiki_sources.page_url(entry.wiki, docs_title)
-    if entry.owner:
-        record["author"] = [{"name": entry.owner, "wiki_username": entry.owner}]
+    if author := (entry.first_author_wiki or entry.owner):
+        record["author"] = [{"name": author, "wiki_username": author}]
     if languages := _languages(entry.basename, content_model):
         record["technology_used"] = languages
     return record

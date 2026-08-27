@@ -157,6 +157,25 @@ def test_a_page_with_no_surviving_revision_is_left_out():
     assert wiki_replica.read_page_stamps(((b"A/b.js", None),)) == {}
 
 
+def test_an_origin_carries_the_name_on_the_first_revision():
+    rows = ((b"Hiob/monobook.js", b"20090701235434", b"Hiob"), ("A/b.js", 20040528131424, "Dr Brains"))
+    assert wiki_replica.read_page_origins(rows) == {
+        "Hiob/monobook.js": wiki_replica.PageOrigin("20090701235434", "Hiob"),
+        "A/b.js": wiki_replica.PageOrigin("20040528131424", "Dr Brains"),
+    }
+
+
+def test_a_suppressed_author_keeps_the_date_and_loses_only_the_name():
+    """The edit happened, so the page has a birthday; the wiki withholds the name."""
+    found = wiki_replica.read_page_origins(((b"A/b.js", b"20040528131424", b""),))
+    assert found == {"A/b.js": wiki_replica.PageOrigin("20040528131424", "")}
+
+
+def test_an_origin_with_no_timestamp_is_left_out_even_when_it_has_a_name():
+    """A row this cannot date is a row it can say nothing about."""
+    assert wiki_replica.read_page_origins(((b"A/b.js", None, b"Hiob"),)) == {}
+
+
 # --- the queries themselves ------------------------------------------------
 
 
@@ -183,38 +202,64 @@ def test_the_dbname_lookup_asks_meta_with_one_placeholder_per_wiki():
     assert found == {"fr.wikipedia.org": "frwiki"}
 
 
-def test_creation_dates_are_asked_for_user_space_scripts_only():
+def test_creation_origins_are_asked_for_user_space_scripts_only():
     seen, closed, targets = [], [], []
-    found = wiki_replica.creation_dates_for(
+    found = wiki_replica.creation_origins_for(
         "frwiki",
         user=wiki_replica.Credentials("u", "p"),
-        connect=connector(((b"Hiob/monobook.js", b"20090701235434"),), seen, closed, targets),
+        connect=connector(((b"Hiob/monobook.js", b"20090701235434", b"Hiob"),), seen, closed, targets),
     )
     sql, params = seen[0]
     assert params == (2, "%.js", "%.css")
-    assert "GROUP BY p.page_id" in sql
     assert targets[0][1].host == "frwiki.analytics.db.svc.wikimedia.cloud"
-    assert found == {"Hiob/monobook.js": "20090701235434"}
+    assert found == {"Hiob/monobook.js": wiki_replica.PageOrigin("20090701235434", "Hiob")}
 
 
-def test_gadget_creation_dates_are_asked_for_the_gadget_prefix_in_interface_space():
-    seen, closed, targets = [], [], []
-    found = wiki_replica.gadget_creation_dates_for(
+def test_the_creation_query_names_the_first_revision_rather_than_aggregating_it():
+    """An aggregate returns a value; only a named row can also name its author."""
+    seen = []
+    wiki_replica.creation_origins_for(
         "frwiki",
         user=wiki_replica.Credentials("u", "p"),
-        connect=connector(((b"Gadget-HotCat.js", b"20070311120000"),), seen, closed, targets),
+        connect=connector((), seen, [], []),
+    )
+    sql, _ = seen[0]
+    assert "GROUP BY" not in sql
+    assert "MIN(" not in sql
+    assert "ORDER BY r2.rev_timestamp, r2.rev_id LIMIT 1" in sql
+    assert "a.actor_name" in sql
+
+
+def test_a_revision_whose_author_mediawiki_suppressed_publishes_no_name():
+    """The date is still a fact; the name is one the wiki has withdrawn."""
+    seen = []
+    wiki_replica.creation_origins_for(
+        "frwiki",
+        user=wiki_replica.Credentials("u", "p"),
+        connect=connector((), seen, [], []),
+    )
+    sql, _ = seen[0]
+    assert "rev_deleted & 4 = 0" in sql
+
+
+def test_gadget_creation_origins_are_asked_for_the_gadget_prefix_in_interface_space():
+    seen, closed, targets = [], [], []
+    found = wiki_replica.gadget_creation_origins_for(
+        "frwiki",
+        user=wiki_replica.Credentials("u", "p"),
+        connect=connector(((b"Gadget-HotCat.js", b"20070311120000", b"Cacycle"),), seen, closed, targets),
     )
     sql, params = seen[0]
     assert params == (8, "Gadget-%")
-    assert "GROUP BY p.page_id" in sql
+    assert "a.actor_name" in sql
     assert targets[0][1].host == "frwiki.analytics.db.svc.wikimedia.cloud"
-    assert found == {"Gadget-HotCat.js": "20070311120000"}
+    assert found == {"Gadget-HotCat.js": wiki_replica.PageOrigin("20070311120000", "Cacycle")}
 
 
 def test_the_gadget_query_asks_for_no_suffix_and_so_finds_every_kind_of_code_page():
     """A gadget can ship .json, and one that does must still have a date."""
     seen = []
-    wiki_replica.gadget_creation_dates_for(
+    wiki_replica.gadget_creation_origins_for(
         "frwiki",
         user=wiki_replica.Credentials("u", "p"),
         connect=connector((), seen, [], []),
@@ -260,7 +305,7 @@ def test_the_connection_is_closed_even_when_the_query_fails():
         return Exploding((), [], closed)
 
     try:
-        wiki_replica.creation_dates_for("frwiki", user=wiki_replica.Credentials("u", "p"), connect=connect)
+        wiki_replica.creation_origins_for("frwiki", user=wiki_replica.Credentials("u", "p"), connect=connect)
     except RuntimeError:
         pass
     assert closed == [True]

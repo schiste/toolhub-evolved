@@ -143,6 +143,11 @@ class Candidate:
     # replica has not dated simply has no last-edit date and the catalogue
     # publishes none.
     touched_at_wiki: str = ""
+    # Whoever wrote the page's first revision, carried through untouched and
+    # never stood in for, on the same terms as `touched_at_wiki` above. The
+    # collapse does not consult it: two scripts are near-copies because their
+    # code matches, and who typed them has no bearing on that.
+    first_author: str = ""
 
     @property
     def rank(self) -> tuple[str, str]:
