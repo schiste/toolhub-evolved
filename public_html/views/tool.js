@@ -39,7 +39,7 @@ import { healthScoreChip, maintainerDisclosure } from "../lib/molecules/tool-hea
 import { relationshipTrustMarkup } from "../lib/molecules/relationship-trust.js";
 import { openClaimDrawer } from "../lib/organisms/claim-drawer.js";
 import { setIssueContext } from "../lib/organisms/issue-drawer.js";
-import { prosePage, viewNotFound } from "./static.js";
+import { viewNotFound } from "./static.js";
 
 /* Split out of organisms.css; the router preloads it alongside this module. */
 export const STYLESHEET = "/styles/tool.css";
@@ -1162,9 +1162,15 @@ export async function viewToolHistory(name) {
 	const rows = revs
 		.map((r, i) => {
 			const username = (r.user && r.user.username) || "system";
+			// A local Evolved edit has no upstream patch to fetch, and the first
+			// revision of a tool has no parent to compare against.
+			const diffLink =
+				r.parent_id && !r._evolved
+					? ` · <a class="feed__diff" href="${toolHref(name)}/history/${encodeURIComponent(String(r.parent_id))}/${encodeURIComponent(String(r.id))}">${t("tool.viewDiff", "diff")}</a>`
+					: "";
 			return `
 		<li>${icon("history", "feed__ic")}
-			<span class="feed__main">${t("tool.revisionBy", "Revision by")} <strong${dirAttrs(username)}>${esc(username)}</strong> · ${timeTag(r.timestamp)}${r.comment ? ` — <span dir="auto">${esc(r.comment)}</span>` : ""}${i === 0 ? ` <span class="tag">${t("tool.currentTag", "current")}</span>` : ""}</span>
+			<span class="feed__main">${t("tool.revisionBy", "Revision by")} <strong${dirAttrs(username)}>${esc(username)}</strong> · ${timeTag(r.timestamp)}${r.comment ? ` — <span dir="auto">${esc(r.comment)}</span>` : ""}${i === 0 ? ` <span class="tag">${t("tool.currentTag", "current")}</span>` : ""}${diffLink}</span>
 			<span class="feed__when">#${esc(String(r.id))}</span></li>`;
 		})
 		.join("");
@@ -1179,15 +1185,115 @@ export async function viewToolHistory(name) {
 		styles: [STYLESHEET]
 	};
 }
-/** @param {string} name */
-export function viewDiffStub(name) {
+/**
+ * Turn one JSON Patch path into a reader-facing field label.
+ *
+ * Toolhub patches address nested toolinfo, so `/author/0/name` has to read as
+ * a field rather than a pointer. Numeric segments are the index of a repeated
+ * field, which is shown as a 1-based position because nothing else on the page
+ * counts from zero.
+ * @param {string} path
+ */
+function diffFieldLabel(path) {
+	const parts = String(path || "")
+		.split("/")
+		.filter(Boolean);
+	if (parts.length === 0) return t("tool.diffWholeRecord", "whole record");
+	return parts
+		.map((part) => (/^\d+$/.test(part) ? t("tool.diffItemPosition", "item $1", String(Number(part) + 1)) : part))
+		.join(" › ");
+}
+/**
+ * Render one patch value, which may be any JSON toolinfo holds.
+ * @param {unknown} value
+ */
+function diffValueHTML(value) {
+	if (value === undefined) return "";
+	const text = typeof value === "string" ? value : JSON.stringify(value, null, 1);
+	return `<span class="tool-diff__value" dir="auto">${esc(String(text))}</span>`;
+}
+const DIFF_OP_LABELS = {
+	add: () => t("tool.diffOpAdd", "Added"),
+	remove: () => t("tool.diffOpRemove", "Removed"),
+	replace: () => t("tool.diffOpReplace", "Changed"),
+	move: () => t("tool.diffOpMove", "Moved"),
+	copy: () => t("tool.diffOpCopy", "Copied"),
+	test: () => t("tool.diffOpTest", "Checked")
+};
+/** @param {string} op */
+function diffOpLabel(op) {
+	const key = String(op || "").toLowerCase();
+	return Object.hasOwn(DIFF_OP_LABELS, key)
+		? /** @type {Record<string, () => string>} */ (DIFF_OP_LABELS)[key]()
+		: key || t("tool.diffOpOther", "Changed");
+}
+/** @param {any[]} operations */
+function diffRowsHTML(operations) {
+	return operations
+		.map((op) => {
+			const kind = String(op && op.op ? op.op : "");
+			return `<tr>
+			<td data-label="${t("tool.diffOperation", "Operation")}"><span class="tool-diff__op tool-diff__op--${esc(kind || "other")}">${esc(diffOpLabel(kind))}</span></td>
+			<td data-label="${t("tool.diffField", "Field")}"><code dir="ltr">${esc(diffFieldLabel(op && op.path))}</code></td>
+			<td data-label="${t("tool.diffValue", "Value")}">${kind === "remove" ? `<span class="tool-diff__removed">—</span>` : diffValueHTML(op ? op.value : undefined)}</td>
+		</tr>`;
+		})
+		.join("");
+}
+/**
+ * One revision's byline, from whichever side of the patch upstream returned.
+ * @param {any} revision
+ */
+function diffRevisionLine(revision) {
+	if (!revision || typeof revision !== "object") return "";
+	const username = (revision.user && revision.user.username) || t("tool.diffSystemUser", "system");
+	const comment = revision.comment ? ` — <span dir="auto">${esc(String(revision.comment))}</span>` : "";
+	return `<li>#${esc(String(revision.id))} · <strong${dirAttrs(username)}>${esc(username)}</strong> · ${timeTag(revision.timestamp)}${comment}</li>`;
+}
+/**
+ * Compare two revisions of one tool, side by side.
+ *
+ * The patch is served from the local replica, which holds only what a
+ * scheduled job persisted. A miss is reported as "not available here" rather
+ * than "no changes": an empty operation list is a real answer upstream can
+ * give, and the two must not read the same.
+ * @param {string} name
+ * @param {string} fromId
+ * @param {string} toId
+ */
+export async function viewToolDiff(name, fromId, toId) {
 	const tool = /** @type {Record<string, Tool>} */ (INDEX)[name];
-	return prosePage(
-		t("tool.revisionDiffTitle", "Revision diff"),
-		`
-		<p>${t("tool.diffCompareLead", "Compare two revisions of")} <strong>${esc(tool ? tool.title : name)}</strong> ${t("tool.diffCompareTail", "side by side.")}</p>
-		<p>${t("tool.diffIntro", "Revision diffs are served from Toolhub's versioning API. In this prototype the\n\t\tdiff viewer is not wired up — see it on the")}
-		<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">${t("tool.liveSite", "live site")}</a>.</p>
-		<p><a href="${toolHref(name)}/history">${t("tool.backToHistory", "← Back to history")}</a></p>`
-	);
+	const title = tool ? tool.title : name;
+	const from = encodeURIComponent(String(fromId));
+	const to = encodeURIComponent(String(toId));
+	const data = await apiGet(`/tools/${encodeURIComponent(name)}/revisions/${from}/diff/${to}/`).catch(() => null);
+	const operations = data && Array.isArray(data.operations) ? data.operations : null;
+	const body = operations
+		? operations.length > 0
+			? `<div class="tool-diff__wrap"><table class="tool-diff">
+			<thead><tr>
+				<th scope="col">${t("tool.diffOperation", "Operation")}</th>
+				<th scope="col">${t("tool.diffField", "Field")}</th>
+				<th scope="col">${t("tool.diffValue", "Value")}</th>
+			</tr></thead>
+			<tbody>${diffRowsHTML(operations)}</tbody>
+		</table></div>`
+			: `<p class="tool-diff__empty">${t("tool.diffNoChanges", "These two revisions record no field changes.")}</p>`
+		: `<p class="tool-diff__empty">${t("tool.diffUnavailable", "This comparison isn't available from the local replica right now.")}</p>`;
+	const byline =
+		data && (data.original || data.result)
+			? `<ul class="tool-diff__revisions">${diffRevisionLine(data.original)}${diffRevisionLine(data.result)}</ul>`
+			: "";
+	return {
+		title: t("tool.diffDocTitle", "Comparing revisions: $1 — Toolhub", title),
+		html: `
+		<div class="container page">
+			<a class="back" href="${toolHref(name)}/history">${t("tool.backToHistory", "← Back to history")}</a>
+			<h1 class="page__title">${t("tool.revisionDiffTitle", "Revision diff")}</h1>
+			<p class="page__intro">${t("tool.diffCompareLead", "Comparing revision $1 with $2 of", esc(String(fromId)), esc(String(toId)))} <strong dir="auto">${esc(title)}</strong>.</p>
+			${byline}
+			${body}
+		</div>`,
+		styles: [STYLESHEET]
+	};
 }

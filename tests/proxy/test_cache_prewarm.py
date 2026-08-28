@@ -110,6 +110,60 @@ def test_revision_endpoints_are_bounded_and_leave_the_tool_name_unencoded():
     assert spaced[0].path == "/api/tools/a tool/revisions/"
 
 
+def test_diff_endpoints_name_only_comparisons_a_recent_row_can_actually_make():
+    """Every row carries both sides of its own diff, so no extra fetch is needed --
+    but only tool edits have two sides to name."""
+    rows = [
+        {"content_type": "tool", "content_id": "a tool", "parent_id": 41, "id": 42},
+        {"content_type": "tool", "content_id": "a tool", "parent_id": 41, "id": 42},
+        {"content_type": "tool", "content_id": "fresh", "parent_id": None, "id": 7},
+        {"content_type": "list", "content_id": "77", "parent_id": 1, "id": 2},
+        {"content_type": "tool", "content_id": "", "parent_id": 1, "id": 2},
+    ]
+
+    endpoints = cache_prewarm.tool_diff_endpoints(rows)
+
+    # The name stays decoded for the same reason as tool_revision_endpoints.
+    assert [e.path for e in endpoints] == ["/api/tools/a tool/revisions/41/diff/42/"]
+
+    many = cache_prewarm.tool_diff_endpoints(
+        [{"content_type": "tool", "content_id": f"t{i}", "parent_id": i, "id": i + 1} for i in range(100)]
+    )
+    assert len(many) == cache_prewarm.DIFF_MAX_ROWS
+
+
+def test_run_once_prewarms_the_diffs_the_recent_page_links_to():
+    endpoint = cache_prewarm.HotEndpoint("/api/recent/", (("page_size", "30"),))
+    session = FakePrewarmSession(
+        [
+            FakePrewarmResponse(
+                body=b'{"results":[{"content_type":"tool","content_id":"alpha","parent_id":41,"id":42},'
+                b'{"content_type":"tool","content_id":"fresh","parent_id":null,"id":7}]}'
+            )
+        ]
+    )
+
+    summary = cache_prewarm.run_once(session, endpoints=[endpoint])
+
+    assert (summary.diffs, summary.diffs_warmed) == (1, 1)
+    assert "diffs=1/1" in summary.log_line()
+    diff_url = cache_prewarm.url_for_endpoint(cache_prewarm.HotEndpoint("/api/tools/alpha/revisions/41/diff/42/"))
+    assert api_cache.get(diff_url) is not None
+    assert any(call[0] == diff_url for call in session.calls)
+
+
+def test_prewarm_asks_for_json_without_pinning_a_starved_cdn_variant():
+    """`Accept: application/json` alone selects a Vary-keyed CDN variant almost
+    nothing else requests, which served /api/recent/ a day stale. The wildcard
+    fallback rides the warm variant; JSON stays first so /api/schema/ does not
+    answer OpenAPI YAML."""
+    session = FakePrewarmSession()
+
+    cache_prewarm.prewarm_endpoint(cache_prewarm.HotEndpoint("/api/schema/"), session=session)
+
+    assert session.calls[0][1]["headers"]["Accept"] == "application/json, */*;q=0.9"
+
+
 def test_run_once_warms_missing_endpoint_and_skips_fresh_endpoint():
     endpoint = cache_prewarm.HotEndpoint("/api/schema/")
     url = cache_prewarm.url_for_endpoint(endpoint)

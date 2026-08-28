@@ -125,6 +125,45 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	);
 });
 
+test("viewRecent: an edit links its action to the diff of exactly the revisions it names", async () => {
+	// Each row already carries both sides of its own comparison, so the link is
+	// built from parent_id -> id without a second fetch. A creation has no parent
+	// and an Evolved-local row has no upstream patch, so neither may link.
+	setSearch("");
+	api.apiGet.mockResolvedValue({
+		results: [
+			{
+				content_type: "tool",
+				content_id: "my tool/x",
+				content_title: "Edited Tool",
+				user: { username: "alice" },
+				timestamp: ISO,
+				id: 42,
+				parent_id: 41
+			},
+			{
+				content_type: "tool",
+				content_id: "fresh-tool",
+				content_title: "Fresh Tool",
+				user: { username: "bob" },
+				timestamp: ISO,
+				id: 7,
+				parent_id: null
+			}
+		]
+	});
+	api.backendGetJson.mockResolvedValue({ owners: {} });
+
+	const view = await viewRecent();
+
+	assert.match(
+		view.html,
+		/<td data-label="Action"><a class="recent-table__diff" href="\/tools\/my%20tool%2Fx\/history\/41\/42">Updated<\/a><\/td>/
+	);
+	assert.match(view.html, /<td data-label="Action">Created<\/td>/);
+	assert.equal(view.html.match(/recent-table__diff/g).length, 1);
+});
+
 test("viewRecent: private favorite activity is removed from live and local rows", async () => {
 	api.apiGet.mockResolvedValue({
 		results: [

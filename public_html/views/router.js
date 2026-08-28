@@ -333,7 +333,12 @@ function dispatchToolRoute(seg) {
 			)
 		);
 	}
-	if (seg[2] === "history") return loadTool().then((m) => (seg[3] ? m.viewDiffStub(nm) : m.viewToolHistory(nm)));
+	// /tools/:name/history/:from/:to compares two revisions; :from alone is the
+	// edit that produced :to, which is how /recent and the history list link in.
+	if (seg[2] === "history") {
+		if (seg[3] && seg[4]) return loadTool().then((m) => m.viewToolDiff(nm, seg[3], seg[4]));
+		return loadTool().then((m) => m.viewToolHistory(nm));
+	}
 	return loadTool().then((m) => m.viewTool(nm));
 }
 /** List sub-routes (/lists/:id and its create/edit/history variants). @param {string[]} seg */

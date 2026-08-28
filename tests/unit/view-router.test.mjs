@@ -33,7 +33,7 @@ vi.mock("../../public_html/views/search.js", () => ({ viewSearch: vi.fn(() => ({
 vi.mock("../../public_html/views/tool.js", () => ({
 	viewTool: vi.fn((n) => ({ tag: "tool", n })),
 	viewToolHistory: vi.fn((n) => ({ tag: "toolhistory", n })),
-	viewDiffStub: vi.fn((n) => ({ tag: "diff", n }))
+	viewToolDiff: vi.fn((n, from, to) => ({ tag: "diff", n, from, to }))
 }));
 vi.mock("../../public_html/views/authors.js", () => ({
 	viewAuthor: vi.fn((n) => ({ tag: "author", n })),
@@ -238,13 +238,21 @@ test("dispatch /tools/<name>/edit-annotations gates behind sign-in", async () =>
 	assert.deepEqual(toolforms.viewAnnotationsEdit.mock.calls[0], ["Bar Baz"]);
 });
 
-test("dispatch /tools/<name>/history → history, with a revision id → diff stub", async () => {
+test("dispatch /tools/<name>/history → history, with two revision ids → diff", async () => {
 	await at("/tools/Foo/history");
 	assert.deepEqual(tool.viewToolHistory.mock.calls[0], ["Foo"]);
-	assert.equal(tool.viewDiffStub.mock.calls.length, 0);
+	assert.equal(tool.viewToolDiff.mock.calls.length, 0);
 
+	await at("/tools/Foo/history/41/42");
+	assert.deepEqual(tool.viewToolDiff.mock.calls[0], ["Foo", "41", "42"]);
+});
+
+test("dispatch /tools/<name>/history/<one id> → history, never a half-specified diff", async () => {
+	// A diff needs both sides. One id names no comparison, so the route falls
+	// back to the history it came from rather than fetching a nonsense pair.
 	await at("/tools/Foo/history/42");
-	assert.deepEqual(tool.viewDiffStub.mock.calls[0], ["Foo"]);
+	assert.deepEqual(tool.viewToolHistory.mock.calls[0], ["Foo"]);
+	assert.equal(tool.viewToolDiff.mock.calls.length, 0);
 });
 
 /* ---- dispatch: lists --------------------------------------------------- */

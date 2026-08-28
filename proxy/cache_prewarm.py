@@ -32,6 +32,11 @@ REVISIONS_PAGE_SIZE = "20"
 # stays flat as the catalog grows. Half the owner budget, because each of these
 # is a real upstream request where an owner lookup is a local database read.
 REVISION_MAX_TOOLS = 25
+# Each recent row names the edit that produced it (`parent_id` -> `id`), so the
+# diff a reader can reach from /recent or a history list is known without any
+# extra lookup. Bounded to one feed page: these are the only diffs both surfaces
+# link to, and a miss renders as "not available here" rather than an error.
+DIFF_MAX_ROWS = 30
 
 
 @dataclass(frozen=True)
@@ -55,6 +60,8 @@ class PrewarmSummary:
     owner_cached: int = 0
     revisions: int = 0
     revisions_warmed: int = 0
+    diffs: int = 0
+    diffs_warmed: int = 0
 
     def observe(self, result: str) -> None:
         """Record one endpoint prewarm result."""
@@ -75,7 +82,8 @@ class PrewarmSummary:
             f"warmed={self.warmed} revalidated={self.revalidated} "
             f"skipped={self.skipped} failed={self.failed} endpoints={self.endpoints} "
             f"owners={self.owners} owner_cached={self.owner_cached} "
-            f"revisions={self.revisions_warmed}/{self.revisions}"
+            f"revisions={self.revisions_warmed}/{self.revisions} "
+            f"diffs={self.diffs_warmed}/{self.diffs}"
         )
 
 
@@ -154,7 +162,14 @@ def _read_capped_body(resp: requests.Response) -> bytes | None:
 
 def _headers(stale: api_cache.CachedResponse | None) -> dict[str, str]:
     """Return anonymous prewarm headers, including validators when available."""
-    headers = {"User-Agent": UA, "Accept": "application/json"}
+    # `Accept: application/json` alone selects a Wikimedia CDN cache variant that
+    # `Vary: Accept` keys separately and that almost nothing else requests, so it
+    # can go many hours without revalidation -- measured at Age 69277s on
+    # /api/recent/, which published a day-old feed while the common variants were
+    # current. Keeping JSON first preserves content negotiation (/api/schema/
+    # still answers JSON, where a bare */* returns OpenAPI YAML) while the
+    # wildcard fallback rides the variant real traffic keeps warm.
+    headers = {"User-Agent": UA, "Accept": "application/json, */*;q=0.9"}
     if stale and stale.etag:
         headers["If-None-Match"] = stale.etag
     if stale and stale.last_modified:
@@ -255,6 +270,41 @@ def prewarm_tool_revisions(session: requests.Session | None = None) -> tuple[int
     return len(endpoints), warmed
 
 
+def tool_diff_endpoints(rows: Iterable[dict[str, object]]) -> tuple[HotEndpoint, ...]:
+    """Return the revision-diff endpoints the current /recent page links to.
+
+    Tool names are placed unencoded for the same reason as
+    `tool_revision_endpoints`: the replica is keyed on the decoded path Flask
+    hands the catalog route, so encoding here would file the entry under a key
+    no request can produce.
+    """
+    endpoints: list[HotEndpoint] = []
+    seen: set[str] = set()
+    for row in rows:
+        if row.get("content_type") != "tool":
+            continue
+        name = str(row.get("content_id") or "").strip()
+        parent, current = row.get("parent_id"), row.get("id")
+        # A creation has no parent, so there is nothing to compare it against.
+        if not name or not isinstance(parent, int) or not isinstance(current, int):
+            continue
+        path = f"/api/tools/{name}/revisions/{parent}/diff/{current}/"
+        if path in seen:
+            continue
+        seen.add(path)
+        endpoints.append(HotEndpoint(path))
+        if len(endpoints) >= DIFF_MAX_ROWS:
+            break
+    return tuple(endpoints)
+
+
+def prewarm_tool_diffs(session: requests.Session | None = None) -> tuple[int, int]:
+    """Prewarm the revision diffs reachable from the current /recent page."""
+    endpoints = tool_diff_endpoints(_recent_rows_from_cache())
+    warmed = sum(1 for e in endpoints if prewarm_endpoint(e, session=session) in {"warmed", "revalidated"})
+    return len(endpoints), warmed
+
+
 def prewarm_recent_owners() -> tuple[int, int]:
     """Prewarm owner-by-tool rows for tools currently visible on /recent."""
     names = _recent_tool_names(_recent_rows_from_cache())
@@ -275,6 +325,7 @@ def run_once(
         summary.observe(prewarm_endpoint(endpoint, session=session))
     summary.owners, summary.owner_cached = prewarm_recent_owners()
     summary.revisions, summary.revisions_warmed = prewarm_tool_revisions(session)
+    summary.diffs, summary.diffs_warmed = prewarm_tool_diffs(session)
     return summary
 
 

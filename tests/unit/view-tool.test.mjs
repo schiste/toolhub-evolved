@@ -1164,6 +1164,76 @@ test("viewToolHistory no tool + no revisions → viewNotFound", async () => {
 	assert.deepEqual(r, viewNotFound());
 });
 
+/* ---------------- viewToolDiff ---------------- */
+
+test("viewToolDiff renders each patch operation as a readable field change", async () => {
+	h.apiGet.mockResolvedValue({
+		original: { id: 10, user: { username: "Nux" }, timestamp: "2026-08-27T12:00:00Z", comment: "before" },
+		result: { id: 11, user: { username: "Toolhub" }, timestamp: "2026-08-27T20:00:00Z", comment: "after" },
+		operations: [
+			{ op: "replace", path: "/title", value: "Authors of a page" },
+			{ op: "remove", path: "/keywords/1" },
+			{ op: "add", path: "/author/0/name", value: "Maciej Jaros" }
+		]
+	});
+
+	const r = await tool.viewToolDiff("toolforge-authors", "10", "11");
+
+	assert.ok(r.html.includes("Authors of a page"), "shows the new value");
+	assert.ok(r.html.includes("Changed"), "replace reads as Changed");
+	assert.ok(r.html.includes("Removed"), "remove reads as Removed");
+	assert.ok(r.html.includes("Added"), "add reads as Added");
+	// A JSON Pointer index is a position in a repeated field, and the page counts from one.
+	assert.ok(r.html.includes("keywords › item 2"), r.html);
+	assert.ok(r.html.includes("author › item 1 › name"), r.html);
+	assert.ok(r.html.includes("Nux") && r.html.includes("Toolhub"), "both revision bylines");
+});
+
+test("viewToolDiff asks the replica for the diff of exactly the two revisions routed to it", async () => {
+	h.apiGet.mockResolvedValue({ operations: [] });
+
+	await tool.viewToolDiff("my tool/x", "10", "11");
+
+	assert.equal(h.apiGet.mock.calls[0][0], "/tools/my%20tool%2Fx/revisions/10/diff/11/");
+});
+
+test("viewToolDiff: an unavailable comparison is not reported as an unchanged one", async () => {
+	// The replica answers 503 for any diff no job has warmed. "No changes" is a
+	// real answer upstream can give, so the two must never render the same.
+	h.apiGet.mockRejectedValue(new Error("local replica entry unavailable"));
+
+	const r = await tool.viewToolDiff("cold", "1", "2");
+
+	assert.ok(r.html.includes("isn't available from the local replica"), r.html);
+	assert.ok(!r.html.includes("no field changes"), "a miss is not an empty patch");
+});
+
+test("viewToolDiff: an empty patch says the revisions changed no fields", async () => {
+	h.apiGet.mockResolvedValue({ operations: [] });
+
+	const r = await tool.viewToolDiff("quiet", "1", "2");
+
+	assert.ok(r.html.includes("no field changes"), r.html);
+	assert.ok(!r.html.includes("isn't available"), r.html);
+});
+
+test("viewToolHistory links each revision with a parent to its own diff", async () => {
+	h.getTool.mockResolvedValue(toolFixture("linked", { title: "Linked" }));
+	h.demoRevisionsFor.mockReturnValue([]);
+	h.apiGet.mockResolvedValue({
+		results: [
+			{ id: 99, parent_id: 98, user: { username: "U" }, timestamp: "2026-01-02T00:00:00Z", comment: "" },
+			{ id: 98, user: { username: "U" }, timestamp: "2026-01-01T00:00:00Z", comment: "" }
+		]
+	});
+
+	const r = await tool.viewToolHistory("linked");
+
+	assert.ok(r.html.includes("/tools/linked/history/98/99"), "the edit links parent → child");
+	// The first revision of a tool has no parent, so it has nothing to compare against.
+	assert.equal(r.html.match(/feed__diff/g).length, 1, r.html);
+});
+
 test("viewToolHistory no tool but revisions exist → title from revision content_title", async () => {
 	h.getTool.mockResolvedValue(null);
 	h.demoRevisionsFor.mockReturnValue([]);
@@ -1190,21 +1260,23 @@ test("viewToolHistory empty rows still renders the no-revisions placeholder", as
 	assert.ok(r.html.includes("No revisions recorded."));
 });
 
-/* ---------------- viewDiffStub ---------------- */
+/* ---------------- viewToolDiff titles ---------------- */
 
-test("viewDiffStub with a tool in INDEX", async () => {
+test("viewToolDiff titles from INDEX when the tool is known", async () => {
 	const { INDEX } = await import("../../public_html/lib/core/api.js");
 	INDEX["diff-tool"] = toolFixture("diff-tool", { title: "Diff Tool" });
-	const r = tool.viewDiffStub("diff-tool");
-	assert.equal(r.title, "Revision diff — Toolhub");
+	h.apiGet.mockResolvedValue({ operations: [] });
+	const r = await tool.viewToolDiff("diff-tool", "1", "2");
+	assert.equal(r.title, "Comparing revisions: Diff Tool — Toolhub");
 	assert.ok(r.html.includes("Revision diff"));
-	assert.ok(r.html.includes("<strong>Diff Tool</strong>"));
+	assert.ok(r.html.includes('<strong dir="auto">Diff Tool</strong>'));
 	delete INDEX["diff-tool"];
 });
 
-test("viewDiffStub without a tool in INDEX → falls back to name", async () => {
-	const r = tool.viewDiffStub("unknown-tool");
-	assert.ok(r.html.includes("<strong>unknown-tool</strong>"));
+test("viewToolDiff without a tool in INDEX → falls back to name", async () => {
+	h.apiGet.mockResolvedValue({ operations: [] });
+	const r = await tool.viewToolDiff("unknown-tool", "1", "2");
+	assert.ok(r.html.includes('<strong dir="auto">unknown-tool</strong>'), r.html);
 });
 
 /* ---------------- helper edge cases ---------------- */

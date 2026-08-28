@@ -222,3 +222,11 @@
 	color: var(--color-text-muted);
 	text-align: center;
 }
+.recent-table__diff {
+	color: var(--color-progressive);
+	text-decoration: none;
+}
+.recent-table__diff:hover,
+.recent-table__diff:focus-visible {
+	text-decoration: underline;
+}

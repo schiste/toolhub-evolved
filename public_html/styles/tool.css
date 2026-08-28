@@ -227,3 +227,55 @@
 	color: var(--color-progressive);
 	text-decoration: none;
 }
+
+/* Revision diff: a wide patch table scrolls inside its own box so the page
+   itself never scrolls sideways on a narrow screen. */
+.tool-diff__wrap {
+	overflow-x: auto;
+}
+.tool-diff {
+	width: 100%;
+	border-collapse: collapse;
+}
+.tool-diff th,
+.tool-diff td {
+	padding: var(--space-2);
+	border-bottom: var(--border-base);
+	text-align: start;
+	vertical-align: top;
+}
+.tool-diff__op {
+	display: inline-block;
+	padding: var(--space-0) var(--space-1);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface-muted);
+	white-space: nowrap;
+}
+.tool-diff__op--remove {
+	color: var(--color-destructive);
+}
+.tool-diff__op--add {
+	color: var(--color-success);
+}
+.tool-diff__value {
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+.tool-diff__removed,
+.tool-diff__empty {
+	color: var(--color-text-muted);
+}
+.tool-diff__revisions {
+	list-style: none;
+	padding: var(--space-0);
+	margin: var(--space-0) var(--space-0) var(--space-3);
+	color: var(--color-text-muted);
+}
+.feed__diff {
+	color: var(--color-progressive);
+	text-decoration: none;
+}
+.feed__diff:hover,
+.feed__diff:focus-visible {
+	text-decoration: underline;
+}

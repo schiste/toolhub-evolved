@@ -86,6 +86,24 @@ function recentActionLabel(r) {
 	}
 	return r.parent_id ? t("parity.updated", "Updated") : t("parity.created", "Created");
 }
+/**
+ * The diff a recent row points at: the edit that produced it.
+ *
+ * Only upstream tool revisions have a patch to show. A creation has no parent
+ * to compare against, and a local Evolved edit was never sent upstream, so
+ * both stay plain text rather than linking somewhere that cannot answer.
+ * @param {any} r
+ */
+function recentDiffHref(r) {
+	if (r._evolved || r.content_type !== "tool" || !r.content_id || !r.parent_id || !r.id) return "";
+	return `${toolHref(r.content_id)}/history/${encodeURIComponent(String(r.parent_id))}/${encodeURIComponent(String(r.id))}`;
+}
+/** @param {any} r */
+function recentActionCell(r) {
+	const href = recentDiffHref(r);
+	const label = esc(recentActionLabel(r));
+	return href ? `<a class="recent-table__diff" href="${href}">${label}</a>` : label;
+}
 /** @param {{ user?: { username?: string } }} r */
 function recentUpdatedBy(r) {
 	return (r.user && r.user.username) || t("parity.system", "system");
@@ -384,7 +402,7 @@ function recentRowHTML(r) {
 		<td data-label="${t("parity.type", "Type")}"><span class="recent-chip recent-chip--${esc(typeKey)}">${esc(recentTypeLabel(type))}</span></td>
 		<td data-label="${t("parity.toolOwner", "Tool owner")}"${ownerCellAttr}>${recentPersonLink(ownerFromRecentRow(r), { crawlerActors: true })}</td>
 		<td data-label="${t("parity.lastUpdatedBy", "Last updated by")}">${recentPersonLink(who, { crawlerActors: true })}</td>
-		<td data-label="${t("parity.action", "Action")}">${esc(recentActionLabel(r))}</td>
+		<td data-label="${t("parity.action", "Action")}">${recentActionCell(r)}</td>
 		<td data-label="${t("parity.reviewState", "Review state")}"><span class="recent-chip recent-chip--${esc(reviewState)}">${esc(recentReviewLabel(reviewState))}</span></td>
 		<td data-label="${t("parity.comment", "Comment")}" class="recent-table__comment">${recentCommentCell(r)}</td>
 	</tr>`;

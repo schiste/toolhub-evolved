@@ -48,7 +48,7 @@ const DOC_STUB = "TODO: document this message.";
  */
 // Set once, at the merge that introduced this gate: every message written
 // before it existed counts as debt. It may only fall from here.
-const DOCUMENTATION_DEBT = 1996;
+const DOCUMENTATION_DEBT = 1986;
 
 /** @returns {string[]} all first-party app sources with extractable messages */
 function sourceFiles(dir) {

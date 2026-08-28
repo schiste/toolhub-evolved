@@ -194,6 +194,16 @@ test("the router's prefetch map and the views agree on every route stylesheet", 
 
 test("no route stylesheet claims a rule another view can match", () => {
 	const sources = viewSources();
+	// canProduce compiles a regex and rescans a whole module on every call, and a
+	// class that appears in several selectors of one sheet asks the same question
+	// again for each of them. Answering once per (view, class) keeps this check
+	// inside the 5s timeout as the sheets grow; the assertion is unchanged.
+	const answers = new Map();
+	const produces = (name, source, cls) => {
+		const key = `${name}\u0000${cls}`;
+		if (!answers.has(key)) answers.set(key, canProduce(source, cls));
+		return answers.get(key);
+	};
 	for (const [specifier, href] of Object.entries(ROUTE_STYLES)) {
 		const owner = specifier.replace("./", "");
 		const rules = selectorClasses(read(sheetPath(href)));
@@ -201,7 +211,7 @@ test("no route stylesheet claims a rule another view can match", () => {
 		for (const [name, source] of sources) {
 			if (name === owner) continue;
 			const stolen = rules
-				.filter((rule) => rule.classes.every((cls) => canProduce(source, cls)))
+				.filter((rule) => rule.classes.every((cls) => produces(name, source, cls)))
 				.map((rule) => rule.selector);
 			assert.deepEqual(
 				stolen,
