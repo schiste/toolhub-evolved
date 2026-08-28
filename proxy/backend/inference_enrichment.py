@@ -51,7 +51,7 @@ from backend.models import ToolInference, UserScriptDirectoryEntry, UserScriptPa
 from backend.userscript_toolinfo import STYLESHEET_MODELS, tool_name
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from sqlalchemy.orm import Session
 
@@ -81,6 +81,11 @@ DEFAULT_BUDGET = 2_400
 # the tail is usually data tables.
 MAX_SOURCE_CHARS = 24_000
 MIN_SOURCE_CHARS = 120
+# How many pages `infer` reads source for at once. `sweep` uses its wave width
+# instead, because a wave is already the unit it asks and commits in; this is
+# only for the serial path, where the choice is between one query per page and
+# one per chunk and neither bound is interesting.
+SOURCE_CHUNK = 50
 
 MIN_DESCRIPTION_CHARS = 20
 MAX_DESCRIPTION_CHARS = 600
@@ -280,6 +285,16 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
     directory is rebuilt whole on every census run, so a page that is promoted
     to original -- or demoted out of it -- changes what this sweep asks about
     on the next tick, with no backfill.
+
+    Candidates come back with an empty `body`; `with_source` reads it for the
+    handful of pages a wave is about to ask about. Selecting it here instead
+    measured 546 MB resident against a 512Mi job -- 19,390 windowed pages carry
+    260 MB of source, and the driver buffers the whole result before this loop
+    copies it into `found` -- and one budgeted run asks about roughly 150 of
+    them, so about 99% of that was read and dropped. The job was OOM-killed
+    every run from 2026-08-27 13:41, which SIGKILL made silent: no summary, no
+    `job_runs` row, and a lock `tools/job_guard.sh` never got to release, so
+    every other tick then skipped on a lock whose owner was long gone.
     """
     stale = (
         select(
@@ -288,7 +303,6 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             UserScriptPage.title,
             UserScriptPage.owner,
             UserScriptPage.basename,
-            UserScriptPage.body,
             UserScriptPage.fingerprint,
         )
         .join(
@@ -306,23 +320,62 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             UserScriptPage.deleted_at.is_(None),
             UserScriptPage.content_model.not_in(STYLESHEET_MODELS),
             ToolInference.tool_name.is_(None),
+            # Was a Python skip over an already-loaded body. In SQL it also
+            # keeps pages too short to describe out of the window, instead of
+            # letting them occupy a slot on every sweep forever. MySQL counts
+            # bytes here and SQLite characters, so on MySQL this admits a
+            # little more than it should; `with_source` re-checks exactly.
+            func.length(UserScriptPage.body) >= MIN_SOURCE_CHARS,
         )
         .order_by(UserScriptPage.id)
         .limit(limit)
     )
     found: list[Candidate] = []
-    for page_id, wiki, title, owner, basename, body, fingerprint in session.execute(stale):
-        # Both skips are permanent for these bytes but leave no row, so they are
-        # re-evaluated every sweep. That is deliberate: they are cheap, they
-        # happen before the model is involved, and a page that grows a body or
-        # gains a name that slugs to something should become eligible without
-        # a backfill.
-        if not body or len(body) < MIN_SOURCE_CHARS:
-            continue
+    for page_id, wiki, title, owner, basename, fingerprint in session.execute(stale):
+        # This skip is permanent for this page but leaves no row, so it is
+        # re-evaluated every sweep. That is deliberate: it is cheap, it happens
+        # before the model is involved, and a page that gains a name that slugs
+        # to something should become eligible without a backfill.
         if not (name := tool_name(wiki, owner, basename)):
             continue
-        found.append(Candidate(name, int(page_id), wiki, title, body, fingerprint or ""))
+        found.append(Candidate(name, int(page_id), wiki, title, "", fingerprint or ""))
     return found
+
+
+def with_source(session: Session, candidates: Sequence[Candidate]) -> list[Candidate]:
+    """Return these candidates carrying their current source, dropping the rest.
+
+    Source is read here rather than in `pending` so that a run holds bodies for
+    one wave instead of for the whole window -- see `pending` for what that
+    cost. `body` and `fingerprint` are read together, so the pair stays
+    consistent: recording an answer against a fingerprint the source has since
+    moved past would claim the page was checked at a revision nobody asked
+    about. Reading both later than the window query narrows that race rather
+    than widening it, because the census can rewrite a page mid-run.
+
+    A page can go missing between the two reads -- deleted, or shrunk below
+    `MIN_SOURCE_CHARS` -- and is simply dropped. It leaves no row, so the next
+    sweep reconsiders it, which is what the window query already does for a
+    page whose name does not slug.
+    """
+    if not candidates:
+        return []
+    rows = session.execute(
+        select(UserScriptPage.id, UserScriptPage.body, UserScriptPage.fingerprint).where(
+            UserScriptPage.id.in_([candidate.page_id for candidate in candidates])
+        )
+    )
+    source = {int(page_id): (body, fingerprint) for page_id, body, fingerprint in rows}
+    ready: list[Candidate] = []
+    # Driven by `candidates`, not by `source`: `IN` does not promise an order,
+    # and a wave that reordered itself between runs would make the sweep harder
+    # to reason about for nothing.
+    for candidate in candidates:
+        body, fingerprint = source.get(candidate.page_id, ("", ""))
+        if not body or len(body) < MIN_SOURCE_CHARS:
+            continue
+        ready.append(candidate._replace(body=body, fingerprint=fingerprint or ""))
+    return ready
 
 
 class Outcome(NamedTuple):
@@ -413,8 +466,10 @@ def infer(
     to the answer, not how it arrived.
     """
     counts = _counts()
-    for candidate in pending(session, limit=limit):
-        ask_one(session, candidate, ask, model=model, counts=counts)
+    candidates = pending(session, limit=limit)
+    for start in range(0, len(candidates), SOURCE_CHUNK):
+        for candidate in with_source(session, candidates[start : start + SOURCE_CHUNK]):
+            ask_one(session, candidate, ask, model=model, counts=counts)
     return counts
 
 
@@ -490,6 +545,11 @@ def sweep(limit: int = BATCH, *, budget: run_budget.Budget | None = None) -> dic
     wave -- everyone waits for the slowest of six -- which at 2.1s a call is
     worth the two properties it buys.
 
+    Source is read a wave at a time, not with the window: `pending` returns
+    bodiless candidates and `with_source` fills in the six about to be asked
+    about, which is what keeps a run's resident memory flat in the size of the
+    backlog rather than growing with it.
+
     One transaction per wave, not per page and not one at the end. A sweep is
     many minutes of network and a job killed partway through should keep the
     answers it already paid Lift Wing for; a wave bounds what a kill can lose to
@@ -508,7 +568,12 @@ def sweep(limit: int = BATCH, *, budget: run_budget.Budget | None = None) -> dic
         for start in range(0, len(candidates), width):
             if not clock.remains():
                 break
-            wave = candidates[start : start + width]
+            with db.session_scope() as session:
+                wave = with_source(session, candidates[start : start + width])
+            # Everything in this slice went away or shrank below the floor
+            # since the window was read. Nothing to ask, and nothing to record.
+            if not wave:
+                continue
             outcomes = list(pool.map(lambda candidate: _ask(candidate, ask, model=model), wave))
             with db.session_scope() as session:
                 for candidate, outcome in zip(wave, outcomes, strict=True):
@@ -549,11 +614,14 @@ def _republish(tool_names: list[str]) -> dict[str, int]:
 def coverage() -> dict[str, int]:
     """Return how much of the user-script lane has been read, by outcome.
 
-    `eligiblePages` counts exactly what `pending` would consider, copies and
-    stylesheets excluded. The two have to agree: a denominator wider than the
-    selection reports a sweep that can never finish, and this one read 166,399
-    while the work was 48,700 -- which is how a lane three weeks from done
-    looked like one that was seven weeks away.
+    `eligiblePages` counts exactly what `pending` would consider -- copies,
+    stylesheets and pages too short to describe excluded. The two have to
+    agree: a denominator wider than the selection reports a sweep that can
+    never finish, and this one read 166,399 while the work was 48,700, which is
+    how a lane three weeks from done looked like one seven weeks away. Every
+    filter added to `pending`'s window belongs here too, which is what
+    `test_the_reported_denominator_is_the_one_the_sweep_actually_works_through`
+    is for.
     """
     with db.session_scope() as session:
         by_status = dict(
@@ -571,6 +639,7 @@ def coverage() -> dict[str, int]:
                 UserScriptPage.role == userscripts.ROLE_SCRIPT,
                 UserScriptPage.deleted_at.is_(None),
                 UserScriptPage.content_model.not_in(STYLESHEET_MODELS),
+                func.length(UserScriptPage.body) >= MIN_SOURCE_CHARS,
             )
         ).scalar_one()
     return {

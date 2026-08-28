@@ -406,10 +406,90 @@ def test_the_reported_denominator_is_the_one_the_sweep_actually_works_through():
     store("User:Anomie/linkclassifier.js")
     store("User:Someone/LiveRCparam.js", owner="Someone", basename="LiveRCparam.js", original=False)
     store("User:Anomie/vector.css", basename="vector.css", content_model="sanitized-css")
+    store("User:Anomie/stub.js", basename="stub.js", fingerprint="f2", body="// hi")
 
     with db.session_scope() as session:
         considered = len(enrichment.pending(session))
     assert enrichment.coverage()["eligiblePages"] == considered == 1
+
+
+def test_the_window_does_not_carry_the_source_it_is_not_asking_about():
+    """`pending` holds no bodies, however large the backlog it windows.
+
+    This is the bug, and it is invisible in the output: the sweep asked about
+    the right pages and stored the right answers while `pending` also loaded
+    every windowed page's source to do it. At 19,390 windowed pages that was
+    260 MB of script text and 546 MB resident against a 512Mi job, so the run
+    was OOM-killed -- silently, because SIGKILL leaves no summary, no
+    `job_runs` row, and a job-guard lock nobody releases. Asserting on names
+    would pass either way, so this asserts on what the run holds.
+    """
+    store("User:Anomie/linkclassifier.js", body="x" * 200_000)
+    store("User:Anomie/two.js", basename="two.js", fingerprint="f2", body="y" * 200_000)
+
+    with db.session_scope() as session:
+        candidates = enrichment.pending(session)
+    assert len(candidates) == 2
+    assert sum(len(candidate.body) for candidate in candidates) == 0
+
+
+def test_a_page_too_short_to_describe_never_reaches_the_window():
+    """The floor moved into SQL, so short pages stop occupying window slots.
+
+    They leave no row when skipped, so under the old Python filter every sweep
+    re-read and re-skipped the same pages forever, each one costing a slot in
+    a window that is the only thing bounding the run.
+    """
+    store("User:Anomie/linkclassifier.js")
+    store("User:Anomie/stub.js", basename="stub.js", fingerprint="f2", body="// hi")
+
+    with db.session_scope() as session:
+        assert names(enrichment.pending(session)) == ["User:Anomie/linkclassifier.js"]
+
+
+def test_source_is_read_for_the_pages_about_to_be_asked_about():
+    store("User:Anomie/linkclassifier.js")
+
+    with db.session_scope() as session:
+        wave = enrichment.with_source(session, enrichment.pending(session))
+    assert [candidate.body for candidate in wave] == [BODY]
+    assert [candidate.fingerprint for candidate in wave] == ["f1"]
+
+
+def test_a_page_that_moves_between_the_window_and_the_wave_is_dropped():
+    """The census rewrites pages while a sweep runs, and a run is many minutes.
+
+    Dropped rather than asked about: the page leaves no row, so the next sweep
+    reconsiders it against whatever it says then.
+    """
+    store("User:Anomie/linkclassifier.js")
+    with db.session_scope() as session:
+        candidates = enrichment.pending(session)
+
+    with db.session_scope() as session:
+        session.query(UserScriptPage).update({"body": "// gone"})
+
+    with db.session_scope() as session:
+        assert enrichment.with_source(session, candidates) == []
+
+
+def test_the_wave_carries_the_fingerprint_of_the_source_it_read():
+    """Body and fingerprint are read together, so the pair cannot disagree.
+
+    Recording an answer against a fingerprint the source has moved past would
+    claim the page was checked at a revision nobody asked about, and the next
+    sweep would trust that row and skip it.
+    """
+    store("User:Anomie/linkclassifier.js")
+    with db.session_scope() as session:
+        candidates = enrichment.pending(session)
+
+    with db.session_scope() as session:
+        session.query(UserScriptPage).update({"body": "z" * 500, "fingerprint": "f2"})
+
+    with db.session_scope() as session:
+        wave = enrichment.with_source(session, candidates)
+    assert [(candidate.body, candidate.fingerprint) for candidate in wave] == [("z" * 500, "f2")]
 
 
 # --- how fast a run is allowed to go ----------------------------------------
