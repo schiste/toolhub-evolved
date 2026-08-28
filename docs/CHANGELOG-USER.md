@@ -1,12 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: what-actually-changed -->
-<!-- Release title: What Actually Changed -->
-<!-- Source range: 68daba19..fde19fca (1 commit, promoted as one) -->
+<!-- Release id: descriptions-start-again -->
+<!-- Release title: Descriptions Start Again -->
+<!-- Source range: 155e75f7..f0b32c65 (1 commit, promoted as one) -->
 
 # What's New for Users
 
-- Recent changes and tool history now show what an edit actually did. Clicking an update opens a comparison of the two revisions, listing each field that changed, what happened to it, and the new value. Until now the history page could only name a revision and send you to the official Toolhub site to find out the rest.
-- Every "Updated" entry on the recent changes page is a link to that comparison. Newly created tools are not, because there is no earlier version to compare them against.
-- The recent changes page was showing a feed up to a day behind official Toolhub. It was reading a copy that nothing else was requesting, so nothing refreshed it. The page now follows the same copy the rest of the world reads, and the feed keeps up.
-- Comparisons are prepared in advance for the changes currently on the recent page, so they open without waiting. An older comparison that was never prepared says it is not available here rather than telling you nothing changed — an edit that genuinely changed no fields is a real answer, and the two now read differently.
+- User scripts and gadgets are getting their written descriptions again. Almost none of these tools carry a description on the wiki page they come from, so the catalogue reads the script's own source and writes one. That work had stopped completely for sixteen hours, and no new description had appeared since.
+- It stopped because the job that does it ran out of memory every time it started, loading the full text of nineteen thousand scripts at once when it only needed a handful at a time. It now reads each script's source at the moment it is about to describe it, and finishes well inside its limits.
+- Nothing already written was affected, and nothing is described twice: a script whose source has not changed keeps the description it already has.
+- Scripts too short to say anything meaningful about no longer take up a place in the queue on every pass, so the run spends its time on tools that can actually get a description.
