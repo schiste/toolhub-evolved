@@ -588,3 +588,23 @@
   timeout: 2700
   mem: 512Mi
   emails: onfailure
+
+- name: job-watchdog
+  # Mail when a declared worker has gone quiet. Every other job here reports
+  # its own failures through a non-zero exit; the three ways a job dies
+  # *without* one -- SIGKILL, the guard's overlap skip, and its breaker, the
+  # last two exiting 0 by design -- are exactly what this covers.
+  #
+  # Deliberately not wrapped in job_guard.sh: the guard disables a job after
+  # three consecutive non-zero exits, and this one exits non-zero whenever
+  # something else is wrong, so a stall lasting three ticks would silence its
+  # own alarm. proxy/job_watchdog.py has the long version.
+  #
+  # Hourly bounds the delay on the fastest verdict it can reach. Running it
+  # more often would not make any verdict arrive sooner: the thresholds are
+  # measured in the watched job's periods, never in this one's.
+  command: exec /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/job_watchdog.py
+  image: python3.13
+  schedule: "17 * * * *"
+  timeout: 120
+  emails: onfailure
