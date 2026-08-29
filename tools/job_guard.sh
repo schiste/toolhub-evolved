@@ -194,6 +194,18 @@ child=""
 set -e
 run_finished="$(date +%s)"
 
+# backend.job_contract.EXIT_SKIPPED: the child took no shared lock and so did
+# no work. Handled here, before anything is recorded, because the two things
+# that read an exit code both get it wrong otherwise: job_runs would publish a
+# successful run that never happened, and Toolforge would mail about a non-zero
+# exit that is entirely routine. This is the same deliberate non-run as the
+# overlap skip above, which exits before reaching this point, so it leaves the
+# same trace -- none -- and the breaker state is untouched rather than reset,
+# because a skip is no evidence that a previously failing job has recovered.
+if [ "$status" -eq 75 ]; then
+	exit 0
+fi
+
 # Publish the run so /workers can show it. Best effort in every direction: a
 # missing recorder or an unreachable database must never turn a healthy job
 # into a failed one, which is why the exit status is captured above and

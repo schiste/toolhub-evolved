@@ -39,6 +39,16 @@ if TYPE_CHECKING:
 # wait. So 120s is what an hour of loss buys, demonstrated. Only the full pass
 # can afford to outlast the drain's ceiling as well, and it is the one whose
 # next chance is seven days away, so it alone is given that much.
+#
+# A wait alone turned out not to be enough. GET_LOCK gives the lock to whoever
+# asks at the instant it frees, which is the mode that asks most often, not the
+# one that has queued longest -- so the drain could hold its 6-11s, release,
+# and take it again a minute later while an hourly waiter sat through its whole
+# two minutes and was turned away. On 2026-08-29 --identities-only lost eight
+# hours in a row that way. So a wait now also books a place: job_runner takes an
+# intent lock for the length of the wait, and a mode that will not wait steps
+# aside for the length of one of its own minutes when it sees one. The numbers
+# below are unchanged -- what a wait buys is what changed.
 HOURLY_LOCK_WAIT_SECONDS = 120
 FULL_PASS_LOCK_WAIT_SECONDS = 600
 
@@ -78,7 +88,7 @@ def _timed(into: dict[str, float], name: str) -> Iterator[None]:
         into[name] = round(time.monotonic() - started, 1)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:  # noqa: C901 - one branch per mode, and the modes are the CLI
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--apply",
@@ -129,6 +139,36 @@ def main(argv: list[str] | None = None) -> int:
     if sum((args.queue, args.retirements, args.identities_only, args.reconverge)) > 1:
         parser.error("--queue, --retirements, --identities-only, and --reconverge are mutually exclusive")
 
+    phase_seconds: dict[str, float] = {}
+    prefetched_batches = None
+
+    def prefetch_remote_batches() -> None:
+        """Resolve this run's remote batch before the shared lock is taken.
+
+        `resolve_remote_batches` opens a session only long enough to read its
+        candidates, closes it, and then spends two minutes on Wikimedia round
+        trips. `--identities-only` starts with it, so under the old shape those
+        two minutes were part of a lock hold four jobs contend for, in a pass
+        that already finishes within a hundred seconds of its own timeout. In
+        front of the lock they cost the hold nothing, and they double as extra
+        time for the lock to free.
+
+        Only this mode can do it. The others resolve labels their rebuild phase
+        has just discovered, so for them the remote phase cannot move ahead of
+        a write it depends on.
+
+        Guarded because `retry_on_disconnect` re-enters here after a dropped
+        connection, and the batch is already in hand.
+        """
+        nonlocal prefetched_batches
+        if prefetched_batches is not None:
+            return
+        with _timed(phase_seconds, "remote"):
+            prefetched_batches = people_reconcile.resolve_remote_batches(
+                candidate_label_limit=args.candidate_label_limit,
+                registry_label_limit=args.registry_label_limit,
+            )
+
     def body() -> dict:
         if args.retirements:
             return people_reconcile.drain_queue(reason="canonical_retired")
@@ -142,7 +182,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         mode = people_reconcile.MODE_APPLY if args.apply or args.identities_only else people_reconcile.MODE_DRY_RUN
         discover = args.apply or args.identities_only
-        phase_seconds: dict[str, float] = {}
+        # Conflicts that were seen again but did not change. Their `last_seen_at`
+        # is written after the passes below commit, not inside them: it is a
+        # cosmetic timestamp, and a row lock held for the length of an
+        # `--identities-only` pass is what a competing writer times out on.
+        deferred_refreshes: list[int] = []
         if discover and not args.identities_only:
             with _timed(phase_seconds, "rebuild"), db.session_scope() as session:
                 local_summary = people_reconcile.run(
@@ -155,18 +199,22 @@ def main(argv: list[str] | None = None) -> int:
                     # evidence write, so only it reconverges. Doing it twice
                     # would advance the cursor past rows this pass never read.
                     reconverge_limit=0,
+                    deferred_conflict_refreshes=deferred_refreshes,
                 )
         else:
             local_summary = None
-        with _timed(phase_seconds, "remote"):
-            resolved_identities, resolved_registry = (
-                people_reconcile.resolve_remote_batches(
-                    candidate_label_limit=args.candidate_label_limit,
-                    registry_label_limit=args.registry_label_limit,
+        if prefetched_batches is not None:
+            resolved_identities, resolved_registry = prefetched_batches
+        else:
+            with _timed(phase_seconds, "remote"):
+                resolved_identities, resolved_registry = (
+                    people_reconcile.resolve_remote_batches(
+                        candidate_label_limit=args.candidate_label_limit,
+                        registry_label_limit=args.registry_label_limit,
+                    )
+                    if discover
+                    else (None, None)
                 )
-                if discover
-                else (None, None)
-            )
         with _timed(phase_seconds, "local"), db.session_scope() as session:
             summary = people_reconcile.run(
                 session,
@@ -179,6 +227,13 @@ def main(argv: list[str] | None = None) -> int:
                 reconverge_limit=args.reconverge_limit,
                 resolved_identity_candidates=resolved_identities,
                 resolved_registry_candidates=resolved_registry,
+                deferred_conflict_refreshes=deferred_refreshes,
+            )
+        if deferred_refreshes:
+            # Reported only when there were any, and reported even when they
+            # failed: `requested` above `refreshed` is the queue quietly ageing.
+            summary["conflictRefreshes"] = people_reconcile.refresh_conflicts_seen(
+                deferred_refreshes, run_id=summary["runId"]
             )
         if local_summary is not None:
             summary["toolsRebuilt"] = local_summary["toolsRebuilt"]
@@ -195,6 +250,7 @@ def main(argv: list[str] | None = None) -> int:
         body,
         lock=True,
         lock_wait_seconds=_lock_wait_seconds(args),
+        before_lock=prefetch_remote_batches if args.identities_only else None,
         # Every mode here re-decides from present evidence and writes in one
         # transaction, so a run that lost its connection left nothing behind and
         # a second attempt reaches the same state the first would have.

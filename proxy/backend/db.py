@@ -504,6 +504,27 @@ def advisory_lock(name: str, *, timeout_seconds: int = 0) -> Iterator[bool]:
         connection.close()
 
 
+def advisory_lock_holder(name: str) -> int | None:
+    """Return the connection id holding ``name``, or None if nobody does.
+
+    Best effort in every direction, because this only ever runs on the failure
+    path of a job that is about to skip: a lock whose holder cannot be named is
+    still held, and the caller's report is worth strictly more with a missing
+    field than it is not written at all. IS_USED_LOCK needs its own connection,
+    which is why the answer can be stale the instant it is read -- it says who
+    held the lock during the skip, not who holds it now, and that is the
+    question worth answering.
+    """
+    if engine().dialect.name not in {"mysql", "mariadb"}:
+        return None
+    try:
+        with engine().connect() as connection:
+            holder = connection.scalar(text("SELECT IS_USED_LOCK(:name)"), {"name": name})
+    except SQLAlchemyError:
+        return None
+    return int(holder) if holder is not None else None
+
+
 # MariaDB rolls one transaction back to break a lock cycle (1213) or gives up
 # waiting for a lock (1205). Both mean "your work was undone, try again", not
 # "your work was wrong", and both are routine when several bounded jobs touch

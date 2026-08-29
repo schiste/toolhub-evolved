@@ -37,3 +37,20 @@ from __future__ import annotations
 
 EXIT_OK = 0
 EXIT_SWEEP_FAILED = 1
+
+# A run that never started because someone else held the shared lock. Not a
+# success and not a failure: nothing was attempted, so recording it either way
+# is a lie. It had been reported as EXIT_OK, which meant tools/job_guard.sh
+# wrote a job_runs row for it and backend.workers read that row as "this job
+# ran and succeeded". people-identity-reconcile skipped eight hourly ticks in a
+# row on 2026-08-29 while /workers showed a fresh successful run each hour --
+# the fourth way a job can stop without anyone being told, after the SIGKILL,
+# the overlap skip and the breaker that job_watchdog was built for.
+#
+# Non-zero so the guard can tell it apart from a real success, and handled by
+# the guard rather than reaching Toolforge, which mails on any non-zero exit.
+# The guard swallows it exactly like its own overlap skip: no run recorded, no
+# effect on the breaker, and zero to the platform. Kept out of the 1-64 range
+# a sweep might plausibly return, and out of 128+n, which means "killed by
+# signal n".
+EXIT_SKIPPED = 75

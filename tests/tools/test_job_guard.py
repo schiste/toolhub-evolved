@@ -262,3 +262,39 @@ def test_a_terminated_run_does_not_count_against_the_failure_breaker(tmp_path):
     guard.wait(timeout=10)
 
     assert not (tmp_path / "guard" / "example.state").exists()
+
+
+def test_guard_swallows_a_lock_skip_without_recording_it_or_mailing(tmp_path):
+    """backend.job_contract.EXIT_SKIPPED: the child took no lock, so it did nothing.
+
+    Toolforge mails on any non-zero exit and job_runs publishes any recorded
+    run, so a skip that reached either would be reported as a failure or as a
+    success. It is neither, and the guard is where that is settled.
+    """
+    result = run_guard(tmp_path, "sh", "-c", "exit 75")
+
+    assert result.returncode == 0, "a skip must not reach Toolforge, which mails on non-zero"
+    assert result.stderr == "", "a deliberate non-run must not pollute the job's .err file"
+
+
+def test_a_lock_skip_leaves_the_breaker_state_exactly_as_it_found_it(tmp_path):
+    """A skip is no evidence that a failing job has recovered, so it must not clear the streak."""
+    failing = ("sh", "-c", "exit 3")
+    run_guard(tmp_path, *failing)
+    run_guard(tmp_path, *failing)
+    state = (tmp_path / "guard" / "example.state").read_text()
+    assert "failure_streak=2" in state
+
+    assert run_guard(tmp_path, "sh", "-c", "exit 75").returncode == 0
+
+    after = (tmp_path / "guard" / "example.state").read_text()
+    assert after == state, "the skip reset the breaker, so a broken job would never be disabled"
+    # Proof that the streak survived: the next real failure is the third, not the first.
+    assert run_guard(tmp_path, *failing).returncode == 3
+    assert "disabled=1" in (tmp_path / "guard" / "example.state").read_text()
+
+
+def test_a_lock_skip_releases_the_lock_it_took(tmp_path):
+    """The guard's own lock is taken before the child runs, so a skip still has to hand it back."""
+    assert run_guard(tmp_path, "sh", "-c", "exit 75").returncode == 0
+    assert not (tmp_path / "guard" / ".example.lock").exists()

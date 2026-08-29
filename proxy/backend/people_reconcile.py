@@ -7,9 +7,10 @@ import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend import (
     db,
@@ -516,6 +517,7 @@ def _record_stable_identity_conflict(
     account: ToolhubAccountProjection,
     *,
     toolforge_uid_number: str = "",
+    deferred_conflict_refreshes: list[int] | None = None,
 ) -> bool:
     """Queue a cross-system stable-id disagreement and refuse a target."""
     identifiers = {
@@ -562,28 +564,115 @@ def _record_stable_identity_conflict(
                 details=details,
             )
         )
-    elif _conflict_moved(conflict, details, utcnow()):
-        conflict.run_id = run_id
-        conflict.details = details
-        conflict.last_seen_at = utcnow()
+    else:
+        _record_conflict_sighting(
+            conflict,
+            run_id=run_id,
+            details=details,
+            now=utcnow(),
+            deferred=deferred_conflict_refreshes,
+        )
     return True
 
 
-def _conflict_moved(conflict: PersonReconciliationConflict, details: dict[str, Any], now: datetime) -> bool:
-    """Whether an already-recorded conflict is worth writing again.
+def _conflict_changed(conflict: PersonReconciliationConflict, details: dict[str, Any]) -> bool:
+    """Whether what the conflict says has moved since it was last written."""
+    return (conflict.details if isinstance(conflict.details, dict) else {}) != details
 
-    True when what the conflict says has changed, and otherwise only once
-    `CONFLICT_REFRESH_AFTER` has passed -- so an unchanged conflict costs one
-    write every six hours rather than one every hour, and a changed one is
-    still written the moment it changes.
-    """
-    if (conflict.details if isinstance(conflict.details, dict) else {}) != details:
-        return True
+
+def _conflict_refresh_due(conflict: PersonReconciliationConflict, now: datetime) -> bool:
+    """Whether an unchanged conflict is stale enough to be marked seen again."""
     last_seen = conflict.last_seen_at
     return last_seen is None or last_seen + CONFLICT_REFRESH_AFTER <= now
 
 
-def _record_account_binding_conflicts(s: Session, run_id: int) -> int:
+def _record_conflict_sighting(
+    conflict: PersonReconciliationConflict,
+    *,
+    run_id: int,
+    details: dict[str, Any],
+    now: datetime,
+    deferred: list[int] | None,
+) -> None:
+    """Write a re-observed conflict, or hand the timestamp bump to `deferred`.
+
+    The two cases look identical -- one UPDATE on one row -- and are not. A
+    changed conflict is what the operator queue exists to show, so it is written
+    here, in the transaction that decided it, and is worth the row lock. An
+    unchanged one only needs `last_seen_at` moved so the queue can say the
+    conflict is still live; nothing reads it otherwise, and it may be minutes
+    late without anyone noticing.
+
+    That distinction is the whole point. Inside `run()` a row lock is held until
+    the pass commits, which for `--identities-only` is twenty minutes later, and
+    `person_reconciliation_conflicts` is written by `source_attestations` too.
+    Refreshing in place is a write with no urgency at all taking a twenty-minute
+    lock and waiting fifty seconds on someone else's -- on 2026-08-28 that lost
+    a run three minutes in, having already spent its network budget. Callers
+    that pass `deferred` get those ids back instead and apply them through
+    `refresh_conflicts_seen` once their transaction has committed.
+
+    `deferred=None` keeps the write inline, for callers whose transaction is
+    short enough that the lock costs nothing -- projection publication, and the
+    tests.
+    """
+    if _conflict_changed(conflict, details):
+        conflict.run_id = run_id
+        conflict.details = details
+        conflict.last_seen_at = now
+    elif not _conflict_refresh_due(conflict, now):
+        return
+    elif deferred is None:
+        conflict.run_id = run_id
+        conflict.last_seen_at = now
+    else:
+        deferred.append(conflict.id)
+
+
+def refresh_conflicts_seen(conflict_ids: list[int], *, run_id: int) -> dict[str, int]:
+    """Mark unchanged conflicts as still observed, in a transaction of its own.
+
+    Owns its transaction because that is what `db.run_with_lock_retry` requires
+    and what makes the retry meaningful: the unit being repeated is one UPDATE
+    of two columns, so losing the race costs a fifth of a second rather than the
+    run that queued it. Call it after the reconciliation transaction has
+    committed -- called inside one, it would be a second connection waiting on
+    locks the first still holds.
+
+    Ids are applied in order so that two jobs refreshing overlapping conflicts
+    take the rows in the same sequence and queue instead of deadlocking.
+
+    A lock that outlasts every retry is reported rather than raised: by this
+    point the pass has committed, and failing a completed run over a timestamp
+    would recreate in the caller exactly the loss this function exists to
+    prevent. The counts differing is the signal that it happened. Only a lock is
+    forgiven that way -- anything else is a fault in the write itself and still
+    raises, because a refresh that can never succeed is worth an alert.
+    """
+    ids = sorted(set(conflict_ids))
+    if not ids:
+        return {"requested": 0, "refreshed": 0}
+
+    def work() -> None:
+        with db.session_scope() as s:
+            s.execute(
+                update(PersonReconciliationConflict)
+                .where(PersonReconciliationConflict.id.in_(ids))
+                .values(run_id=run_id, last_seen_at=utcnow())
+            )
+
+    try:
+        db.run_with_lock_retry(work)
+    except SQLAlchemyError as error:
+        if not db.is_transient_lock_error(error):
+            raise
+        return {"requested": len(ids), "refreshed": 0}
+    return {"requested": len(ids), "refreshed": len(ids)}
+
+
+def _record_account_binding_conflicts(
+    s: Session, run_id: int, deferred_conflict_refreshes: list[int] | None = None
+) -> int:
     """Project durable provider-binding conflicts into the operator queue."""
     rows = list(
         s.execute(
@@ -620,10 +709,14 @@ def _record_account_binding_conflicts(s: Session, run_id: int) -> int:
                     details=details,
                 )
             )
-        elif _conflict_moved(conflict, details, now):
-            conflict.run_id = run_id
-            conflict.details = details
-            conflict.last_seen_at = now
+        else:
+            _record_conflict_sighting(
+                conflict,
+                run_id=run_id,
+                details=details,
+                now=now,
+                deferred=deferred_conflict_refreshes,
+            )
     return len(rows)
 
 
@@ -927,7 +1020,7 @@ def _resolve_identity_candidate_batch(
     ]
 
 
-def discover_identity_candidates(
+def discover_identity_candidates(  # noqa: PLR0913 - resolved batches and the refresh sink are supplied by the caller
     s: Session,
     *,
     run_id: int,
@@ -935,6 +1028,7 @@ def discover_identity_candidates(
     label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
     resolved_batch: list[tuple[ToolhubAccountProjection, list[Person], public_identity.ResolvedPublicIdentity | None]]
     | None = None,
+    deferred_conflict_refreshes: list[int] | None = None,
 ) -> dict[str, int]:
     """Resolve exact public accounts and auto-link only SUL-backed tool evidence."""
     created = 0
@@ -961,6 +1055,7 @@ def discover_identity_candidates(
             run_id,
             account,
             toolforge_uid_number=toolforge.uid_number if toolforge else "",
+            deferred_conflict_refreshes=deferred_conflict_refreshes,
         ):
             conflicts += 1
             continue
@@ -1217,8 +1312,15 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
     ]
     | None = None,
     resolved_registry_candidates: tuple[list[tuple[str, public_identity.WikimediaIdentity | None]], str] | None = None,
+    deferred_conflict_refreshes: list[int] | None = None,
 ) -> dict[str, Any]:
-    """Audit or rebuild Toolhub-backed evidence and local people projections."""
+    """Audit or rebuild Toolhub-backed evidence and local people projections.
+
+    Pass `deferred_conflict_refreshes` to collect the ids of conflicts that were
+    seen again unchanged instead of writing their timestamps here; feed the list
+    to `refresh_conflicts_seen` once this session has committed. See
+    `_record_conflict_sighting` for why a long pass must not write them inline.
+    """
     if mode not in {MODE_DRY_RUN, MODE_APPLY}:
         raise PersonReconciliationError(mode)
     run_row = PersonReconciliationRun(mode=mode, status="running", started_at=utcnow())
@@ -1280,7 +1382,9 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
                     "relationshipCacheHit": 0,
                 }
             )
-            account_binding_conflicts_queued = _record_account_binding_conflicts(s, run_row.id)
+            account_binding_conflicts_queued = _record_account_binding_conflicts(
+                s, run_row.id, deferred_conflict_refreshes
+            )
             identity_qualities_refreshed = people_index.refresh_identity_qualities(s)
             non_actionable_conflicts_retired = _retire_non_actionable_display_conflicts(s)
             if rebuild_tools:
@@ -1293,6 +1397,7 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
                     identity_resolver=identity_resolver,
                     label_limit=candidate_label_limit,
                     resolved_batch=resolved_identity_candidates,
+                    deferred_conflict_refreshes=deferred_conflict_refreshes,
                 )
                 if discover_candidates
                 else {"created": 0, "linked": 0, "conflicts": 0}
@@ -1379,6 +1484,7 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
             catalog_anchor_summary = {"tools": 0, "authorEvidence": 0, "ambiguous": 0, "cacheHit": 0}
         after = build_plan(s)
         summary = {
+            "runId": run_row.id,
             "mode": mode,
             "peopleScanned": after["peopleScanned"],
             "evidenceScanned": after["evidenceScanned"],

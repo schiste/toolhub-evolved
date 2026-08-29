@@ -63,10 +63,11 @@ def test_losing_the_lock_is_a_successful_no_op(capsys, monkeypatch):
     code = job_runner.run_job("example-job", lambda: ran.append(1), lock=True)
 
     # Losing a race with the run already doing the work is not a failure, and
-    # must not count toward the guard's breaker.
-    assert code == job_contract.EXIT_OK
+    # must not count toward the guard's breaker -- but it is not a success
+    # either, and reporting it as one published a run that never happened.
+    assert code == job_contract.EXIT_SKIPPED
     assert ran == []
-    assert json.loads(capsys.readouterr().out) == {"locked": True}
+    assert json.loads(capsys.readouterr().out) == {"locked": True, "heldBy": None}
 
 
 def test_the_lock_name_keeps_the_shared_prefix(monkeypatch):
@@ -88,17 +89,98 @@ def test_the_lock_is_taken_without_waiting_unless_a_wait_is_asked_for(monkeypatc
     from contextlib import contextmanager
 
     @contextmanager
+    def record(name, **kwargs):
+        seen.append((name, kwargs.get("timeout_seconds")))
+        yield True
+
+    monkeypatch.setattr(db, "advisory_lock", record)
+    monkeypatch.setattr(db, "advisory_lock_holder", lambda _name: None)
+    job_runner.run_job("example-job", lambda: None, lock=True)
+    job_runner.run_job("example-job", lambda: None, lock=True, lock_wait_seconds=120)
+
+    lock = f"{job_runner.LOCK_PREFIX}example-job"
+    intent = f"{lock}{job_runner.INTENT_SUFFIX}"
+    # Skipping on contact stays the default: the callers that run every minute
+    # have another attempt immediately and must not queue behind a long pass.
+    # A job that will not wait also never announces a wait -- it has nothing to
+    # reserve -- so only the second run takes the intent lock, and it takes it
+    # first, before it can be turned away from the lock it actually wants.
+    assert seen == [(lock, 0), (intent, 120), (lock, 120)]
+
+
+def test_a_job_that_will_not_wait_stands_aside_for_one_that_has_been_waiting(monkeypatch, capsys):
+    """The starvation, in one test.
+
+    GET_LOCK hands the lock to whoever asks at the instant it frees, so the job
+    asking every minute takes it back before the job that has been queueing
+    since :43 is handed anything -- eight hours of that on 2026-08-29, each hour
+    reported as a run. Being unwilling to wait is affordable exactly because
+    another attempt is sixty seconds away, which is also what makes stepping
+    aside cost nothing.
+    """
+    from contextlib import contextmanager
+
+    taken = []
+
+    @contextmanager
+    def record(name, **_kwargs):
+        taken.append(name)
+        yield True
+
+    monkeypatch.setattr(db, "advisory_lock", record)
+    monkeypatch.setattr(db, "advisory_lock_holder", lambda _name: 4172)
+
+    code = job_runner.run_job("example-job", lambda: None, lock=True)
+
+    assert code == job_contract.EXIT_SKIPPED
+    assert json.loads(capsys.readouterr().out) == {"locked": True, "yieldedTo": 4172}
+    # Yielded before touching the lock. Checking after losing it would be too
+    # late and checking after winning it would be the starvation itself: the
+    # lock being free at this instant is not evidence that nobody is owed it.
+    assert taken == []
+
+
+def test_a_waiter_that_loses_to_an_earlier_waiter_says_so(monkeypatch, capsys):
+    """Two queueing jobs order themselves rather than both racing the holder."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def busy(_name, **_kwargs):
+        yield False
+
+    monkeypatch.setattr(db, "advisory_lock", busy)
+    monkeypatch.setattr(db, "advisory_lock_holder", lambda _name: 91)
+
+    code = job_runner.run_job("example-job", lambda: None, lock=True, lock_wait_seconds=120)
+
+    assert code == job_contract.EXIT_SKIPPED
+    assert json.loads(capsys.readouterr().out) == {"locked": True, "queuedBehind": 91}
+
+
+def test_announcing_a_wait_cannot_double_the_wait_the_caller_asked_for(monkeypatch):
+    """Two locks, one budget.
+
+    `lock_wait_seconds` has to stay well inside the job's own timeout, because
+    waiting past that is a kill and a kill is worse than the skip it replaced.
+    Time spent reserving is time not spent queueing.
+    """
+    from contextlib import contextmanager
+
+    seen = []
+    clock = iter([1000.0, 1090.0])
+
+    @contextmanager
     def record(_name, **kwargs):
         seen.append(kwargs.get("timeout_seconds"))
         yield True
 
     monkeypatch.setattr(db, "advisory_lock", record)
-    job_runner.run_job("example-job", lambda: None, lock=True)
+    monkeypatch.setattr(db, "advisory_lock_holder", lambda _name: None)
+    monkeypatch.setattr(job_runner.time, "monotonic", lambda: next(clock))
+
     job_runner.run_job("example-job", lambda: None, lock=True, lock_wait_seconds=120)
 
-    # Skipping on contact stays the default: the callers that run every minute
-    # have another attempt immediately and must not queue behind a long pass.
-    assert seen == [0, 120]
+    assert seen == [120, 30]
 
 
 def _scheduled_modes() -> dict[str, str]:
@@ -367,8 +449,155 @@ def test_the_retry_re_enters_through_the_lock_rather_than_resuming_inside_it(cap
         raise _disconnect()
 
     code = job_runner.run_job("example-job", body, lock=True, retry_on_disconnect=True)
-    assert code == job_contract.EXIT_OK
+    assert code == job_contract.EXIT_SKIPPED
     assert acquisitions == [1, 1]
     # The lock was gone on the retry, so the body never ran a second time.
     assert attempts == [1]
-    assert json.loads(capsys.readouterr().out.strip()) == {"locked": True}
+    assert json.loads(capsys.readouterr().out.strip()) == {"locked": True, "heldBy": None}
+
+
+def test_a_lock_skip_reports_who_was_holding_it(monkeypatch, capsys):
+    """Eight identical `{"locked": true}` lines say nothing about which fix is needed."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def busy(_name, **_kwargs):
+        yield False
+
+    asked = []
+    lock = f"{job_runner.LOCK_PREFIX}example-job"
+    intent = f"{lock}{job_runner.INTENT_SUFFIX}"
+    monkeypatch.setattr(db, "advisory_lock", busy)
+    monkeypatch.setattr(
+        db,
+        "advisory_lock_holder",
+        lambda name: asked.append(name) or (None if name == intent else 4172),
+    )
+
+    code = job_runner.run_job("example-job", lambda: None, lock=True)
+
+    assert code == job_contract.EXIT_SKIPPED
+    assert json.loads(capsys.readouterr().out) == {"locked": True, "heldBy": 4172}
+    # Asked about the prefixed lock, not the bare job name: the wrong name would
+    # always answer "nobody" and quietly turn the diagnostic back into noise.
+    # Nobody was queueing, so this is a plain loss to the holder rather than a
+    # yield, and the two are named differently because the fixes differ.
+    assert asked == [intent, lock]
+
+
+def test_a_skip_is_distinguishable_from_both_of_the_outcomes_it_is_not():
+    """The whole point: three states, three codes, none of them colliding."""
+    assert job_contract.EXIT_SKIPPED not in {job_contract.EXIT_OK, job_contract.EXIT_SWEEP_FAILED}
+    # 128+n is "killed by signal n"; a skip that landed there would read as a crash.
+    assert job_contract.EXIT_SKIPPED < 128
+
+
+def test_conflict_timestamp_refreshes_land_after_the_pass_has_committed(monkeypatch):
+    """Deferring the write only helps if it is applied outside the transaction.
+
+    Applied inside, it is a second connection waiting on locks the first still
+    holds -- the collision the deferral exists to avoid, rebuilt one layer down.
+    The ordering is the entire fix, so it is what this asserts.
+    """
+    import people_reconcile as entrypoint
+
+    events = []
+
+    @contextlib.contextmanager
+    def scope():
+        events.append("begin")
+        yield None
+        events.append("commit")
+
+    def fake_run(*_args, deferred_conflict_refreshes=None, **_kwargs):
+        deferred_conflict_refreshes.append(2700)
+        return {"mode": "apply", "runId": 761}
+
+    captured = {}
+    monkeypatch.setattr(
+        job_runner,
+        "run_job",
+        lambda _name, body, **_kwargs: captured.update(body()) or job_contract.EXIT_OK,
+    )
+    monkeypatch.setattr(entrypoint.people_reconcile, "resolve_remote_batches", lambda **_kwargs: (None, None))
+    monkeypatch.setattr(entrypoint.people_reconcile, "run", fake_run)
+    monkeypatch.setattr(
+        entrypoint.people_reconcile,
+        "refresh_conflicts_seen",
+        lambda ids, *, run_id: events.append(("refresh", list(ids), run_id)) or {"requested": 1, "refreshed": 1},
+    )
+    monkeypatch.setattr(entrypoint.db, "session_scope", scope)
+
+    entrypoint.main(["--identities-only"])
+
+    assert events == ["begin", "commit", ("refresh", [2700], 761)]
+    # Reported, so a refresh that keeps losing its race is visible in the log
+    # rather than being the silent half of an otherwise successful run.
+    assert captured["conflictRefreshes"] == {"requested": 1, "refreshed": 1}
+
+
+def test_the_remote_phase_of_an_identities_run_happens_before_the_lock(monkeypatch):
+    """Two minutes of Wikimedia round trips are not worth a lock four jobs want.
+
+    The pass finishes within a hundred seconds of its own 1500s timeout, and
+    the remote phase needs no row at all: it reads its batch, closes the
+    session, and then waits on the network. Ahead of the lock it costs the hold
+    nothing, and the hold is what the other three modes are queueing behind.
+    """
+    import people_reconcile as entrypoint
+
+    order = []
+
+    @contextlib.contextmanager
+    def lock(name, **_kwargs):
+        order.append(("lock", name))
+        yield True
+
+    monkeypatch.setattr(entrypoint.db, "advisory_lock", lock)
+    monkeypatch.setattr(entrypoint.db, "advisory_lock_holder", lambda _name: None)
+    monkeypatch.setattr(entrypoint.db, "session_scope", contextlib.nullcontext)
+    monkeypatch.setattr(entrypoint.job_runner, "configure", lambda: None)
+    monkeypatch.setattr(job_runner, "configure", lambda: None)
+    monkeypatch.setattr(
+        entrypoint.people_reconcile,
+        "resolve_remote_batches",
+        lambda **_kwargs: order.append(("remote", None)) or (None, None),
+    )
+    monkeypatch.setattr(entrypoint.people_reconcile, "run", lambda *_args, **_kwargs: {"mode": "apply", "runId": 1})
+
+    assert entrypoint.main(["--identities-only"]) == job_contract.EXIT_OK
+
+    assert order[0] == ("remote", None)
+    assert [step for step, _name in order[1:]] == ["lock", "lock"]
+
+
+def test_a_full_pass_still_resolves_inside_the_lock(monkeypatch):
+    """Its labels are what its own rebuild phase discovers, so it cannot hoist."""
+    import people_reconcile as entrypoint
+
+    order = []
+
+    @contextlib.contextmanager
+    def lock(name, **_kwargs):
+        order.append(("lock", name))
+        yield True
+
+    monkeypatch.setattr(entrypoint.db, "advisory_lock", lock)
+    monkeypatch.setattr(entrypoint.db, "advisory_lock_holder", lambda _name: None)
+    monkeypatch.setattr(entrypoint.db, "session_scope", contextlib.nullcontext)
+    monkeypatch.setattr(entrypoint.job_runner, "configure", lambda: None)
+    monkeypatch.setattr(job_runner, "configure", lambda: None)
+    monkeypatch.setattr(
+        entrypoint.people_reconcile,
+        "resolve_remote_batches",
+        lambda **_kwargs: order.append(("remote", None)) or (None, None),
+    )
+    monkeypatch.setattr(
+        entrypoint.people_reconcile,
+        "run",
+        lambda *_args, **_kwargs: {"mode": "apply", "runId": 1, "toolsRebuilt": 0},
+    )
+
+    assert entrypoint.main(["--apply"]) == job_contract.EXIT_OK
+
+    assert [step for step, _name in order] == ["lock", "lock", "remote"]

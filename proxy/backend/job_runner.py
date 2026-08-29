@@ -8,18 +8,23 @@ had: two spellings of the environment lookup with different empty-string
 behaviour, four summary formats, and three exit-code policies feeding a
 circuit breaker that acts on them (see backend.job_contract).
 
-The lock convention is preserved exactly: a job that cannot take it prints
-``{"locked": true}`` and exits zero, because losing a race with the job
-already doing the work is a successful no-op, not a failure. A caller that
-would rather queue than skip can ask for a bounded wait first; giving up is
-still what happens when the wait runs out.
+A job that cannot take the lock prints ``{"locked": true}`` and returns
+``job_contract.EXIT_SKIPPED``. It used to return ``EXIT_OK``, on the reasoning
+that losing a race with the job already doing the work is a successful no-op.
+That is true of the run and false of the record: the guard wrote a job_runs row
+for it, so /workers reported a healthy job that had in fact done nothing for
+eight hours. A skip is neither outcome, and now says so. A caller that would
+rather queue than skip can ask for a bounded wait first; giving up is still
+what happens when the wait runs out.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
+import time
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.exc import DBAPIError
@@ -30,6 +35,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 LOCK_PREFIX = "toolhub-evolved:"
+# Held by a job that is queueing for the shared lock, for as long as it queues.
+# The lock itself cannot express this: `GET_LOCK` hands the lock to whoever asks
+# at the moment it frees, which is the job that asks most often, not the job
+# that has been waiting longest. people-reconcile-incremental asks every minute
+# and is unwilling to wait; people-identity-reconcile asks once an hour and
+# waits two minutes for it, and on 2026-08-29 lost eight hours in a row. This is
+# how the losing side gets to say it is there.
+INTENT_SUFFIX = ":waiting"
 
 
 def database_url() -> str:
@@ -56,34 +69,76 @@ def configure() -> None:
     db.init_schema()
 
 
+def _skipped(**detail: int | None) -> int:
+    """Report a run that never started, and say which lock turned it away.
+
+    Eight consecutive skips are indistinguishable from each other without it,
+    and the answer decides the fix: a once-a-minute job taking the lock briefly
+    needs different work than one run holding it for twenty minutes. It is
+    always the losing side that has to ask -- the holder has no reason to
+    announce itself -- so the question is asked here, once, at the only moment
+    the answer matters.
+    """
+    sys.stdout.write(json.dumps({"locked": True, **detail}, sort_keys=True) + "\n")
+    return job_contract.EXIT_SKIPPED
+
+
 def _run_once(
     name: str,
     body: Callable[[], Any],
     *,
     lock: bool,
     lock_wait_seconds: int,
+    before_lock: Callable[[], None] | None = None,
 ) -> int:
     """Take the lock if asked, run the body, print the summary, choose the code."""
-    if lock:
-        with db.advisory_lock(f"{LOCK_PREFIX}{name}", timeout_seconds=lock_wait_seconds) as acquired:
-            if not acquired:
-                sys.stdout.write(json.dumps({"locked": True}, sort_keys=True) + "\n")
-                return job_contract.EXIT_OK
-            summary = body()
-    else:
+    if before_lock is not None:
+        before_lock()
+    if not lock:
+        summary = body()
+        if summary is not None:
+            sys.stdout.write(f"{name}: " + json.dumps(summary, sort_keys=True) + "\n")
+        return job_contract.EXIT_OK
+
+    lock_name = f"{LOCK_PREFIX}{name}"
+    intent_name = f"{lock_name}{INTENT_SUFFIX}"
+    # One budget covers both locks, so announcing intent cannot double the wait
+    # a caller signed up for -- which has to stay well inside its job timeout.
+    started = time.monotonic()
+    with contextlib.ExitStack() as stack:
+        if lock_wait_seconds > 0:
+            # Willing to queue, so it queues visibly. Held for the whole run
+            # rather than dropped once the lock is won: a second waiter would
+            # otherwise wait out the run on the lock instead of on this, which
+            # ends the same way, and releasing early is the only version of this
+            # that can leave the flag set with nobody behind it.
+            if not stack.enter_context(db.advisory_lock(intent_name, timeout_seconds=lock_wait_seconds)):
+                return _skipped(queuedBehind=db.advisory_lock_holder(intent_name))
+        elif (waiter := db.advisory_lock_holder(intent_name)) is not None:
+            # Unwilling to wait, which is only affordable because another
+            # attempt is a minute away -- so it can afford to give this one up.
+            # Checked before the lock and not after losing it: the starvation is
+            # not that the lock is busy, it is that a job asking every minute
+            # takes it back in the instant it frees, before the job that has
+            # been waiting since :43 is handed anything.
+            return _skipped(yieldedTo=waiter)
+        remaining = max(0, lock_wait_seconds - int(time.monotonic() - started))
+        if not stack.enter_context(db.advisory_lock(lock_name, timeout_seconds=remaining)):
+            return _skipped(heldBy=db.advisory_lock_holder(lock_name))
         summary = body()
     if summary is not None:
         sys.stdout.write(f"{name}: " + json.dumps(summary, sort_keys=True) + "\n")
     return job_contract.EXIT_OK
 
 
-def run_job(
+def run_job(  # noqa: PLR0913 - one keyword per job-shape difference, which is the point of the scaffold
     name: str,
     body: Callable[[], Any],
     *,
     lock: bool = False,
     lock_wait_seconds: int = 0,
     retry_on_disconnect: bool = False,
+    before_lock: Callable[[], None] | None = None,
 ) -> int:
     """Run one job body with the shared database, lock, and exit conventions.
 
@@ -96,6 +151,17 @@ def run_job(
     inside the caller's own job timeout: waiting past that is a kill, and a
     kill is strictly worse than the skip it replaced. Waiting adds no
     concurrency, so it does not reintroduce the deadlocks the lock prevents.
+
+    ``before_lock`` runs once the database is configured but before the lock is
+    taken, for the part of a job that provably needs neither. people_reconcile's
+    remote phase is two minutes of Wikimedia round trips over a batch it has
+    already read and closed its session on, and holding the shared lock through
+    them was two minutes of a hold four jobs contend for, in a pass that already
+    finishes within a hundred seconds of its own timeout. It runs before the
+    lock rather than inside it, so a run that then loses the lock has spent that
+    work for nothing -- worth it only where the work is bounded and the loss is
+    rare, which is why this is opt-in per caller rather than a phase of the
+    scaffold.
 
     ``retry_on_disconnect`` runs the body a second time when ToolsDB closes the
     connection underneath it. ``pool_pre_ping`` only proves a connection is
@@ -114,7 +180,7 @@ def run_job(
     """
     configure()
     try:
-        return _run_once(name, body, lock=lock, lock_wait_seconds=lock_wait_seconds)
+        return _run_once(name, body, lock=lock, lock_wait_seconds=lock_wait_seconds, before_lock=before_lock)
     except DBAPIError as exc:
         if not (retry_on_disconnect and exc.connection_invalidated):
             raise
@@ -122,4 +188,4 @@ def run_job(
         # the retry starts from an empty pool rather than the next dead checkout.
         sys.stderr.write(f"{name}: database connection lost mid-run; retrying once\n")
     db.engine().dispose()
-    return _run_once(name, body, lock=lock, lock_wait_seconds=lock_wait_seconds)
+    return _run_once(name, body, lock=lock, lock_wait_seconds=lock_wait_seconds, before_lock=before_lock)

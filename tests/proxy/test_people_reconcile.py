@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
@@ -1789,3 +1790,132 @@ def test_an_unchanged_conflict_is_not_rewritten_on_every_run():
         s.flush()
         assert conflict.run_id == second.id
         assert conflict.last_seen_at > seen_at - people_reconcile.CONFLICT_REFRESH_AFTER
+
+
+def _standing_conflict(s):
+    """A pending stable-identity conflict plus a later run that re-observes it."""
+    first = PersonReconciliationRun(mode="apply", status="completed")
+    second = PersonReconciliationRun(mode="apply", status="completed")
+    s.add_all([first, second])
+    s.flush()
+    people_index.ensure_person(s, display_name="Toolhub Owner", toolhub_user_id="1")
+    people_index.ensure_person(s, display_name="Wikimedia Owner", wikimedia_global_user_id="2")
+    account = ToolhubAccountProjection(
+        toolhub_user_id="1",
+        username="Someone",
+        normalized_username="someone",
+        wikimedia_global_user_id="2",
+    )
+    s.add(account)
+    s.flush()
+    people_reconcile._record_stable_identity_conflict(s, first.id, account)  # noqa: SLF001
+    s.flush()
+    return s.query(PersonReconciliationConflict).one(), account, first, second
+
+
+def test_a_stale_conflict_hands_its_timestamp_to_the_caller_instead_of_writing_it():
+    """The refresh is cosmetic; the transaction it used to be written in was not.
+
+    Writing `last_seen_at` inline takes a row lock for the rest of the pass --
+    twenty minutes of one, for `--identities-only` -- on a table
+    `source_attestations` also writes. On 2026-08-28 that collision waited out
+    the fifty-second `innodb_lock_wait_timeout` and destroyed a run three
+    minutes in, over a two-column UPDATE nothing reads. Given a sink, the pass
+    collects the id and touches no row at all.
+    """
+    _configure()
+    deferred: list[int] = []
+    with db.session_scope() as s:
+        conflict, account, first, second = _standing_conflict(s)
+        stale = conflict.last_seen_at - people_reconcile.CONFLICT_REFRESH_AFTER
+        conflict.last_seen_at = stale
+        conflict.run_id = first.id
+        s.flush()
+        people_reconcile._record_stable_identity_conflict(  # noqa: SLF001
+            s, second.id, account, deferred_conflict_refreshes=deferred
+        )
+        s.flush()
+        assert deferred == [conflict.id]
+        assert conflict.run_id == first.id
+        assert conflict.last_seen_at == stale
+
+
+def test_a_changed_conflict_is_still_written_by_the_pass_that_decided_it():
+    """Only the timestamp defers. What the queue shows is real data and stays inline."""
+    _configure()
+    deferred: list[int] = []
+    with db.session_scope() as s:
+        conflict, account, _first, second = _standing_conflict(s)
+        conflict.details = dict(conflict.details) | {"reason": "something else entirely"}
+        s.flush()
+        people_reconcile._record_stable_identity_conflict(  # noqa: SLF001
+            s, second.id, account, deferred_conflict_refreshes=deferred
+        )
+        s.flush()
+        assert deferred == []
+        assert conflict.run_id == second.id
+        assert conflict.details["reason"].startswith("Cross-system stable identifiers")
+
+
+def test_deferred_refreshes_are_applied_once_the_pass_has_committed():
+    """Deferring is only half the fix: the timestamps still have to land."""
+    _configure()
+    deferred: list[int] = []
+    with db.session_scope() as s:
+        conflict, account, first, second = _standing_conflict(s)
+        stale = conflict.last_seen_at - people_reconcile.CONFLICT_REFRESH_AFTER
+        conflict.last_seen_at = stale
+        conflict.run_id = first.id
+        s.flush()
+        people_reconcile._record_stable_identity_conflict(  # noqa: SLF001
+            s, second.id, account, deferred_conflict_refreshes=deferred
+        )
+        second_id = second.id
+
+    # Duplicates are what two passes over the same standing conflict produce;
+    # they must cost one UPDATE, not one per sighting.
+    applied = people_reconcile.refresh_conflicts_seen([*deferred, *deferred], run_id=second_id)
+    assert applied == {"requested": 1, "refreshed": 1}
+    with db.session_scope() as s:
+        conflict = s.query(PersonReconciliationConflict).one()
+        assert conflict.run_id == second_id
+        assert conflict.last_seen_at > stale
+
+
+def test_nothing_deferred_costs_no_transaction_at_all():
+    """The common hour: every conflict unchanged and inside the throttle."""
+    _configure()
+
+    def explode() -> None:
+        raise AssertionError("refresh opened a transaction for an empty list")
+
+    assert people_reconcile.refresh_conflicts_seen([], run_id=1) == {"requested": 0, "refreshed": 0}
+    # Proved by the counts above rather than by patching, but assert the seam too:
+    # an empty list must not reach the retry helper.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(db, "run_with_lock_retry", lambda *_a, **_k: explode())
+        assert people_reconcile.refresh_conflicts_seen([], run_id=1)["refreshed"] == 0
+
+
+def test_a_lost_lock_on_the_refresh_does_not_fail_a_run_that_already_committed():
+    """The reason the write was deferred cannot be allowed to kill it anyway.
+
+    By the time this runs the pass has committed, so raising here would throw
+    away a completed run over a timestamp -- exactly the loss the deferral was
+    built to stop. The shortfall shows in the counts instead.
+    """
+    _configure()
+    locked = OperationalError("UPDATE person_reconciliation_conflicts", {}, Exception(1205, "Lock wait timeout"))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(db, "run_with_lock_retry", lambda *_a, **_k: (_ for _ in ()).throw(locked))
+        assert people_reconcile.refresh_conflicts_seen([7], run_id=3) == {"requested": 1, "refreshed": 0}
+
+
+def test_a_refresh_that_can_never_succeed_is_not_swallowed():
+    """A lock is forgiven; a broken statement is not, or the fix hides its own bugs."""
+    _configure()
+    broken = OperationalError("UPDATE person_reconciliation_conflicts", {}, Exception(1054, "Unknown column"))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(db, "run_with_lock_retry", lambda *_a, **_k: (_ for _ in ()).throw(broken))
+        with pytest.raises(OperationalError):
+            people_reconcile.refresh_conflicts_seen([7], run_id=3)
