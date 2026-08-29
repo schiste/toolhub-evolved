@@ -9,7 +9,7 @@ import time
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from backend import db, job_catalog, job_runner, people_reconcile
+from backend import db, job_catalog, job_runner, people_reconcile, wikimedia_user_reconciliation
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -141,6 +141,32 @@ def _timed(into: dict[str, float], name: str) -> Iterator[None]:
         into[name] = round(time.monotonic() - started, 1)
 
 
+def _publish_user_space(phase_seconds: dict[str, float]) -> dict[str, int]:
+    """Publish user-space evidence in a transaction of its own.
+
+    `wikimedia_user_reconciliation.synchronize` writes `person_identifiers`, and
+    run inside `people_reconcile.run` those row locks are held until the entire
+    pass commits -- 1468s on the 07:43Z pass of 2026-08-29. Anything else
+    reaching for one of those rows waits out `innodb_lock_wait_timeout` and is
+    rolled back; on 2026-08-29 this phase was itself on the losing end of that at
+    10:45:36Z, which is what `run_job`'s lock retry now covers. This is the other
+    half: the locks it takes are released when its own transaction commits
+    rather than twenty minutes later.
+
+    Ahead of the pass rather than after it, so `source_attestations` still reads
+    the evidence in the run that published it. The trade is that identifiers
+    this pass's own discovery creates are matched next hour instead of this one
+    -- a phase-ordering lag the hourly loop converges out, and one the log says
+    is empty in practice: `identityMappingsApplied` and `registryPeopleCreated`
+    are 0 on every recorded run.
+
+    Still inside the shared advisory lock, because it writes: two passes
+    publishing user-space evidence at once is the race that lock exists for.
+    """
+    with _timed(phase_seconds, "userSpace"), db.session_scope() as session:
+        return wikimedia_user_reconciliation.synchronize(session)
+
+
 def main(argv: list[str] | None = None) -> int:  # noqa: C901 - one branch per mode, and the modes are the CLI
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -222,7 +248,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 - one branch per m
                 registry_label_limit=args.registry_label_limit,
             )
 
+    user_space: dict[str, int] | None = None
+
     def body() -> dict:
+        nonlocal user_space
         if args.retirements:
             return people_reconcile.drain_queue(reason="canonical_retired")
         if args.reconverge:
@@ -240,6 +269,11 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 - one branch per m
         # cosmetic timestamp, and a row lock held for the length of an
         # `--identities-only` pass is what a competing writer times out on.
         deferred_refreshes: list[int] = []
+        # Guarded like `prefetch_remote_batches`: a retry re-enters `body()`, and
+        # the fingerprint cache would report the repeat as a hit with zero
+        # counts, losing the record of what this pass actually published.
+        if mode == people_reconcile.MODE_APPLY and user_space is None:
+            user_space = _publish_user_space(phase_seconds)
         if discover and not args.identities_only:
             with _timed(phase_seconds, "rebuild"), db.session_scope() as session:
                 local_summary = people_reconcile.run(
@@ -252,6 +286,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 - one branch per m
                     # evidence write, so only it reconverges. Doing it twice
                     # would advance the cursor past rows this pass never read.
                     reconverge_limit=0,
+                    # The pass below reports what was published; this one only
+                    # needs the counts to decide whether to refresh summaries,
+                    # and `rebuild_tools` has already decided that for it.
+                    user_space_result=wikimedia_user_reconciliation.empty_stats(cache_hit=1),
                     deferred_conflict_refreshes=deferred_refreshes,
                 )
         else:
@@ -280,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 - one branch per m
                 reconverge_limit=args.reconverge_limit,
                 resolved_identity_candidates=resolved_identities,
                 resolved_registry_candidates=resolved_registry,
+                user_space_result=user_space,
                 deferred_conflict_refreshes=deferred_refreshes,
             )
         if deferred_refreshes:

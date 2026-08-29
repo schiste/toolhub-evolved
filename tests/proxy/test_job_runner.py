@@ -14,7 +14,14 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 from sqlalchemy.exc import DBAPIError  # noqa: E402
 
-from backend import DEFAULT_DB_URL, db, job_catalog, job_contract, job_runner  # noqa: E402
+from backend import (  # noqa: E402
+    DEFAULT_DB_URL,
+    db,
+    job_catalog,
+    job_contract,
+    job_runner,
+    wikimedia_user_reconciliation,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -255,6 +262,23 @@ def test_each_mode_waits_in_proportion_to_how_long_until_its_next_attempt(monkey
     assert ordered[-1][2] > 0, ordered[-1]
 
 
+def _stub_user_space(monkeypatch, order: list | None = None) -> None:
+    """Stub the user-space phase, which now opens a session of its own.
+
+    Entrypoint tests hand `session_scope` a null context, so the real
+    `synchronize` would be reconciling against no session at all. Pass `order`
+    to record where the phase falls relative to the lock and the remote batch.
+    """
+    import people_reconcile as entrypoint
+
+    def synchronize(_session) -> dict:
+        if order is not None:
+            order.append(("userSpace", None))
+        return wikimedia_user_reconciliation.empty_stats()
+
+    monkeypatch.setattr(entrypoint.wikimedia_user_reconciliation, "synchronize", synchronize)
+
+
 def test_a_sweep_reports_how_long_its_remote_and_local_phases_took(monkeypatch):
     """One duration for two phases cannot say which one needs the budget.
 
@@ -278,13 +302,14 @@ def test_a_sweep_reports_how_long_its_remote_and_local_phases_took(monkeypatch):
     )
     monkeypatch.setattr(entrypoint.people_reconcile, "run", lambda *_args, **_kwargs: {"mode": "apply"})
     monkeypatch.setattr(entrypoint.db, "session_scope", contextlib.nullcontext)
+    _stub_user_space(monkeypatch)
 
     entrypoint.main(["--identities-only"])
 
     phases = captured["phaseSeconds"]
     # The rebuild phase belongs to --apply, so --identities-only must not claim
     # to have spent time in a phase it never entered.
-    assert set(phases) == {"remote", "local"}
+    assert set(phases) == {"userSpace", "remote", "local"}
     # Not one total attributed twice: only the stub that slept is charged for it.
     assert phases["remote"] >= 0.05
     assert phases["local"] < phases["remote"]
@@ -640,10 +665,13 @@ def test_conflict_timestamp_refreshes_land_after_the_pass_has_committed(monkeypa
         lambda ids, *, run_id: events.append(("refresh", list(ids), run_id)) or {"requested": 1, "refreshed": 1},
     )
     monkeypatch.setattr(entrypoint.db, "session_scope", scope)
+    _stub_user_space(monkeypatch)
 
     entrypoint.main(["--identities-only"])
 
-    assert events == ["begin", "commit", ("refresh", [2700], 761)]
+    # Two transactions now: the user-space phase commits and releases its
+    # `person_identifiers` locks before the pass that used to hold them opens.
+    assert events == ["begin", "commit", "begin", "commit", ("refresh", [2700], 761)]
     # Reported, so a refresh that keeps losing its race is visible in the log
     # rather than being the silent half of an otherwise successful run.
     assert captured["conflictRefreshes"] == {"requested": 1, "refreshed": 1}
@@ -677,11 +705,14 @@ def test_the_remote_phase_of_an_identities_run_happens_before_the_lock(monkeypat
         lambda **_kwargs: order.append(("remote", None)) or (None, None),
     )
     monkeypatch.setattr(entrypoint.people_reconcile, "run", lambda *_args, **_kwargs: {"mode": "apply", "runId": 1})
+    _stub_user_space(monkeypatch, order)
 
     assert entrypoint.main(["--identities-only"]) == job_contract.EXIT_OK
 
     assert order[0] == ("remote", None)
-    assert [step for step, _name in order[1:]] == ["lock", "lock"]
+    # The user-space phase writes, so unlike the remote batch it stays inside
+    # the lock -- it moved out of the pass's transaction, not out of the lock.
+    assert [step for step, _name in order[1:]] == ["lock", "lock", "userSpace"]
 
 
 def test_a_full_pass_still_resolves_inside_the_lock(monkeypatch):
@@ -710,7 +741,8 @@ def test_a_full_pass_still_resolves_inside_the_lock(monkeypatch):
         "run",
         lambda *_args, **_kwargs: {"mode": "apply", "runId": 1, "toolsRebuilt": 0},
     )
+    _stub_user_space(monkeypatch, order)
 
     assert entrypoint.main(["--apply"]) == job_contract.EXIT_OK
 
-    assert [step for step, _name in order] == ["lock", "lock", "remote"]
+    assert [step for step, _name in order] == ["lock", "lock", "userSpace", "remote"]

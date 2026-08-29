@@ -10,7 +10,16 @@ from sqlalchemy.exc import OperationalError
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import db, identity_graph, maintainer_index, people_index, people_policy, people_reconcile, sync  # noqa: E402
+from backend import (  # noqa: E402
+    db,
+    identity_graph,
+    maintainer_index,
+    people_index,
+    people_policy,
+    people_reconcile,
+    sync,
+    wikimedia_user_reconciliation,
+)
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
     Person,
@@ -446,6 +455,67 @@ def test_identity_only_registry_resolution_applies_wikimedia_user_space_rule():
         assert summary["wikimediaUserSpaceReconciliation"]["verifiedTools"] == 1
         relationship = s.query(ToolPersonRelationship).filter_by(relationship_type="author").one()
         assert relationship.verification_status == "verified"
+
+
+def test_a_caller_that_published_user_space_evidence_is_not_made_to_publish_it_twice(monkeypatch):
+    """`user_space_result` is how the entrypoint keeps that phase's locks short.
+
+    Run inline, `synchronize` writes `person_identifiers` and those row locks
+    are held until the whole pass commits -- twenty minutes for
+    `--identities-only`. The entrypoint runs it in a transaction of its own and
+    hands the counts down; this pins that handing them down actually skips the
+    inline pass rather than silently running it a second time under the lock it
+    was moved out of.
+    """
+    _configure()
+    calls = []
+    monkeypatch.setattr(
+        wikimedia_user_reconciliation,
+        "synchronize",
+        lambda _s: calls.append(1) or wikimedia_user_reconciliation.empty_stats(),
+    )
+    published = wikimedia_user_reconciliation.empty_stats()
+    published["verifiedTools"] = 4
+    published["authorEvidence"] = 9
+
+    with db.session_scope() as s:
+        summary = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            rebuild_tools=False,
+            sync_accounts=False,
+            refresh_sources=False,
+            user_space_result=published,
+        )
+
+    assert calls == []
+    # Reported, not discarded: the counts are the record of what the pass did,
+    # and the phase that produced them no longer appears in this summary's own
+    # transaction to speak for itself.
+    assert summary["wikimediaUserSpaceReconciliation"] == published
+
+
+def test_the_default_still_publishes_user_space_evidence_inline(monkeypatch):
+    """Short-transaction callers -- projection publication, and these tests --
+    pay nothing for the lock window and should not have to plumb the phase."""
+    _configure()
+    calls = []
+    monkeypatch.setattr(
+        wikimedia_user_reconciliation,
+        "synchronize",
+        lambda _s: calls.append(1) or wikimedia_user_reconciliation.empty_stats(),
+    )
+
+    with db.session_scope() as s:
+        people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            rebuild_tools=False,
+            sync_accounts=False,
+            refresh_sources=False,
+        )
+
+    assert calls == [1]
 
 
 def test_identity_batch_limit_counts_resolvable_accounts_not_unmatched_labels():

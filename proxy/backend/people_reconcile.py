@@ -1312,6 +1312,7 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
     ]
     | None = None,
     resolved_registry_candidates: tuple[list[tuple[str, public_identity.WikimediaIdentity | None]], str] | None = None,
+    user_space_result: dict[str, int] | None = None,
     deferred_conflict_refreshes: list[int] | None = None,
 ) -> dict[str, Any]:
     """Audit or rebuild Toolhub-backed evidence and local people projections.
@@ -1320,6 +1321,15 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
     seen again unchanged instead of writing their timestamps here; feed the list
     to `refresh_conflicts_seen` once this session has committed. See
     `_record_conflict_sighting` for why a long pass must not write them inline.
+
+    Pass `user_space_result` when the caller has already run
+    `wikimedia_user_reconciliation.synchronize` in a transaction of its own; its
+    counts are then reported and acted on here without repeating the pass. That
+    is how the entrypoint keeps the `person_identifiers` locks that phase takes
+    from being held for the rest of the run -- see `_synchronize_user_space`.
+    `None` runs it inline, which is right for any caller whose transaction is
+    short: projection publication, and the tests. Ignored in dry-run mode, which
+    publishes no user-space evidence at all.
     """
     if mode not in {MODE_DRY_RUN, MODE_APPLY}:
         raise PersonReconciliationError(mode)
@@ -1414,7 +1424,9 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
                 if discover_candidates and registry_label_limit
                 else {"checked": 0, "resolved": 0, "peopleCreated": 0}
             )
-            wikimedia_user_space_result = wikimedia_user_reconciliation.synchronize(s)
+            wikimedia_user_space_result = (
+                user_space_result if user_space_result is not None else wikimedia_user_reconciliation.synchronize(s)
+            )
             source_attestation_summary = {
                 "sources": 0,
                 "tools": 0,
