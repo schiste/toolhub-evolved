@@ -202,18 +202,26 @@ def _scheduled_modes() -> dict[str, str]:
     return modes
 
 
-def _wait_for(mode: str, monkeypatch) -> int:
-    """Ask the entrypoint itself what it would wait, rather than the constant."""
+def _run_job_kwargs(argv: list[str], monkeypatch) -> dict:
+    """Ask the entrypoint itself what it would pass, rather than the constants."""
     import people_reconcile as entrypoint
 
-    seen: list[int] = []
+    seen: list[dict] = []
     monkeypatch.setattr(
         job_runner,
         "run_job",
-        lambda _name, _body, **kwargs: seen.append(kwargs.get("lock_wait_seconds")) or job_contract.EXIT_OK,
+        lambda _name, _body, **kwargs: seen.append(kwargs) or job_contract.EXIT_OK,
     )
-    entrypoint.main([mode])
+    entrypoint.main(argv)
     return seen[0]
+
+
+def _wait_for(mode: str, monkeypatch) -> int:
+    return _run_job_kwargs([mode], monkeypatch).get("lock_wait_seconds")
+
+
+def _retry_budget_for(argv: list[str], monkeypatch) -> int:
+    return _run_job_kwargs(argv, monkeypatch).get("retry_on_lock_timeout")
 
 
 def test_each_mode_waits_in_proportion_to_how_long_until_its_next_attempt(monkeypatch):
@@ -427,6 +435,111 @@ def test_a_failure_that_is_not_a_disconnect_is_not_retried():
     with pytest.raises(DBAPIError):
         job_runner.run_job("example-job", body, retry_on_disconnect=True)
     assert attempts == [1]
+
+
+def _lock_timeout() -> Exception:
+    """Build the DBAPIError PyMySQL raises when InnoDB stops waiting on a row."""
+    return DBAPIError("UPDATE person_identifiers ...", {}, Exception(1205, "Lock wait timeout exceeded"))
+
+
+def _clock(*ticks: float, monkeypatch) -> None:
+    """Hand run_job a start and an elapsed reading, so the budget is testable."""
+    readings = iter(ticks)
+    monkeypatch.setattr(job_runner.time, "monotonic", lambda: next(readings))
+
+
+def test_a_row_lock_lost_early_enough_to_try_again_is_tried_again(capsys, monkeypatch):
+    """The database rolled the transaction back, so there is nothing to resume.
+
+    This is what ended people-identity-reconcile 205s into a 1500s timeout on
+    2026-08-29: an UPDATE waited out innodb_lock_wait_timeout and took the pass
+    with it, an hour before the next attempt.
+    """
+    _clock(0.0, 205.0, monkeypatch=monkeypatch)
+    attempts = []
+
+    def body() -> dict:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise _lock_timeout()
+        return {"attempt": len(attempts)}
+
+    code = job_runner.run_job("example-job", body, retry_on_lock_timeout=750)
+    assert code == job_contract.EXIT_OK
+    assert attempts == [1, 1]
+    assert "lost a row lock 205s in; retrying once" in capsys.readouterr().err
+
+
+def test_a_row_lock_lost_too_late_to_finish_a_second_pass_is_reported_instead(capsys, monkeypatch):
+    """A retry costs what the aborted attempt cost, and past the budget the job
+    would be killed part way through it -- which says nothing at all, whereas
+    this failure mails."""
+    _clock(0.0, 900.0, monkeypatch=monkeypatch)
+    attempts = []
+
+    def body() -> dict:
+        attempts.append(1)
+        raise _lock_timeout()
+
+    with pytest.raises(DBAPIError):
+        job_runner.run_job("example-job", body, retry_on_lock_timeout=750)
+    assert attempts == [1]
+    assert "too late in the run to retry" in capsys.readouterr().err
+
+
+def test_the_lock_retry_is_opt_in_so_a_job_with_no_budget_never_repeats_its_body(monkeypatch):
+    _clock(0.0, 5.0, monkeypatch=monkeypatch)
+    attempts = []
+
+    def body() -> dict:
+        attempts.append(1)
+        raise _lock_timeout()
+
+    with pytest.raises(DBAPIError):
+        job_runner.run_job("example-job", body)
+    assert attempts == [1]
+
+
+def test_a_failure_that_is_not_a_lock_conflict_does_not_spend_the_lock_budget(monkeypatch):
+    _clock(0.0, 5.0, monkeypatch=monkeypatch)
+    attempts = []
+
+    def body() -> dict:
+        attempts.append(1)
+        # The statement was rejected rather than rolled back, so a second
+        # attempt has the same argument with the same database.
+        raise _rejected()
+
+    with pytest.raises(DBAPIError):
+        job_runner.run_job("example-job", body, retry_on_lock_timeout=750)
+    assert attempts == [1]
+
+
+def test_each_scheduled_mode_budgets_its_retry_out_of_the_timeout_jobs_yaml_declares(monkeypatch):
+    """The retry has to fit inside the timeout it is racing, and only jobs.yaml
+    knows what that is -- a ceiling guessed in the entrypoint is exactly how a
+    retry ends up running past a timeout it never knew about."""
+    import people_reconcile as entrypoint
+
+    jobs = {job.name: job for job in job_catalog.load(ROOT / "jobs.yaml")}
+    modes = _scheduled_modes()
+    assert len(modes) >= 4, modes
+
+    for mode, job_name in modes.items():
+        declared = jobs[job_name].timeout_seconds
+        assert declared > 0, f"{job_name} declares no timeout to budget against"
+        # The four timeouts differ, so a mode that resolved the wrong job here
+        # cannot land on the right number by accident.
+        budget = _retry_budget_for([mode], monkeypatch)
+        assert budget == declared // entrypoint.LOCK_RETRY_BUDGET_FRACTION, mode
+        assert 0 < budget < declared
+
+
+def test_a_mode_nothing_schedules_gets_no_budget_rather_than_a_borrowed_one(monkeypatch):
+    """Nothing times out a hand-run pass, so there is no timeout to divide and
+    an operator watching one does not need a retry to learn it lost a lock."""
+    assert _retry_budget_for([], monkeypatch) == 0
+    assert _retry_budget_for(["--retirements"], monkeypatch) == 0
 
 
 def test_the_retry_re_enters_through_the_lock_rather_than_resuming_inside_it(capsys, monkeypatch):

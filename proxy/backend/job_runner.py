@@ -131,6 +131,24 @@ def _run_once(
     return job_contract.EXIT_OK
 
 
+def _lock_retry_due(name: str, error: DBAPIError, budget_seconds: int, elapsed: float) -> bool:
+    """Whether a run the database rolled back for a lock has time to try again.
+
+    A retry costs about what the aborted attempt would have, so it is only
+    offered while at least that much of the job's timeout is left. Past that
+    the abort is reported as the failure it is: exit 1 mails, whereas a retry
+    that runs past the timeout is a SIGKILL, and a kill is one of the three
+    ways a job dies without saying anything at all.
+    """
+    if budget_seconds <= 0 or not db.is_transient_lock_error(error):
+        return False
+    if elapsed > budget_seconds:
+        sys.stderr.write(f"{name}: lost a row lock {int(elapsed)}s in; too late in the run to retry\n")
+        return False
+    sys.stderr.write(f"{name}: lost a row lock {int(elapsed)}s in; retrying once\n")
+    return True
+
+
 def run_job(  # noqa: PLR0913 - one keyword per job-shape difference, which is the point of the scaffold
     name: str,
     body: Callable[[], Any],
@@ -138,6 +156,7 @@ def run_job(  # noqa: PLR0913 - one keyword per job-shape difference, which is t
     lock: bool = False,
     lock_wait_seconds: int = 0,
     retry_on_disconnect: bool = False,
+    retry_on_lock_timeout: int = 0,
     before_lock: Callable[[], None] | None = None,
 ) -> int:
     """Run one job body with the shared database, lock, and exit conventions.
@@ -177,15 +196,28 @@ def run_job(  # noqa: PLR0913 - one keyword per job-shape difference, which is t
     dropped connection releases the locks it held, so continuing would run
     unserialized against whoever acquired it next; re-acquiring either wins the
     lock again or reports the skip that losing it has always meant.
+
+    ``retry_on_lock_timeout`` is the same bargain for the other way ToolsDB
+    ends a long pass: an InnoDB lock wait that expires takes the whole
+    transaction with it, and MySQL's own advice for errno 1205 is to run it
+    again. It is a number of seconds, not a flag, because the retry is only
+    worth offering while the timeout has room for it -- see `_lock_retry_due`.
+    Like the disconnect retry it is opt-in and happens once: a body that lost
+    the same race twice is contending with something a third attempt will not
+    outlast, and saying so is more useful than a third.
     """
     configure()
+    # Only the lock budget needs the clock, and reading it unconditionally would
+    # make every other caller pay for a feature it did not ask for.
+    started = time.monotonic() if retry_on_lock_timeout else 0.0
     try:
         return _run_once(name, body, lock=lock, lock_wait_seconds=lock_wait_seconds, before_lock=before_lock)
     except DBAPIError as exc:
-        if not (retry_on_disconnect and exc.connection_invalidated):
+        if retry_on_disconnect and exc.connection_invalidated:
+            # Every pooled connection to a server that closed one is suspect, so
+            # the retry starts from an empty pool rather than the next dead checkout.
+            sys.stderr.write(f"{name}: database connection lost mid-run; retrying once\n")
+            db.engine().dispose()
+        elif not _lock_retry_due(name, exc, retry_on_lock_timeout, time.monotonic() - started):
             raise
-        # Every pooled connection to a server that closed one is suspect, so
-        # the retry starts from an empty pool rather than the next dead checkout.
-        sys.stderr.write(f"{name}: database connection lost mid-run; retrying once\n")
-    db.engine().dispose()
     return _run_once(name, body, lock=lock, lock_wait_seconds=lock_wait_seconds, before_lock=before_lock)

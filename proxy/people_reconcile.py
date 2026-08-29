@@ -9,7 +9,7 @@ import time
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from backend import db, job_runner, people_reconcile
+from backend import db, job_catalog, job_runner, people_reconcile
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -51,6 +51,59 @@ if TYPE_CHECKING:
 # below are unchanged -- what a wait buys is what changed.
 HOURLY_LOCK_WAIT_SECONDS = 120
 FULL_PASS_LOCK_WAIT_SECONDS = 600
+
+
+#: Which Toolforge job runs each scheduled mode. jobs.yaml declares the
+#: timeouts, so the retry budget below is read from there rather than repeated
+#: here where the two could drift; a test pins these names against the file.
+#: The unscheduled modes -- a bare dry run, and --retirements -- are absent on
+#: purpose: nothing times them out, and an operator watching one does not need
+#: a retry to find out it lost a lock.
+MODE_JOB_NAMES = {
+    "queue": "people-reconcile-incremental",
+    "reconverge": "people-attribution-reconverge",
+    "identities_only": "people-identity-reconcile",
+    "full": "people-reconcile",
+}
+#: A retry needs at least as long as the attempt it replaces, so it is offered
+#: only in the first half of the declared timeout.
+LOCK_RETRY_BUDGET_FRACTION = 2
+
+
+def _mode_job_name(args: argparse.Namespace) -> str:
+    """Return the Toolforge job that runs this mode, empty when hand-run."""
+    if args.retirements:
+        return ""
+    if args.queue:
+        return MODE_JOB_NAMES["queue"]
+    if args.reconverge:
+        return MODE_JOB_NAMES["reconverge"]
+    if args.identities_only:
+        return MODE_JOB_NAMES["identities_only"]
+    return MODE_JOB_NAMES["full"] if args.apply else ""
+
+
+def _lock_retry_deadline_seconds(args: argparse.Namespace) -> int:
+    """How late into this mode's timeout a lock abort may still be retried.
+
+    Every mode here writes in one transaction it re-decides from present
+    evidence, so a run the database rolled back left nothing behind and a
+    second attempt reaches the state the first would have -- the same property
+    that already makes `retry_on_disconnect` safe. What differs is the cost: an
+    InnoDB lock wait expires 50s in, and on 2026-08-29 that ended a 205s
+    --identities-only pass on `UPDATE person_identifiers` and cost the hour.
+
+    Zero for a mode nothing schedules, and zero when jobs.yaml does not declare
+    the job, rather than a guessed ceiling: a budget invented here is exactly
+    how a retry ends up running past a timeout it never knew about.
+    """
+    name = _mode_job_name(args)
+    if not name:
+        return 0
+    declared = next((job for job in job_catalog.load() if job.name == name), None)
+    if declared is None or declared.timeout_seconds <= 0:
+        return 0
+    return declared.timeout_seconds // LOCK_RETRY_BUDGET_FRACTION
 
 
 def _lock_wait_seconds(args: argparse.Namespace) -> int:
@@ -251,6 +304,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 - one branch per m
         lock=True,
         lock_wait_seconds=_lock_wait_seconds(args),
         before_lock=prefetch_remote_batches if args.identities_only else None,
+        # Same idempotence as the disconnect retry above, for the other way
+        # ToolsDB ends a long pass: a row lock this run waited out.
+        retry_on_lock_timeout=_lock_retry_deadline_seconds(args),
         # Every mode here re-decides from present evidence and writes in one
         # transaction, so a run that lost its connection left nothing behind and
         # a second attempt reaches the same state the first would have.
