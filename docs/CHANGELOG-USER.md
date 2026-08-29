@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: attribution-stops-losing-its-turn -->
 <!-- Release title: Attribution Stops Losing Its Turn -->
-<!-- Source range: a1f7f053..c59c52e6 (3 commits, promoted as one) -->
+<!-- Source range: a1f7f053..4b76cfb0 (3 commits, promoted in two steps) -->
 
 # What's New for Users
 
