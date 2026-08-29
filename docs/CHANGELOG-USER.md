@@ -1,14 +1,13 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: attribution-stops-losing-its-turn -->
-<!-- Release title: Attribution Stops Losing Its Turn -->
-<!-- Source range: a1f7f053..4b76cfb0 (3 commits, promoted in two steps) -->
+<!-- Release id: a-lost-lock-no-longer-costs-the-hour -->
+<!-- Release title: A Lost Lock No Longer Costs the Hour -->
+<!-- Source range: 1322cff2..776c3197 (1 commit) -->
 
 # What's New for Users
 
-- Working out who wrote and who maintains each tool had quietly stopped. The hourly task that does it takes about twenty-three minutes, and for most of a day it either crashed partway through or never started at all. Authorship on tool pages, and the queue of authorship conflicts waiting for a moderator, went stale without anything saying so.
-- It crashed on a collision with another task over the same row, and the write it died on was one nobody reads: a "still true" timestamp, refreshed every six hours, on a conflict that had not changed. That refresh now happens after the real work is safely saved, in a moment of its own, and losing it costs nothing.
-- It failed to start for a different reason. Four related tasks take turns through a single token, and one of them asks for it every minute while the big one asks once an hour. Whoever asks at the instant the token frees gets it, so the frequent one kept winning — eight hours in a row at the worst. Asking now reserves a place in the queue, and the every-minute task steps aside for one minute when it sees somebody waiting.
-- The big task also spends its first two minutes fetching from Wikimedia. It now does that before it takes the token rather than after, so it holds up the others for two minutes less each hour.
-- When a task couldn't get its turn, the workers page recorded it as a run that succeeded. It was the fourth way a task could stop without anyone finding out, alongside the three fixed in the last release. A skipped turn is now shown as skipped.
-- Nothing about how you use the site changes. This is about the catalogue's authorship staying current on its own, rather than depending on somebody noticing it had not.
+- The task that keeps track of who wrote and who maintains each tool ran once more after yesterday's fixes and stopped again about three minutes in, this time colliding with a different part of the catalogue than the one that was fixed. Nothing it had done was saved, and nothing tried again until the next hour.
+- When two things reach for the same record at the same moment, the database picks one and undoes the other's work completely. The task now notices when it was the one undone and starts over straight away, instead of losing the hour.
+- It only starts over when there is time to finish. Each of these tasks has a deadline, and a second attempt costs about what the abandoned one did, so a fresh start is offered only in the first half of that deadline. Any later and the task stops and reports the failure, which is how somebody finds out.
+- It starts over once, not repeatedly. Losing the same race twice means something is holding on that a third attempt would not outlast, and saying so is more useful than trying again.
+- Nothing about how you use the site changes. This is the same work as yesterday's release: authorship on tool pages staying current on its own, rather than depending on somebody noticing that it had not.
