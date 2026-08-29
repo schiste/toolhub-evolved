@@ -436,3 +436,76 @@ def test_a_row_written_before_the_columns_existed_is_not_read_as_deprecated():
 
     assert "alpha" in [row["name"] for row in default["results"]]
     assert "alpha" not in [row["name"] for row in only_flagged["results"]]
+
+
+def _names(**params):
+    return [row["name"] for row in catalog_read.search_payload({"page_size": "50", **params})["results"]]
+
+
+def test_every_word_of_a_multi_word_query_is_matched_separately():
+    """The defect this replaces: the whole query was one contiguous substring.
+
+    "alpha editor" is two words of one record and matched; "editor alpha" is
+    the same two words out of order and matched nothing, which is what made
+    every ordinary two-word query answer zero.
+    """
+    assert _names(q="alpha") == ["alpha"]
+    assert _names(q="editor") == ["alpha"]
+    assert _names(q="editor alpha") == ["alpha"]
+    assert _names(q="alpha editor") == ["alpha"]
+
+
+def test_a_query_can_span_two_fields_of_one_record():
+    """`_search_text` joins name, title and description with newlines.
+
+    No contiguous substring could ever cross one, so a query mixing a name and
+    a word from its description was unanswerable however it was spelled.
+    """
+    assert _names(q="alpha wikidata") == ["alpha"]
+    assert _names(q="beta wikipedia") == ["beta"]
+
+
+def test_extra_words_narrow_rather_than_widen():
+    """Terms are AND-ed, which is what the tool description now promises."""
+    assert _names(q="editor") == ["alpha"]
+    assert _names(q="editor wikipedia") == []
+
+
+def test_matching_is_case_and_whitespace_insensitive():
+    assert _names(q="  ALPHA   Editor  ") == ["alpha"]
+
+
+def test_a_query_of_only_whitespace_filters_nothing():
+    assert sorted(_names(q="   ")) == ["alpha", "beta"]
+
+
+def test_wildcards_in_a_term_stay_literal():
+    """Per-term escaping, so one `%` cannot turn a narrow query into a scan."""
+    assert _names(q="alpha %") == []
+    assert _names(q="%") == []
+
+
+def test_a_pasted_sentence_is_truncated_rather_than_refused():
+    """The cap bounds how many LIKEs one query can build, and never errors."""
+    padding = " ".join(f"w{i}" for i in range(canonical_tools.MAX_SEARCH_TERMS * 3))
+    terms = canonical_tools.search_terms(f"alpha {padding}")
+
+    assert terms[0] == "alpha"
+    assert len(terms) == canonical_tools.MAX_SEARCH_TERMS
+    # A working query either way -- the surviving terms still have to match.
+    assert _names(q=f"alpha {padding}") == []
+
+
+def test_repeated_words_do_not_multiply_the_query():
+    assert canonical_tools.search_terms("alpha alpha ALPHA") == ["alpha"]
+
+
+def test_the_offline_fallback_reads_a_query_the_same_way():
+    """`canonical_tools.search` is what the catalog page falls back to on failure.
+
+    It had its own copy of the single-substring match, so a fallback answered a
+    two-word query with nothing while the page it replaced had found results.
+    """
+    assert [row["toolName"] for row in canonical_tools.search("editor alpha")] == ["alpha"]
+    assert [row["toolName"] for row in canonical_tools.search("alpha wikidata")] == ["alpha"]
+    assert canonical_tools.search("editor wikipedia") == []

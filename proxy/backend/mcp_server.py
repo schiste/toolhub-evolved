@@ -99,13 +99,17 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "name": "search_tools",
         "description": (
-            "Relevance-ranked search over all ~4,500 Wikimedia tools in the Toolhub "
-            "catalog, served from Toolhub Evolved's synchronized local replica. Covers "
-            "the latest complete catalog generation without request-time upstream calls. "
-            "Keep queries SHORT and distinctive (2-3 content words): terms are matched "
-            "independently and scored, so extra common words ('wikipedia', 'check', "
-            "'tool') pull in unrelated results and push good ones down. Prefer several "
-            "narrow queries with different vocabulary over one long descriptive one."
+            "Substring search over every Wikimedia tool in the Toolhub catalog -- "
+            "including the gadgets and user scripts Toolhub Evolved contributes -- served "
+            "from a synchronized local replica. Covers the latest complete catalog "
+            "generation without request-time upstream calls. Every word you supply must "
+            "appear somewhere in the tool's name, title, description or keywords, so each "
+            "extra word NARROWS the result set and a word that is merely plausible "
+            "('wikipedia', 'check', 'tool') can empty it. Keep queries SHORT and "
+            "distinctive (2-3 content words), and prefer several narrow queries with "
+            "different vocabulary over one long descriptive one. Words are matched as "
+            "substrings, not stemmed: results are not ranked by relevance, so an empty "
+            "result means no tool contains all your words, not that none exists."
         ),
         "inputSchema": {
             "type": "object",
@@ -381,10 +385,12 @@ _PRIOR_ART_PROMPT = (
     "whether it is too similar to existing tools to justify, or whether it is "
     "genuinely novel and differentiated.\n\n"
     "You have three catalog-discovery tools available:\n\n"
-    "1. **search_tools(query, limit=10)**: Relevance-ranked search across the full "
-    "~4,500-tool catalog. Keep queries short and distinctive (2-3 content words); "
-    "longer queries introduce noise. Prefer several narrow queries with different "
-    "vocabulary.\n\n"
+    "1. **search_tools(query, limit=10)**: Substring search across the full catalog "
+    "of Wikimedia tools, gadgets and user scripts. Every word must appear in the "
+    "record, so each extra word narrows the results and can empty them. Keep queries "
+    "short and distinctive (2-3 content words), and prefer several narrow queries "
+    "with different vocabulary. Results are not ordered by relevance, so an empty "
+    "result means no tool contains all your words, not that none exists.\n\n"
     "2. **facet_tools(dependency=[], api=[], detected_technology=[], "
     "declared_technology=[], tool_type=[], keyword=[], wiki=[], license=[], "
     "ui_language=[], task=[], audience=[], limit=25)**: Find tools by technical "

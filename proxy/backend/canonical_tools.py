@@ -16,7 +16,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlparse
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import catalog_facets, db
@@ -26,10 +26,17 @@ from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+    from sqlalchemy.sql.elements import ColumnElement
 
 MAX_INGEST_TOOLS = 100
 MAX_QUERY_NAMES = 50
 MAX_SEARCH_RESULTS = 50
+# Terms honored from one free-text query. A longer query is truncated rather
+# than refused: an LLM caller that pastes a whole sentence should get the best
+# match for its leading content words, not an error. Truncation drops
+# conjuncts, so it can only widen the result set -- it can never hide a tool a
+# shorter query would have found.
+MAX_SEARCH_TERMS = 8
 MAX_SOURCE_URL = 2000
 TOOL_DETAIL_PARTS = 3
 MAX_RECORD_RESULTS = 5000
@@ -262,6 +269,36 @@ def _has_value(value: Any) -> bool:  # noqa: ANN401 - official API JSON
 def escape_like(term: str) -> str:
     """Escape LIKE wildcards so a query for "100%" is not a match-anything pattern."""
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def search_terms(query: str) -> list[str]:
+    """Split a free-text query into the terms a row has to contain, all of them.
+
+    One shared reading of a query, because there were two before and both were
+    the same mistake: the entire string went into a single `LIKE %...%`, so a
+    match had to contain the words *contiguously*. `lupin popups` found nothing
+    while `lupin` and `popups` each found plenty, and since `_search_text` joins
+    name, title and description with newlines, no query spanning two of those
+    fields could ever match at all. Two-word queries are the ordinary case here
+    -- the MCP tool description asks callers for exactly that shape.
+    """
+    return list(dict.fromkeys(part for part in str(query or "").casefold().split() if part))[:MAX_SEARCH_TERMS]
+
+
+def search_predicate(query: str) -> ColumnElement[bool] | None:
+    """AND one `search_text` substring test per term; None when there is no query.
+
+    AND rather than the scored OR the MCP tool advertises, because ranking does
+    not exist yet: `search_payload` falls through to ordering by tool name. An
+    OR with no scorer behind it would answer "wikipedia bot" with a thousand
+    alphabetical tools over 53,000 rows, most of them matching only
+    "wikipedia", which is a worse answer than the empty one this replaces. Narrowing is the honest behaviour to ship
+    without a scorer, and the tool descriptions now say so.
+    """
+    terms = search_terms(query)
+    if not terms:
+        return None
+    return and_(*(CanonicalToolCache.search_text.like(f"%{escape_like(term)}%", escape="\\") for term in terms))
 
 
 def _merge_listing_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
@@ -622,15 +659,15 @@ def search(
     would have answered a search with mostly tools nobody loads. Fetching by
     name is unaffected -- asking for a row by name is asking for it on purpose.
     """
-    term = str(query or "").strip().casefold()
+    predicate = search_predicate(query)
     capped = max(1, min(MAX_SEARCH_RESULTS, int(limit or MAX_SEARCH_RESULTS)))
     population = select(CanonicalToolCache) if include_archived else catalog_facets.default_population()
     statement = population.order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
     status = catalog_facets.status_predicate(catalog_facets.STATUS_VALUES if statuses is None else statuses)
     if status is not None:
         statement = statement.where(status)
-    if term:
-        statement = statement.where(CanonicalToolCache.search_text.like(f"%{escape_like(term)}%", escape="\\"))
+    if predicate is not None:
+        statement = statement.where(predicate)
     with db.session_scope() as s:
         rows = list(s.execute(statement.limit(capped)).scalars())
     return [_payload(row) for row in rows]

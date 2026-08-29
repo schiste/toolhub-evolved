@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 from sqlalchemy import func, select
 
 from backend import activity_privacy, api_cache, catalog_facets, db, list_revisions, paging
-from backend.canonical_tools import escape_like
+from backend.canonical_tools import search_predicate
 from backend.catalog_facets import STATUS_VALUES, selected_statuses, status_predicate
 from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
 
@@ -81,9 +81,9 @@ def include_archived(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or 
 
 def _filtered_statement(params: Any) -> Select[tuple[CanonicalToolCache]]:  # noqa: ANN401
     statement = select(CanonicalToolCache) if include_archived(params) else catalog_facets.default_population()
-    query = str(params.get("q") or "").strip().casefold()
-    if query:
-        statement = statement.where(CanonicalToolCache.search_text.like(f"%{escape_like(query)}%", escape="\\"))
+    predicate = search_predicate(params.get("q"))
+    if predicate is not None:
+        statement = statement.where(predicate)
     for public_field, stored_field in FACET_FIELDS.items():
         selected = _values(params, f"{public_field}__term")
         if not selected:
