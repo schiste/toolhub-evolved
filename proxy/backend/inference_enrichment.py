@@ -52,7 +52,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import requests
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 
 from backend import db, digests, run_budget, userscripts
 from backend.models import ToolInference, UserScriptDirectoryEntry, UserScriptPage, utcnow
@@ -126,9 +126,16 @@ STATUS_ERROR = "error"
 # hammered by an hourly job, short enough that a page recovers the same day.
 # Rejections are deliberately not retried: those are statements about the
 # answer, and re-asking the same model about unchanged bytes returns it again.
+# `pending` carries one bounded exception, for rejections stored before the
+# reply was kept; see its docstring.
 RETRY_ERROR_AFTER = timedelta(hours=6)
 
 MAX_DETAIL_CHARS = 500
+# How much of the model's reply is kept when something in it was refused. A
+# well-formed answer is a few hundred characters of JSON; this is generous
+# enough to hold a malformed one whole and small enough that 4,260 of them are
+# a rounding error beside the bodies they were read from.
+MAX_REPLY_CHARS = 2_000
 
 DEFAULT_USER_AGENT = "toolhub-evolved/0.2 (catalogue enrichment)"
 DEFAULT_TIMEOUT_SECONDS = 60
@@ -315,6 +322,17 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
     first so a retry can only ever use a slot nobody else wanted, which is what
     `ask_one` promised when it started storing failures at all.
 
+    Plus, once, the rejections stored before `ToolInference.reply` existed. A
+    rejection is normally never retried -- the bytes have not changed, so the
+    same model returns the same answer at full price -- and this is not a change
+    to that rule. It is the one window in which those 4,260 rows can acquire
+    what a rejection is for: `detail` names the rule the answer broke, but every
+    one of them recorded it against a reply nobody kept, so "description too
+    short" cannot be told from "the endpoint returned an error page". The re-ask
+    stores the reply, and because `record` writes that column whatever the
+    outcome, the row leaves this arm permanently on its first pass through it --
+    the "once" is a property of the predicate, not a counter that could drift.
+
     The selection is a left join against `tool_inference` on (page, fingerprint)
     keeping the misses, so a sweep over an already-enriched corpus reads an
     index rather than 37,791 bodies. Doing it in Python instead -- load every
@@ -381,6 +399,7 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             or_(
                 ToolInference.tool_name.is_(None),
                 (ToolInference.status == STATUS_ERROR) & (ToolInference.checked_at < retry_before),
+                (ToolInference.status == STATUS_REJECTED) & ToolInference.reply.is_(None),
             ),
             # Was a Python skip over an already-loaded body. In SQL it also
             # keeps pages too short to describe out of the window, instead of
@@ -389,9 +408,19 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             # little more than it should; `with_source` re-checks exactly.
             func.length(UserScriptPage.body) >= MIN_SOURCE_CHARS,
         )
-        # Untried pages before retries, so a page nobody has ever asked about is
-        # never displaced by one whose only news is that the endpoint was down.
-        .order_by(ToolInference.tool_name.is_(None).desc(), UserScriptPage.id)
+        # Untried pages first, then error retries, then the rejection backfill.
+        # Each tier can only use slots the tier above it did not want, so a page
+        # nobody has ever asked about is never displaced by one whose only news
+        # is that the endpoint was down, and neither is displaced by a re-ask of
+        # an answer that has already been read once.
+        .order_by(
+            case(
+                (ToolInference.tool_name.is_(None), 0),
+                (ToolInference.status == STATUS_ERROR, 1),
+                else_=2,
+            ),
+            UserScriptPage.id,
+        )
         .limit(limit)
     )
     found: list[Candidate] = []
@@ -448,6 +477,10 @@ class Outcome(NamedTuple):
     status: str
     accepted: dict[str, Any]
     detail: str = ""
+    # The reply itself, where `detail` says part of it was refused. Empty when
+    # nothing was: a fully accepted answer is already stored, as `accepted`, and
+    # keeping the prose it arrived in beside it stores the same thing twice.
+    reply: str = ""
 
 
 def record(session: Session, candidate: Candidate, outcome: Outcome, *, model: str) -> None:
@@ -467,6 +500,12 @@ def record(session: Session, candidate: Candidate, outcome: Outcome, *, model: s
     row.model = model[:64]
     row.status = outcome.status
     row.detail = outcome.detail[:MAX_DETAIL_CHARS]
+    # Always assigned, including the empty string. `reply` being NULL is what
+    # marks a row this code has never written, and a re-ask that stores "" has
+    # still answered that question -- so a row leaves the backfill window on the
+    # first re-ask whatever came of it, which is what makes "once" structural
+    # rather than a counter somebody has to keep.
+    row.reply = outcome.reply[:MAX_REPLY_CHARS]
     row.checked_at = utcnow()
 
 
@@ -493,6 +532,7 @@ def _ask(
     except Exception as exc:  # noqa: BLE001 - one page's outage must not end the sweep
         return Outcome(STATUS_ERROR, {}, f"{type(exc).__name__}: {exc}")
     text = model_text(response)
+    collapsed = " ".join(text.split())
     parsed = parse_json(text)
     if parsed is None:
         # No field-level verdict exists when nothing parsed, so the reply is its
@@ -500,7 +540,7 @@ def _ask(
         # off-format or the endpoint returned something that was never a model
         # reply at all.
         sample = " ".join(text.split())[:200]
-        return Outcome(STATUS_REJECTED, {}, f"unparsed reply: {sample or '(empty)'}")
+        return Outcome(STATUS_REJECTED, {}, f"unparsed reply: {sample or '(empty)'}", collapsed)
     verdicts = check(parsed)
     accepted = {field: verdict.value for field, verdict in verdicts.items() if verdict.value}
     # Written whatever the status, not only on rejection. A reply whose keywords
@@ -508,7 +548,12 @@ def _ask(
     # description -- exactly the gap this lane exists to close, and invisible in
     # the status alone.
     detail = "; ".join(f"{field}: {verdict.reason}" for field, verdict in verdicts.items() if verdict.reason)
-    return Outcome(STATUS_READY if accepted else STATUS_REJECTED, accepted, detail)
+    # The reply follows the detail, not the status. `detail` names the rule a
+    # field broke; without the words that broke it, a reader can tell that a
+    # description was too short but not whether the model wrote a bad one or the
+    # prompt asked for the wrong thing -- which is the difference between a
+    # rejection worth fixing and one worth accepting.
+    return Outcome(STATUS_READY if accepted else STATUS_REJECTED, accepted, detail, collapsed if detail else "")
 
 
 def ask_one(

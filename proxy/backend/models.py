@@ -2186,4 +2186,10 @@ class ToolInference(Base):
     model: Mapped[str] = mapped_column(String(64), default="")
     status: Mapped[str] = mapped_column(String(16), default="")
     detail: Mapped[str] = mapped_column(Text, default="")
+    # The model's own words, kept only where `detail` says something was
+    # refused. Nullable rather than defaulted to "" for the same reason
+    # `wiki_gadgets.description` is: 4,260 rows predate this column, and an
+    # empty string here would claim the model replied with nothing, when in
+    # fact nobody ever wrote the reply down. NULL is how those rows are found.
+    reply: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

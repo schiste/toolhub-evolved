@@ -323,6 +323,15 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # nothing. The first census pass after this fills it.
             "description": f"{text_col} NULL",
         },
+        "tool_inference": {
+            # What the model actually replied, kept where the reply was refused.
+            # Nullable on the same terms as `wiki_gadgets.description`: 4,260
+            # rows were stored before this column existed and none of them kept
+            # the reply, so NULL means "nobody wrote it down" and an empty
+            # string means "asked, and nothing was refused". The sweep uses that
+            # difference to find the rows worth asking about once more.
+            "reply": f"{text_col} NULL",
+        },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",
             # Nullable with no default, deliberately: every existing row starts

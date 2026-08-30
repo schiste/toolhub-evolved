@@ -115,6 +115,23 @@ def details():
         return {row.tool_name: row.detail for row in session.query(ToolInference)}
 
 
+def replies():
+    with db.session_scope() as session:
+        return {row.tool_name: row.reply for row in session.query(ToolInference)}
+
+
+def forget_replies():
+    """Blank the reply column, standing in for a row stored before it existed.
+
+    NULL is the only mark those 4,260 rows carry, so a test that wants one has
+    to produce it the way production did: store a rejection, then take the reply
+    away. Constructing the row by hand instead would test the fixture.
+    """
+    with db.session_scope() as session:
+        for row in session.query(ToolInference):
+            row.reply = None
+
+
 def outage(message="503 Server Error: Service Unavailable"):
     """An `ask` that fails the way Lift Wing did on 2026-08-26."""
 
@@ -230,6 +247,34 @@ def test_an_endpoint_failure_still_records_the_exception():
     assert details()[TOOL] == "RuntimeError: 503 Server Error: Service Unavailable"
 
 
+def test_a_refusal_keeps_the_words_that_were_refused():
+    # `detail` names the rule that was broken; on its own it cannot say whether
+    # the model wrote a bad answer or the prompt asked for the wrong thing. The
+    # reply is the only thing that can, and re-asking to see it costs the call
+    # again -- which for the 4,260 rows stored without it is the whole problem.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REFUSAL))
+    assert replies()[TOOL] == REAL_REFUSAL
+
+
+def test_an_answer_that_was_accepted_whole_is_not_stored_twice():
+    # Nothing was refused, so there is nothing the reply explains that `payload`
+    # does not already hold -- and this table is 37,791 rows wide.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REPLY))
+    assert rows()[TOOL][0] == enrichment.STATUS_READY
+    assert replies()[TOOL] == ""
+
+
+def test_a_reply_too_long_to_keep_whole_is_cut_rather_than_dropped():
+    # A malformed reply can be arbitrarily long -- an HTML error page, a model
+    # that never stopped generating -- and the first characters are what say
+    # which of those it was.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply("garbage " * 5_000))
+    assert len(replies()[TOOL]) == enrichment.MAX_REPLY_CHARS
+
+
 # --- what is worth asking about --------------------------------------------
 
 
@@ -286,6 +331,57 @@ def test_a_page_nobody_has_tried_is_offered_before_a_page_awaiting_a_retry():
     store("User:B/two.js", owner="B", basename="two.js", fingerprint="b")
     with db.session_scope() as session:
         assert names(enrichment.pending(session)) == ["User:B/two.js", "User:A/one.js"]
+
+
+def test_a_rejection_stored_before_the_reply_was_kept_is_asked_once_more():
+    # The one exception to "rejections are never retried", and it is bounded by
+    # what it is for: those rows recorded a verdict against words nobody kept,
+    # so they can never be read. A re-ask is the only way they acquire them.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REFUSAL))
+    forget_replies()
+    age_inference(by=enrichment.RETRY_ERROR_AFTER * 100)
+    assert run(lambda payload: reply(REAL_REPLY))["ready"] == 1
+
+
+def test_a_backfilled_rejection_is_never_offered_again():
+    # "Once" is the predicate, not a counter: the re-ask writes the column, and
+    # writing it is what removes the row from the arm that selected it.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REFUSAL))
+    forget_replies()
+    assert run(lambda payload: reply(REAL_REFUSAL))["asked"] == 1
+    assert run(lambda payload: reply(REAL_REFUSAL))["asked"] == 0
+
+
+def test_a_backfill_the_endpoint_refused_leaves_the_backfill_and_joins_the_retries():
+    # An outage during the backfill must not consume the row's one turn. It
+    # leaves this arm all the same -- the column is written -- but as an
+    # `error`, which the cooldown offers again on its own terms.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REFUSAL))
+    forget_replies()
+    assert run(outage())["error"] == 1
+    assert run(lambda payload: reply(REAL_REPLY))["asked"] == 0
+    age_inference(by=enrichment.RETRY_ERROR_AFTER + timedelta(minutes=1))
+    assert run(lambda payload: reply(REAL_REPLY))["ready"] == 1
+
+
+def test_the_backfill_takes_only_slots_the_other_two_did_not_want():
+    # Three tiers, and the newest is the cheapest to postpone: a page nobody has
+    # described is worth more than a second reading of one already answered.
+    store("User:A/one.js", owner="A", basename="one.js", fingerprint="a")
+    run(lambda payload: reply(REAL_REFUSAL))
+    store("User:B/two.js", owner="B", basename="two.js", fingerprint="b")
+    # A is a rejection carrying its reply at this point, so this sweep passes
+    # over it and only B fails. Taking A's reply away afterwards is what makes
+    # it a legacy row -- doing it before would put A in this outage too.
+    run(outage())
+    age_inference(by=enrichment.RETRY_ERROR_AFTER + timedelta(minutes=1))
+    forget_replies()
+    store("User:C/three.js", owner="C", basename="three.js", fingerprint="c")
+    with db.session_scope() as session:
+        assert names(enrichment.pending(session)) == ["User:C/three.js", "User:B/two.js", "User:A/one.js"]
 
 
 @pytest.mark.parametrize(
