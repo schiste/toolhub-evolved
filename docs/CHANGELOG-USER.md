@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-descriptions-the-wikis-already-wrote -->
 <!-- Release title: The Descriptions the Wikis Already Wrote -->
-<!-- Source range: 752537d1..9123c228 (2 commits) -->
+<!-- Source range: 752537d1..0045c847 (6 commits) -->
 
 # What's New for Users
 
@@ -11,4 +11,4 @@
 - They appear in the language they were written in, untranslated. A French gadget reads in French. Translating would mean paraphrasing a maintainer rather than quoting one, and quoting is the better of the two.
 - A gadget whose maintainer never wrote that message is left blank rather than filled in with a guess. A blank is a gap somebody can fill; an invented sentence is harder to spot and harder to correct.
 - Separately: 235 user scripts had been left permanently without a description by a few bad minutes at the service that reads them, back on the 26th. Failing to reach that service was being filed as though it were an answer, so those pages were never offered to it again. They come back into the queue now, behind everything that has never been tried.
-- When that service does answer but the answer is not usable, we now keep a note of what was wrong with it, rather than only that it was refused.
+- When that service does answer but the answer is not usable, we now keep a note of what was wrong with it, rather than only that it was refused — and we keep the answer itself, so the note can be checked against what was actually said. Four thousand answers had already been turned down before we started keeping either. Those are being put once more, one time only, so their reasons become readable; almost all of them will be turned down again, and this time we will know why.
