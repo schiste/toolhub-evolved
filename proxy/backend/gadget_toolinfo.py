@@ -14,11 +14,18 @@ nothing. The row carries `SOURCE_WIKI_GADGET`, which is both what stops a
 catalog snapshot deleting it and what stops the projection reporting that
 Toolhub said any of this.
 
-Only what the wiki actually declares is projected, and there is deliberately no
-description. MediaWiki keeps a gadget's description in the interface message
-`MediaWiki:Gadget-<name>`, written in the wiki's own language, and this lane
-does not read it yet. A missing description is a gap somebody can fill; an
-inferred one is this codebase putting words in a maintainer's mouth.
+Only what the wiki actually declares is projected. That now includes the
+description: MediaWiki keeps one in the interface message
+`MediaWiki:Gadget-<name>`, `backend.gadget_inventory` reads it, and this lane
+publishes it. It is a transcription like every other field here -- the wiki's
+own community wrote that sentence for its own users -- which is why gadgets are
+described without ever being sent to the language model that `inference_enrichment`
+runs for user scripts. A missing description is still a gap somebody can fill;
+an inferred one would be this codebase putting words in a maintainer's mouth.
+
+It is in the wiki's language rather than English, because that is the language
+it was written in and translating it here would make the catalogue the author
+of a sentence it only carries.
 """
 
 from __future__ import annotations
@@ -110,9 +117,10 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
 
     Every field here is a transcription. `title` is the name the wiki gives the
     gadget, `for_wikis` is where it runs, `repository` is the page its code
-    lives on. Nothing is inferred, and fields the declaration says nothing
-    about -- description, licence, audiences, a bug tracker -- are absent
-    rather than filled with a plausible guess.
+    lives on, `description` is the interface message the wiki shows on
+    Special:Gadgets. Nothing is inferred, and fields the wiki says nothing
+    about -- licence, audiences, a bug tracker -- are absent rather than filled
+    with a plausible guess.
 
     `created_date`, `modified_date` and `author` are the fields the declaration
     does not carry itself: they come from the code pages' own history, stamped
@@ -155,6 +163,11 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
         # edited the gadget since -- the catalogue claims an author, not a
         # contributor list.
         record["author"] = [{"name": gadget.first_author_wiki, "wiki_username": gadget.first_author_wiki}]
+    if description := (gadget.description or "").strip():
+        # The wiki's own words, in the wiki's own language. Omitted when the
+        # message was never written or reduced to nothing but markup, so a
+        # gadget reads as having no description rather than an empty one.
+        record["description"] = description
     if pages:
         record["repository"] = wiki_sources.page_url(gadget.wiki, f"{wiki_sources.GADGET_PREFIX}{pages[0]}")
     if languages := _languages(pages):

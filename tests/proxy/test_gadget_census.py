@@ -26,8 +26,15 @@ class FakeWiki:
 
     def __init__(self):
         self.asked = []
+        self.described = []
 
     def request(self, domain, _method, params):
+        if params.get("meta") == "allmessages":
+            # Descriptions are a second read against the same wiki, so a fake
+            # that answered it with a definition page would make every gadget
+            # look undescribed rather than exercise the branch.
+            self.described.append(domain)
+            return {"query": {"allmessages": [{"name": "Gadget-Popups", "content": "Navigation popups."}]}}
         self.asked.append(domain)
         revision = {"slots": {"main": {"content": DEFINITION}}}
         if "ids" in str(params.get("rvprop", "")).split("|"):

@@ -3,10 +3,17 @@
 
 Every wiki lane in this catalogue is a transcription: it publishes what the
 wiki already says and nothing else, which is why `description` and `keywords`
-sit at exactly 0% across 48,299 user scripts and gadgets while `repository`,
-`tool_type` and `for_wikis` sit at 100%. Those two fields are not missing
-because nobody collected them. They are missing because no wiki page states
-them, and no amount of further crawling will produce one.
+sat at exactly 0% across 37,791 user scripts while `repository`, `tool_type`
+and `for_wikis` sat at 100%. Those two fields are not missing because nobody
+collected them. They are missing because no wiki page states them, and no
+amount of further crawling will produce one.
+
+This lane is user scripts only, and gadgets are the reason to say so out loud.
+A gadget *does* have a description on the wiki -- the interface message
+`MediaWiki:Gadget-<name>`, which 91% of declared gadgets have -- so it is read
+and transcribed by `backend.gadget_inventory` and never sent here. Where a real
+description exists, asking a model to compose a second one would replace a
+maintainer's sentence with a guess at it.
 
 So this module does the one thing the rest of the catalogue refuses to do: it
 asks a language model to read the source and say what the tool is for. That
@@ -41,10 +48,11 @@ import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import requests
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from backend import db, digests, run_budget, userscripts
 from backend.models import ToolInference, UserScriptDirectoryEntry, UserScriptPage, utcnow
@@ -108,6 +116,17 @@ class Candidate(NamedTuple):
 STATUS_READY = "ready"
 STATUS_REJECTED = "rejected"
 STATUS_ERROR = "error"
+
+# How long an `error` row keeps its page out of the window before the page is
+# offered again. An error is a statement about the endpoint -- a 503, a
+# timeout, a dropped socket -- not about the source, so freezing it forever
+# turns one bad minute at Lift Wing into a tool that can never acquire a
+# description: 235 pages sat that way from a burst on 2026-08-26 and no later
+# sweep would ever have looked at them again. Six hours is long enough that an outage is not
+# hammered by an hourly job, short enough that a page recovers the same day.
+# Rejections are deliberately not retried: those are statements about the
+# answer, and re-asking the same model about unchanged bytes returns it again.
+RETRY_ERROR_AFTER = timedelta(hours=6)
 
 MAX_DETAIL_CHARS = 500
 
@@ -201,21 +220,39 @@ def parse_json(text: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _description(value: object) -> str:
+class Checked(NamedTuple):
+    """One field's verdict: the value that survived, or why nothing did.
+
+    The reason travels with the verdict rather than being re-derived from the
+    reply afterwards, so the explanation stored on a row cannot drift away from
+    the rule that actually refused the value.
+    """
+
+    value: Any
+    reason: str = ""
+
+
+def _description(value: object) -> Checked:
+    if value is None:
+        return Checked("", "absent or null in the reply")
     if not isinstance(value, str):
-        return ""
+        return Checked("", f"not a string ({type(value).__name__})")
     text = " ".join(value.split())
     if len(text) < MIN_DESCRIPTION_CHARS or len(text) > MAX_DESCRIPTION_CHARS:
-        return ""
+        return Checked("", f"{len(text)} chars, wanted {MIN_DESCRIPTION_CHARS}-{MAX_DESCRIPTION_CHARS}")
     lowered = text.casefold()
     if any(lowered.startswith(opener) for opener in REFUSAL_OPENERS):
-        return ""
-    return text if not _URL_LIKE.search(text) else ""
+        return Checked("", "refusal prose rather than a description")
+    if _URL_LIKE.search(text):
+        return Checked("", "contains a URL")
+    return Checked(text)
 
 
-def _keywords(value: object) -> list[str]:
+def _keywords(value: object) -> Checked:
+    if value is None:
+        return Checked([], "absent or null in the reply")
     if not isinstance(value, list):
-        return []
+        return Checked([], f"not a list ({type(value).__name__})")
     found: list[str] = []
     for item in value:
         if not isinstance(item, str):
@@ -229,7 +266,9 @@ def _keywords(value: object) -> list[str]:
             found.append(tag)
         if len(found) == MAX_KEYWORDS:
             break
-    return found
+    if not found:
+        return Checked([], "empty list" if not value else f"none of {len(value)} passed the shape rules")
+    return Checked(found)
 
 
 # The only fields this source may ever produce, each with what it has to survive.
@@ -238,7 +277,17 @@ def _keywords(value: object) -> list[str]:
 # later reader assume it was asked for. `tool_type`, `technology_used` and
 # `for_wikis` in particular are already derived deterministically and sit at
 # 100% on this lane -- a guess there could only contradict something known.
-FIELDS: dict[str, Any] = {"description": _description, "keywords": _keywords}
+FIELDS: dict[str, Callable[[object], Checked]] = {"description": _description, "keywords": _keywords}
+
+
+def check(parsed: dict[str, Any] | None) -> dict[str, Checked]:
+    """Run every field's shape rules, keeping both halves of each verdict.
+
+    Split from `accept` so a caller that needs to say why a reply produced
+    nothing reads the same verdicts that decided it, rather than a second
+    implementation of the same rules written to explain the first.
+    """
+    return {field: validate((parsed or {}).get(field)) for field, validate in FIELDS.items()}
 
 
 def accept(parsed: dict[str, Any] | None) -> dict[str, Any]:
@@ -251,11 +300,20 @@ def accept(parsed: dict[str, Any] | None) -> dict[str, Any]:
     """
     if not parsed:
         return {}
-    return {field: validated for field, check in FIELDS.items() if (validated := check(parsed.get(field)))}
+    return {field: verdict.value for field, verdict in check(parsed).items() if verdict.value}
 
 
 def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
-    """Return the pages whose current source has never been read by the model.
+    """Return the pages whose current source the model has not answered for.
+
+    That is the pages never asked about, plus the ones whose last answer was an
+    `error` older than `RETRY_ERROR_AFTER`. The second half exists because the
+    first half alone made a transport failure permanent: the join is on the
+    fingerprint, so any row at all -- including one recording that Lift Wing was
+    briefly unreachable -- removed the page from every future window, and the
+    source had to change before it came back. Never-asked pages are ordered
+    first so a retry can only ever use a slot nobody else wanted, which is what
+    `ask_one` promised when it started storing failures at all.
 
     The selection is a left join against `tool_inference` on (page, fingerprint)
     keeping the misses, so a sweep over an already-enriched corpus reads an
@@ -296,6 +354,7 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
     `job_runs` row, and a lock `tools/job_guard.sh` never got to release, so
     every other tick then skipped on a lock whose owner was long gone.
     """
+    retry_before = utcnow() - RETRY_ERROR_AFTER
     stale = (
         select(
             UserScriptPage.id,
@@ -319,7 +378,10 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             UserScriptPage.role == userscripts.ROLE_SCRIPT,
             UserScriptPage.deleted_at.is_(None),
             UserScriptPage.content_model.not_in(STYLESHEET_MODELS),
-            ToolInference.tool_name.is_(None),
+            or_(
+                ToolInference.tool_name.is_(None),
+                (ToolInference.status == STATUS_ERROR) & (ToolInference.checked_at < retry_before),
+            ),
             # Was a Python skip over an already-loaded body. In SQL it also
             # keeps pages too short to describe out of the window, instead of
             # letting them occupy a slot on every sweep forever. MySQL counts
@@ -327,7 +389,9 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             # little more than it should; `with_source` re-checks exactly.
             func.length(UserScriptPage.body) >= MIN_SOURCE_CHARS,
         )
-        .order_by(UserScriptPage.id)
+        # Untried pages before retries, so a page nobody has ever asked about is
+        # never displaced by one whose only news is that the endpoint was down.
+        .order_by(ToolInference.tool_name.is_(None).desc(), UserScriptPage.id)
         .limit(limit)
     )
     found: list[Candidate] = []
@@ -428,8 +492,23 @@ def _ask(
         response = ask(payload_for(model, candidate.wiki, candidate.title, candidate.body))
     except Exception as exc:  # noqa: BLE001 - one page's outage must not end the sweep
         return Outcome(STATUS_ERROR, {}, f"{type(exc).__name__}: {exc}")
-    accepted = accept(parse_json(model_text(response)))
-    return Outcome(STATUS_READY if accepted else STATUS_REJECTED, accepted)
+    text = model_text(response)
+    parsed = parse_json(text)
+    if parsed is None:
+        # No field-level verdict exists when nothing parsed, so the reply is its
+        # own evidence: a sample is what tells a reader whether the model went
+        # off-format or the endpoint returned something that was never a model
+        # reply at all.
+        sample = " ".join(text.split())[:200]
+        return Outcome(STATUS_REJECTED, {}, f"unparsed reply: {sample or '(empty)'}")
+    verdicts = check(parsed)
+    accepted = {field: verdict.value for field, verdict in verdicts.items() if verdict.value}
+    # Written whatever the status, not only on rejection. A reply whose keywords
+    # pass and whose description does not is stored `ready` carrying no
+    # description -- exactly the gap this lane exists to close, and invisible in
+    # the status alone.
+    detail = "; ".join(f"{field}: {verdict.reason}" for field, verdict in verdicts.items() if verdict.reason)
+    return Outcome(STATUS_READY if accepted else STATUS_REJECTED, accepted, detail)
 
 
 def ask_one(

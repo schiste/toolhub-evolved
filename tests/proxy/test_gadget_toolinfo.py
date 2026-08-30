@@ -315,3 +315,17 @@ def test_a_gadget_no_replica_has_answered_for_publishes_no_author():
     """There is no owner to fall back to, and a namespace is not a person."""
     record = gadget_toolinfo.toolinfo_record(a_gadget(first_author_wiki=""))
     assert "author" not in record
+
+
+def test_a_gadget_is_described_in_the_words_its_own_wiki_wrote():
+    # The whole reason gadgets never go to the language model that describes
+    # user scripts: a gadget already has a description, written by the community
+    # that runs it, and a guess at one would displace it.
+    record = gadget_toolinfo.toolinfo_record(a_gadget(description="Popups : afficher une fenêtre au survol d'un lien."))
+    assert record["description"] == "Popups : afficher une fenêtre au survol d'un lien."
+
+
+def test_a_gadget_whose_wiki_never_wrote_a_message_publishes_no_description():
+    # Absent rather than empty, on the same terms as every other field here: a
+    # gadget nobody described reads as undescribed, not as described emptily.
+    assert "description" not in gadget_toolinfo.toolinfo_record(a_gadget(description=""))

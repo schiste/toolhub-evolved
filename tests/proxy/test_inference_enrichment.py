@@ -23,6 +23,7 @@ fixture written to match the current prompt.
 
 import sys
 import threading
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -109,6 +110,27 @@ def rows():
         return {row.tool_name: (row.status, row.payload, row.source_fingerprint) for row in session.query(ToolInference)}
 
 
+def details():
+    with db.session_scope() as session:
+        return {row.tool_name: row.detail for row in session.query(ToolInference)}
+
+
+def outage(message="503 Server Error: Service Unavailable"):
+    """An `ask` that fails the way Lift Wing did on 2026-08-26."""
+
+    def answer(payload):
+        raise RuntimeError(message)
+
+    return answer
+
+
+def age_inference(*, by):
+    """Backdate every stored outcome, standing in for time passing between runs."""
+    with db.session_scope() as session:
+        for row in session.query(ToolInference):
+            row.checked_at = utcnow() - by
+
+
 def run(answer, *, limit=enrichment.BATCH):
     """Drive one pass with `answer` deciding each reply, and return the counts."""
     with db.session_scope() as session:
@@ -174,6 +196,40 @@ def test_a_keyword_that_would_pollute_the_facet_list_is_dropped(keyword):
     assert enrichment.accept({"keywords": [keyword]}) == {}
 
 
+def test_a_refusal_records_which_field_refused_and_why():
+    # 4,253 rejections were stored with an empty `detail`, so the only way to
+    # learn why the lane produced nothing was to re-ask the model.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REFUSAL))
+    assert details()[TOOL] == "description: absent or null in the reply; keywords: empty list"
+
+
+def test_a_description_that_fails_while_keywords_pass_is_ready_and_still_says_what_is_missing():
+    # `accept` returns the fields that survived, so one surviving keyword makes
+    # the row `ready` with no description at all. Without the reason recorded
+    # here, that row is indistinguishable from a described tool in every count.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply('{"description": "Too short.", "keywords": ["links"]}'))
+    assert rows()[TOOL][0] == enrichment.STATUS_READY
+    assert "description" not in rows()[TOOL][1]
+    assert details()[TOOL] == "description: 10 chars, wanted 20-600"
+
+
+def test_a_reply_that_never_parsed_keeps_a_sample_of_what_came_back():
+    # No field has a verdict when nothing parsed, so the reply is the only
+    # evidence for whether the model went off-format or something upstream
+    # answered in its place.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply("<html><body>502 Bad Gateway</body></html>"))
+    assert details()[TOOL] == "unparsed reply: <html><body>502 Bad Gateway</body></html>"
+
+
+def test_an_endpoint_failure_still_records_the_exception():
+    store("User:Anomie/linkclassifier.js")
+    run(outage())
+    assert details()[TOOL] == "RuntimeError: 503 Server Error: Service Unavailable"
+
+
 # --- what is worth asking about --------------------------------------------
 
 
@@ -192,12 +248,44 @@ def test_a_page_whose_source_moved_is_read_again():
     assert rows()["userscript-en.wikipedia.org-anomie-linkclassifier.js"][2] == "f2"
 
 
-def test_a_page_that_failed_is_not_retried_ahead_of_pages_nobody_has_tried():
+def test_a_page_that_failed_is_not_retried_on_the_very_next_sweep():
     # Without a stored row for the failure, every sweep spends its whole budget
     # on the same unanswerable page and never reaches the rest of the corpus.
     store("User:Anomie/linkclassifier.js")
-    assert run(lambda payload: (_ for _ in ()).throw(RuntimeError("503")))["error"] == 1
+    assert run(outage())["error"] == 1
     assert run(lambda payload: reply(REAL_REPLY))["asked"] == 0
+
+
+def test_a_page_that_failed_is_asked_again_once_the_cooldown_has_passed():
+    # The failure was a statement about Lift Wing, not about the script. Keyed
+    # on the fingerprint and never revisited, it made one bad minute at the
+    # endpoint into a tool that could never acquire a description.
+    store("User:Anomie/linkclassifier.js")
+    run(outage())
+    age_inference(by=enrichment.RETRY_ERROR_AFTER + timedelta(minutes=1))
+    assert run(lambda payload: reply(REAL_REPLY))["ready"] == 1
+    assert rows()[TOOL][0] == enrichment.STATUS_READY
+
+
+def test_a_rejected_answer_is_not_retried_however_long_it_sits():
+    # A rejection is a statement about the answer, and the bytes it was read
+    # from have not moved. Re-asking the same model about them buys the same
+    # reply at full price, which is why only errors get a second chance.
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REFUSAL))
+    age_inference(by=enrichment.RETRY_ERROR_AFTER * 100)
+    assert run(lambda payload: reply(REAL_REPLY))["asked"] == 0
+
+
+def test_a_page_nobody_has_tried_is_offered_before_a_page_awaiting_a_retry():
+    # The retry must only ever take a slot no untried page wanted, or a corpus
+    # with a bad day behind it starves its own frontier.
+    store("User:A/one.js", owner="A", basename="one.js", fingerprint="a")
+    run(outage())
+    age_inference(by=enrichment.RETRY_ERROR_AFTER + timedelta(minutes=1))
+    store("User:B/two.js", owner="B", basename="two.js", fingerprint="b")
+    with db.session_scope() as session:
+        assert names(enrichment.pending(session)) == ["User:B/two.js", "User:A/one.js"]
 
 
 @pytest.mark.parametrize(

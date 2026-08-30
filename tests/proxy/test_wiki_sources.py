@@ -100,7 +100,9 @@ def test_both_spellings_of_one_title_reach_one_registration():
     # which spelling a tool record happened to carry.
     underscored = wiki_sources.wiki_source("https://fr.wikipedia.org/wiki/MediaWiki:Gadget-C_helper.js")
     spaced = wiki_sources.wiki_source("https://fr.wikipedia.org/wiki/MediaWiki:Gadget-C%20helper.js")
-    assert wiki_sources.registered_gadget(underscored, UNDERSCORED) == wiki_sources.registered_gadget(spaced, UNDERSCORED)
+    assert wiki_sources.registered_gadget(underscored, UNDERSCORED) == wiki_sources.registered_gadget(
+        spaced, UNDERSCORED
+    )
 
 
 def test_an_underscored_definition_does_not_register_a_page_it_omits():
@@ -448,3 +450,63 @@ def test_a_canonical_listing_is_left_exactly_as_it_was():
     # are the ones a change here must not move.
     source = wiki_sources.wiki_source(SCRIPT)
     assert wiki_sources.listed_title(source, "User:Example/twinkle.js") == "User:Example/twinkle.js"
+
+
+# Verbatim from fr.wikipedia.org on 2026-08-30, through the same `allmessages`
+# query `gadget_inventory.message_params` builds. Kept as the wiki wrote them
+# rather than composed here: a reducer tested only on markup invented to suit it
+# cannot disagree with the reducer, and every idiom that matters below --
+# nbsp before a colon, a `<span lang>` inside italics, a bracketed reference
+# link inside `<small>` -- is one no fixture of mine would have thought to use.
+DELUXE_HISTORY = (
+    "''DeluxeHistory'' : afficher les historiques en couleur en fonction du statut de contributeur "
+    "<small><nowiki>[</nowiki>[[Aide:Historiques en couleur|documentation]]<nowiki>]</nowiki></small> "
+    "<small><nowiki>[</nowiki>[[:Image:Histocouleur.jpg|illustration]]<nowiki>]</nowiki></small>."
+)
+POPUPS = (
+    "''Popups'' : afficher une fenêtre ''<span class=\"lang-en\" lang=\"en\">popup</span>'' "
+    "(« surgissante »), quand la souris passe sur un lien, proposant de nombreuses fonctionnalités "
+    "<small><nowiki>[</nowiki>[[Utilisateur:Leag/Navigation popups|documentation]]<nowiki>]</nowiki></small>."
+)
+
+
+def test_a_real_description_message_reduces_to_the_sentence_it_says():
+    assert wiki_sources.plain_text(DELUXE_HISTORY) == (
+        "DeluxeHistory : afficher les historiques en couleur en fonction du statut de contributeur."
+    )
+
+
+def test_reduction_keeps_the_words_an_author_chose_and_drops_the_markup_around_them():
+    # The `<span lang="en">` around "popup" is markup; the word is the author's.
+    # French spacing inside the quotation marks is the author's too, and closing
+    # it up would be this catalogue rewriting a wiki's typography.
+    assert wiki_sources.plain_text(POPUPS) == (
+        "Popups : afficher une fenêtre popup (« surgissante »), quand la souris passe sur un lien, "
+        "proposant de nombreuses fonctionnalités."
+    )
+
+
+def test_a_link_keeps_its_label_and_loses_its_target():
+    # The target is a page on one wiki and the label is the words the author
+    # chose, so only one of the two means anything in a catalogue record.
+    assert wiki_sources.plain_text("See [[Help:Editing|the guide]] and [[HotCat]].") == "See the guide and HotCat."
+
+
+def test_an_external_link_with_no_label_leaves_nothing():
+    # A bare URL is not a description, and the alternative to dropping it is
+    # publishing an address where a sentence should be.
+    assert wiki_sources.plain_text("Read [https://example.org/doc the manual], [https://example.org].") == (
+        "Read the manual,."
+    )
+
+
+def test_a_template_the_wiki_could_not_resolve_is_not_published_as_prose():
+    # The API expands templates before they arrive, so anything still bracketed
+    # here is one the wiki itself failed on, and its name is not a description.
+    assert wiki_sources.plain_text("{{int:gadget-foo}} adds a button &amp; a menu") == "adds a button & a menu"
+
+
+def test_a_message_that_was_markup_all_the_way_down_reduces_to_nothing():
+    # Not an error and not a description: the caller reads an empty result as a
+    # gadget the wiki declares without saying anything about.
+    assert wiki_sources.plain_text("<small><nowiki>[</nowiki>[[Aide:X|doc]]<nowiki>]</nowiki></small>") == ""

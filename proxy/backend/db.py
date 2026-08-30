@@ -317,6 +317,11 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # published before this column existed carried no author at all, so
             # filling it in only ever adds attribution and never revises one.
             "first_author_wiki": "VARCHAR(255) NOT NULL DEFAULT ''",
+            # The gadget's own description message, reduced to plain text.
+            # Nullable rather than NOT NULL DEFAULT '': adding it to a populated
+            # table must not claim every existing row was read and found to say
+            # nothing. The first census pass after this fills it.
+            "description": f"{text_col} NULL",
         },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",

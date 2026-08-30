@@ -39,12 +39,32 @@ class Boom(RuntimeError):
 class FakeWiki:
     """An Action API that answers with one definition page, or fails."""
 
-    def __init__(self, definition=DEFINITION, *, fails=False):
+    def __init__(self, definition=DEFINITION, *, fails=False, messages=None, messages_fail=False):
         self.definition = definition
         self.fails = fails
+        # Gadget name -> the wikitext of its `MediaWiki:Gadget-<name>` message.
+        # A name absent here is a gadget whose message nobody ever wrote, which
+        # is what 15% of frwiki's declarations look like.
+        self.messages = messages or {}
+        self.messages_fail = messages_fail
         self.requests = []
+        self.message_requests = []
 
     def request(self, domain, method, params):
+        if params.get("meta") == "allmessages":
+            self.message_requests.append(params["ammessages"].split("|"))
+            if self.messages_fail:
+                raise Boom
+            return {
+                "query": {
+                    "allmessages": [
+                        {"name": f"Gadget-{name}", "content": self.messages[name]}
+                        if name in self.messages
+                        else {"name": f"Gadget-{name}", "missing": True}
+                        for name in (key.removeprefix("Gadget-") for key in params["ammessages"].split("|"))
+                    ]
+                }
+            }
         self.requests.append((domain, method, params))
         if self.fails:
             raise Boom
@@ -63,12 +83,15 @@ def stored(wiki=FRWIKI):
 
 
 def test_one_request_reads_a_whole_wiki_of_gadgets():
-    wiki = FakeWiki()
+    wiki = FakeWiki(messages={"Popups": "Navigation popups."})
     summary = gadget_inventory.ingest(wiki.request, FRWIKI)
 
-    # The economics of the lane: user scripts cost thousands of requests, the
-    # gadget inventory costs one.
+    # The economics of the lane: user scripts cost thousands of requests, and
+    # the whole inventory of a wiki costs one whatever it declares. Descriptions
+    # add one request per 50 gadgets on top, so frwiki's 445 gadgets cost ten
+    # requests rather than the 445 a page-per-gadget read would.
     assert len(wiki.requests) == 1
+    assert wiki.message_requests == [["Gadget-Popups", "Gadget-Purge", "Gadget-Internals"]]
     assert summary == {
         "wiki": FRWIKI,
         "read": True,
@@ -78,7 +101,49 @@ def test_one_request_reads_a_whole_wiki_of_gadgets():
         "updated": 0,
         "folded": 0,
         "retired": 0,
+        "described": 1,
     }
+
+
+def test_a_gadget_is_described_in_the_wikis_own_words():
+    # The description a gadget has is the one its community wrote for its own
+    # preferences screen. Reading it is what keeps gadgets out of the language
+    # model that describes user scripts, which have no such sentence anywhere.
+    wiki = FakeWiki(messages={"Popups": "\'\'Popups\'\' : afficher une fenêtre au survol d\'un lien."})
+    gadget_inventory.ingest(wiki.request, FRWIKI)
+
+    assert stored()["Popups"].description == "Popups : afficher une fenêtre au survol d\'un lien."
+    assert stored()["Purge"].description == ""
+
+
+def test_descriptions_are_asked_for_fifty_at_a_time():
+    definition = "== A ==\n" + "".join(f"* Gadget{n}[ResourceLoader]|G{n}.js\n" for n in range(120))
+    wiki = FakeWiki(definition)
+    gadget_inventory.ingest(wiki.request, FRWIKI)
+
+    assert [len(batch) for batch in wiki.message_requests] == [50, 50, 20]
+
+
+def test_a_wiki_that_would_not_say_keeps_the_descriptions_it_had():
+    # The definition page answered and the messages did not, so the gadgets are
+    # known and their descriptions are not. Treating that silence as a
+    # retraction would blank a wiki's descriptions on one bad response, which is
+    # the same mistake `_unread` exists to prevent for the inventory itself.
+    gadget_inventory.ingest(FakeWiki(messages={"Popups": "Navigation popups."}).request, FRWIKI)
+    summary = gadget_inventory.ingest(FakeWiki(messages_fail=True).request, FRWIKI)
+
+    assert stored()["Popups"].description == "Navigation popups."
+    assert summary["described"] == 0
+
+
+def test_a_description_the_wiki_has_deleted_is_cleared():
+    # The opposite case, and the reason the one above has to be a distinct
+    # answer rather than an empty one: here the wiki did tell us, and what it
+    # said is that the message is gone.
+    gadget_inventory.ingest(FakeWiki(messages={"Popups": "Navigation popups."}).request, FRWIKI)
+    gadget_inventory.ingest(FakeWiki().request, FRWIKI)
+
+    assert stored()["Popups"].description == ""
 
 
 def test_a_gadget_keeps_the_facts_the_definition_gave_it():

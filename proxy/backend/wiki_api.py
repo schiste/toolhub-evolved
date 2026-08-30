@@ -187,6 +187,29 @@ def definition_text(payload: object) -> str:
     return found[0].content if found else ""
 
 
+def messages(payload: object) -> dict[str, str]:
+    """Return the interface messages a query answered with, keyed by name.
+
+    A message the wiki never wrote comes back flagged `missing` and carrying no
+    content, and is dropped here rather than kept as an empty string: "the wiki
+    says nothing about this gadget" and "the wiki says this gadget does nothing"
+    are different facts, and only the first is true.
+    """
+    query = _object(_object(payload).get("query"))
+    found: dict[str, str] = {}
+    for item in query.get("allmessages") or []:
+        entry = _object(item)
+        name = str(entry.get("name") or "")
+        content = entry.get("content")
+        # `missing` is `true` under formatversion 2 and `""` under 1, so its
+        # presence is the test rather than its truth.
+        if not name or entry.get("missing") is not None or not isinstance(content, str):
+            continue
+        if content.strip():
+            found[name] = content
+    return found
+
+
 def head(found: tuple[Revision, ...]) -> str:
     """Return one identifier for the state of a whole page set.
 

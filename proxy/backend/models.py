@@ -1958,6 +1958,22 @@ class WikiGadget(Base):
     # Empty where no replica has answered for this wiki, where the code lives on
     # another wiki, or where MediaWiki has suppressed that revision's author.
     first_author_wiki: Mapped[str] = mapped_column(String(255), default="")
+    # What the wiki itself says this gadget does, from the interface message
+    # `MediaWiki:Gadget-<name>` that MediaWiki renders on Special:Gadgets. It is
+    # the only description a gadget has and it is a transcription like every
+    # other column here -- a community wrote it for its own users, and this
+    # catalogue publishes it rather than asking a model to guess at one.
+    #
+    # Stored reduced to plain text: the message is wikitext aimed at a
+    # preferences screen, so it arrives carrying italics, interface links and
+    # `<small>` spans that are noise in a JSON description field.
+    #
+    # In the wiki's own language, not English -- frwiki describes its gadgets in
+    # French -- because that is what the wiki wrote. Empty where the wiki
+    # declares a gadget whose message nobody ever created, which was 15% of
+    # frwiki's gadgets and 1% of Meta's, and empty is published as no
+    # description rather than as an empty one.
+    description: Mapped[str] = mapped_column(Text, default="")
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     # Set when a definition page no longer declares this gadget. Kept rather

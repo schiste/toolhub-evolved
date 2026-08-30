@@ -25,6 +25,7 @@ from one document it must fetch itself: a gadget's peers come out of
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass, replace
 from urllib.parse import parse_qs, unquote, urlparse
@@ -52,6 +53,10 @@ NAMESPACES = {NAMESPACE_USER.casefold(): NAMESPACE_USER, NAMESPACE_MEDIAWIKI.cas
 NAMESPACE_IDS = {NAMESPACE_USER: 2, NAMESPACE_MEDIAWIKI: 8}
 
 GADGET_PREFIX = f"{NAMESPACE_MEDIAWIKI}:Gadget-"
+#: How a gadget's description message is named: the same spelling as
+#: `GADGET_PREFIX` without the namespace, because a message is asked for by key
+#: and a key carrying one names nothing.
+GADGET_MESSAGE_PREFIX = "Gadget-"
 GADGET_DEFINITION_TITLE = f"{NAMESPACE_MEDIAWIKI}:Gadgets-definition"
 
 # MediaWiki only assigns a code content model to pages with these extensions,
@@ -469,3 +474,58 @@ def subpage_titles(source: WikiSource, listed: list[str]) -> tuple[str, ...]:
     ]
     ordered = [source.title, *sorted(set(kept) - {source.title})]
     return tuple(ordered[:MAX_PAGES])
+
+
+# A description message is wikitext written for Special:Gadgets, not for a
+# catalogue. Ordered deliberately: links resolve before tags are stripped, so
+# the `<nowiki>[</nowiki>` a wiki uses to print a literal bracket around a link
+# is still recognizable as a tag when its turn comes, rather than having become
+# a stray `[[` that reads as the start of another link.
+# `<small>` in a description message is the wikis' shared idiom for reference
+# chrome rather than emphasis -- on frwiki every one of them wraps a bracketed
+# "documentation" or "illustration" link. Its label survives link resolution and
+# its target does not, so keeping the span leaves a catalogue description ending
+# in "[documentation] [illustration]": words that pointed somewhere on a wiki and
+# point nowhere here. The span goes, not just its tags.
+_SMALL_SPAN_RE = re.compile(r"<small\b[^>]*>.*?</small\s*>", re.IGNORECASE | re.DOTALL)
+_TEMPLATE_RE = re.compile(r"\{\{[^{}]*\}\}")
+_WIKI_LINK_RE = re.compile(r"\[\[(?:[^\]|]*\|)?([^\]|]+)\]\]")
+_EXTERNAL_LINK_RE = re.compile(r"\[(?:https?:|//)\S+(?:[ \t]+([^\]]*))?\]")
+_HTML_TAG_RE = re.compile(r"<[^>]*>")
+_QUOTES_RE = re.compile(r"'{2,5}")
+# Removing a span leaves the space that separated it from the sentence sitting
+# in front of the full stop. Only `.` and `,` are closed up: French spaces its
+# `:`, `;`, `?`, `!` and `»` on purpose, and these messages are mostly not in
+# English -- tidying those would be this catalogue correcting a wiki's own
+# typography rather than reading it.
+_ORPHAN_PUNCTUATION_RE = re.compile(r"\s+([.,])")
+
+
+def plain_text(wikitext: str) -> str:
+    """Reduce a wikitext interface message to prose a catalogue can publish.
+
+    What survives is the sentence a reader of the gadget's preferences screen
+    sees; what does not is the markup that got it there. A link keeps its label
+    and loses its target, because the target is a page on one wiki and the
+    label is the words the author chose. An unlabelled external link leaves
+    nothing at all -- a bare URL in a description field is not a description.
+
+    A `<small>` span goes entirely, contents included, for the reason given
+    where the pattern is defined.
+
+    Templates are dropped rather than expanded. The API is asked to expand them
+    before they arrive, so anything still bracketed here is one the wiki itself
+    could not resolve, and a template's name is not prose.
+
+    Reduction only. Nothing here decides whether the result is worth
+    publishing: an empty return means the message was markup all the way down,
+    and it is the caller that reads that as no description.
+    """
+    text = str(wikitext or "")
+    text = _SMALL_SPAN_RE.sub("", text)
+    text = _TEMPLATE_RE.sub("", text)
+    text = _WIKI_LINK_RE.sub(r"\1", text)
+    text = _EXTERNAL_LINK_RE.sub(lambda match: match.group(1) or "", text)
+    text = _HTML_TAG_RE.sub("", text)
+    text = _QUOTES_RE.sub("", text)
+    return _ORPHAN_PUNCTUATION_RE.sub(r"\1", " ".join(html.unescape(text).split()))
