@@ -41,6 +41,7 @@ from backend import (
     source_attestations,
     userscript_sweep,
     userscripts,
+    wiki_prefixes,
 )
 from backend.author_claims import claim_relationship_for_method
 from backend.models import (
@@ -156,6 +157,7 @@ def migrations() -> Iterator[MigrationResult]:
     yield MigrationResult("user-script load key widened for modules", _widen_userscript_import_key())
     yield MigrationResult("user-script loads resolved to pages", _backfill_userscript_import_targets())
     yield MigrationResult("user-script body sketches", _backfill_userscript_sketches())
+    yield MigrationResult("user-script analyses restated", _restate_swallowed_userscript_analyses())
 
 
 def _ensure_catalog_read_indexes() -> int:
@@ -345,6 +347,68 @@ def _backfill_userscript_sketches() -> int:
                 if sketch:
                     row.sketch = sketch
                     written += 1
+
+
+#: Bodies are read whole here, and a user-script body runs to `MAX_STORED_BODY`
+#: (512 KiB). A thousand of those at once is half a gigabyte of strings held to
+#: re-run a regex over them, in a migration that runs inline during a deploy; a
+#: quarter of the usual chunk keeps the peak where the rest of the deploy can
+#: live beside it. Nothing here is faster in bigger slices -- the walk is one
+#: pass over the table either way.
+RESTATE_CHUNK = BACKFILL_CHUNK // 4
+
+
+def _restate_swallowed_userscript_analyses() -> int:
+    """Re-analyse the stored bodies that a comment-stripping bug read as blank.
+
+    Block comments were stripped before line comments, so a `/*` that was already
+    inside a `//` line opened one anyway. A Tampermonkey header reading
+    `// @match https://commons.wikimedia.org/*` -- a URL wildcard, not an opener
+    -- blanked everything between it and the file's next `*/`, and the script
+    behind it was stored as an empty page. `backend.userscripts` no longer reads
+    it that way; this is what carries the correction to the pages already read,
+    which the sweep never will because their revisions have not moved.
+
+    Restricted to the rows that could have been truncated: a page already filed
+    as a script was not, and a body with no `/*` in it has nothing to open a
+    comment. The predicate is deliberately wider than the symptom -- a swallow
+    that leaves one or two lines behind reads as a stub, and one that leaves a
+    load behind reads as a shim -- so all three of the non-script roles are
+    offered rather than just the empty one.
+
+    Chunked by id and restartable: a row is examined by its position, not by
+    whether it still needs work, so the walk ends whether or not any given row
+    changed, and an interrupted deploy resumes from where the ids left off. Rows
+    whose verdict does not move are left entirely alone, so running it again on
+    the next deploy writes nothing.
+    """
+    engine = db.engine()
+    if UserScriptPage.__tablename__ not in set(inspect(engine).get_table_names()):
+        return 0
+    restated = 0
+    after = 0
+    while True:
+        with db.session_scope() as session:
+            rows = (
+                session.query(UserScriptPage)
+                .filter(
+                    UserScriptPage.role != userscripts.ROLE_SCRIPT,
+                    UserScriptPage.deleted_at.is_(None),
+                    UserScriptPage.body.contains("/*"),
+                    UserScriptPage.id > after,
+                )
+                .order_by(UserScriptPage.id)
+                .limit(RESTATE_CHUNK)
+                .all()
+            )
+            if not rows:
+                return restated
+            after = rows[-1].id
+            # Read, not refreshed: a load edge names its target wiki and reading
+            # that target's title needs the target's own namespace names, but
+            # this walk asks no wiki anything and must not start.
+            prefixes = wiki_prefixes.resolver(session)
+            restated += sum(1 for row in rows if userscript_sweep.restate_analysis(session, row, prefixes))
 
 
 #: Columns declared `LARGE_TEXT` in models.py that shipped as plain TEXT, and so

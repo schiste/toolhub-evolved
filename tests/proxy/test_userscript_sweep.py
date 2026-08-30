@@ -1,6 +1,7 @@
 """Tests for reading a wiki's user scripts into the directory."""
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -1603,6 +1604,53 @@ def test_two_loads_the_database_calls_one_do_not_fail_the_page():
     # means this codebase cannot know how many there were without asking, so the
     # one thing it must not do is fold them away in silence.
     assert dropped == 1
+
+
+def test_restating_an_analysis_leaves_every_record_of_reading_the_wiki_alone():
+    # The correction comes out of the stored body, and no wiki was asked. A row
+    # that moved `last_checked_at` here would report a freshness it never earned,
+    # and one that moved `revision` would tell the next sweep it had already read
+    # a revision it has not seen.
+    body = "// @match https://commons.wikimedia.org/*\n" + "".join(f"var a{at} = {at};\n" for at in range(40))
+    checked = datetime(2024, 3, 1, 12, 0, 0)
+    with db.session_scope() as session:
+        session.add(
+            UserScriptPage(
+                wiki=FRWIKI,
+                title="User:A/one.js",
+                role="empty",
+                body=body,
+                revision="7",
+                last_checked_at=checked,
+                touched_at_wiki="2024-01-01T00:00:00Z",
+            ),
+        )
+    with db.session_scope() as session:
+        row = session.query(UserScriptPage).one()
+        assert sweeper.restate_analysis(session, row) is True
+    with db.session_scope() as session:
+        row = session.query(UserScriptPage).one()
+        assert row.role == userscripts.ROLE_SCRIPT
+        assert (row.revision, row.last_checked_at, row.touched_at_wiki) == ("7", checked, "2024-01-01T00:00:00Z")
+
+
+def test_restating_an_analysis_that_has_not_changed_reports_no_repair():
+    body = "".join(f"var a{at} = {at};\n" for at in range(40))
+    analysis = userscripts.analyze("User:A/one.js", body, wiki=FRWIKI)
+    with db.session_scope() as session:
+        session.add(
+            UserScriptPage(
+                wiki=FRWIKI,
+                title="User:A/one.js",
+                role=analysis.role,
+                fingerprint=analysis.fingerprint,
+                sketch=analysis.sketch,
+                body=body,
+            ),
+        )
+    with db.session_scope() as session:
+        row = session.query(UserScriptPage).one()
+        assert sweeper.restate_analysis(session, row) is False
 
 
 def test_a_page_whose_loads_all_survive_reports_no_collisions():

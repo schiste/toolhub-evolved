@@ -202,8 +202,15 @@ class ScriptPage:
 # out of the line-comment rule; a `//` inside a string literal that is not
 # preceded by a quote or colon is still treated as a comment, which is the
 # known cost of not writing a tokenizer.
-_BLOCK_COMMENT: Final = re.compile(r"/\*.*?\*/", re.DOTALL)
-_LINE_COMMENT: Final = re.compile(r"(?<![:'\"])//[^\n]*")
+#
+# One pattern rather than two, because `//` and `/*` are alternatives of the
+# same scan and not two independent passes. Stripping block comments first let
+# a `/*` that was already inside a line comment open one: a Tampermonkey header
+# reading `// @match https://commons.wikimedia.org/*` -- a URL wildcard, not an
+# opener -- swallowed the 17,079 bytes between it and the file's next `*/`, and
+# the script behind it read as an empty page and was left out of the directory.
+# Which branch is written first does not matter; that there is one scan does.
+_COMMENT: Final = re.compile(r"(?<![:'\"])//[^\n]*|/\*.*?\*/", re.DOTALL)
 _WHITESPACE: Final = re.compile(r"\s+")
 
 # MediaWiki serves the user namespace under a localized name, and the API
@@ -322,12 +329,15 @@ def _edge_pattern(wiki: str) -> re.Pattern[str]:
     )
 
 
-def _blank_block(match: re.Match[str]) -> str:
-    """Replace one block comment with whitespace of the same line count.
+def _blank(match: re.Match[str]) -> str:
+    """Replace one comment with whitespace of the same line count.
 
     Collapsing a multi-line comment to a single space would join the code
     before it to the code after it, and classification counts lines: a
     twelve-line script wrapped around one long comment would read as a stub.
+
+    A line comment never spans a newline, so this hands back the single space
+    the line-comment rule always substituted.
     """
     newlines = match.group().count("\n")
     return "\n" * newlines if newlines else " "
@@ -339,7 +349,7 @@ def strip_comments(body: str) -> str:
     Comments are replaced by whitespace rather than removed, so that both line
     structure and token separation survive for everything downstream.
     """
-    return _LINE_COMMENT.sub(" ", _BLOCK_COMMENT.sub(_blank_block, body or ""))
+    return _COMMENT.sub(_blank, body or "")
 
 
 def canonical_title(title: str, *, spellings: tuple[str, ...] = ()) -> str:

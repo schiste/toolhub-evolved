@@ -814,6 +814,72 @@ def test_migrate_sketches_the_bodies_stored_before_sketches_existed(configured_d
     assert stored == {"User:A/one.js": userscripts.sketch(body), "User:B/vector.js": ""}
 
 
+SWALLOWED = (
+    "// ==UserScript==\n"
+    # A URL wildcard, not a block-comment opener. Stripping block comments first
+    # read it as one and blanked the rest of the file.
+    "// @match       https://commons.wikimedia.org/*\n"
+    "// ==/UserScript==\n"
+    + "".join(f"var line{at} = {at};\n" for at in range(40))
+    + "mw.loader.load('//fr.wikipedia.org/w/index.php?title=User:C/lib.js&action=raw&ctype=text/javascript');\n"
+    + "/* a closing note */\n"
+)
+
+
+def test_migrate_restates_the_analyses_a_comment_bug_read_as_blank(configured_db):
+    # The revision has not moved and never will -- these are abandoned scripts --
+    # so the sweep will not revisit them and the correction has no other route in.
+    ordinary = "\n".join(f"var b{at} = {at};" for at in range(40))
+    with db.session_scope() as session:
+        session.add_all(
+            [
+                UserScriptPage(wiki="fr.wikipedia.org", title="User:A/swallowed.js", role="empty", body=SWALLOWED),
+                # Genuinely empty, and it stays that way: the migration offers
+                # rows to the analyzer, it does not assume they were wrong.
+                UserScriptPage(wiki="fr.wikipedia.org", title="User:B/blank.js", role="empty", body="/* all of it */"),
+                # Already a script, so nothing here could have been truncated.
+                UserScriptPage(wiki="fr.wikipedia.org", title="User:C/lib.js", role="script", body=ordinary),
+            ],
+        )
+
+    assert migrate._restate_swallowed_userscript_analyses() == 1
+    # And again: a row whose verdict does not move is written zero times, so a
+    # second deploy is free rather than merely harmless.
+    assert migrate._restate_swallowed_userscript_analyses() == 0
+
+    with db.session_scope() as session:
+        roles = dict(session.query(UserScriptPage.title, UserScriptPage.role))
+        loads = [row.target_title for row in session.query(UserScriptImport).all()]
+    assert roles == {
+        "User:A/swallowed.js": userscripts.ROLE_SCRIPT,
+        "User:B/blank.js": userscripts.ROLE_EMPTY,
+        "User:C/lib.js": userscripts.ROLE_SCRIPT,
+    }
+    # The loads were parsed out of the same blanked body and were missing in the
+    # same way, so the demand this page places on other scripts was never counted.
+    assert loads == ["User:C/lib.js"]
+
+
+def test_migrate_leaves_a_deleted_page_out_of_the_restatement(configured_db):
+    # A tombstoned page is not a directory candidate whatever it says, and
+    # rewriting one would spend the walk on rows nothing reads.
+    with db.session_scope() as session:
+        session.add(
+            UserScriptPage(
+                wiki="fr.wikipedia.org",
+                title="User:A/gone.js",
+                role="empty",
+                body=SWALLOWED,
+                deleted_at=utcnow(),
+            ),
+        )
+
+    assert migrate._restate_swallowed_userscript_analyses() == 0
+
+    with db.session_scope() as session:
+        assert session.query(UserScriptPage.role).scalar() == "empty"
+
+
 def test_the_import_key_is_widened_once_and_then_left_alone(configured_db):
     # A fresh database declares the widened key with the table, so there is no
     # separate unique index and nothing for this to do. What production has is

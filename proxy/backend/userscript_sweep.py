@@ -468,6 +468,41 @@ def store_page(
     return _replace_imports(session, wiki, analysis)
 
 
+def restate_analysis(
+    session: Session,
+    row: UserScriptPage,
+    prefixes: userscripts.Prefixes = userscripts.no_prefixes,
+) -> bool:
+    """Re-derive one stored page's analysis from the body already held.
+
+    Bodies are kept so that a corrected analyzer can be applied to a corpus that
+    has already been read, and this is the only route by which it reaches one.
+    `_settled` skips a page whose revision has not moved, so a page filed under a
+    wrong verdict keeps it until somebody edits the page -- which for an
+    abandoned script is never, and a wrong verdict is exactly the case that has
+    to be repairable without a re-crawl.
+
+    The wiki is not asked, so nothing that records having asked it moves:
+    `revision`, `touched_at_wiki` and `last_checked_at` go on describing the read
+    that fetched this body. Only what was derived from the body is restated.
+
+    Reports whether the verdict actually changed, so a caller counts repairs
+    rather than rows examined -- and so a page whose analysis is already right
+    costs no write and no load-edge churn.
+    """
+    analysis = userscripts.analyze(row.title, row.body or "", wiki=row.wiki, prefixes=prefixes)
+    if (analysis.role, analysis.fingerprint, analysis.sketch) == (row.role, row.fingerprint, row.sketch):
+        return False
+    row.role = analysis.role
+    row.fingerprint = analysis.fingerprint
+    row.sketch = analysis.sketch
+    # The loads came out of the same body and were wrong in the same way: a page
+    # whose text was blanked parsed as loading nothing, so its demand for every
+    # script it loads went unrecorded.
+    _replace_imports(session, row.wiki, analysis)
+    return True
+
+
 def ingest(  # noqa: PLR0913 - the two ranking arguments and the revision map are all one caller's context
     request: Callable[[str, str, dict[str, Any]], Any],
     wiki: str,

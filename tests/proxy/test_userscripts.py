@@ -43,6 +43,33 @@ def test_stripping_an_absent_body_is_not_an_error():
     assert userscripts.strip_comments("") == ""
 
 
+def test_a_wildcard_url_in_a_line_comment_does_not_open_a_block_comment():
+    # `User:Yug/RenameOrReplace.js` on meta: a Tampermonkey header whose `@match`
+    # ends in the URL wildcard `/*`. Stripping block comments before line
+    # comments read that as an opener and blanked everything up to the file's
+    # next `*/` -- 17,079 of 17,240 bytes -- leaving a real script classified as
+    # an empty page and absent from the directory.
+    body = "// @match       https://commons.wikimedia.org/*\nvar real = 1;\n/* a comment */\nvar more = 2;\n"
+    stripped = userscripts.strip_comments(body)
+    assert "var real = 1;" in stripped
+    assert "var more = 2;" in stripped
+    assert "a comment" not in stripped
+
+
+def test_a_script_behind_a_wildcard_match_header_is_still_a_script():
+    header = "// ==UserScript==\n// @match       https://commons.wikimedia.org/*\n// ==/UserScript==\n"
+    body = header + "".join(f"var line{n} = {n};\n" for n in range(20)) + "/* closing note */\n"
+    assert userscripts.classify(body, wiki=FRWIKI) == userscripts.ROLE_SCRIPT
+
+
+def test_a_block_comment_still_swallows_the_line_comments_inside_it():
+    body = "/* opening\n// not a line comment, it is inside the block\n*/\nvar after = 1;\n"
+    stripped = userscripts.strip_comments(body)
+    assert "not a line comment" not in stripped
+    assert "var after = 1;" in stripped
+    assert stripped.count("\n") == body.count("\n")
+
+
 # --- titles ---------------------------------------------------------------
 
 
