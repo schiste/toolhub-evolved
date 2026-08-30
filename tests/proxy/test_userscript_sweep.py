@@ -1653,6 +1653,30 @@ def test_restating_an_analysis_that_has_not_changed_reports_no_repair():
         assert sweeper.restate_analysis(session, row) is False
 
 
+def test_restating_a_body_stored_at_the_truncation_cap_is_declined():
+    # `store_page` derives the analysis from the whole page and keeps only the
+    # first `MAX_STORED_BODY` characters, so what is on the row here is a verdict
+    # about text this function cannot see. Restating from the remnant would
+    # replace it with a narrower claim wearing the same fields.
+    body = "// @match https://commons.wikimedia.org/*\n" + ("x" * sweeper.MAX_STORED_BODY)
+    with db.session_scope() as session:
+        session.add(
+            UserScriptPage(
+                wiki=FRWIKI,
+                title="User:A/huge.js",
+                role="empty",
+                fingerprint="from-the-whole-page",
+                body=body[: sweeper.MAX_STORED_BODY],
+            ),
+        )
+    with db.session_scope() as session:
+        row = session.query(UserScriptPage).one()
+        assert sweeper.restate_analysis(session, row) is False
+    with db.session_scope() as session:
+        row = session.query(UserScriptPage).one()
+        assert (row.role, row.fingerprint) == ("empty", "from-the-whole-page")
+
+
 def test_a_page_whose_loads_all_survive_reports_no_collisions():
     imports = tuple(
         userscripts.ScriptImport(

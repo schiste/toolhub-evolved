@@ -490,7 +490,15 @@ def restate_analysis(
     rather than rows examined -- and so a page whose analysis is already right
     costs no write and no load-edge churn.
     """
-    analysis = userscripts.analyze(row.title, row.body or "", wiki=row.wiki, prefixes=prefixes)
+    body = row.body or ""
+    # `store_page` analyses the whole page and only then truncates what it keeps,
+    # so a body sitting at the cap is a partial record of a page whose stored
+    # verdict was taken from all of it. Restating from the kept part would trade a
+    # statement about the script for one about its first half megabyte. These stay
+    # for the sweep, which re-reads the whole page the next time it is edited.
+    if len(body) >= MAX_STORED_BODY:
+        return False
+    analysis = userscripts.analyze(row.title, body, wiki=row.wiki, prefixes=prefixes)
     if (analysis.role, analysis.fingerprint, analysis.sketch) == (row.role, row.fingerprint, row.sketch):
         return False
     row.role = analysis.role

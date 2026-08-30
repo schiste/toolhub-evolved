@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-script-that-read-as-a-blank-page -->
 <!-- Release title: The Script That Read As A Blank Page -->
-<!-- Source range: 5a08c45e..4eb9805c (1 commit) -->
+<!-- Source range: 5a08c45e..605836ad (2 commits) -->
 
 # What's New for Users
 
