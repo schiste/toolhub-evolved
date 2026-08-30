@@ -89,13 +89,21 @@ def cover(client: WikimediaClient, entry: wiki_schedule.Due, connect: wiki_repli
     wiki = entry.wiki
     known = wiki_schedule.addresses([entry])
     read = gadget_inventory.ingest(client.request, wiki)
+    # `described` is the only count that can be absent rather than zero: the
+    # descriptions come from a second request, so a wiki whose definition page
+    # answered and whose messages did not knows its gadgets and not their
+    # descriptions. Printing 0 there would say the wiki wrote no descriptions,
+    # which is what an unanswered request cannot tell us -- and this line is
+    # how the lane is read, so a lane that has stopped transcribing has to be
+    # visible in it rather than only in the table.
+    described = "unread" if read["described"] is None else read["described"]
     sys.stdout.write(
         "gadget-inventory: "
         f"wiki={read['wiki']} read={'yes' if read['read'] else 'no'} "
         f"reason={read['reason']} "
         f"declared={read['declared']} added={read['added']} "
         f"updated={read['updated']} folded={read['folded']} "
-        f"retired={read['retired']}\n",
+        f"retired={read['retired']} described={described}\n",
     )
     stamped = gadget_creation_dates.backfill([wiki], connect=connect, known=known)
     sys.stdout.write(

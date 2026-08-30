@@ -24,12 +24,15 @@ DEFINITION = """
 class FakeWiki:
     """An Action API answering every wiki with the same definition page."""
 
-    def __init__(self):
+    def __init__(self, messages_fail=False):
         self.asked = []
         self.described = []
+        self.messages_fail = messages_fail
 
     def request(self, domain, _method, params):
         if params.get("meta") == "allmessages":
+            if self.messages_fail:
+                raise RuntimeError("503 Server Error: Service Unavailable")
             # Descriptions are a second read against the same wiki, so a fake
             # that answered it with a definition page would make every gadget
             # look undescribed rather than exercise the branch.
@@ -62,6 +65,8 @@ def test_the_job_reads_each_configured_wiki_once_and_catalogues_it(monkeypatch, 
     assert wiki.asked == ["fr.wikipedia.org", "en.wikipedia.org"]
     out = capsys.readouterr().out
     assert "gadget-inventory: wiki=fr.wikipedia.org read=yes reason=read declared=2" in out
+    # One of the two gadgets has a description message; the other does not.
+    assert "declared=2 added=2 updated=0 folded=0 retired=0 described=1" in out
     assert "gadget-catalogue: wiki=fr.wikipedia.org declared=2 written=1" in out
     assert "hidden=1" in out
 
@@ -153,7 +158,7 @@ def test_a_wiki_with_no_replica_reports_no_last_edits_and_is_still_catalogued(mo
 
 # --- a thousand wikis, one run ---------------------------------------------
 
-INVENTORY = {"read": True, "reason": "read", "declared": 0, "added": 0, "updated": 0, "folded": 0, "retired": 0}
+INVENTORY = {"read": True, "reason": "read", "declared": 0, "added": 0, "updated": 0, "folded": 0, "retired": 0, "described": 0}
 
 
 def queued(*wikis, closed=False):
@@ -256,3 +261,38 @@ def test_a_run_fails_only_when_every_wiki_it_attempted_failed(monkeypatch, wiki)
 
     with pytest.raises(RuntimeError, match="every wiki attempted"):
         job.main()
+
+
+def test_a_wiki_whose_messages_did_not_answer_says_so_rather_than_reporting_none(monkeypatch, capsys):
+    # `described=0` and `described=unread` are different facts: the first says
+    # the wiki wrote no description messages, the second says we did not get to
+    # ask. A lane that has stopped transcribing entirely reports the second on
+    # every wiki, and this line is where anybody would notice.
+    monkeypatch.setenv("TOOLHUB_DB_URL", "sqlite://")
+    monkeypatch.setattr(job, "WikimediaClient", lambda: FakeWiki(messages_fail=True))
+    monkeypatch.setenv("GADGET_WIKIS", FRWIKI)
+
+    assert job.main() == 0
+
+    out = capsys.readouterr().out
+    assert f"gadget-inventory: wiki={FRWIKI} read=yes reason=read declared=2" in out
+    assert "retired=0 described=unread" in out
+
+
+def test_a_wiki_that_never_answered_at_all_reports_its_descriptions_unread_too(monkeypatch, capsys):
+    # The definition page is what the descriptions are asked for, so a wiki that
+    # refused that read cannot have told us about its messages either.
+    monkeypatch.setenv("TOOLHUB_DB_URL", "sqlite://")
+
+    class Silent:
+        def request(self, _domain, _method, _params):
+            raise RuntimeError("503 Server Error: Service Unavailable")
+
+    monkeypatch.setattr(job, "WikimediaClient", Silent)
+    monkeypatch.setenv("GADGET_WIKIS", FRWIKI)
+
+    job.main()
+
+    out = capsys.readouterr().out
+    assert "read=no reason=request-failed" in out
+    assert "described=unread" in out

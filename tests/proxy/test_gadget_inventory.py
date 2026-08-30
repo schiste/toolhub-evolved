@@ -133,7 +133,10 @@ def test_a_wiki_that_would_not_say_keeps_the_descriptions_it_had():
     summary = gadget_inventory.ingest(FakeWiki(messages_fail=True).request, FRWIKI)
 
     assert stored()["Popups"].description == "Navigation popups."
-    assert summary["described"] == 0
+    # Not zero. Zero is the count for a wiki that answered and wrote no
+    # messages, and the summary is what the job prints, so reporting the two
+    # the same way would hide a lane that had stopped transcribing.
+    assert summary["described"] is None
 
 
 def test_a_description_the_wiki_has_deleted_is_cleared():

@@ -156,7 +156,7 @@ def _store(
     wiki: str,
     entries: tuple[wiki_sources.GadgetEntry, ...],
     described: dict[str, str] | None = None,
-) -> dict[str, int]:
+) -> dict[str, int | None]:
     """Write one wiki's inventory, returning what changed.
 
     `described` is applied separately from `_apply` because it comes from a
@@ -196,6 +196,12 @@ def _store(
         if key not in seen and row.deleted_at is None:
             row.deleted_at = now
             counts["retired"] += 1
+    if described is None:
+        # No number is honest here. Zero would read as "this wiki wrote no
+        # description messages", which is the one thing an unanswered request
+        # cannot tell us -- the same distinction `_unread` draws for the
+        # definition page, drawn again for the read that follows it.
+        counts["described"] = None
     return counts
 
 
@@ -207,7 +213,10 @@ def _unread(wiki: str, reason: str) -> dict[str, Any]:
     a lane that has silently read every page as empty looks exactly like a
     lane whose wikis are all down.
     """
-    return {"wiki": wiki, "read": False, "reason": reason, **dict.fromkeys(COUNT_FIELDS, 0)}
+    # `described` is absent rather than zero for the same reason the counts
+    # above are qualified by `reason`: a wiki we never read told us nothing
+    # about its descriptions either.
+    return {"wiki": wiki, "read": False, "reason": reason, **dict.fromkeys(COUNT_FIELDS, 0), "described": None}
 
 
 def ingest(request: Callable[[str, str, dict[str, Any]], Any], wiki: str) -> dict[str, Any]:
