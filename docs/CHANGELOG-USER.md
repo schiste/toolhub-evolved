@@ -1,15 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-descriptions-the-wikis-already-wrote -->
-<!-- Release title: What the Wikis Wrote, and What the Workers Did -->
-<!-- Source range: 752537d1..2eaa393a (8 commits) -->
+<!-- Release id: the-alarm-that-switched-itself-off -->
+<!-- Release title: The Alarm That Switched Itself Off -->
+<!-- Source range: 462c5007..PROMOTE (2 commits) -->
 
 # What's New for Users
 
-- About fifteen thousand of the fifty-seven thousand entries in the catalogue showed no description at all. Most of that gap was one group: gadgets, the tools a wiki offers you from its preferences page. Nothing had ever tried to describe them.
-- We could have asked a model to write those descriptions. We checked first, and found the wikis had already written them — nine gadgets in ten have a description their own maintainer wrote, sitting in a wiki message this catalogue was not reading. Gadgets now carry those words instead of ours.
-- They appear in the language they were written in, untranslated. A French gadget reads in French. Translating would mean paraphrasing a maintainer rather than quoting one, and quoting is the better of the two.
-- A gadget whose maintainer never wrote that message is left blank rather than filled in with a guess. A blank is a gap somebody can fill; an invented sentence is harder to spot and harder to correct.
-- Separately: 235 user scripts had been left permanently without a description by a few bad minutes at the service that reads them, back on the 26th. Failing to reach that service was being filed as though it were an answer, so those pages were never offered to it again. They come back into the queue now, behind everything that has never been tried.
-- When that service does answer but the answer is not usable, we now keep a note of what was wrong with it, rather than only that it was refused — and we keep the answer itself, so the note can be checked against what was actually said. Four thousand answers had already been turned down before we started keeping either. Those are being put once more, one time only, so their reasons become readable; almost all of them will be turned down again, and this time we will know why.
-- Also in this release: every background job that keeps this catalogue current now has a page of its own. It lists that job's recent runs, how long each took, how much work it got through, and — for the jobs that measure it — how much of the catalogue they have covered so far and whether that is going up. A run that was cut short before it could say what it had done is marked as saying nothing, rather than counted as having done nothing.
+- The daily summary for 30 August was missing from the archive. It has now been written and published. The single tool it covers, a remote-desktop gadget on English Wikipedia, was registered at 22:01 that night and reached this catalogue at 06:30 the next morning, a quarter of an hour after the day's summary had already been written over a day that still looked empty.
+- Nothing was watching it happen. The check that exists to notice a missing summary had been reporting this one since 08:00 that morning, and because it kept reporting a fault it was switched off by the very mechanism that stops a genuinely broken task from retrying forever. A check whose whole job is to fail when something else is wrong can no longer be silenced that way; it now keeps reporting for as long as the problem lasts.
+- The deadline it was measuring against was wrong too. It called a summary overdue eight hours after the day ended, while summaries are written once every twenty-four hours, so any tool arriving late in the day produced a complaint nobody could act on for the better part of a day. A day is now only reported as missing its summary once a scheduled writing has actually passed over it. We are not writing summaries more often to close that gap: a published summary never changes afterwards, and writing it earlier in the day would freeze it before the day's late arrivals had landed.
