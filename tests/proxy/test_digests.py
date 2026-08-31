@@ -89,6 +89,60 @@ def test_due_periods_are_closed_utc_days_weeks_and_months_without_empty_periods(
     assert all(period.end <= datetime(2026, 8, 10) for period in periods)
 
 
+def test_a_period_is_not_late_while_no_generation_run_has_yet_seen_it():
+    """The daily:2026-08-30 incident: one tool landed fifteen minutes after the run.
+
+    digest-publish ran at 06:15 with the period still empty, so it was never due
+    and nothing was generated; catalog-sync captured the tool at 06:30. Reporting
+    that as a missed run made the audit fail every hour until the next day's run.
+    """
+    digests.capture_recent_rows(
+        [creation(1, "enwiki-msk-rdp", "2026-08-30T22:01:21Z")],
+        captured_at=datetime(2026, 8, 31, 6, 30, 15),
+    )
+
+    # 09:00 is past both the period end and the eight hours this used to allow.
+    assert digests.overdue_periods(grace=timedelta(hours=26), now=datetime(2026, 8, 31, 9)) == []
+
+
+def test_a_period_is_late_once_a_scheduled_run_has_passed_over_it():
+    digests.capture_recent_rows(
+        [creation(1, "enwiki-msk-rdp", "2026-08-30T22:01:21Z")],
+        captured_at=datetime(2026, 8, 31, 6, 30, 15),
+    )
+
+    late = digests.overdue_periods(grace=timedelta(hours=26), now=datetime(2026, 9, 1, 9))
+
+    assert ("daily", "2026-08-30") in {(period.cadence, period.key) for period in late}
+
+
+def test_a_period_captured_before_it_closed_ages_from_the_close():
+    """Late capture must not become an excuse: the alarm still has to fire."""
+    digests.capture_recent_rows(
+        [creation(1, "prompt-tool", "2026-08-09T12:00:00Z")],
+        captured_at=datetime(2026, 8, 9, 12, 1),
+    )
+
+    late = digests.overdue_periods(grace=timedelta(hours=26), now=datetime(2026, 8, 11, 12))
+
+    assert ("daily", "2026-08-09") in {(period.cadence, period.key) for period in late}
+
+
+def test_generating_the_edition_takes_the_period_out_of_the_late_set(monkeypatch):
+    digests.capture_recent_rows(
+        [creation(1, "prompt-tool", "2026-08-09T12:00:00Z")],
+        captured_at=datetime(2026, 8, 9, 12, 1),
+    )
+    now = datetime(2026, 8, 11, 12)
+    period = next(p for p in digests.due_periods(now=now) if p.cadence == "daily")
+
+    digests.create_edition(period)
+
+    assert ("daily", "2026-08-09") not in {
+        (item.cadence, item.key) for item in digests.overdue_periods(grace=timedelta(hours=26), now=now)
+    }
+
+
 def test_due_periods_stop_at_the_backfill_horizon():
     digests.capture_recent_rows(
         [
@@ -1409,7 +1463,12 @@ def test_digest_audit_detects_late_ungenerated_period(monkeypatch):
         "https://api.wikimedia.org/service/lw/inference/v1/models/llm-qwen36-27b/openai/v1/chat/completions",
     )
     monkeypatch.setattr(digest_audit, "utcnow", lambda: datetime(2026, 8, 14, 9))
-    digests.capture_recent_rows([creation(1, "missing", "2026-08-12T12:00:00Z")])
+    # Captured on the pinned clock, not the wall clock: staleness now runs from
+    # whichever came later, the period closing or this row arriving.
+    digests.capture_recent_rows(
+        [creation(1, "missing", "2026-08-12T12:00:00Z")],
+        captured_at=datetime(2026, 8, 12, 12, 5),
+    )
 
     with pytest.raises(digest_audit.DigestAuditError, match="daily:2026-08-12"):
         digest_audit.audit()
@@ -2481,3 +2540,22 @@ def test_create_edition_returns_the_winner_of_a_concurrent_insert(monkeypatch):
     monkeypatch.setattr(digests, "_existing_edition", lambda *_args, **_kwargs: next(calls))
 
     assert digests.create_edition(period) is winner
+
+
+def test_the_digest_alarm_cannot_be_muted_by_the_circuit_breaker():
+    """This exits non-zero exactly when the digest pipeline is unhealthy.
+
+    Counted as its own failures, three such exits disable it while the fault is
+    still live: on 2026-08-30 that muted the only job that knew a daily edition
+    was missing, for a day, and digest-publish went on reporting success. The
+    watchdog avoids this by running unwrapped; the rest of the guard is worth
+    keeping here, so the breaker alone is switched off.
+    """
+    lines = (ROOT / "jobs.yaml").read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == "- name: digest-audit")
+    end = next(i for i, line in enumerate(lines[start + 1 :], start + 1) if line.strip().startswith("- name:"))
+    block = lines[start:end]
+    command = next(line for line in block if line.strip().startswith("command:"))
+
+    assert "--no-breaker" in command, "a breaker that trips on the alarm hides what it reports"
+    assert "emails: onfailure" in "\n".join(block), "without this the non-zero exit reaches nobody"

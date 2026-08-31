@@ -25,6 +25,16 @@ STALE_AFTER=3600
 # after a cooldown instead, so recovery is automatic and a still-broken job
 # simply re-trips.
 RETRY_AFTER=3600
+# An alarm job reports on something other than itself: it exits non-zero exactly
+# when the thing it watches is broken. Counting those exits as its own failures
+# retires the alarm while the fault it exists to report is still there, which is
+# why job-watchdog runs outside this script entirely. digest-audit has the same
+# shape and did not get the same treatment: it tripped the breaker on 2026-08-30
+# over a genuinely missing daily edition and spent a day muted. Wrapping is still
+# worth having for such a job -- the lock, the abandoned-lock reclaim, and the
+# run row that /workers reads all come from here -- so the breaker alone is what
+# switches off, leaving every non-zero exit to reach the failure mail.
+NO_BREAKER=0
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -47,6 +57,10 @@ while [ "$#" -gt 0 ]; do
 			[ "$#" -ge 2 ] || { echo "job-guard: --retry-after needs a value" >&2; exit 2; }
 			RETRY_AFTER="$2"
 			shift 2
+			;;
+		--no-breaker)
+			NO_BREAKER=1
+			shift
 			;;
 		--reset)
 			RESET=1
@@ -162,7 +176,7 @@ if [ -f "$STATE_FILE" ]; then
 	last_failure_at="${last_failure_at:-0}"
 fi
 
-if [ "$disabled" -eq 1 ] || [ "$failure_streak" -ge "$MAX_FAILURES" ]; then
+if [ "$NO_BREAKER" -eq 0 ] && { [ "$disabled" -eq 1 ] || [ "$failure_streak" -ge "$MAX_FAILURES" ]; }; then
 	cooled_for=$(($(date +%s) - last_failure_at))
 	if [ "$RETRY_AFTER" -gt 0 ] && [ "$last_failure_at" -gt 0 ] && [ "$cooled_for" -ge "$RETRY_AFTER" ]; then
 		# Half-open: one trial run. Success below clears the streak; a failure
@@ -245,7 +259,7 @@ fi
 
 failure_streak=$((failure_streak + 1))
 disabled=0
-if [ "$failure_streak" -ge "$MAX_FAILURES" ]; then
+if [ "$NO_BREAKER" -eq 0 ] && [ "$failure_streak" -ge "$MAX_FAILURES" ]; then
 	disabled=1
 fi
 cat > "$tmp" <<EOF

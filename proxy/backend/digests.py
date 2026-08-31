@@ -327,6 +327,42 @@ def due_periods(*, now: datetime | None = None) -> list[Period]:
     return sorted(periods, key=lambda item: (item.end, CADENCES.index(item.cadence), item.start))
 
 
+def overdue_periods(*, grace: timedelta, now: datetime | None = None) -> list[Period]:
+    """Return due periods a scheduled generation run has already had, and missed.
+
+    A period is not ready to generate the moment it closes. Upstream creation
+    times are back-dated relative to ingestion, so `catalog-sync` can capture at
+    06:30 a tool created at 22:01 the night before: the period stood empty when
+    the generator ran at 06:15 and only became due a quarter of an hour later.
+    Age measured from the period end calls that a missed run when no run has yet
+    seen the period at all, and daily:2026-08-30 was exactly that -- reported
+    ungenerated for a day over one tool that arrived fifteen minutes late.
+
+    So age runs from whichever came later, the period closing or its earliest
+    event being captured: the first moment a run could have produced it. Callers
+    pick `grace` to span a full generation cycle, since a period that becomes due
+    just after a run is not late until the following one has also passed it by.
+    """
+    current = _naive_utc(now or utcnow())
+    pending = due_periods(now=current)
+    if not pending:
+        return []
+    late = []
+    with db.session_scope() as session:
+        for period in pending:
+            first_capture = session.execute(
+                select(func.min(ToolActivityEvent.captured_at)).where(
+                    ToolActivityEvent.event_type == "created",
+                    ToolActivityEvent.event_at >= period.start,
+                    ToolActivityEvent.event_at < period.end,
+                )
+            ).scalar_one()
+            due_since = max(period.end, first_capture) if first_capture else period.end
+            if due_since <= current - grace:
+                late.append(period)
+    return late
+
+
 def _fact_text(value: Any) -> str:  # noqa: ANN401 - cached official JSON is heterogeneous
     if isinstance(value, dict):
         return str(value.get("en") or value.get("mul") or next(iter(value.values()), "")).strip()

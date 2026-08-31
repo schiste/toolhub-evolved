@@ -14,7 +14,7 @@ from backend.digests import (
     PUBLICATION_BLOCKED_STATUS,
     PUBLICATION_FAILED_STATUS,
     clean_liftwing_endpoint,
-    due_periods,
+    overdue_periods,
 )
 from backend.models import (
     DigestDelivery,
@@ -27,7 +27,13 @@ from backend.models import (
 
 MAX_VALIDATED_AGE = timedelta(hours=2)
 MAX_OUTBOX_AGE = timedelta(hours=48)
-MAX_DUE_PERIOD_AGE = timedelta(hours=8)
+# Spans one full generation cycle. digest-publish runs once a day, so a period
+# that becomes due just after 06:15 has no run to produce it for nearly 24 hours;
+# a threshold shorter than that reports the wait itself as a fault, which it did
+# every time a tool arrived late in the day. At 26 hours a period is late only
+# once a scheduled run has passed over it without producing it. Measured from
+# when the period became ready to generate, not when it closed -- see overdue_periods.
+MAX_DUE_PERIOD_AGE = timedelta(hours=26)
 FALLBACK_ALERT_WINDOW = timedelta(hours=48)
 
 
@@ -95,7 +101,7 @@ def audit() -> dict[str, object]:
                 DigestEdition.status != OUT_OF_SCOPE_STATUS,
             )
         ).scalar_one()
-    late_due = [period for period in due_periods(now=now) if period.end <= now - MAX_DUE_PERIOD_AGE]
+    late_due = overdue_periods(grace=MAX_DUE_PERIOD_AGE, now=now)
     problems = []
     if edition_counts.get(PUBLICATION_FAILED_STATUS, 0):
         problems.append("one or more Meta publications failed")

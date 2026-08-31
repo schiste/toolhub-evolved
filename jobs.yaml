@@ -414,7 +414,14 @@
 - name: digest-audit
   # Turn durable publication failures and stale delivery backlogs into an
   # operator-visible failure email rather than trusting cron execution alone.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name digest-audit --stale-after 240 -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/digest_audit.py
+  #
+  # --no-breaker for the reason job-watchdog is not wrapped at all: this exits
+  # non-zero whenever the digest pipeline is unhealthy, so counting those as its
+  # own failures disables the alarm precisely while the fault is live. It did, on
+  # 2026-08-30, and the missing daily edition went unreported for a day. The rest
+  # of the guard still earns its place here -- one run at a time, the abandoned
+  # lock reclaim, and the run row /workers charts -- so only the breaker is off.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name digest-audit --stale-after 240 --no-breaker -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/digest_audit.py
   image: python3.13
   schedule: "23 * * * *"
   timeout: 120

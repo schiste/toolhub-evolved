@@ -324,3 +324,48 @@ def test_guard_clears_a_previous_summary_before_running_the_child(tmp_path):
 
     assert result.returncode == 0
     assert not stale.exists()
+
+
+def test_no_breaker_keeps_running_an_alarm_that_stays_failing(tmp_path):
+    """An alarm exits non-zero while something else is broken; muting it hides the fault.
+
+    digest-audit tripped the breaker on 2026-08-30 over a genuinely missing daily
+    edition and went quiet for a day, which is the failure job-watchdog avoids by
+    not being wrapped at all. --no-breaker keeps the wrapper without that.
+    """
+    marker = tmp_path / "runs"
+    failing = ("--no-breaker", "--", "sh", "-c", f"echo run >> {marker}; exit 7")
+
+    for _ in range(6):
+        result = run_guard_with(tmp_path, *failing)
+        assert result.returncode == 7
+        assert "disabled" not in result.stdout
+
+    assert marker.read_text().splitlines() == ["run"] * 6
+
+
+def test_no_breaker_leaves_every_other_guarantee_of_the_guard_in_place(tmp_path):
+    """Only the breaker switches off: the lock and the summary file still apply."""
+    _held_lock(tmp_path, age_seconds=60)
+    overlapping = run_guard_with(tmp_path, "--no-breaker", "--", "sh", "-c", "exit 7")
+    assert overlapping.returncode == 0
+    assert "already running; skipping" in overlapping.stdout
+
+    (tmp_path / "guard" / ".example.lock").rmdir()
+    summary = run_guard_with(
+        tmp_path, "--no-breaker", "--", "sh", "-c", 'printf %s "$TOOLHUB_JOB_SUMMARY_FILE"'
+    )
+    assert summary.stdout.endswith("example.summary.json")
+
+
+def test_a_breaker_already_tripped_is_ignored_once_no_breaker_is_set(tmp_path):
+    """Recovery must not need a hand-run --reset after the flag is added."""
+    for _ in range(3):
+        assert run_guard_with(tmp_path, "--", "sh", "-c", "exit 7").returncode == 7
+    assert run_guard_with(tmp_path, "--", "sh", "-c", "exit 7").returncode == 0
+
+    marker = tmp_path / "runs"
+    result = run_guard_with(tmp_path, "--no-breaker", "--", "sh", "-c", f"echo run >> {marker}; exit 7")
+
+    assert result.returncode == 7
+    assert marker.read_text().splitlines() == ["run"]
