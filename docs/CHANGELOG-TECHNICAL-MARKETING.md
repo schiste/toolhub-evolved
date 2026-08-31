@@ -1,7 +1,7 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-descriptions-the-wikis-already-wrote -->
-<!-- Release title: The Descriptions the Wikis Already Wrote -->
+<!-- Release title: What the Wikis Wrote, and What the Workers Did -->
 <!-- Source range: 752537d1..2eaa393a (8 commits) -->
 
 # Technical and Marketing Notes
