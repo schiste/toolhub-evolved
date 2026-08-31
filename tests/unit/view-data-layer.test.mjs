@@ -110,17 +110,18 @@ test("fields are ordered most complete first, whatever order the payload arrives
 	assert.deepEqual(names, ["Title", "Description", "Keywords"]);
 });
 
-test("an AI value a stronger source overrode is reported as overridden, not as filled", () => {
+test("an AI value a stronger source overrode never reaches the bar or the filled count", () => {
 	document.body.innerHTML = dataLayerHTML(payload);
 	const description = [...document.querySelectorAll(".data-layer-table tbody tr")].find((row) =>
 		row.textContent.includes("description")
 	);
-	// 12 tools had an inferred description that lost. They are not part of the
+	// 12 tools had an inferred description that lost. The payload still reports
+	// them, and the page must ignore them completely: they are not part of the
 	// field's 60 filled, and the AI segment stays at the 20 it actually won.
-	assert.match(description.querySelector(".data-layer-shadow").textContent, /12/);
 	const ai = description.querySelector(".data-layer-bar__seg--ai");
 	assert.equal(Number(ai.style.getPropertyValue("--share")), 20);
 	assert.match(description.textContent, /60/);
+	assert.equal(description.querySelectorAll(".data-layer-shadow").length, 0);
 });
 
 test("a list field is marked as one, so a partial list is not read as a single missing value", () => {

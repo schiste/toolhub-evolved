@@ -165,9 +165,8 @@ function fieldsHTML(payload) {
 	const tools = Number(payload?.tools) || 0;
 	const fields = Array.isArray(payload?.fields) ? payload.fields : [];
 	const rows = fields
-		.map((entry) => {
-			const shadowedAi = Number(entry?.shadowed?.ai) || 0;
-			return `<tr>
+		.map(
+			(entry) => `<tr>
 				<th scope="row">
 					<span class="data-layer-field">${esc(fieldLabel(String(entry?.field || "")))}</span>
 					<code>${esc(String(entry?.field || ""))}</code>
@@ -175,13 +174,8 @@ function fieldsHTML(payload) {
 				</th>
 				<td class="data-layer-cell--figure"><strong>${esc(`${Number(entry?.percent) || 0}%`)}</strong><span>${esc(`${count(entry?.filled)} / ${count(tools)}`)}</span></td>
 				<td class="data-layer-cell--bar">${stackedBar(entry?.primary || {}, tools, Number(entry?.filled) || 0)}</td>
-				<td class="data-layer-cell--shadow">${
-					shadowedAi > 0
-						? `<span class="data-layer-shadow" title="${esc(t("dataLayer.shadowedHint", "A language model offered a value here that a stronger source overrode."))}">${esc(count(shadowedAi))}</span>`
-						: `<span class="data-layer-shadow data-layer-shadow--none">—</span>`
-				}</td>
-			</tr>`;
-		})
+			</tr>`
+		)
 		.join("");
 	return `<section class="data-layer-fields" aria-labelledby="data-layer-fields-title">
 		<h2 id="data-layer-fields-title">${esc(t("dataLayer.fieldsTitle", "Filling by field"))}</h2>
@@ -197,7 +191,6 @@ function fieldsHTML(payload) {
 					<th scope="col">${esc(t("dataLayer.colField", "Field"))}</th>
 					<th scope="col">${esc(t("dataLayer.colFilled", "Filled"))}</th>
 					<th scope="col">${esc(t("dataLayer.colSources", "By source"))}</th>
-					<th scope="col">${esc(t("dataLayer.colShadowed", "AI overridden"))}</th>
 				</tr></thead>
 				<tbody>${rows}</tbody>
 			</table>

@@ -251,19 +251,6 @@
 	min-width: 10rem;
 }
 
-.data-layer-cell--shadow {
-	text-align: end;
-	font-variant-numeric: tabular-nums;
-}
-
-.data-layer-shadow {
-	color: var(--color-source-ai);
-}
-
-.data-layer-shadow--none {
-	color: var(--color-text-muted);
-}
-
 /* ---- Legend ----------------------------------------------------------- */
 
 .data-layer-legend {
