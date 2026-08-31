@@ -119,8 +119,16 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
     gadget, `for_wikis` is where it runs, `repository` is the page its code
     lives on, `description` is the interface message the wiki shows on
     Special:Gadgets. Nothing is inferred, and fields the wiki says nothing
-    about -- licence, audiences, a bug tracker -- are absent rather than filled
-    with a plausible guess.
+    about -- audiences, a bug tracker -- are absent rather than filled with a
+    plausible guess.
+
+    `license` is a transcription too, of the only document that speaks to it.
+    No gadget declares a licence and the Terms of Use license every one of them
+    anyway, so the field is read off the Terms rather than the page, and off
+    `created_date` for the version. It is the single field here whose source is
+    the site rather than the gadget, and it is absent for exactly the gadgets
+    `created_date` is absent for, because an undated page cannot be placed on
+    either side of the Terms change.
 
     `created_date`, `modified_date` and `author` are the fields the declaration
     does not carry itself: they come from the code pages' own history, stamped
@@ -149,6 +157,12 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
         # gadget began to exist, not when this catalogue noticed it. Absent
         # rather than approximated wherever no replica has answered.
         record["created_date"] = created
+        # The licence follows from that same date. It is the one field here the
+        # wiki does not state per gadget and still binds for every one of them,
+        # and the version depends on when the code was first published -- see
+        # `wiki_sources.content_license`.
+        if license_id := wiki_sources.content_license(created):
+            record["license"] = license_id
     if touched := wiki_replica.iso_timestamp(gadget.touched_at_wiki or ""):
         # The newest current revision among the code pages: when the gadget was
         # last actually changed. Distinct from `last_seen_at` on the inventory

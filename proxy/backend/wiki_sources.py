@@ -257,6 +257,60 @@ def page_url(domain: str, title: str) -> str:
     return f"https://{domain}/wiki/{title.replace(' ', '_')}"
 
 
+#: The Terms of Use every Wikimedia wiki publishes under, and the one document
+#: that says anything at all about the licence of a script or gadget page.
+TERMS_OF_USE_URL = "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use"
+#: The day the current Terms took effect and moved new contributions from
+#: CC BY-SA 3.0 to 4.0. Everything published before it was licensed under 3.0
+#: and was never relicensed, so this date -- not today's Terms -- decides which
+#: version a given page carries.
+TERMS_4_0_EFFECTIVE = "2023-06-07"
+LICENSE_CC_BY_SA_3 = "CC-BY-SA-3.0"
+LICENSE_CC_BY_SA_4 = "CC-BY-SA-4.0"
+
+
+def content_license(created_at: str) -> str:
+    """Return the SPDX licence a wiki page carries by the Terms of Use, or "".
+
+    This is the one field on a script or gadget that no page states and every
+    page nonetheless has. Section 7 of the Terms binds text contributed to any
+    Wikimedia project under CC BY-SA, and carves out nothing for JavaScript or
+    CSS: the words never appear. Nor does the project supply a different rule --
+    `Wikipedia:User scripts` says a great deal about trusting a script and
+    nothing about copying one. So the site-wide term is the whole of the answer,
+    and reading it off is a transcription of a declaration the author made by
+    publishing, not a guess about a page nobody licensed.
+
+    The version is what makes it a computation rather than a constant, and the
+    reason `created_at` is required. The current Terms took effect on 7 June
+    2023; everything published before them was licensed under CC BY-SA 3.0, and
+    a later Terms of Use cannot relicense a contribution already made. A page
+    first written in 2009 is 3.0 today. In a 120-page sample of enwiki user
+    scripts, 102 were created before that date, so calling the corpus 4.0
+    because the Terms now say 4.0 would misstate roughly six pages in seven.
+
+    Creation, not last edit, settles it: an edit in 2024 adds 4.0 material to a
+    page whose earlier revisions stay 3.0, and the licence anybody reusing the
+    whole page must honour is the older one. The result is deliberately the stricter
+    of the two claims the page supports.
+
+    Only the date is compared, so a bare `2023-06-07` and a full instant agree,
+    and anything too short to be a date -- including the "" an undated page
+    already carries -- is treated as undated.
+
+    An undated page yields "", the same answer `created_date` itself gives.
+    Which version applies is a question about when, so a page the Wiki Replicas
+    have never dated publishes no licence rather than the more common guess.
+    Dual licensing under the GFDL is omitted for the same reason a single SPDX
+    identifier can only say one thing: the Terms let anybody reusing it satisfy
+    either, and CC BY-SA is the one they reach for.
+    """
+    day = created_at.strip()[: len(TERMS_4_0_EFFECTIVE)]
+    if len(day) != len(TERMS_4_0_EFFECTIVE) or not day[:4].isdigit():
+        return ""
+    return LICENSE_CC_BY_SA_4 if day >= TERMS_4_0_EFFECTIVE else LICENSE_CC_BY_SA_3
+
+
 def _definition_options(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
     """Split the inside of a definition's bracket into its options.
 

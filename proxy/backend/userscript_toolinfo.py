@@ -164,6 +164,15 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "", do
     page exists and said yes -- and it is omitted, never guessed at, for the
     scripts whose authors documented them somewhere else or not at all.
 
+    `license` is the one field no script page states and every script page has.
+    Section 7 of the Terms of Use puts text contributed to any project under
+    CC BY-SA and carves nothing out for JavaScript, so publishing the page was
+    the licensing act and this only reads it back. The version comes from
+    `created_date`: the current Terms took effect on 7 June 2023 and could not
+    relicense what was already published, so most of this corpus is 3.0 rather
+    than 4.0. `wiki_sources.content_license` holds the reasoning and the
+    measurement. Like `created_date`, it is omitted for an undated page.
+
     `_lifecycle` is the exception, and is marked as one by its underscore: it is
     Evolved's reading of the directory's tier rather than anything the wiki
     published.
@@ -179,6 +188,10 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "", do
     }
     if created := wiki_replica.iso_timestamp(entry.created_at_wiki or ""):
         record["created_date"] = created
+        # And the licence, which follows from that date rather than from the
+        # page -- see `wiki_sources.content_license`.
+        if license_id := wiki_sources.content_license(created):
+            record["license"] = license_id
     if touched := wiki_replica.iso_timestamp(entry.touched_at_wiki or ""):
         record["modified_date"] = touched
     if docs_title:

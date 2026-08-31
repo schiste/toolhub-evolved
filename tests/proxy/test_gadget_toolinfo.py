@@ -329,3 +329,23 @@ def test_a_gadget_whose_wiki_never_wrote_a_message_publishes_no_description():
     # Absent rather than empty, on the same terms as every other field here: a
     # gadget nobody described reads as undescribed, not as described emptily.
     assert "description" not in gadget_toolinfo.toolinfo_record(a_gadget(description=""))
+
+
+def test_a_dated_gadget_publishes_the_licence_the_terms_of_use_give_it():
+    # A gadget declares even less about itself than a script does: no gadget
+    # states a licence anywhere, and the Terms of Use license every one of them.
+    record = gadget_toolinfo.toolinfo_record(a_gadget(created_at_wiki="20070311120000"))
+
+    assert record["license"] == "CC-BY-SA-3.0"
+
+
+def test_a_gadget_written_since_the_terms_changed_publishes_the_newer_licence():
+    record = gadget_toolinfo.toolinfo_record(a_gadget(created_at_wiki="20240115090000"))
+
+    assert record["license"] == "CC-BY-SA-4.0"
+
+
+def test_an_undated_gadget_publishes_no_licence_either():
+    """The version turns on the creation date, and an undated gadget has none to turn on."""
+    assert "license" not in gadget_toolinfo.toolinfo_record(a_gadget())
+    assert "license" not in gadget_toolinfo.toolinfo_record(a_gadget(created_at_wiki="whenever"))

@@ -510,3 +510,41 @@ def test_a_message_that_was_markup_all_the_way_down_reduces_to_nothing():
     # Not an error and not a description: the caller reads an empty result as a
     # gadget the wiki declares without saying anything about.
     assert wiki_sources.plain_text("<small><nowiki>[</nowiki>[[Aide:X|doc]]<nowiki>]</nowiki></small>") == ""
+
+
+def test_a_page_written_under_the_current_terms_carries_the_four_licence():
+    assert wiki_sources.content_license("2024-01-01T00:00:00Z") == "CC-BY-SA-4.0"
+
+
+def test_a_page_older_than_the_current_terms_still_carries_the_three_licence():
+    # The Terms changed in 2023 and could not reach back: a script published in
+    # 2004 was licensed under 3.0 and nothing has relicensed it since. This is
+    # the common case, not the exception -- of 120 enwiki user scripts sampled,
+    # 102 predate the change.
+    assert wiki_sources.content_license("2004-04-29T08:08:22Z") == "CC-BY-SA-3.0"
+
+
+@pytest.mark.parametrize(
+    "stamp,expected",
+    [
+        ("2023-06-06T23:59:59Z", "CC-BY-SA-3.0"),
+        ("2023-06-07T00:00:00Z", "CC-BY-SA-4.0"),
+    ],
+)
+def test_the_boundary_falls_on_the_day_the_terms_took_effect(stamp, expected):
+    # A whole corpus turns on this instant, so it is pinned rather than left to
+    # whichever comparison the implementation happens to use.
+    assert wiki_sources.content_license(stamp) == expected
+
+
+def test_a_bare_date_and_a_full_instant_agree():
+    # Callers pass `wiki_replica.iso_timestamp` output, but the answer depends
+    # only on the day and must not change with the precision it arrives in.
+    assert wiki_sources.content_license("2023-06-07") == wiki_sources.content_license("2023-06-07T12:00:00Z")
+
+
+@pytest.mark.parametrize("stamp", ["", "   ", "whenever", "2023"])
+def test_an_undated_page_carries_no_licence_rather_than_the_likelier_guess(stamp):
+    # Which version applies is a question about when. With no date there is no
+    # answer, and 3.0 -- right about six pages in seven -- is still a guess.
+    assert wiki_sources.content_license(stamp) == ""

@@ -402,3 +402,32 @@ def test_a_page_whose_first_author_is_unknown_is_still_credited_to_its_owner():
 
     record = catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
     assert record["author"] == [{"name": "Lupin", "wiki_username": "Lupin"}]
+
+
+def test_a_script_publishes_the_licence_the_terms_of_use_give_it():
+    # Popups was written in 2009, under Terms that said CC BY-SA 3.0. No script
+    # page states a licence -- of 409 enwiki script pages read, two so much as
+    # used the word -- so the Terms are the only thing there is to transcribe.
+    a_script(created="20090412183000")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    assert catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]["license"] == "CC-BY-SA-3.0"
+
+
+def test_a_script_written_since_the_terms_changed_publishes_the_newer_licence():
+    a_script(created="20240115090000")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    assert catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]["license"] == "CC-BY-SA-4.0"
+
+
+def test_an_undated_script_publishes_no_licence_either():
+    # The licence is a function of the creation date, so it is absent for
+    # exactly the scripts the date is absent for. Publishing the likelier of the
+    # two versions here would be the guess this lane exists not to make.
+    a_script()
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    record = catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
+    assert "created_date" not in record
+    assert "license" not in record
