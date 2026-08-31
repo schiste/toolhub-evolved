@@ -219,6 +219,15 @@ fi
 if ! curl -fsS --max-time 30 -o /dev/null "$BASE_URL/v1/tools/summaries/?names=toolforge-toolhub-evolved"; then
 	echo "  tool summary prewarm skipped" >&2
 fi
+# Coverage walks every projection's provenance, so a cold build is far heavier
+# than the composed payloads above and does not fit in a visitor's request. The
+# refresh job keeps it warm afterwards; this covers the window where nothing has
+# been stored yet, which is every deploy that introduces or resets the snapshot
+# key -- the first ship of /data-layer served an error page for exactly that
+# reason. Skipping stays non-fatal: a slow prewarm must not fail a release.
+if ! curl -fsS --max-time 180 -o /dev/null "$BASE_URL/v1/coverage/"; then
+	echo "  coverage prewarm skipped" >&2
+fi
 
 if [ -n "$release_stage" ]; then
 	failure_phase="promote"
