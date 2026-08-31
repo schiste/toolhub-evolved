@@ -332,6 +332,13 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # difference to find the rows worth asking about once more.
             "reply": f"{text_col} NULL",
         },
+        "job_runs": {
+            # The summary the job printed for this run. Nullable because the row
+            # is written by the guard, which only learns the summary if the
+            # child lived long enough to hand it over -- and because every run
+            # recorded before that handoff existed has none.
+            "summary": f"{json_col} NULL",
+        },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",
             # Nullable with no default, deliberately: every existing row starts

@@ -746,3 +746,52 @@ def test_a_full_pass_still_resolves_inside_the_lock(monkeypatch):
     assert entrypoint.main(["--apply"]) == job_contract.EXIT_OK
 
     assert [step for step, _name in order] == ["lock", "lock", "userSpace", "remote"]
+
+
+def test_the_summary_is_left_where_the_guard_asked_for_it(monkeypatch, tmp_path, capsys):
+    """The process that knows what ran cannot write the row, so the two meet in a file.
+
+    Only the guard can tell a child that finished from one that was killed
+    without a word, so it -- not the job -- writes job_runs. This is how the
+    job's own account of the run reaches it.
+    """
+    handoff = tmp_path / "example-job.summary.json"
+    monkeypatch.setenv("TOOLHUB_JOB_SUMMARY_FILE", str(handoff))
+
+    job_runner.run_job("example-job", lambda: {"counts": {"done": 4}})
+
+    assert json.loads(handoff.read_text()) == {"counts": {"done": 4}}
+    # Still printed: the log line is what a human reads, and the file is not it.
+    assert capsys.readouterr().out.startswith("example-job: ")
+
+
+def test_a_job_run_outside_the_guard_just_prints(capsys):
+    job_runner.run_job("example-job", lambda: {"counts": {"done": 4}})
+    assert capsys.readouterr().out.startswith("example-job: ")
+
+
+def test_a_summary_that_cannot_be_handed_over_does_not_fail_the_run(monkeypatch, tmp_path, capsys):
+    """Publishing a summary is observability: it cannot fail a job that worked."""
+    monkeypatch.setenv("TOOLHUB_JOB_SUMMARY_FILE", str(tmp_path / "no-such-dir" / "s.json"))
+
+    code = job_runner.run_job("example-job", lambda: {"counts": {"done": 4}})
+
+    assert code == job_contract.EXIT_OK
+    assert capsys.readouterr().out.startswith("example-job: ")
+
+
+def test_a_skipped_run_hands_over_no_summary(monkeypatch, tmp_path):
+    """It did no work, and a stale file would attribute someone else's to it."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def busy(_name, **_kwargs):
+        yield False
+
+    monkeypatch.setattr(db, "advisory_lock", busy)
+    handoff = tmp_path / "example-job.summary.json"
+    monkeypatch.setenv("TOOLHUB_JOB_SUMMARY_FILE", str(handoff))
+
+    job_runner.run_job("example-job", lambda: {"counts": {"done": 4}}, lock=True)
+
+    assert not handoff.exists()

@@ -305,6 +305,9 @@ PUBLIC_V1_ROUTES = {
     ),
     "/v1/userscripts/script/": "public per-script detail and the pages folded under it; local DB only, rate limited",
     "/v1/workers/": "public scheduled-job health; job names, schedules, and run outcomes carry no user data",
+    "/v1/workers/<name>/": (
+        "public per-worker run history and the counts each run reported; job telemetry only, no user data"
+    ),
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
     "/v1/accounts/": "public official Toolhub account projection; local DB only and reads are rate limited",

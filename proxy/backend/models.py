@@ -914,6 +914,13 @@ class JobRun(Base):
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
     exit_code: Mapped[int] = mapped_column(Integer, default=0)
     succeeded: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # The summary the job itself printed: how much work it did, and how much of
+    # the corpus it has now covered. Nullable because the guard, not the job, is
+    # what writes this row -- a child killed before it printed anything still
+    # produced a run worth recording, and every row written before jobs handed
+    # their summary over has none. NULL means "this run did not say", which is
+    # not the same as a run that said it did nothing.
+    summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class CrawlerRun(Base):

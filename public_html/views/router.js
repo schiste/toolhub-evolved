@@ -391,6 +391,7 @@ export function dispatch() {
 			: loadAuthors().then((m) => m.viewPeople());
 	}
 	if (seg[0] === "people" && seg[1]) return loadAuthors().then((m) => m.viewPerson(decodeURIComponent(seg[1])));
+	if (seg[0] === "workers" && seg[1]) return loadWorkers().then((m) => m.viewWorker(decodeURIComponent(seg[1])));
 	if (seg[0] === "tools" && seg[1]) return dispatchToolRoute(seg);
 	if (seg[0] === "lists" && seg[1]) return dispatchListRoute(seg);
 	if (seg[0] === "digests") {

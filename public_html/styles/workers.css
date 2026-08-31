@@ -425,3 +425,160 @@
 		grid-template-columns: minmax(0, 1fr);
 	}
 }
+
+/* One worker's own page ------------------------------------------------- */
+
+.worker-back {
+	margin-block-end: var(--space-3);
+	font-size: var(--fs-small);
+}
+
+.worker-hero__status {
+	display: inline-block;
+	margin-block-start: var(--space-2);
+}
+
+/* The methodology panel on the list explains all five states at once. Here
+   only one applies, so the reason this worker is in the state it is sits
+   directly under the badge rather than behind a disclosure. */
+.worker-hero__why {
+	max-width: 60ch;
+	margin-block-start: var(--space-2);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-small);
+}
+
+.worker-facts {
+	margin-block: var(--space-4);
+}
+
+.worker-section {
+	margin-block-start: var(--space-5);
+}
+
+.worker-section h2 {
+	margin-block-end: var(--space-1);
+	font-size: var(--fs-subtitle);
+}
+
+.worker-section__lead,
+.worker-section__foot {
+	max-width: 60ch;
+	color: var(--color-text-secondary);
+	font-size: var(--fs-small);
+}
+
+.worker-section__foot {
+	margin-block-start: var(--space-2);
+}
+
+.worker-trend {
+	display: grid;
+	gap: var(--space-2);
+	margin-block-start: var(--space-3);
+}
+
+.worker-trend__row {
+	display: grid;
+	grid-template-columns: minmax(0, 12rem) minmax(0, 1fr);
+	gap: var(--space-2);
+	align-items: center;
+	padding-block: var(--space-2);
+	border-block-start: var(--border-base);
+}
+
+.worker-trend__row dt {
+	font-size: var(--fs-small);
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.worker-trend__row dd {
+	display: flex;
+	gap: var(--space-2);
+	align-items: center;
+	margin: var(--space-0);
+}
+
+.worker-trend__now {
+	font-variant-numeric: tabular-nums;
+	font-size: var(--fs-body-large);
+	font-weight: 600;
+}
+
+.worker-trend__delta {
+	font-size: var(--fs-micro);
+	white-space: nowrap;
+}
+
+/* Direction is a fact about the number, not a verdict on it: a shrinking
+   backlog and a shrinking corpus are the same arrow. Both directions get the
+   same neutral weight, and only the flat case is muted. */
+.worker-trend__delta[data-direction="flat"] {
+	color: var(--color-text-muted);
+}
+
+.worker-trend__delta[data-direction="up"],
+.worker-trend__delta[data-direction="down"] {
+	color: var(--color-text-secondary);
+}
+
+.worker-trend__spark {
+	flex: 1;
+	min-width: 0;
+	height: 1.75rem;
+}
+
+.worker-trend__spark polyline {
+	fill: none;
+	stroke: var(--color-progressive);
+	stroke-width: 2;
+
+	/* preserveAspectRatio="none" stretches the line's own thickness with the
+	   box, so the stroke is measured in the untransformed box instead. */
+	vector-effect: non-scaling-stroke;
+}
+
+/* Every job reports its own metrics, so the column count is unknown until the
+   page loads. The table scrolls inside this rather than widening the page. */
+.worker-runs__scroll {
+	margin-block-start: var(--space-3);
+	overflow-x: auto;
+}
+
+.worker-runs {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--fs-small);
+}
+
+.worker-runs th,
+.worker-runs td {
+	padding: var(--space-1) var(--space-2);
+	text-align: start;
+	white-space: nowrap;
+	border-block-end: var(--border-base);
+}
+
+.worker-runs thead th {
+	color: var(--color-text-secondary);
+	font-size: var(--fs-micro);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.worker-runs__num {
+	font-variant-numeric: tabular-nums;
+	text-align: end;
+}
+
+.worker-runs tr[data-outcome="failed"] th[scope="row"] {
+	color: var(--color-destructive);
+}
+
+/* A run that reported nothing is dimmed rather than blanked: it still ran, and
+   the row is the only evidence of that. */
+.worker-runs tr[data-silent="true"] td {
+	color: var(--color-text-muted);
+}

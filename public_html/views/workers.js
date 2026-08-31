@@ -157,7 +157,7 @@ function workerRow(worker) {
 	return `<article class="workers-card workers-card--${esc(status)}">
 		<header class="workers-card__head">
 			<div class="workers-card__ident">
-				<h2>${esc(String(worker.name || ""))}</h2>
+				<h2><a href="/workers/${esc(encodeURIComponent(String(worker.name || "")))}">${esc(String(worker.name || ""))}</a></h2>
 				<p class="workers-card__schedule"><code>${esc(worker.continuous ? "continuous" : String(worker.schedule || ""))}</code> <span class="workers-card__period">${esc(period(worker.expectedIntervalMinutes))}</span></p>
 			</div>
 			<p class="workers-card__status" data-status="${esc(status)}">${esc(statusLabel(status))}</p>
@@ -295,6 +295,284 @@ export function viewWorkers() {
 			mountReport();
 			document.querySelector("[data-workers-root]")?.addEventListener("click", onNoteToggle);
 		},
+		styles: [STYLESHEET]
+	};
+}
+
+// The one summary group whose numbers describe the corpus rather than the run.
+// Nothing in a number says which it is: 3,911 rejected pages is a total that
+// only moves when the world does, while 3,973 asked is what this run alone did,
+// and diffing them would be nonsense the other way round. Only the job knows,
+// and `coverage` is how the jobs here say it. A job that reports none gets the
+// run table and no trend, which is accurate rather than degraded.
+const COVERAGE_GROUP = "coverage";
+
+// A trend needs two points that both said something; one run is a reading, not
+// a direction.
+const TREND_MIN_POINTS = 2;
+
+const SPARK_WIDTH = 120;
+const SPARK_HEIGHT = 28;
+
+/** @param {unknown} value */
+function count(value) {
+	return new Intl.NumberFormat().format(Number(value) || 0);
+}
+
+/**
+ * Split one run's summary into what it did, where things now stand, and prose.
+ *
+ * Flattened one level deep: jobs group their numbers (`counts`, `projection`),
+ * and a page that only read top-level scalars would show almost nothing.
+ *
+ * @param {Record<string, any> | null | undefined} summary
+ * @returns {{ work: Array<[string, number]>, coverage: Array<[string, number]>, notes: Array<[string, string]> }}
+ */
+function splitSummary(summary) {
+	/** @type {Array<[string, number]>} */ const work = [];
+	/** @type {Array<[string, number]>} */ const coverage = [];
+	/** @type {Array<[string, string]>} */ const notes = [];
+	if (!summary || typeof summary !== "object") return { work, coverage, notes };
+	for (const [key, value] of Object.entries(summary)) {
+		if (typeof value === "number" && Number.isFinite(value)) {
+			work.push([key, value]);
+		} else if (typeof value === "string" || typeof value === "boolean") {
+			notes.push([key, String(value)]);
+		} else if (value && typeof value === "object" && !Array.isArray(value)) {
+			for (const [inner, nested] of Object.entries(value)) {
+				if (typeof nested !== "number" || !Number.isFinite(nested)) continue;
+				if (key === COVERAGE_GROUP) coverage.push([inner, nested]);
+				else work.push([`${key}.${inner}`, nested]);
+			}
+		}
+	}
+	return { work, coverage, notes };
+}
+
+/**
+ * Column order for the work table: newest run's keys first, then any older key.
+ *
+ * Ordering by the newest run rather than alphabetically keeps the columns in
+ * the shape the job currently reports; a metric it has stopped reporting still
+ * gets a column, because its disappearance is itself news.
+ *
+ * @param {Array<{ work: Array<[string, number]> }>} runs newest first
+ */
+function workColumns(runs) {
+	/** @type {string[]} */ const columns = [];
+	for (const run of runs) {
+		for (const [key] of run.work) if (!columns.includes(key)) columns.push(key);
+	}
+	return columns;
+}
+
+/**
+ * A minimal line of one metric over time, oldest point leftmost.
+ *
+ * @param {number[]} values oldest first
+ */
+function trendLine(values) {
+	const low = Math.min(...values);
+	const high = Math.max(...values);
+	const span = high - low;
+	const step = values.length > 1 ? SPARK_WIDTH / (values.length - 1) : 0;
+	const points = values
+		.map((value, index) => {
+			// A flat series has no span to scale by; drawing it through the
+			// middle says "unchanged", where dividing by zero says nothing.
+			const y = span === 0 ? SPARK_HEIGHT / 2 : SPARK_HEIGHT - ((value - low) / span) * SPARK_HEIGHT;
+			return `${(index * step).toFixed(1)},${y.toFixed(1)}`;
+		})
+		.join(" ");
+	return `<svg class="worker-trend__spark" viewBox="0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}" /></svg>`;
+}
+
+/**
+ * How far each coverage metric has moved across the runs still retained.
+ *
+ * Runs that reported nothing are skipped rather than plotted at zero: a run
+ * killed before it printed did not say the corpus was empty, and a chart that
+ * dips to zero every time a job is stopped is worse than no chart.
+ *
+ * @param {Array<{ coverage: Array<[string, number]> }>} runs newest first
+ */
+function trendHTML(runs) {
+	/** @type {Map<string, number[]>} */ const series = new Map();
+	// Oldest first so each series reads left to right in time.
+	for (const run of [...runs].reverse()) {
+		for (const [key, value] of run.coverage) {
+			const points = series.get(key) || [];
+			points.push(value);
+			series.set(key, points);
+		}
+	}
+	const usable = [...series.entries()].filter(([, points]) => points.length >= TREND_MIN_POINTS);
+	if (usable.length === 0) return "";
+	const rows = usable
+		.map(([key, points]) => {
+			const first = points[0];
+			const last = points[points.length - 1];
+			const delta = last - first;
+			const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+			const change =
+				delta === 0
+					? t("worker.trendFlat", "no change over $1 runs", points.length)
+					: t(
+							"worker.trendChange",
+							"$1$2 over $3 runs",
+							delta > 0 ? "+" : "−",
+							count(Math.abs(delta)),
+							points.length
+						);
+			return `<div class="worker-trend__row">
+		<dt>${esc(key)}</dt>
+		<dd>
+			<span class="worker-trend__now">${esc(count(last))}</span>
+			<span class="worker-trend__delta" data-direction="${esc(direction)}">${esc(change)}</span>
+			${trendLine(points)}
+		</dd>
+	</div>`;
+		})
+		.join("");
+	return `<section class="worker-section">
+	<h2>${esc(t("worker.trendTitle", "Progression"))}</h2>
+	<p class="worker-section__lead">${esc(t("worker.trendLead", "How much of this worker's corpus is covered, across the runs still kept."))}</p>
+	<dl class="worker-trend">${rows}</dl>
+</section>`;
+}
+
+/**
+ * Every retained run, with what it reported doing.
+ *
+ * @param {Array<{ startedAt: string, durationSeconds: number, succeeded: boolean, exitCode: number, reported: boolean, work: Array<[string, number]> }>} runs newest first
+ */
+function runsHTML(runs) {
+	const heading = `<h2>${esc(t("worker.runsTitle", "Work done"))}</h2>`;
+	if (runs.length === 0) {
+		return `<section class="worker-section">${heading}<p class="workers-runs__empty">${esc(t("workers.noRuns", "No runs recorded yet."))}</p></section>`;
+	}
+	const columns = workColumns(runs);
+	const body = runs
+		.map((run) => {
+			const values = new Map(run.work);
+			// An em dash for a run that reported other numbers but not this one.
+			// A run that reported none is marked on the row instead, so the two
+			// never have to be told apart cell by cell.
+			const cells = columns
+				.map(
+					(key) => `<td class="worker-runs__num">${esc(values.has(key) ? count(values.get(key)) : "—")}</td>`
+				)
+				.join("");
+			const outcome = run.succeeded
+				? t("workers.runOk", "Succeeded")
+				: t("workers.exitCode", "exit $1", String(run.exitCode));
+			return `<tr data-outcome="${run.succeeded ? "ok" : "failed"}"${run.reported ? "" : ' data-silent="true"'}>
+		<th scope="row"><time datetime="${esc(run.startedAt)}">${esc(run.startedAt.replace("T", " ").replace("Z", ""))}</time></th>
+		<td>${esc(duration(run.durationSeconds) || "—")}</td>
+		<td>${esc(outcome)}</td>
+		${cells}
+	</tr>`;
+		})
+		.join("");
+	// A run that said nothing is not a run that did nothing, and the table has
+	// to say which it is, or every killed run reads as an idle one.
+	const silent = runs.filter((run) => !run.reported).length;
+	return `<section class="worker-section">
+	${heading}
+	<div class="worker-runs__scroll">
+		<table class="worker-runs">
+			<thead><tr>
+				<th scope="col">${esc(t("worker.colStarted", "Started"))}</th>
+				<th scope="col">${esc(t("workers.lastDuration", "Took"))}</th>
+				<th scope="col">${esc(t("workers.outcome", "Outcome"))}</th>
+				${columns.map((key) => `<th scope="col">${esc(key)}</th>`).join("")}
+			</tr></thead>
+			<tbody>${body}</tbody>
+		</table>
+	</div>
+	${
+		silent > 0
+			? `<p class="worker-section__foot">${esc(t("worker.silentRuns", "$1 of these runs reported no figures: they either predate this record or were stopped before they could.", silent))}</p>`
+			: ""
+	}
+</section>`;
+}
+
+/** @param {Record<string, any>} payload */
+function workerHTML(payload) {
+	const worker = payload?.worker && typeof payload.worker === "object" ? payload.worker : {};
+	const status = String(worker.status || "unknown");
+	const rawRuns = Array.isArray(payload?.runs) ? payload.runs : [];
+	const runs = rawRuns.map((run) => ({
+		startedAt: String(run?.startedAt || ""),
+		durationSeconds: Number(run?.durationSeconds) || 0,
+		succeeded: run?.succeeded !== false,
+		exitCode: Number(run?.exitCode) || 0,
+		// Boolean of the payload's null, not of an empty object: the backend
+		// keeps "did not say" and "said nothing happened" apart, and so must this.
+		reported: Boolean(run?.summary),
+		...splitSummary(run?.summary)
+	}));
+	const definitions = payload?.definitions && typeof payload.definitions === "object" ? payload.definitions : {};
+	const explanation = definitions[status];
+	return `<div class="workers-page__inner worker-page__inner">
+	<nav class="worker-back"><a href="/workers">${esc(t("worker.backToAll", "← All workers"))}</a></nav>
+	<header class="workers-hero worker-hero">
+		<p class="workers-hero__eyebrow">${esc(t("workers.eyebrow", "Evolved data"))}</p>
+		<h1>${esc(String(worker.name || ""))}</h1>
+		<p class="workers-hero__lead">${esc(String(worker.description || ""))}</p>
+		<p class="workers-card__schedule"><code>${esc(worker.continuous ? "continuous" : String(worker.schedule || ""))}</code> <span class="workers-card__period">${esc(period(worker.expectedIntervalMinutes))}</span></p>
+		<p class="workers-card__status worker-hero__status" data-status="${esc(status)}">${esc(statusLabel(status))}</p>
+		${explanation ? `<p class="worker-hero__why">${esc(String(explanation))}</p>` : ""}
+	</header>
+	<dl class="workers-card__facts worker-facts">
+		<div><dt>${esc(t("workers.lastRun", "Last run"))}</dt><dd>${esc(elapsed(worker.minutesSinceLastRun))}</dd></div>
+		<div><dt>${esc(t("workers.lastDuration", "Took"))}</dt><dd>${esc(duration(worker.lastRunDurationSeconds) || "—")}</dd></div>
+		<div><dt>${esc(t("worker.lastSuccess", "Last success"))}</dt><dd>${esc(String(worker.lastSuccessAt || "") || "—")}</dd></div>
+		<div><dt>${esc(t("worker.retained", "Runs kept"))}</dt><dd>${esc(`${runs.length} / ${count(payload?.retainedRuns)}`)}</dd></div>
+	</dl>
+	${trendHTML(runs)}
+	${runsHTML(runs)}
+</div>`;
+}
+
+const workerLoadingHTML = () =>
+	loadingRegion({
+		label: t("worker.loading", "Loading this worker's history"),
+		className: "workers-loading",
+		bodyClass: "workers-page__inner",
+		body: `<header class="workers-hero">
+		${skeletonLine("skeleton--w-xs")}
+		${skeletonLine("skeleton-page__title skeleton--w-md")}
+		${skeletonLine("skeleton-page__intro skeleton--w-xl")}
+	</header>
+	<dl class="workers-card__facts worker-facts">${`<div><dt>${skeletonLine("skeleton--w-lg")}</dt><dd>${skeletonLine("skeleton--w-md")}</dd></div>`.repeat(4)}</dl>`
+	});
+
+const workerErrorHTML = () =>
+	`<div class="workers-error" role="alert"><h1>${esc(t("worker.errorTitle", "This worker's history is unavailable"))}</h1><p>${esc(t("worker.errorBody", "The run history could not be loaded. It may not be a worker this site knows about."))}</p>${button(t("workers.retry", "Try again"), { attrs: "data-worker-retry" })}</div>`;
+
+/**
+ * One worker's own page: every run still retained, and what each one did.
+ *
+ * Shares this module rather than getting its own, because it shares nearly all
+ * of its vocabulary -- status, schedule, elapsed time, duration are the same
+ * words on both pages, and two copies would eventually disagree about them.
+ *
+ * @param {string} name
+ */
+export function viewWorker(name) {
+	const mountReport = mountJsonReport({
+		name: "worker",
+		endpoint: `/v1/workers/${encodeURIComponent(name)}/`,
+		render: workerHTML,
+		renderLoading: workerLoadingHTML,
+		renderError: workerErrorHTML
+	});
+	return {
+		title: t("worker.docTitle", "$1 — Background workers — Toolhub", name),
+		html: `<div class="container page workers-page worker-page" data-worker-root>${workerLoadingHTML()}</div>`,
+		mount: mountReport,
 		styles: [STYLESHEET]
 	};
 }

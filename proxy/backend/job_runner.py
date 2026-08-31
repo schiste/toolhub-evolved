@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import pathlib
 import sys
 import time
 from typing import TYPE_CHECKING, Any
@@ -83,6 +84,24 @@ def _skipped(**detail: int | None) -> int:
     return job_contract.EXIT_SKIPPED
 
 
+def _publish(name: str, summary: object) -> None:
+    """Print the run summary, and hand it to the guard if the guard asked for it.
+
+    The process that knows what the run did cannot write the job_runs row: the
+    guard writes that, afterwards, because only the guard can tell a child that
+    finished from one that was killed without a word. So the summary is left
+    where the guard said to leave it, in TOOLHUB_JOB_SUMMARY_FILE, and the guard
+    reads it back once the child's fate is known. Purely additive: nothing here
+    can fail a run that worked, and a job run outside the guard simply prints.
+    """
+    sys.stdout.write(f"{name}: " + json.dumps(summary, sort_keys=True) + "\n")
+    handoff = os.environ.get("TOOLHUB_JOB_SUMMARY_FILE")
+    if not handoff:
+        return
+    with contextlib.suppress(OSError, TypeError, ValueError):
+        pathlib.Path(handoff).write_text(json.dumps(summary, sort_keys=True), encoding="utf-8")
+
+
 def _run_once(
     name: str,
     body: Callable[[], Any],
@@ -97,7 +116,7 @@ def _run_once(
     if not lock:
         summary = body()
         if summary is not None:
-            sys.stdout.write(f"{name}: " + json.dumps(summary, sort_keys=True) + "\n")
+            _publish(name, summary)
         return job_contract.EXIT_OK
 
     lock_name = f"{LOCK_PREFIX}{name}"
@@ -127,7 +146,7 @@ def _run_once(
             return _skipped(heldBy=db.advisory_lock_holder(lock_name))
         summary = body()
     if summary is not None:
-        sys.stdout.write(f"{name}: " + json.dumps(summary, sort_keys=True) + "\n")
+        _publish(name, summary)
     return job_contract.EXIT_OK
 
 

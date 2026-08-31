@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 
-from backend import job_catalog
+from backend import job_catalog, job_runs
 from backend.models import JobRun, utcnow
 
 if TYPE_CHECKING:
@@ -54,6 +54,105 @@ def _status(job: job_catalog.ScheduledJob, last: JobRun | None, minutes_since: f
     return STATUS_HEALTHY
 
 
+def _definitions() -> dict[str, str]:
+    """How each status was decided, in the payload that reports it.
+
+    Keyed by the STATUS_* constants so a state _status() can return can never
+    ship without the page's explanation of it.
+    """
+    return {
+        "recorded": "Only runs that executed are recorded; a skipped overlap is routine and is not a run.",
+        STATUS_HEALTHY: (
+            f"The most recent run succeeded, less than {LATE_PERIODS} of this job's own scheduled periods ago."
+        ),
+        STATUS_LATE: f"No run for {LATE_PERIODS} or more of this job's own scheduled periods.",
+        STATUS_FAILING: (
+            "The most recent run exited non-zero. A job that has also gone silent reads as stalled instead, "
+            "because silence is the more urgent fault."
+        ),
+        STATUS_STALLED: f"No run for {STALLED_PERIODS} or more periods, so the schedule is not being honoured.",
+        STATUS_UNKNOWN: "No run has been recorded yet, which is expected for a newly added worker.",
+    }
+
+
+def _entry(
+    job: job_catalog.ScheduledJob,
+    last: JobRun | None,
+    last_success_at: datetime | None,
+    now: datetime,
+) -> dict[str, Any]:
+    """Describe one worker's identity and current standing, without its runs.
+
+    Shared by the list and the per-worker page so the two can never disagree
+    about a job's status: the page people open to understand a red row on the
+    list must not compute red differently.
+    """
+    minutes_since = (now - last.started_at).total_seconds() / 60 if last else None
+    return {
+        "name": job.name,
+        "description": job.description,
+        "schedule": job.schedule,
+        "continuous": job.continuous,
+        "expectedIntervalMinutes": job.expected_interval_minutes,
+        "timeoutSeconds": job.timeout_seconds,
+        "status": _status(job, last, minutes_since),
+        "lastRunAt": _iso(last.started_at if last else None),
+        "lastRunSucceeded": bool(last.succeeded) if last else None,
+        "lastRunDurationSeconds": last.duration_seconds if last else None,
+        "lastRunExitCode": last.exit_code if last else None,
+        "lastSuccessAt": _iso(last_success_at),
+        "minutesSinceLastRun": round(minutes_since) if minutes_since is not None else None,
+    }
+
+
+def _run(row: JobRun, *, with_summary: bool = False) -> dict[str, Any]:
+    """One executed run, optionally carrying what the job said it did."""
+    run: dict[str, Any] = {
+        "startedAt": _iso(row.started_at),
+        "durationSeconds": row.duration_seconds,
+        "succeeded": bool(row.succeeded),
+        "exitCode": row.exit_code,
+    }
+    if with_summary:
+        run["finishedAt"] = _iso(row.finished_at)
+        # Null, not {}: a run recorded before jobs handed their summaries over,
+        # or one killed before it printed, did not say it did nothing -- it did
+        # not say. The page has to be able to tell those apart.
+        run["summary"] = row.summary if isinstance(row.summary, dict) else None
+    return run
+
+
+def detail(session: Any, name: str) -> dict[str, Any] | None:  # noqa: ANN401 - SQLAlchemy session
+    """Return one worker with its full retained run history and summaries.
+
+    None when no such worker is declared, so the route can answer 404 rather
+    than an empty page: a mistyped name and a worker that has never run look
+    identical otherwise, and only one of them is worth investigating.
+    """
+    job = next((candidate for candidate in job_catalog.load() if candidate.name == name), None)
+    if job is None:
+        return None
+    now = utcnow()
+    rows = list(
+        session.execute(
+            select(JobRun)
+            .where(JobRun.job_name == job.name)
+            .order_by(JobRun.started_at.desc(), JobRun.id.desc())
+            .limit(job_runs.KEEP_RUNS_PER_JOB)
+        ).scalars()
+    )
+    last_success_at = session.execute(
+        select(func.max(JobRun.started_at)).where(JobRun.job_name == job.name, JobRun.succeeded.is_(True))
+    ).scalar()
+    return {
+        "generatedAt": _iso(now),
+        "worker": _entry(job, rows[0] if rows else None, last_success_at, now),
+        "runs": [_run(row, with_summary=True) for row in rows],
+        "retainedRuns": job_runs.KEEP_RUNS_PER_JOB,
+        "definitions": _definitions(),
+    }
+
+
 def snapshot(session: Any) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy session
     """Return every declared worker with its most recent executed runs."""
     now = utcnow()
@@ -81,31 +180,10 @@ def snapshot(session: Any) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy sessi
     workers = []
     for job in jobs:
         last = latest.get(job.name)
-        minutes_since = (now - last.started_at).total_seconds() / 60 if last else None
         workers.append(
             {
-                "name": job.name,
-                "description": job.description,
-                "schedule": job.schedule,
-                "continuous": job.continuous,
-                "expectedIntervalMinutes": job.expected_interval_minutes,
-                "timeoutSeconds": job.timeout_seconds,
-                "status": _status(job, last, minutes_since),
-                "lastRunAt": _iso(last.started_at if last else None),
-                "lastRunSucceeded": bool(last.succeeded) if last else None,
-                "lastRunDurationSeconds": last.duration_seconds if last else None,
-                "lastRunExitCode": last.exit_code if last else None,
-                "lastSuccessAt": _iso(last_success.get(job.name)),
-                "minutesSinceLastRun": round(minutes_since) if minutes_since is not None else None,
-                "recentRuns": [
-                    {
-                        "startedAt": _iso(row.started_at),
-                        "durationSeconds": row.duration_seconds,
-                        "succeeded": bool(row.succeeded),
-                        "exitCode": row.exit_code,
-                    }
-                    for row in history.get(job.name, ())
-                ],
+                **_entry(job, last, last_success.get(job.name), now),
+                "recentRuns": [_run(row) for row in history.get(job.name, ())],
             }
         )
     counts: dict[str, int] = {}
@@ -115,19 +193,5 @@ def snapshot(session: Any) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy sessi
         "generatedAt": _iso(now),
         "workers": workers,
         "counts": dict(sorted(counts.items())),
-        # Keyed by the STATUS_* constants so a state _status() can return can
-        # never ship without the page's explanation of how it was decided.
-        "definitions": {
-            "recorded": "Only runs that executed are recorded; a skipped overlap is routine and is not a run.",
-            STATUS_HEALTHY: (
-                f"The most recent run succeeded, less than {LATE_PERIODS} of this job's own scheduled periods ago."
-            ),
-            STATUS_LATE: f"No run for {LATE_PERIODS} or more of this job's own scheduled periods.",
-            STATUS_FAILING: (
-                "The most recent run exited non-zero. A job that has also gone silent reads as stalled instead, "
-                "because silence is the more urgent fault."
-            ),
-            STATUS_STALLED: f"No run for {STALLED_PERIODS} or more periods, so the schedule is not being honoured.",
-            STATUS_UNKNOWN: "No run has been recorded yet, which is expected for a newly added worker.",
-        },
+        "definitions": _definitions(),
     }

@@ -26,8 +26,20 @@ if TYPE_CHECKING:
 KEEP_RUNS_PER_JOB = 50
 
 
-def record(job_name: str, started: datetime, finished: datetime, exit_code: int) -> None:
-    """Store one executed run and trim this job's history to KEEP_RUNS_PER_JOB."""
+def record(
+    job_name: str,
+    started: datetime,
+    finished: datetime,
+    exit_code: int,
+    summary: dict | None = None,
+) -> None:
+    """Store one executed run and trim this job's history to KEEP_RUNS_PER_JOB.
+
+    `summary` is whatever the job printed about itself -- counts of work done,
+    and how much of its corpus is now covered. Optional because the guard
+    records the run either way: a child that died before printing still ran,
+    and losing the row would lose the very failure worth seeing.
+    """
     name = job_name[:64]
     with db.session_scope() as session:
         session.add(
@@ -38,6 +50,7 @@ def record(job_name: str, started: datetime, finished: datetime, exit_code: int)
                 duration_seconds=max(0, int((finished - started).total_seconds())),
                 exit_code=exit_code,
                 succeeded=exit_code == 0,
+                summary=summary,
             )
         )
         session.flush()

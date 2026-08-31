@@ -26,7 +26,7 @@ def fresh_db():
     db.init_schema()
 
 
-def _run(session, job_name, *, minutes_ago, succeeded=True, exit_code=0, duration=3):
+def _run(session, job_name, *, minutes_ago, succeeded=True, exit_code=0, duration=3, summary=None):
     started = datetime.now(tz=UTC).replace(tzinfo=None) - timedelta(minutes=minutes_ago)
     session.add(
         JobRun(
@@ -36,6 +36,7 @@ def _run(session, job_name, *, minutes_ago, succeeded=True, exit_code=0, duratio
             duration_seconds=duration,
             exit_code=exit_code,
             succeeded=succeeded,
+            summary=summary,
         )
     )
 
@@ -323,3 +324,147 @@ def test_every_job_with_a_timeout_reclaims_its_lock_at_twice_that_timeout():
         if timeout and declared is not None and declared <= timeout:
             wrong.append(f"{name}: stale-after {declared} would reclaim a live run")
     assert wrong == [], wrong
+
+
+def test_a_worker_page_carries_what_each_run_said_it_did():
+    with db.session_scope() as session:
+        _run(session, "crawler", minutes_ago=30, summary={"counts": {"fetched": 12}})
+        _run(session, "crawler", minutes_ago=5, summary={"counts": {"fetched": 40}})
+        session.flush()
+        payload = workers.detail(session, "crawler")
+
+    assert payload["worker"]["name"] == "crawler"
+    # Newest first, so the run being asked about is the one at the top.
+    assert [run["summary"]["counts"]["fetched"] for run in payload["runs"]] == [40, 12]
+    assert all(run["finishedAt"] for run in payload["runs"])
+
+
+def test_a_run_that_never_said_what_it_did_is_null_rather_than_empty():
+    """A killed run and a run that did nothing are different facts.
+
+    Every row recorded before jobs handed their summaries over has none, and
+    reporting those as {} would put them on a coverage chart at zero.
+    """
+    with db.session_scope() as session:
+        _run(session, "crawler", minutes_ago=5)
+        session.flush()
+        payload = workers.detail(session, "crawler")
+
+    assert payload["runs"][0]["summary"] is None
+
+
+def test_the_worker_page_and_the_list_agree_about_status():
+    """The page opened to explain a red row must not compute red differently."""
+    with db.session_scope() as session:
+        _run(session, "crawler", minutes_ago=5, succeeded=False, exit_code=1)
+        session.flush()
+        listed = _worker(workers.snapshot(session), "crawler")
+        page = workers.detail(session, "crawler")["worker"]
+
+    assert page["status"] == listed["status"] == workers.STATUS_FAILING
+    assert {key: page[key] for key in page} == {key: listed[key] for key in page}
+
+
+def test_a_worker_with_no_runs_still_has_a_page():
+    """Absence is the state most worth looking at; it must not be a dead link."""
+    with db.session_scope() as session:
+        payload = workers.detail(session, "crawler")
+
+    assert payload["runs"] == []
+    assert payload["worker"]["status"] == workers.STATUS_UNKNOWN
+
+
+def test_a_name_that_is_not_a_declared_worker_has_no_page():
+    with db.session_scope() as session:
+        assert workers.detail(session, "not-a-job") is None
+
+
+def test_the_worker_endpoint_answers_by_name_and_404s_for_anything_else():
+    app = Flask(__name__)
+    backend.register(app, db_url="sqlite://", secret_key="test-secret")
+    app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
+    with db.session_scope() as session:
+        _run(session, "crawler", minutes_ago=5, summary={"counts": {"fetched": 3}})
+
+    client = app.test_client()
+    found = client.get("/v1/workers/crawler/")
+    assert found.status_code == 200
+    assert found.headers["Cache-Control"].startswith("public")
+    assert found.get_json()["runs"][0]["summary"] == {"counts": {"fetched": 3}}
+
+    assert client.get("/v1/workers/not-a-job/").status_code == 404
+
+
+def test_the_recorder_attaches_the_summary_the_child_left_behind(tmp_path):
+    database = f"sqlite:///{tmp_path / 'runs.sqlite'}"
+    db.configure(database)
+    db.init_schema()
+    handoff = tmp_path / "crawler.summary.json"
+    handoff.write_text('{"counts": {"fetched": 9}}', encoding="utf-8")
+    subprocess.run(
+        [
+            sys.executable,
+            str(RECORDER),
+            "--job-name",
+            "crawler",
+            "--started",
+            "1700000000",
+            "--finished",
+            "1700000004",
+            "--exit-code",
+            "0",
+            "--summary-file",
+            str(handoff),
+        ],
+        check=True,
+        capture_output=True,
+        env={"TOOLHUB_DB_URL": database, "PATH": "/usr/bin:/bin"},
+    )
+    db.configure(database)
+    with db.session_scope() as session:
+        row = session.query(JobRun).filter(JobRun.job_name == "crawler").one()
+    assert row.summary == {"counts": {"fetched": 9}}
+
+
+@pytest.mark.parametrize(
+    ("label", "written"),
+    [
+        ("truncated by a kill mid-write", '{"counts": {"fetch'),
+        ("not an object", "[1, 2, 3]"),
+        ("empty", ""),
+    ],
+)
+def test_an_unusable_summary_still_records_the_run(tmp_path, label, written):
+    """Losing the row is the one outcome worse than losing the summary.
+
+    A run that died badly is exactly the run worth seeing on the page, and it
+    is also the run most likely to have left half a line behind.
+    """
+    database = f"sqlite:///{tmp_path / 'runs.sqlite'}"
+    db.configure(database)
+    db.init_schema()
+    handoff = tmp_path / "crawler.summary.json"
+    handoff.write_text(written, encoding="utf-8")
+    subprocess.run(
+        [
+            sys.executable,
+            str(RECORDER),
+            "--job-name",
+            "crawler",
+            "--started",
+            "1700000000",
+            "--finished",
+            "1700000004",
+            "--exit-code",
+            "0",
+            "--summary-file",
+            str(handoff),
+        ],
+        check=True,
+        capture_output=True,
+        env={"TOOLHUB_DB_URL": database, "PATH": "/usr/bin:/bin"},
+    )
+    db.configure(database)
+    with db.session_scope() as session:
+        row = session.query(JobRun).filter(JobRun.job_name == "crawler").one()
+    assert row.summary is None, label

@@ -298,3 +298,29 @@ def test_a_lock_skip_releases_the_lock_it_took(tmp_path):
     """The guard's own lock is taken before the child runs, so a skip still has to hand it back."""
     assert run_guard(tmp_path, "sh", "-c", "exit 75").returncode == 0
     assert not (tmp_path / "guard" / ".example.lock").exists()
+
+
+def test_guard_gives_the_child_somewhere_to_leave_its_summary(tmp_path):
+    seen = tmp_path / "seen"
+    result = run_guard(tmp_path, "sh", "-c", f'printf %s "$TOOLHUB_JOB_SUMMARY_FILE" > {seen}')
+
+    assert result.returncode == 0
+    assert seen.read_text().endswith("/example.summary.json")
+
+
+def test_guard_clears_a_previous_summary_before_running_the_child(tmp_path):
+    """A killed run leaves its file behind; the next run must not inherit it.
+
+    Cleared before the child rather than matched by timestamp afterwards: the
+    guard lock already means one run of this job at a time, so whatever is
+    there when the child exits was written by that child.
+    """
+    guard_dir = tmp_path / "guard"
+    guard_dir.mkdir()
+    stale = guard_dir / "example.summary.json"
+    stale.write_text('{"counts": {"done": 99}}')
+
+    result = run_guard(tmp_path, "sh", "-c", "exit 0")
+
+    assert result.returncode == 0
+    assert not stale.exists()

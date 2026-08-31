@@ -175,6 +175,16 @@ if [ "$disabled" -eq 1 ] || [ "$failure_streak" -ge "$MAX_FAILURES" ]; then
 fi
 
 [ "$#" -gt 0 ] || { echo "job-guard: missing child command" >&2; exit 2; }
+# Where the child leaves the summary it printed, for the recorder below to
+# attach to the run row. The child knows what work it did but cannot write the
+# row -- only this guard can tell a run that finished from one that was killed
+# without a word -- so the two halves meet in a file. Removed before the child
+# starts rather than matched by timestamp afterwards: the lock above already
+# guarantees one run of this job at a time, so anything present when the child
+# exits was written by that child.
+SUMMARY_FILE="$STATE_DIR/$JOB_NAME.summary.json"
+rm -f "$SUMMARY_FILE"
+export TOOLHUB_JOB_SUMMARY_FILE="$SUMMARY_FILE"
 run_started="$(date +%s)"
 set +e
 # Started in the background and waited for, not run in the foreground. A shell
@@ -216,8 +226,10 @@ if [ -n "${TOOLHUB_DB_URL:-}" ] && [ -x "${TOOLHUB_JOB_RUN_PYTHON:-$HOME/www/pyt
 		--job-name "$JOB_NAME" \
 		--started "$run_started" \
 		--finished "$run_finished" \
-		--exit-code "$status" >/dev/null 2>&1 || true
+		--exit-code "$status" \
+		--summary-file "$SUMMARY_FILE" >/dev/null 2>&1 || true
 fi
+rm -f "$SUMMARY_FILE"
 
 tmp="$STATE_FILE.$$"
 if [ "$status" -eq 0 ]; then
