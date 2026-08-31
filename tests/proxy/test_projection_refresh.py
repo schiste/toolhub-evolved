@@ -47,14 +47,23 @@ def test_refresh_reuses_fresh_inputs_then_publishes_and_precomputes(monkeypatch)
         lambda **_kwargs: order.append("statistics")
         or {"generatedAt": "2026-08-13T00:00:00Z", "catalog": {"totalTools": 4473}},
     )
+    monkeypatch.setattr(
+        projection_refresh.catalog_coverage,
+        "refresh",
+        lambda: order.append("coverage") or {"stored": True, "generatedAt": "2026-08-13T00:00:00Z", "tools": 4473},
+    )
 
     report = projection_refresh.run(max_age_seconds=123)
 
     assert report["status"] == "completed"
     assert report["failurePhase"] is None
-    assert order == [("sync", plan), "retire", ("publish", "fingerprint"), "statistics"]
+    # Coverage reads the projections the publish stage just wrote, so it has to
+    # run after them -- and after statistics, which is the same whole-catalog
+    # pass this job exists to keep off the request path.
+    assert order == [("sync", plan), "retire", ("publish", "fingerprint"), "statistics", "coverage"]
     assert report["stages"]["parallelSync"]["plan"] == plan
     assert report["stages"]["statistics"]["metrics"]["totalTools"] == 4473
+    assert report["stages"]["coverage"]["metrics"]["tools"] == 4473
     with db.session_scope() as session:
         persisted = session.get(ApiCacheMeta, projection_refresh.RUN_META_KEY)
         assert persisted is not None
@@ -250,10 +259,15 @@ def test_full_source_audit_uses_concurrency_safe_batched_runner(monkeypatch):
         lambda **_kwargs: order.append("statistics")
         or {"generatedAt": "2026-08-14T00:00:00Z", "catalog": {"totalTools": 2}},
     )
+    monkeypatch.setattr(
+        projection_refresh.catalog_coverage,
+        "refresh",
+        lambda: order.append("coverage") or {"stored": True, "generatedAt": "2026-08-14T00:00:00Z", "tools": 2},
+    )
 
     report = projection_refresh.run(full_sources=True)
 
-    assert order == ["source-audit", "statistics"]
+    assert order == ["source-audit", "statistics", "coverage"]
     assert report["stages"]["fullSourceAudit"]["metrics"]["batches"] == 12
 
 

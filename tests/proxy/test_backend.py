@@ -297,6 +297,9 @@ PUBLIC_V1_ROUTES = {
     "/v1/home/": ("public landing page composed from the local catalog replica and local summaries"),
     "/v1/search/tools/": "public search over local records; local DB only",
     "/v1/statistics/": "public cached quality snapshot derived only from local public catalog evidence",
+    "/v1/coverage/": (
+        "public cached field-coverage snapshot; counts of filled fields per provenance source, no values"
+    ),
     "/v1/facets/tools/": "public faceted discovery by analyzer signals and declared metadata; rate limited",
     "/v1/facets/values/": "public facet value listing and adoption counts; rate limited",
     "/v1/userscripts/wikis/": "public list of wikis with a user-script directory; local DB only, rate limited",

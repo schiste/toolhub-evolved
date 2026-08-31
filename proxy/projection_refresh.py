@@ -16,6 +16,7 @@ import account_sync
 import catalog_sync
 import toolforge_account_sync
 from backend import (
+    catalog_coverage,
     catalog_statistics,
     db,
     identity_graph,
@@ -216,6 +217,14 @@ def run(
             "durationMs": duration,
             "metrics": {"generatedAt": statistics["generatedAt"], "totalTools": statistics["catalog"]["totalTools"]},
         }
+        # Coverage reads the projections this run just rewrote. Rebuilding it
+        # here, rather than leaving it to the first request that finds the cached
+        # copy stale, keeps the whole-catalog provenance pass off the request
+        # path -- the same trade the statistics snapshot above makes.
+        report["failurePhase"] = "coverage"
+        coverage, duration = _timed(catalog_coverage.refresh)
+        report["stages"]["coverage"] = {"durationMs": duration, "metrics": coverage}
+
         report["status"] = "completed"
         report["failurePhase"] = None
     except ProjectionRefreshDeferredError as error:

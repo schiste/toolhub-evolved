@@ -37,6 +37,7 @@ export const ROUTE_STYLES = {
 	"./experiments.js": "/styles/experiments.css",
 	"./changelog.js": "/styles/changelog.css",
 	"./statistics.js": "/styles/statistics.css",
+	"./data-layer.js": "/styles/data-layer.css",
 	"./workers.js": "/styles/workers.css",
 	"./userscripts.js": "/styles/userscripts.css",
 	"./digests.js": "/styles/digests.css",
@@ -111,6 +112,7 @@ const loadExperiments = () => loadRouteModule("./experiments.js", () => import("
 const loadStyleguide = () => loadRouteModule("./styleguide.js", () => import("./styleguide.js"));
 const loadChangelog = () => loadRouteModule("./changelog.js", () => import("./changelog.js"));
 const loadStatistics = () => loadRouteModule("./statistics.js", () => import("./statistics.js"));
+const loadDataLayer = () => loadRouteModule("./data-layer.js", () => import("./data-layer.js"));
 const loadWorkers = () => loadRouteModule("./workers.js", () => import("./workers.js"));
 const loadDigests = () => loadRouteModule("./digests.js", () => import("./digests.js"));
 const loadMcpServer = () => loadRouteModule("./mcp-server.js", () => import("./mcp-server.js"));
@@ -258,6 +260,7 @@ export const ROUTES = {
 	"published-lists": () => loadLists().then((m) => m.viewLists()),
 	changelog: () => loadChangelog().then((m) => m.viewChangelog()),
 	statistics: () => loadStatistics().then((m) => m.viewStatistics()),
+	"data-layer": () => loadDataLayer().then((m) => m.viewDataLayer()),
 	workers: () => loadWorkers().then((m) => m.viewWorkers()),
 	"my-lists": () =>
 		requireSignIn(
