@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-alarm-that-switched-itself-off -->
 <!-- Release title: The Alarm That Switched Itself Off -->
-<!-- Source range: 462c5007..PROMOTE (2 commits) -->
+<!-- Source range: 462c5007..59a2b254 (2 commits) -->
 
 # Technical and Marketing Notes
 
