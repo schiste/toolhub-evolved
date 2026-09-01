@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-licence-nobody-wrote-down -->
 <!-- Release title: The Licence Nobody Wrote Down -->
-<!-- Source range: 62afe4b..90d4de6 (17 commits) -->
+<!-- Source range: 62afe4b..ea9baf5 (19 commits) -->
 
 # What's New for Users
 
