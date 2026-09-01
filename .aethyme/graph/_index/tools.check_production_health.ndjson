@@ -40,7 +40,8 @@
 {"module":"tools.check_production_health","symbol":"baselines.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6leuuppz3vsmdbe7yrtnes7cru","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"baselines.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:oh6q4tpydyyj2wotzq6esyzwiu","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"body.splitlines","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:gjlgbxrpdxgmncqjjalcrutg4a","file":"tools/check_production_health.py"}
-{"module":"tools.check_production_health","symbol":"buckets.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4odvad2bvh3tx7rfduro6tokyu","file":"tools/check_production_health.py"}
+{"module":"tools.check_production_health","symbol":"buckets.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:27dq5ejlmidf676xydjfmp7nrm","file":"tools/check_production_health.py"}
+{"module":"tools.check_production_health","symbol":"buckets.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4haod5wu7jwkkdoezon5lvzpie","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"collect","kind":"function","node_id":"function:toolhub-evolved:v5uxqij3yfzyfkn26eh7mu7zjm","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"collect","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ips7wmtvavnpven5g2xinlqp4i","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"dataclass","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wgczebccsuhp2iw7bdiydhcchu","file":"tools/check_production_health.py"}
@@ -54,8 +55,8 @@
 {"module":"tools.check_production_health","symbol":"evaluate","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:dcagyq7kyqppy2rjty4qorfkmi","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"exercise_alerts","kind":"function","node_id":"function:toolhub-evolved:kzg4ynpvubp6f2spjl4r672e2q","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"exercise_alerts","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:h2cvnvoreuilinigcz6lbes4zq","file":"tools/check_production_health.py"}
-{"module":"tools.check_production_health","symbol":"float","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pft3h6ulplino5efyyzyrvdgxq","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"float","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tf7gztv42bmsu6xvpuumo3jfre","file":"tools/check_production_health.py"}
+{"module":"tools.check_production_health","symbol":"float","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wuucgdsnwavz5uor6pebzuthd4","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:itabsmi43lhqjdusapslwing6m","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hhqzai2d23zuqfhntwp34nj2aa","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:mn6eovppvzndorkhmtohfxuoze","file":"tools/check_production_health.py"}
@@ -74,7 +75,11 @@
 {"module":"tools.check_production_health","symbol":"metrics.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:a3igpzrxqdzrdr3dypio2rzdie","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"metrics.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:in6eb34jx2x576yg2da7dqllu4","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"metrics.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lw3fdsyifnl5voqedo3ftld45u","file":"tools/check_production_health.py"}
+{"module":"tools.check_production_health","symbol":"next","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7llukukxffa5k236mfn2d22nx4","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"next","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:j6jhqsbllmbqoqhg3sfx3cqnta","file":"tools/check_production_health.py"}
+{"module":"tools.check_production_health","symbol":"p95_from_buckets","kind":"function","node_id":"function:toolhub-evolved:n33odeqkrpw5kopy4paidvbadq","file":"tools/check_production_health.py"}
+{"module":"tools.check_production_health","symbol":"p95_from_buckets","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cfsihnb5mmhalu6vt6iacdtfuu","file":"tools/check_production_health.py"}
+{"module":"tools.check_production_health","symbol":"p95_from_buckets","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ricwedlbimh3kdcjpr6jpt2dky","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"parse_metrics","kind":"function","node_id":"function:toolhub-evolved:ari6rs5czbmll5hk3rfkz6jv7u","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"parse_metrics","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zbb3m4bj6baxnkgxkvxv6s4uie","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"parser.add_argument","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qxz5tts57b5jvx3o3je2smavra","file":"tools/check_production_health.py"}
@@ -84,6 +89,7 @@
 {"module":"tools.check_production_health","symbol":"payload.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3ubhnyih3wt7oszyqunoa6cn2i","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"previous.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qtnvjznvpn2ezyk3j3eoq2ueyu","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"print","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:polo3c3acry7lm6xgmicfcgvfa","file":"tools/check_production_health.py"}
+{"module":"tools.check_production_health","symbol":"prior_buckets.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nuzhzg5ksyg7euhy46grgunnv4","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"raw_line.strip","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zlf7p5zmhbzoso2fbr2ijyrps4","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"re","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:sijpwek2sawu2hysxgx5wgh3xa","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"response.read","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2hax5lxlubkwa2d65hxrr425dm","file":"tools/check_production_health.py"}
@@ -91,7 +97,7 @@
 {"module":"tools.check_production_health","symbol":"samples.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ba5js6ksfpj36ioedteyn2usnq","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"save_window_state","kind":"function","node_id":"function:toolhub-evolved:frtkkgudghfejzw6qdp3ufvtie","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"save_window_state","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:st2tyhx735z5zbssfnkjwdtkjy","file":"tools/check_production_health.py"}
-{"module":"tools.check_production_health","symbol":"sorted","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7cecee74qm6mj5flraazmgwfum","file":"tools/check_production_health.py"}
+{"module":"tools.check_production_health","symbol":"sorted","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4kkoptelk6oyyycjbixoh6eyjq","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"state.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:mg6tbousjf3fu7sjmyyzryxif4","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"str","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ke57rvqm4zpkdktf53nm5wyqqm","file":"tools/check_production_health.py"}
 {"module":"tools.check_production_health","symbol":"sum","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hgbzj27v477vjb5c3avtj2oia4","file":"tools/check_production_health.py"}
