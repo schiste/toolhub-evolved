@@ -21,8 +21,20 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v7
+            # Homebrew is not present on the Ubuntu runner image, so the pair
+            # is fetched from the same release the tap formula points at and
+            # verified against the formula's own checksum before it runs.
             - name: Install Aethyme binary pair
-              run: brew install schiste/tap/aethyme
+              env:
+                  VERSION: "0.4.2"
+                  SHA256: "99d07b113df7fd888c28857170e683adbfde60aeac08809d92b7a993cd011b39"
+              run: |
+                  asset="aethyme-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+                  curl -sSfL "https://github.com/schiste/Aethyme/releases/download/v${VERSION}/${asset}" -o "$asset"
+                  echo "${SHA256}  ${asset}" | sha256sum -c -
+                  tar -xzf "$asset" aethyme aethyme-engine-cli
+                  install -m 755 aethyme aethyme-engine-cli /usr/local/bin/
+                  rm -f "$asset" aethyme aethyme-engine-cli
             - name: Verify paired binaries
               run: |
                   aethyme --version
