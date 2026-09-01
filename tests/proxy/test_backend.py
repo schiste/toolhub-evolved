@@ -485,6 +485,41 @@ def test_recent_rss_feed_uses_local_recent_replica(client, monkeypatch):
     assert root.find("./channel/item/guid").text == "toolhub-recent:7"
 
 
+def test_a_recent_change_with_no_comment_gets_no_trailing_separator(client, monkeypatch):
+    """Most upstream revisions carry no edit summary, so this is the common row.
+
+    The description is built as "<action> by <user>." and the comment is appended
+    only when there is one. Appending unconditionally would leave every
+    summary-less item with a trailing space inside <description>, which readers
+    render as a ragged blank before the next line.
+    """
+    monkeypatch.setenv("TOOLHUB_EVOLVED_BASE_URL", "https://evolved.example")
+    monkeypatch.setattr(
+        catalog_read,
+        "collection_payload",
+        lambda *_a, **_k: {
+            "results": [
+                {
+                    "id": 9,
+                    "timestamp": "2026-07-30T12:00:00Z",
+                    "content_type": "tool",
+                    "content_id": "editing-tool",
+                    "content_title": "Editing tool",
+                    "user": {"username": "Grace"},
+                    "comment": "",
+                }
+            ]
+        },
+    )
+
+    resp = client.get("/feeds/recent.xml")
+
+    assert resp.status_code == 200
+    root = ET.fromstring(resp.get_data(as_text=True))
+    assert root.find("./channel/item/description").text == "Created by Grace."
+    assert root.find("./channel/item/link").text == "https://evolved.example/tools/editing-tool"
+
+
 def test_cached_feed_rejects_a_forged_host_header(client, monkeypatch):
     """A forged Host must not reach a publicly cached feed.
 
