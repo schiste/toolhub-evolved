@@ -58,10 +58,15 @@ output/
 # aethyme-broker:begin (managed block — do not edit inside)
 .aethyme/broker.db*
 .aethyme/logs/
+.aethyme/reports/
 .aethyme/run/
 .aethyme/worktrees/
 .aethyme/graph_store.redb
 .aethyme/broker-action-required.md
+.aethyme/broker-advisory.md
+.aethyme/generated/experience-status.json
+.aethyme/generated/experience-status.md
+.aethyme/generated/experience-telemetry.jsonl
 # aethyme-broker:end
 
 # Aethyme deployment telemetry and reports are machine-local runtime state.

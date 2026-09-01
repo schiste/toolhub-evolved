@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { translationMetrics } from "./i18n.js";
 
 const PREFIX = "toolhub-evolved";
 export const APP_BOOT_START = `${PREFIX}:app-boot-start`;
@@ -217,6 +218,7 @@ export function pageDiagnostics() {
 		path: pagePath,
 		title: typeof document === "object" ? document.title : "",
 		locale: typeof document === "object" ? document.documentElement.lang : "",
+		translations: translationMetrics(),
 		userAgent: typeof navigator === "object" ? navigator.userAgent : "",
 		platform: typeof navigator === "object" ? navigator.platform : "",
 		viewport:

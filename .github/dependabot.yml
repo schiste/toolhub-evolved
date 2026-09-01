@@ -7,12 +7,32 @@ updates:
       directory: "/"
       schedule:
           interval: weekly
+          day: monday
       open-pull-requests-limit: 5
+      groups:
+          npm-development:
+              dependency-type: development
     - package-ecosystem: github-actions
       directory: "/"
       schedule:
           interval: weekly
+          day: monday
+      groups:
+          github-actions:
+              patterns: ["*"]
     - package-ecosystem: pip
       directory: "/proxy"
       schedule:
           interval: weekly
+          day: monday
+      groups:
+          python-runtime:
+              patterns: ["*"]
+    - package-ecosystem: pip
+      directory: "/tools"
+      schedule:
+          interval: weekly
+          day: monday
+      groups:
+          python-quality:
+              patterns: ["*"]

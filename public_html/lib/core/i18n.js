@@ -75,6 +75,7 @@ export const LOCALE = appLocale();
 let messages = {};
 /** @type {Set<string> | null} */
 let knownMessageKeys = null;
+let translationStats = { lookups: 0, catalogHits: 0, fallbackHits: 0, missingKeys: 0 };
 const BANANA_PARAM = /\$(\d+)/g;
 /** `{{NAME:arg|arg…}}`; scanned rather than matched so nested braces survive. */
 const MAGIC_OPEN = "{{";
@@ -213,10 +214,31 @@ export function setKnownMessageKeys(keys) {
  */
 export function setMessages(catalog) {
 	messages = {};
+	resetTranslationMetrics();
 	if (!catalog || typeof catalog !== "object") return;
 	for (const [key, value] of Object.entries(catalog)) {
 		if (!key.startsWith("@") && typeof value === "string") messages[key] = value;
 	}
+}
+
+/** Reset process-local translation lookup counters after a catalog change. */
+export function resetTranslationMetrics() {
+	translationStats = { lookups: 0, catalogHits: 0, fallbackHits: 0, missingKeys: 0 };
+}
+
+/**
+ * Return bounded, non-content diagnostics for the active message catalog.
+ * `fallbackRate` includes visible missing keys because both require attention
+ * before a non-English locale can be considered complete in production.
+ */
+export function translationMetrics() {
+	const untranslated = translationStats.fallbackHits + translationStats.missingKeys;
+	return {
+		locale: LOCALE,
+		catalogMessages: Object.keys(messages).length,
+		...translationStats,
+		fallbackRate: translationStats.lookups === 0 ? 0 : untranslated / translationStats.lookups
+	};
 }
 
 /** @param {unknown} value @returns {value is { html: string }} */
@@ -360,9 +382,16 @@ function expandMagicWords(text, params) {
  * @param {readonly unknown[]} params
  */
 function resolveMessage(key, fallback, params) {
-	if (knownMessageKeys && !knownMessageKeys.has(String(key))) return `[unknown i18n key ${String(key)}]`;
+	translationStats.lookups++;
+	if (knownMessageKeys && !knownMessageKeys.has(String(key))) {
+		translationStats.missingKeys++;
+		return `[unknown i18n key ${String(key)}]`;
+	}
 	const hasCatalogMessage = Object.prototype.hasOwnProperty.call(messages, key);
 	const hasBootMessage = Object.prototype.hasOwnProperty.call(BOOT_MESSAGES, key);
+	if (hasCatalogMessage) translationStats.catalogHits++;
+	else if (fallback !== undefined || hasBootMessage) translationStats.fallbackHits++;
+	else translationStats.missingKeys++;
 	let out = hasCatalogMessage ? String(messages[key]) : (fallback ?? BOOT_MESSAGES[key] ?? key);
 	out = expandMagicWords(out, params);
 	if (isPseudoLocale() && (hasCatalogMessage || hasBootMessage || fallback !== undefined)) out = pseudoLocalize(out);

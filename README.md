@@ -187,15 +187,18 @@ final verification pass after those issues are fixed.
   headers, zero warnings), Stylelint (design-token enforcement), cspell.
 - **Types** — `tsc --checkJs` in **full strict mode** across the whole app.
 - **Tests** — Vitest (happy-dom), with a V8 **coverage ratchet** aimed explicitly
-  at 100 % (current floors: statements ≥ 90.44 %, branches ≥ 80.33 %, functions
-  ≥ 93.67 %, lines ≥ 92.73 %; thresholds may only rise); Playwright e2e (smoke +
-  axe accessibility). `npm run coverage:update` records improvements without
-  ever lowering a floor.
+  at 100 %; Playwright e2e (smoke + axe accessibility). The floors live in
+  `.coverage-ratchet.json`, which `vitest.config.mjs` reads directly — they are
+  deliberately not restated here, because a second copy drifts. They may only
+  rise; `npm run coverage:update` records improvements without ever lowering one.
 - **Hygiene** — knip (dead code), jscpd (duplication), a small AST checker
   (`tools/checks.mjs`: XSS, a11y, dead code, floating promises, HTML balance),
-  `npm run i18n:check`, a JS payload budget, and gitleaks secret scanning.
-- **Proxy** — ruff (`select = ALL`, incl. flake8-bandit security), pip-audit,
-  and a pytest asserting the CSP + security headers.
+  `npm run i18n:check`, a JS payload budget, gitleaks secret scanning, and
+  `npm audit --audit-level=moderate`.
+- **Proxy** — ruff (`select = ALL`, incl. flake8-bandit security), pip-audit for
+  both runtime and quality-tool requirements, weekly grouped Dependabot updates,
+  pytest with a literal 100 % statement-and-branch coverage gate, and a test
+  asserting the CSP + security headers.
 
 **Mutation testing** (Stryker) runs weekly (`.github/workflows/mutation.yml`)
 over `public_html/**`, sharded across a matrix because one full-scope run does not

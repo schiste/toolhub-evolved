@@ -46,6 +46,11 @@
 		],
 		"*.{json,md,yml,yaml,html,svg}": "prettier --write"
 	},
+	"overrides": {
+		"typed-rest-client": {
+			"qs": "6.15.3"
+		}
+	},
 	"devDependencies": {
 		"@axe-core/playwright": "4.12.1",
 		"@commitlint/cli": "21.1.0",

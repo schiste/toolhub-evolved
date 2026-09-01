@@ -3,11 +3,15 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
 	extractCatalogFromEntries,
+	messageDocumentation,
+	messageKeyContext,
 	messageParameters,
 	renderCatalog,
 	renderDocsCatalog,
 	renderLocalesModule,
-	validateMessageShape
+	validateLocaleCatalog,
+	validateMessageShape,
+	validateReviewManifest
 } from "../../tools/i18n-extract.mjs";
 
 test("extractCatalogFromEntries collects stable English source messages", () => {
@@ -47,15 +51,35 @@ test("renderCatalog emits tab-indented JSON, sorted, with @metadata first", () =
 	assert.equal(renderCatalog({ "b.two": "Two", "a.one": "One" }), '{\n\t"a.one": "One",\n\t"b.two": "Two"\n}\n');
 });
 
-test("renderDocsCatalog keeps written documentation and stubs the rest", () => {
+test("renderDocsCatalog keeps written documentation and generates context for the rest", () => {
 	const docs = renderDocsCatalog(
 		{ "a.plain": "Hello", "b.params": "GET $1 returned $2." },
 		{ "a.plain": "Greeting shown on the home page." }
 	);
 	assert.equal(docs["a.plain"], "Greeting shown on the home page.");
-	// A stub pre-shapes the Parameters block translators need most.
-	assert.match(docs["b.params"], /^TODO/);
-	assert.match(docs["b.params"], /Parameters:\n\* \$1 - TODO\n\* \$2 - TODO$/);
+	assert.equal(
+		docs["b.params"],
+		"Message shown in the b interface for params.\n\nParameters:\n" +
+			"* $1 - Value substituted for $1 in the source message “GET $1 returned $2.”.\n" +
+			"* $2 - Value substituted for $2 in the source message “GET $1 returned $2.”."
+	);
+	assert.doesNotMatch(JSON.stringify(docs), /TODO/);
+});
+
+test("message documentation turns stable keys into translator context", () => {
+	assert.equal(messageKeyContext("dataLayer.summaryTitle"), "data layer › summary title");
+	assert.equal(
+		messageDocumentation("dataLayer.summaryTitle", "Overall filling"),
+		"Message shown in the data layer interface for summary title."
+	);
+});
+
+test("legacy documentation stubs are replaced instead of preserved", () => {
+	const docs = renderDocsCatalog(
+		{ "dataLayer.summaryTitle": "Overall filling" },
+		{ "dataLayer.summaryTitle": "TODO: document this message." }
+	);
+	assert.equal(docs["dataLayer.summaryTitle"], "Message shown in the data layer interface for summary title.");
 });
 
 test("renderLocalesModule lists shipped catalogs in sorted order", () => {
@@ -121,4 +145,53 @@ test("message shape helpers accept the banana conventions", () => {
 	assert.deepEqual(validateMessageShape("people.name", "{{bidi:$1}} contributed", 1), []);
 	// Without a call site there is no argument count to check against.
 	assert.deepEqual(validateMessageShape("shell.skipToContent", "Skip to content"), []);
+});
+
+test("shipped locale validation requires complete keys and parameter parity", () => {
+	const source = { "app.greeting": "Hello $1", "app.title": "Catalog" };
+	assert.deepEqual(
+		validateLocaleCatalog(source, { "app.greeting": "Bonjour $1", "app.title": "Catalogue" }, "fr"),
+		[]
+	);
+	const problems = validateLocaleCatalog(
+		source,
+		{ "@metadata": { locale: "fr" }, "app.greeting": "Bonjour", "app.extra": "Extra" },
+		"fr"
+	);
+	assert.match(problems.join("\n"), /missing 1\/2 source messages: app\.title/);
+	assert.match(problems.join("\n"), /has 1 unknown messages: app\.extra/);
+	assert.match(problems.join("\n"), /message "app\.greeting" parameters differ: expected \$1, got none/);
+});
+
+test("translation review evidence names a real shipped message pair", () => {
+	const source = { "app.title": "Catalog" };
+	const locales = { fr: { "app.title": "Catalogue" } };
+	assert.deepEqual(
+		validateReviewManifest(
+			{
+				version: 1,
+				reviewed: [{ locale: "fr", key: "app.title", reviewedBy: "Ada", reviewedAt: "2026-09-01" }]
+			},
+			source,
+			locales
+		),
+		[]
+	);
+	const problems = validateReviewManifest(
+		{
+			version: 2,
+			reviewed: [
+				{ locale: "de", key: "app.unknown", reviewedBy: "", reviewedAt: "September" },
+				{ locale: "de", key: "app.unknown", reviewedBy: "Ada", reviewedAt: "2026-09-01" }
+			]
+		},
+		source,
+		locales
+	);
+	assert.match(problems.join("\n"), /version must be 1/);
+	assert.match(problems.join("\n"), /names unshipped locale de/);
+	assert.match(problems.join("\n"), /names unknown message app\.unknown/);
+	assert.match(problems.join("\n"), /needs reviewedBy/);
+	assert.match(problems.join("\n"), /needs reviewedAt in YYYY-MM-DD form/);
+	assert.match(problems.join("\n"), /duplicates de:app\.unknown/);
 });

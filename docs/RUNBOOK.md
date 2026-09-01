@@ -719,6 +719,15 @@ Rollback = `git -C ~/repo revert <sha>` (or `git reset --hard <good-sha>`)
 followed by `sh ~/repo/tools/deploy.sh` again. The deploy script fails loudly
 if the webservice doesn't come back healthy.
 
+The deployment is rejected before release-history promotion when any of these
+non-mutating production contracts fail: database-backed `/healthz`, a non-empty
+local catalog generation, `/v1/config/` capability consistency, or anonymous
+write rejection on `/v1/write/tools/`. The script prints the exact pre-deploy
+commit as the rollback target. Restore that commit, restart, and run
+`python ~/repo/tools/post_deploy_smoke.py --base-url https://<toolname>.toolforge.org`
+before reopening traffic. A stale catalog alone is observable but not a rollback
+condition; an unavailable/failed or empty generation is.
+
 The release path deliberately serves the last successfully published account,
 catalog, and identity projections. After smoke and manifest promotion, the
 deploy queues `projection-refresh`, which refreshes Toolhub accounts, Toolforge

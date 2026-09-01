@@ -195,6 +195,16 @@ done
 if [ "$ready" -ne 1 ]; then
 	echo "Webservice did not become healthy after restart; current status:" >&2
 	webservice status >&2 || true
+	echo "Rollback criterion met: the app shell or a required bundle is unavailable." >&2
+	echo "Restore $deploy_head_before, restart the webservice, and rerun the smoke check." >&2
+	exit 1
+fi
+
+echo "Verifying production API contracts ..."
+failure_phase="smoke"
+if ! "$VENV_PY" "$REPO_DIR/tools/post_deploy_smoke.py" --base-url "$BASE_URL"; then
+	echo "Rollback criterion met: readiness, catalog, capability, or write-guard smoke failed." >&2
+	echo "Restore $deploy_head_before, restart the webservice, and inspect $deployment_diagnostics." >&2
 	exit 1
 fi
 restart_finished="$(date +%s.%N)"

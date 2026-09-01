@@ -35,20 +35,15 @@ const OUT = path.join(I18N_DIR, "en.json");
 const QQQ = path.join(I18N_DIR, "qqq.json");
 /** Generated so shipping a locale is a data change, not a code change. */
 const LOCALES = path.join(I18N_DIR, "locales.js");
-const DOC_STUB = "TODO: document this message.";
+/** Explicit evidence of human review for shipped translations. */
+const REVIEW = path.join(ROOT, ".i18n-review.json");
+const LEGACY_DOC_STUB = "TODO: document this message.";
 /**
- * How many messages may still carry a stub instead of real documentation.
- *
- * translatewiki wants every message documented, and the historical backfill of
- * this catalog has not happened yet. A hard "all messages documented" gate would
- * be red from day one and therefore ignored, so this is a RATCHET: it may only
- * ever be lowered. A new message must arrive documented; backfilling a batch
- * means lowering this number in the same commit. Onboarding to translatewiki
- * needs it at 0.
+ * How many messages may still carry a legacy stub instead of documentation.
+ * This is held at zero: generated context gives each new key a useful baseline,
+ * and translators can replace that baseline with more specific human guidance.
  */
-// Set once, at the merge that introduced this gate: every message written
-// before it existed counts as debt. It may only fall from here.
-const DOCUMENTATION_DEBT = 1986;
+const DOCUMENTATION_DEBT = 0;
 
 /** @returns {string[]} all first-party app sources with extractable messages */
 function sourceFiles(dir) {
@@ -80,6 +75,84 @@ function walk(node, visit) {
  */
 export function messageParameters(text) {
 	return [...new Set([...text.matchAll(BANANA_PARAM)].map((match) => Number(match[1])))].sort((a, b) => a - b);
+}
+
+/** @param {unknown} catalog @returns {Record<string, unknown>} */
+function catalogMessages(catalog) {
+	if (!catalog || typeof catalog !== "object" || Array.isArray(catalog)) return {};
+	return Object.fromEntries(Object.entries(catalog).filter(([key]) => !key.startsWith("@")));
+}
+
+/**
+ * Require every shipped translation to cover exactly the English key set and
+ * preserve banana parameters. Partial translatewiki exports stay unshipped and
+ * use English fallback until they are complete.
+ * @param {Record<string, string>} source
+ * @param {unknown} translated
+ * @param {string} locale
+ */
+export function validateLocaleCatalog(source, translated, locale) {
+	const messages = catalogMessages(translated);
+	const sourceKeys = Object.keys(source);
+	const missing = sourceKeys.filter((key) => typeof messages[key] !== "string" || messages[key] === "");
+	const extra = Object.keys(messages).filter((key) => !Object.prototype.hasOwnProperty.call(source, key));
+	const problems = [];
+	if (missing.length > 0) {
+		problems.push(
+			`${locale}.json is missing ${missing.length}/${sourceKeys.length} source messages: ${missing.slice(0, 10).join(", ")}`
+		);
+	}
+	if (extra.length > 0) {
+		problems.push(`${locale}.json has ${extra.length} unknown messages: ${extra.slice(0, 10).join(", ")}`);
+	}
+	for (const key of sourceKeys) {
+		if (typeof messages[key] !== "string" || messages[key] === "") continue;
+		const expected = messageParameters(source[key]);
+		const actual = messageParameters(messages[key]);
+		if (expected.join(",") !== actual.join(",")) {
+			problems.push(
+				`${locale}.json message "${key}" parameters differ: expected ${expected.map((n) => `$${n}`).join(", ") || "none"}, got ${actual.map((n) => `$${n}`).join(", ") || "none"}`
+			);
+		}
+	}
+	return problems;
+}
+
+/**
+ * Validate the auditable list of translation pairs a human has reviewed.
+ * @param {unknown} manifest
+ * @param {Record<string, string>} source
+ * @param {Record<string, Record<string, unknown>>} locales
+ */
+export function validateReviewManifest(manifest, source, locales) {
+	const problems = [];
+	if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+		return [".i18n-review.json must be an object"];
+	}
+	if (manifest.version !== 1) problems.push(".i18n-review.json version must be 1");
+	if (!Array.isArray(manifest.reviewed)) return [...problems, ".i18n-review.json reviewed must be an array"];
+	const seen = new Set();
+	for (const [index, record] of manifest.reviewed.entries()) {
+		const label = `.i18n-review.json reviewed[${index}]`;
+		if (!record || typeof record !== "object" || Array.isArray(record)) {
+			problems.push(`${label} must be an object`);
+			continue;
+		}
+		const { locale, key, reviewedAt, reviewedBy } = record;
+		const pair = `${locale}:${key}`;
+		if (seen.has(pair)) problems.push(`${label} duplicates ${pair}`);
+		seen.add(pair);
+		if (!Object.prototype.hasOwnProperty.call(locales, locale)) {
+			problems.push(`${label} names unshipped locale ${locale}`);
+		}
+		if (!Object.prototype.hasOwnProperty.call(source, key)) problems.push(`${label} names unknown message ${key}`);
+		if (typeof locales[locale]?.[key] !== "string") problems.push(`${label} names untranslated pair ${pair}`);
+		if (typeof reviewedBy !== "string" || reviewedBy.trim() === "") problems.push(`${label} needs reviewedBy`);
+		if (typeof reviewedAt !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(reviewedAt)) {
+			problems.push(`${label} needs reviewedAt in YYYY-MM-DD form`);
+		}
+	}
+	return problems;
 }
 
 /**
@@ -311,10 +384,39 @@ export function renderCatalog(catalog, metadata) {
 	return `${JSON.stringify(body, null, "\t")}\n`;
 }
 
+/** Turn camelCase and identifier punctuation into short translator-facing prose. */
+export function messageKeyContext(key) {
+	return key
+		.split(".")
+		.map((part) =>
+			part
+				.replaceAll(/([a-z\d])([A-Z])/g, "$1 $2")
+				.replaceAll(/[-_]+/g, " ")
+				.toLowerCase()
+		)
+		.join(" › ");
+}
+
 /**
- * Documentation skeleton: keep whatever a human already wrote, stub the rest.
- * Parameterised messages get their `Parameters:` block pre-shaped, because that
- * is the part translators cannot guess and the part banana-checker looks for.
+ * A deterministic baseline for qqq. It names the interface and purpose from
+ * the stable key, then points parameter documentation at the exact English
+ * sentence whose value is substituted. Human-written qqq always wins.
+ */
+export function messageDocumentation(key, fallback) {
+	const [area, ...purposeParts] = messageKeyContext(key).split(" › ");
+	const purpose = purposeParts.join(" › ") || area;
+	const source = fallback.replaceAll(/\s+/g, " ").trim();
+	const params = messageParameters(fallback);
+	const summary = `Message shown in the ${area} interface for ${purpose}.`;
+	if (params.length === 0) return summary;
+	return `${summary}\n\nParameters:\n${params
+		.map((index) => `* $${index} - Value substituted for $${index} in the source message “${source}”.`)
+		.join("\n")}`;
+}
+
+/**
+ * Documentation catalog: keep whatever a human already wrote and generate a
+ * translator-facing baseline for missing or legacy-stubbed entries.
  * @param {Record<string, string>} catalog
  * @param {Record<string, string>} current
  * @returns {Record<string, string>}
@@ -323,15 +425,11 @@ export function renderDocsCatalog(catalog, current) {
 	/** @type {Record<string, string>} */
 	const docs = {};
 	for (const key of Object.keys(sortedCatalog(catalog))) {
-		if (current[key]) {
+		if (current[key] && !current[key].startsWith(LEGACY_DOC_STUB)) {
 			docs[key] = current[key];
 			continue;
 		}
-		const params = messageParameters(catalog[key]);
-		docs[key] =
-			params.length === 0
-				? DOC_STUB
-				: `${DOC_STUB}\n\nParameters:\n${params.map((index) => `* $${index} - TODO`).join("\n")}`;
+		docs[key] = messageDocumentation(key, catalog[key]);
 	}
 	return docs;
 }
@@ -349,16 +447,50 @@ export const SHIPPED_LOCALES = ${JSON.stringify([...locales].sort())};
 `;
 }
 
+/** Locale catalog files actually present on disk. */
+function localeCatalogFiles() {
+	return readdirSync(I18N_DIR, { withFileTypes: true }).filter(
+		(entry) => entry.isFile() && entry.name.endsWith(".json") && !new Set(["en.json", "qqq.json"]).has(entry.name)
+	);
+}
+
 /** Locale catalogs actually present on disk (qqq is documentation, not a locale). */
 function shippedLocales() {
-	const found = readdirSync(I18N_DIR, { withFileTypes: true })
-		.filter((entry) => entry.isFile() && entry.name.endsWith(".json") && entry.name !== "qqq.json")
-		.map((entry) => entry.name.replace(/\.json$/, ""));
+	const found = localeCatalogFiles().map((entry) => entry.name.replace(/\.json$/, ""));
 	return [...new Set(["en", ...found])];
+}
+
+/** @param {Record<string, string>} source */
+function localeQuality(source) {
+	/** @type {Record<string, Record<string, unknown>>} */
+	const locales = {};
+	const problems = [];
+	for (const entry of localeCatalogFiles()) {
+		const locale = entry.name.replace(/\.json$/, "");
+		try {
+			const parsed = JSON.parse(readFileSync(path.join(I18N_DIR, entry.name), "utf8"));
+			locales[locale] = catalogMessages(parsed);
+			problems.push(...validateLocaleCatalog(source, parsed, locale));
+		} catch (error) {
+			problems.push(`${entry.name} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+	let manifest;
+	try {
+		manifest = JSON.parse(readFileSync(REVIEW, "utf8"));
+	} catch (error) {
+		problems.push(
+			`.i18n-review.json is missing or invalid: ${error instanceof Error ? error.message : String(error)}`
+		);
+	}
+	if (manifest !== undefined) problems.push(...validateReviewManifest(manifest, source, locales));
+	return { locales, manifest, problems };
 }
 
 function main() {
 	const { catalog, problems } = extractCatalogFromFiles(sourceFiles(SRC));
+	const quality = localeQuality(catalog);
+	problems.push(...quality.problems);
 	if (problems.length > 0) {
 		console.error(`i18n-extract: ${problems.length} problem(s):\n  ${problems.join("\n  ")}`);
 		process.exit(1);
@@ -369,7 +501,7 @@ function main() {
 		{ file: QQQ, label: "qqq.json", body: renderCatalog(docs, existingMetadata(QQQ, "qqq")) },
 		{ file: LOCALES, label: "locales.js", body: renderLocalesModule(shippedLocales()) }
 	];
-	const undocumented = Object.keys(docs).filter((key) => docs[key].startsWith(DOC_STUB));
+	const undocumented = Object.keys(docs).filter((key) => docs[key].startsWith(LEGACY_DOC_STUB));
 
 	if (process.argv.includes("--check")) {
 		for (const { file, label, body } of outputs) {
@@ -384,8 +516,7 @@ function main() {
 				process.exit(1);
 			}
 		}
-		// Documentation debt is allowed to shrink, never to grow: a message added
-		// today must arrive documented, even though the historical backfill is open.
+		// Documentation debt is zero: generated context is mandatory for every key.
 		if (undocumented.length > DOCUMENTATION_DEBT) {
 			console.error(
 				`i18n-extract: ${undocumented.length} messages lack qqq documentation, above the agreed ceiling of ${DOCUMENTATION_DEBT}.\n` +
@@ -395,7 +526,8 @@ function main() {
 		}
 		console.log(
 			`i18n-extract: en.json in sync (${Object.keys(catalog).length} keys); ` +
-				`qqq documented ${Object.keys(docs).length - undocumented.length}/${Object.keys(docs).length}`
+				`qqq documented ${Object.keys(docs).length - undocumented.length}/${Object.keys(docs).length}; ` +
+				`${Object.keys(quality.locales).length} translated locale(s), ${quality.manifest?.reviewed?.length ?? 0} human-reviewed pair(s)`
 		);
 		return;
 	}

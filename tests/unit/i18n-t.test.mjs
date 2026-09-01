@@ -13,7 +13,8 @@ import {
 	setMessages,
 	t,
 	tData,
-	tWithElements
+	tWithElements,
+	translationMetrics
 } from "../../public_html/lib/core/i18n.js";
 
 // These tests exercise the resolver itself, so they address it with keys like
@@ -96,6 +97,22 @@ test("setMessages drops @metadata and non-string entries from a catalog", () => 
 	assert.equal(t("@metadata", "fallback"), "fallback");
 	assert.equal(t("x.ok", "Hello"), "Bonjour");
 	assert.equal(t("x.bad", "Hello"), "Hello");
+});
+
+test("translation metrics distinguish catalog hits, fallbacks, and missing keys", () => {
+	setMessages({ "x.translated": "Traduit" });
+	assert.equal(t("x.translated", "Translated"), "Traduit");
+	assert.equal(t("x.fallback", "Fallback"), "Fallback");
+	assert.equal(t("x.missing"), "x.missing");
+	assert.deepEqual(translationMetrics(), {
+		locale: "en",
+		catalogMessages: 1,
+		lookups: 3,
+		catalogHits: 1,
+		fallbackHits: 1,
+		missingKeys: 1,
+		fallbackRate: 2 / 3
+	});
 });
 
 test("tData resolves markup-extracted shell messages", () => {

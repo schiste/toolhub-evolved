@@ -521,6 +521,18 @@ test("the fallback carries the other Status boxes too, and omits an untouched se
 	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0][0].statuses, ["active"]);
 });
 
+test("an unreadable cache surfaces the live failure instead of an empty result page", async () => {
+	// The fallback's own catch exists so a broken cache cannot mask an outage.
+	// With nothing left to show, the original live error has to reach the
+	// caller: swallowing it would render a convincing, and wrong, "no tools
+	// match" page over a backend that is simply down.
+	setUrl("q=cite");
+	h.apiGet.mockRejectedValue(new Error("down"));
+	h.cachedCanonicalTools.mockRejectedValue(new Error("cache unreadable"));
+
+	await assert.rejects(search.viewSearch(), { message: "down" });
+});
+
 test("search sort=complete orders by completeness with title tiebreak", async () => {
 	setUrl("sort=complete");
 	h.apiGet.mockResolvedValue({

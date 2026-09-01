@@ -81,6 +81,8 @@ test("invalidUrlNotice() escapes label and raw URL text", () => {
 		'<span class="linkout-bad" role="note" aria-label="&lt;Repo&gt;: invalid URL" data-url-state="invalid"><span class="linkout-bad__label">&lt;Repo&gt;</span><span class="linkout-bad__state">Invalid URL</span><span class="linkout-bad__url" dir="auto">javascript:alert(&#39;&lt;x&gt;&#39;)</span></span>'
 	);
 	assert.equal(invalidUrlNotice("Repo", ""), "");
+	assert.equal(invalidUrlNotice("Repo", null), "");
+	assert.equal(invalidUrlNotice("Repo", undefined), "");
 });
 
 // ---- wikiLabel ----------------------------------------------------------------
