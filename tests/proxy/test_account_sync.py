@@ -231,7 +231,10 @@ def test_projection_refresh_owns_complete_account_generation_outside_deploy():
     assert 'run_with_tool_env account-sync "$REPO_DIR/proxy/account_sync.py --complete"' not in deploy
     assert "projection-refresh-deploy" in deploy
     assert "webservice python3.13 shell" not in deploy
-    assert 'exec env TOOLHUB_DEPLOY_REEXECUTED=1 sh "$REPO_DIR/tools/deploy.sh"' in deploy
+    assert (
+        'exec env TOOLHUB_DEPLOY_REEXECUTED=1 TOOLHUB_DEPLOY_HEAD_BEFORE="$deploy_head_before" '
+        'sh "$REPO_DIR/tools/deploy.sh"'
+    ) in deploy
 
 
 def test_sync_payload_reports_unavailable_before_any_sync_state_exists():

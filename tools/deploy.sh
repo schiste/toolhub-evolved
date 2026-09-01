@@ -8,13 +8,17 @@ set -eu
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "Updating $REPO_DIR ..."
-deploy_head_before="$(git -C "$REPO_DIR" rev-parse HEAD)"
+# The re-exec below runs after the pull, so the second process would recompute
+# this from the already-updated HEAD and name the commit it just deployed as the
+# rollback target -- the one commit that is known not to work. Carry the real
+# pre-deploy SHA across the boundary instead.
+deploy_head_before="${TOOLHUB_DEPLOY_HEAD_BEFORE:-$(git -C "$REPO_DIR" rev-parse HEAD)}"
 git -C "$REPO_DIR" pull --ff-only
 deploy_head_after="$(git -C "$REPO_DIR" rev-parse HEAD)"
 deploy_id="$deploy_head_after"
 if [ "$deploy_head_before" != "$deploy_head_after" ] && [ "${TOOLHUB_DEPLOY_REEXECUTED:-0}" != "1" ]; then
 	echo "Restarting deploy with the updated script ..."
-	exec env TOOLHUB_DEPLOY_REEXECUTED=1 sh "$REPO_DIR/tools/deploy.sh"
+	exec env TOOLHUB_DEPLOY_REEXECUTED=1 TOOLHUB_DEPLOY_HEAD_BEFORE="$deploy_head_before" sh "$REPO_DIR/tools/deploy.sh"
 fi
 
 deploy_short="$(printf '%s' "$deploy_id" | cut -c1-12)"
