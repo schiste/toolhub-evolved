@@ -1,7 +1,7 @@
 {
   "schema_version": "aethyme-onboarding-v1",
   "repo": {
-    "name": "stop-statistics-oom-killing-the-webservi",
+    "name": "toolhub-evolved",
     "root": ".",
     "kind": "repository",
     "languages": [
@@ -78,12 +78,6 @@
       "confidence": "high"
     },
     {
-      "path": "node_modules",
-      "role": "generated_or_vendor",
-      "reason": "generated output or vendored dependencies",
-      "confidence": "high"
-    },
-    {
       "path": "tests",
       "role": "tests",
       "reason": "conventional test directory",
@@ -114,12 +108,7 @@
       "confidence": "medium"
     }
   },
-  "caution_zones": [
-    {
-      "path": "node_modules",
-      "reason": "likely generated, vendored, fixture, or migration-heavy area"
-    }
-  ],
+  "caution_zones": [],
   "navigation_recipes": [
     {
       "purpose": "Broad repository orientation for a user request",
@@ -156,11 +145,9 @@
     ]
   },
   "freshness": {
-    "generated_at": "2026-08-25T08:02:01+00:00",
-    "snapshot_key": "5732a396c585033f487caaea9853dbf78c41d653",
-    "commit": "5732a396c585033f487caaea9853dbf78c41d653",
-    "repo_dirty": false,
-    "file_count": 565,
+    "source_digest": "f3bbd8cad33ec6d2504e959dd1374a6330acbb0860d4c30cdd3c9146737e5dc9",
+    "source_commit": null,
+    "source_file_count": 587,
     "generator": "deterministic"
   },
   "telemetry": {
@@ -176,9 +163,9 @@
     ],
     "counts": {
       "commands": 7,
-      "areas": 5,
+      "areas": 4,
       "entrypoints": 1,
-      "caution_zones": 1,
+      "caution_zones": 0,
       "navigation_recipes": 3,
       "notes": 0
     },

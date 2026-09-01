@@ -3,7 +3,7 @@ name: repo-onboarding
 description: Use when starting work in an unfamiliar repository, when the task asks for repo overview, setup, architecture, entrypoints, test commands, or where to begin. Skip for narrow file-scoped edits once the relevant paths are already known.
 ---
 
-# Repo Onboarding: stop-statistics-oom-killing-the-webservi
+# Repo Onboarding: toolhub-evolved
 
 ## When to Use
 
@@ -46,7 +46,6 @@ description: Use when starting work in an unfamiliar repository, when the task a
 
 - `.github` (automation; automation and CI configuration; high confidence)
 - `docs` (docs; documentation area; high confidence)
-- `node_modules` (generated_or_vendor; generated output or vendored dependencies; high confidence)
 - `tests` (tests; conventional test directory; high confidence)
 - `tools` (tooling; developer tooling or scripts; high confidence)
 
@@ -59,15 +58,9 @@ description: Use when starting work in an unfamiliar repository, when the task a
 - `aethyme graph callers "$PWD" "<symbol-or-file>" --json-output`
   Purpose: Trace likely impact before editing
 
-## Caution Zones
-
-- `node_modules` (likely generated, vendored, fixture, or migration-heavy area)
-
 ## Freshness
 
-- Snapshot key: `5732a396c585033f487caaea9853dbf78c41d653`
-- Commit: `5732a396c585033f487caaea9853dbf78c41d653`
-- Repo dirty: `False`
-- Generated at: `2026-08-25T08:02:01+00:00`
+- Source digest: `f3bbd8cad33ec6d2504e959dd1374a6330acbb0860d4c30cdd3c9146737e5dc9`
+- Tracked source files: `587`
 - Overrides applied: `False`
 - Sections generated: `repo, commands, areas, entrypoints, caution_zones, navigation_recipes, summon, freshness`
