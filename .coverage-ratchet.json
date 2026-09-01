@@ -1,0 +1,9 @@
+{
+	"target": 100,
+	"minimum": {
+		"statements": 90.44,
+		"branches": 80.33,
+		"functions": 93.67,
+		"lines": 92.73
+	}
+}

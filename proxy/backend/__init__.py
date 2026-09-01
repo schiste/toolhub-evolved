@@ -10,13 +10,14 @@ architecture.
 
 import os
 import secrets
+from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 
 from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from backend import db, token_crypto
+from backend import db, observability, token_crypto
 from backend.mcp_server import mcp_bp
 from backend.oauth import oauth_bp
 from backend.v1 import v1_bp
@@ -47,6 +48,9 @@ from backend.v1_write import v1_write_bp
 DEFAULT_DB_URL = f"sqlite:///{Path(__file__).resolve().parent.parent / 'var' / 'app.sqlite3'}"
 SESSION_DAYS = 30
 DEV_ENV = "TOOLHUB_INSECURE_COOKIES"
+TRUSTED_HOSTS_ENV = "TOOLHUB_TRUSTED_HOSTS"
+DEFAULT_TRUSTED_HOSTS = ("toolhub-evolved.toolforge.org",)
+LOCAL_TRUSTED_HOSTS = ("localhost", "127.0.0.1", "[::1]")
 
 
 def _session_secret(secret_key: str | None) -> str:
@@ -71,7 +75,29 @@ def _session_secret(secret_key: str | None) -> str:
     raise RuntimeError(msg)
 
 
-def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = None) -> None:
+def _trusted_hosts(explicit: Sequence[str] | None) -> list[str]:
+    """Resolve the exact hosts Flask may accept before routing a request."""
+    if explicit is not None:
+        hosts = [host.strip() for host in explicit if host.strip()]
+    elif TRUSTED_HOSTS_ENV in os.environ:
+        hosts = [host.strip() for host in os.environ[TRUSTED_HOSTS_ENV].split(",") if host.strip()]
+    elif os.environ.get(DEV_ENV) == "1":
+        hosts = list(LOCAL_TRUSTED_HOSTS)
+    else:
+        hosts = list(DEFAULT_TRUSTED_HOSTS)
+    if not hosts:
+        msg = f"{TRUSTED_HOSTS_ENV} must contain at least one host"
+        raise RuntimeError(msg)
+    return list(dict.fromkeys(hosts))
+
+
+def register(
+    app: Flask,
+    *,
+    db_url: str | None = None,
+    secret_key: str | None = None,
+    trusted_hosts: Sequence[str] | None = None,
+) -> None:
     """Wire the backend into a Flask app: config, database schema, blueprints.
 
     Explicit arguments win over the environment; the environment wins over the
@@ -91,6 +117,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
         SESSION_COOKIE_SECURE=os.environ.get(DEV_ENV) != "1",
         PERMANENT_SESSION_LIFETIME=timedelta(days=SESSION_DAYS),
         MAX_CONTENT_LENGTH=1024 * 1024,
+        TRUSTED_HOSTS=_trusted_hosts(trusted_hosts),
     )
     token_crypto.configure(app.secret_key)
     db.configure(url)
@@ -101,6 +128,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
         # docs/deploy-toolforge.md); trusting more hops than the ingress
         # actually appends lets clients forge their address.
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_hops, x_proto=proxy_hops)
+    observability.register(app)
     app.register_blueprint(oauth_bp)
     app.register_blueprint(mcp_bp)
     app.register_blueprint(v1_bp)

@@ -174,7 +174,7 @@ def test_the_wiki_lane_holds_both_gadgets_and_user_scripts_and_nothing_else():
 
 def test_statistics_endpoint_is_publicly_cacheable_and_supports_etag():
     app = Flask(__name__)
-    backend.register(app, db_url="sqlite://", secret_key="test-secret")
+    backend.register(app, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     with db.session_scope() as session:
         _tool(session, "one", {"title": "One"})

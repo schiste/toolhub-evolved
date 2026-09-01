@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Production monitor
+
+on:
+    schedule:
+        - cron: "7,22,37,52 * * * *"
+    workflow_dispatch:
+        inputs:
+            exercise_alerts:
+                description: Exercise every documented alert with synthetic unhealthy data
+                required: false
+                type: boolean
+                default: false
+
+permissions:
+    contents: read
+
+concurrency:
+    group: production-monitor
+    cancel-in-progress: false
+
+jobs:
+    probe:
+        name: Probe production
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-python@v7
+              with:
+                  python-version: "3.13"
+            - name: Exercise alert rules
+              if: inputs.exercise_alerts
+              run: python tools/check_production_health.py --exercise-alerts
+            - name: Collect health and metrics
+              run: python tools/check_production_health.py --output production-health.json
+            - name: Preserve external snapshot
+              if: always() && hashFiles('production-health.json') != ''
+              uses: actions/upload-artifact@v6
+              with:
+                  name: production-health-${{ github.run_id }}
+                  path: production-health.json
+                  retention-days: 30

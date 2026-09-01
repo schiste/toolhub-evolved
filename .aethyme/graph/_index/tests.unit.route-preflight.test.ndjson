@@ -1,0 +1,2 @@
+{"module":"tests.unit.route-preflight.test","symbol":"every hinted route asks for exactly the url the shell started","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:ssxmstjroc3wtnbnvzzqehat2m","file":"tests/unit/route-preflight.test.mjs"}
+{"module":"tests.unit.route-preflight.test","symbol":"every hinted route names a view module that exists","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:ziiq4f5ietiuczmymh2tprfyzq","file":"tests/unit/route-preflight.test.mjs"}

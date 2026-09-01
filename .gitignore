@@ -19,6 +19,8 @@ node_modules/
 playwright-report/
 test-results/
 coverage/
+/backend
+/mutants/
 htmlcov/
 .ruff_cache/
 .pytest_cache/
@@ -58,6 +60,7 @@ output/
 .aethyme/logs/
 .aethyme/run/
 .aethyme/worktrees/
+.aethyme/graph_store.redb
 .aethyme/broker-action-required.md
 # aethyme-broker:end
 

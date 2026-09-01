@@ -1,0 +1,3 @@
+{"module":"package","symbol":"coverage:proxy","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:a2semzwzlo3p4qxmgpgbej6qpi","file":"package.json"}
+{"module":"package","symbol":"env:\"secrets\"","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:n34sxr3ebbcdpunnun4ja76pt4","file":"package.json"}
+{"module":"package","symbol":"spell","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:mn6fa7q3cltg4jwdqtj7fmvchq","file":"package.json"}

@@ -163,7 +163,7 @@ def test_unready_projections_are_excluded_from_the_denominator():
 def test_coverage_endpoint_is_publicly_cacheable_and_serves_the_stored_snapshot():
     """The page reads one cached document; a request never pays for the pass twice."""
     app = Flask(__name__)
-    backend.register(app, db_url="sqlite://", secret_key="test-secret")
+    backend.register(app, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     with db.session_scope() as session:
         _projection(session, "one", {"title": [_entry(SOURCE_CURATION, effective=True)]})

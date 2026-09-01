@@ -27,6 +27,7 @@ them automatically.
 | `TOOLHUB_GITHUB_TOKEN`           | no       | Server-only token with permission to create issues in the configured Evolved repository; enables authenticated in-app issue reporting                                                                                     |
 | `TOOLHUB_GITHUB_REPOSITORY`      | no       | GitHub `owner/repository` target for in-app issue reports (default `schiste/toolhub-evolved`)                                                                                                                             |
 | `TOOLHUB_GITHUB_ISSUE_LABELS`    | no       | Optional comma-separated labels applied by the server to published reports                                                                                                                                                |
+| `TOOLHUB_TRUSTED_HOSTS`          | no       | Comma-separated hostnames Flask may accept; defaults to `toolhub-evolved.toolforge.org` in production and must be set when serving another public hostname                                                                |
 | `TOOLHUB_INSECURE_COOKIES`       | no       | Set to `1` only for local http development — never in production                                                                                                                                                          |
 
 Without `TOOLHUB_DB_URL` the backend falls back to a repo-local SQLite file
@@ -34,6 +35,12 @@ Without `TOOLHUB_DB_URL` the backend falls back to a repo-local SQLite file
 vars, `/oauth/login` answers 503 and the site runs with live reads plus
 signed-out read-only mode. Without a stored per-user Toolhub grant, `/v1/write/*`
 write endpoints answer 401 with `reauth: true`.
+
+Flask rejects an unlisted `Host` header with HTTP 400 before routing. Local
+development selected by `TOOLHUB_INSECURE_COOKIES=1` trusts only `localhost`,
+`127.0.0.1`, and `[::1]`; production defaults to the canonical Toolforge host.
+When changing `TOOLHUB_EVOLVED_BASE_URL`, set `TOOLHUB_TRUSTED_HOSTS` to the
+matching hostname at the same time. An empty override is a startup error.
 
 Authenticated issue reporting is disabled unless `TOOLHUB_GITHUB_TOKEN` is set.
 The token is never sent to the browser. A signed-in user must review and
@@ -671,6 +678,36 @@ Also keep labels aligned. The `lane-b` label describes prospective hybrid
 Evolved roadmap work; it must not refer to the removed experimental-toggle
 surface.
 
+## Rebuild the Aethyme graph
+
+The committed `.aethyme/graph/` fragments are generated evidence, not a local
+cache. Rebuild them whenever repository changes alter Aethyme's indexable
+source. The local `.aethyme/graph_store.redb` engine database is intentionally
+ignored and is recreated from those fragments.
+
+Aethyme 0.4.2 contains the fragment indexer source but its release archive does
+not include that binary. Install it from the exact release commit before
+rebuilding:
+
+```sh
+cargo install --locked \
+  --git https://github.com/schiste/Aethyme.git \
+  --rev d3af42260b1de174c286b7fe749f9f7f597ad429 \
+  --root /tmp/aethyme-graph-index \
+  --bin aethyme-graph-index \
+  aethyme-graph-indexer
+AETHYME_GRAPH_INDEX_BIN=/tmp/aethyme-graph-index/bin/aethyme-graph-index \
+  python3 tools/aethyme_graph.py rebuild
+```
+
+The wrapper excludes ignored runtime and quality outputs such as `.chau7/`,
+`coverage/`, `.quality/`, test reports, local databases, and broker state; those
+artifacts depend on which commands happened to run before generation. It
+restores the previous fragments when either indexing phase fails, rebuilds the
+engine store, and finishes with a bounded Explore smoke test. CI runs
+`python3 tools/aethyme_graph.py check`, which also fails when regeneration
+changes a committed fragment or the engine-version marker.
+
 ## Deploy / rollback
 
 ```sh
@@ -1180,23 +1217,64 @@ zcat ~/backups/<dump>.sql.gz | mariadb --defaults-file=$HOME/replica.my.cnf \
 ```
 
 then point a local `TOOLHUB_DB_URL` at the restore-test DB and check
-`/healthz` + `/v1/overlay/` shapes. Drop the test DB afterwards.
+`/readyz` + `/v1/overlay/` shapes. Drop the test DB afterwards.
 
 ## Monitoring
 
-- External uptime check (e.g. UptimeRobot free tier) on
-  `https://<toolname>.toolforge.org/healthz` — it verifies DB reachability,
-  not just the webservice.
+- The `Production monitor` GitHub Actions workflow probes production every 15
+  minutes from outside Toolforge, preserves a machine-readable snapshot for 30
+  days, and turns failed probes or threshold breaches into a failed check. Set
+  repository Actions notifications to deliver failed-workflow pages to the
+  operator. Its manual `exercise_alerts` input evaluates every rule against
+  deterministic unhealthy data without changing production.
+- External liveness check on `https://<toolname>.toolforge.org/livez`; it proves
+  the worker can answer without waiting on ToolsDB.
+- External readiness check on `https://<toolname>.toolforge.org/readyz`; it
+  verifies ToolsDB reachability and is the deployment traffic gate. `/healthz`
+  remains a compatibility form of the database-backed check.
+- Scrape `/metricsz` from every worker and aggregate it outside the process. It
+  exposes normalized route/status counters and a request-duration histogram;
+  counters reset on worker restart and never contain paths, query strings,
+  message bodies, identities, or credentials. Every response also carries a
+  sanitized or generated `X-Request-ID`, repeated in the normalized completion
+  log for correlation.
 - `webservice status` / `toolforge jobs list` for platform state;
   `~/uwsgi.log` for application errors (rotated nightly — see § Logs).
 - The deploy script's post-restart smoke loop is the first line of defence —
   a deploy that doesn't serve the app fails the deploy, not the users.
 
+### Service-level objectives
+
+Measure these over a rolling 30-day window after aggregating all workers. They
+are operational targets, not claims about historical availability before the
+metrics and external checks were installed.
+
+| Signal                           | Objective                   | Page / first response                                                                  |
+| -------------------------------- | --------------------------- | -------------------------------------------------------------------------------------- |
+| `/livez` successful probes       | >= 99.9%                    | Check `webservice status` and `~/uwsgi.log`; restart a wedged worker                   |
+| `/readyz` successful probes      | >= 99.5%                    | Check ToolsDB reachability, pool exhaustion, and `TOOLHUB_DB_URL`                      |
+| HTTP request p95                 | < 500 ms                    | Split by normalized route in request logs; inspect DB/query and static transfer time   |
+| HTTP 5xx share                   | < 1%                        | Correlate route/status metrics with `X-Request-ID` in `~/uwsgi.log`                    |
+| Published catalog generation age | < 2 hours outside incidents | Check `/v1/catalog/health/` and projection/synchronization job state; retain last good |
+
+Page when either availability objective burns more than 10% of its monthly
+error budget in one hour, when the 5xx objective is missed for 15 minutes, or
+when catalog age reaches two hours. A single failed client request is logged and
+correlated but is not itself an availability incident.
+
+The GitHub monitor is the immediate external sentinel and audit trail. Its
+`/metricsz` ratio alerts require at least 100 requests in the sampled worker so
+one error after a restart does not page. Because those counters are per-worker
+and reset on restart, use a durable multi-worker Prometheus service for exact
+30-day SLO and burn-rate accounting; the endpoint and thresholds are compatible
+with that upgrade.
+
 ## Incidents
 
 | Symptom                          | First moves                                                                                                                                                                             |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/healthz` returns 503           | ToolsDB reachability: `sql tools`; check `TOOLHUB_DB_URL`; `webservice restart`                                                                                                         |
+| `/livez` returns 503             | Worker/process failure: `webservice status`; inspect `~/uwsgi.log`; restart the webservice                                                                                              |
+| `/readyz` or `/healthz` is 503   | ToolsDB reachability: `sql tools`; check `TOOLHUB_DB_URL` and pool exhaustion; restart only after dependency checks                                                                     |
 | Site up, catalog unavailable     | Local replica/database problem — check `/v1/catalog/health/` and `tool_catalog_sync_state`; an upstream outage should only mark refresh delayed while retaining the previous generation |
 | Sign-in loops to `/?login=error` | Check Toolhub OAuth env vars; callback URL exact? `TOOLHUB_EVOLVED_BASE_URL` needed? `toolhub.wikimedia.org` reachable?                                                                 |
 | Official writes return 401       | The user's stored grant is absent/expired — ask them to sign in with Toolhub again                                                                                                      |

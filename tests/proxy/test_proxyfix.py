@@ -16,12 +16,12 @@ import backend  # noqa: E402
 def test_register_wraps_wsgi_app_when_proxy_hops_configured(monkeypatch):
     monkeypatch.setenv("TOOLHUB_PROXYFIX_X_FOR", "1")
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    backend.register(application, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     assert isinstance(application.wsgi_app, ProxyFix)
 
 
 def test_register_leaves_wsgi_app_bare_without_proxy_hops(monkeypatch):
     monkeypatch.delenv("TOOLHUB_PROXYFIX_X_FOR", raising=False)
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    backend.register(application, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     assert not isinstance(application.wsgi_app, ProxyFix)

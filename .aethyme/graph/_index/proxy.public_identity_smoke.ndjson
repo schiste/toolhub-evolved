@@ -1,0 +1,8 @@
+{"module":"proxy.public_identity_smoke","symbol":"ToolforgeIdentityProvider","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bzqnyrjbtdwbmnhemyet5esz6m","file":"proxy/public_identity_smoke.py"}
+{"module":"proxy.public_identity_smoke","symbol":"ToolforgeIdentityProvider","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:uusokswnhv4rhiv7k2ooefnsfy","file":"proxy/public_identity_smoke.py"}
+{"module":"proxy.public_identity_smoke","symbol":"annotations","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wjs2gprmhy6avm465tlwcxyl2u","file":"proxy/public_identity_smoke.py"}
+{"module":"proxy.public_identity_smoke","symbol":"json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:q2qbqd366kdampybw6zsam4gri","file":"proxy/public_identity_smoke.py"}
+{"module":"proxy.public_identity_smoke","symbol":"json.dumps","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3k54nrd24tvbnp4fijnm5xqhfu","file":"proxy/public_identity_smoke.py"}
+{"module":"proxy.public_identity_smoke","symbol":"main","kind":"function","node_id":"function:toolhub-evolved:n4x72kxbog4esistz4xv4u33im","file":"proxy/public_identity_smoke.py"}
+{"module":"proxy.public_identity_smoke","symbol":"sys","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:dvq2f5krjtnjksckjekeifsafu","file":"proxy/public_identity_smoke.py"}
+{"module":"proxy.public_identity_smoke","symbol":"sys.stdout.write","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5j2vj54ch5nr7l4yowifqpimna","file":"proxy/public_identity_smoke.py"}

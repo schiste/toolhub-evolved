@@ -193,7 +193,7 @@ def test_real_openssh_signature_verifier_accepts_only_the_signed_challenge(tmp_p
 
 def test_account_link_routes_are_private_csrf_protected_and_return_challenges(monkeypatch):
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    backend.register(application, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     application.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     user_id = seed()
     client = application.test_client()

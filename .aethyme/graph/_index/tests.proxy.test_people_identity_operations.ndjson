@@ -1,0 +1,3 @@
+{"module":"tests.proxy.test_people_identity_operations","symbol":"Path","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nxxmlhdm7jglhu6h4jv4i2aj54","file":"tests/proxy/test_people_identity_operations.py"}
+{"module":"tests.proxy.test_people_identity_operations","symbol":"ROOT","kind":"global_variable","node_id":"global_variable:toolhub-evolved:rgpscidbjs46ozmraq74lqari4","file":"tests/proxy/test_people_identity_operations.py"}
+{"module":"tests.proxy.test_people_identity_operations","symbol":"test_background_jobs_reconcile_public_identities","kind":"function","node_id":"function:toolhub-evolved:q7bvbqs5muqgjt4hdm7he43xmu","file":"tests/proxy/test_people_identity_operations.py"}

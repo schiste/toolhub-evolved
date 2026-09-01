@@ -39,8 +39,24 @@ jobs:
               run: |
                   aethyme --version
                   aethyme-engine-cli --version
+            # v0.4.2 contains the fragment indexer source, but its release
+            # archive accidentally packages only the router and engine. Build
+            # the omitted binary from the exact release commit and Cargo.lock.
+            - name: Install pinned Aethyme graph indexer
+              env:
+                  AETHYME_GRAPH_INDEX_REV: "d3af42260b1de174c286b7fe749f9f7f597ad429"
+              run: |
+                  cargo install --locked \
+                    --git https://github.com/schiste/Aethyme.git \
+                    --rev "$AETHYME_GRAPH_INDEX_REV" \
+                    --root "$RUNNER_TEMP/aethyme-graph-index" \
+                    --bin aethyme-graph-index \
+                    aethyme-graph-indexer
+                  echo "$RUNNER_TEMP/aethyme-graph-index/bin" >> "$GITHUB_PATH"
             - name: Verify repository policy
               run: aethyme deploy verify --repo .
+            - name: Rebuild graph and smoke-test Explore
+              run: python3 tools/aethyme_graph.py check
 
     js:
         name: JS quality
@@ -89,7 +105,7 @@ jobs:
             - name: Feature docs in sync (docs/FEATURES.md generated from experiments list)
               run: node tools/feature-docs.mjs --check
             - name: Unit tests + coverage gate
-              run: npx vitest run --coverage
+              run: npm run coverage
             # Mutation testing (Stryker) runs in its own workflow (.github/
             # workflows/mutation.yml) on a schedule + manual dispatch: a full-scope
             # run is ~60 min on the 2-core runner, too slow for a per-push gate.

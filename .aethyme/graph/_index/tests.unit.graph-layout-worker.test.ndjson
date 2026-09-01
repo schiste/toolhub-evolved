@@ -1,0 +1,2 @@
+{"module":"tests.unit.graph-layout-worker.test","symbol":"test","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:7j5miwhh6vicmhfbabwukpwzqy","file":"tests/unit/graph-layout-worker.test.mjs"}
+{"module":"tests.unit.graph-layout-worker.test","symbol":"worker layout is deterministic and pulls shared facets together","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:hd3pxd4udtgayaxk664suulppu","file":"tests/unit/graph-layout-worker.test.mjs"}

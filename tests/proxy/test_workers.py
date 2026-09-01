@@ -204,7 +204,7 @@ def test_every_status_the_page_can_show_is_explained():
 
 def test_the_endpoint_is_public_and_counts_every_declared_worker():
     app = Flask(__name__)
-    backend.register(app, db_url="sqlite://", secret_key="test-secret")
+    backend.register(app, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     with db.session_scope() as session:
         _run(session, "crawler", minutes_ago=5)
@@ -381,7 +381,7 @@ def test_a_name_that_is_not_a_declared_worker_has_no_page():
 
 def test_the_worker_endpoint_answers_by_name_and_404s_for_anything_else():
     app = Flask(__name__)
-    backend.register(app, db_url="sqlite://", secret_key="test-secret")
+    backend.register(app, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     with db.session_scope() as session:
         _run(session, "crawler", minutes_ago=5, summary={"counts": {"fetched": 3}})

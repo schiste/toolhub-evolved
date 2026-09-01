@@ -146,7 +146,12 @@ TOOLSADMIN_MAINTAINERS_TABLE_HTML = """
 @pytest.fixture
 def app():
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    backend.register(
+        application,
+        db_url="sqlite://",
+        secret_key="test-secret",
+        trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS,
+    )
     application.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     security.clear_rate_limits()
     return application
@@ -250,7 +255,29 @@ def test_register_env_paths(monkeypatch, tmp_path):
     backend.register(application)
     assert application.secret_key == "env-secret"
     assert application.config["SESSION_COOKIE_SECURE"] is False
+    assert application.config["TRUSTED_HOSTS"] == ["localhost", "127.0.0.1", "[::1]"]
     assert (tmp_path / "nested").is_dir()
+
+
+def test_register_defaults_to_toolforge_and_parses_trusted_host_override(monkeypatch):
+    monkeypatch.delenv("TOOLHUB_INSECURE_COOKIES", raising=False)
+    monkeypatch.delenv("TOOLHUB_TRUSTED_HOSTS", raising=False)
+    application = Flask(__name__)
+    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    assert application.config["TRUSTED_HOSTS"] == ["toolhub-evolved.toolforge.org"]
+    assert application.test_client().get("/livez", headers={"Host": "forged.example"}).status_code == 400
+
+    monkeypatch.setenv("TOOLHUB_TRUSTED_HOSTS", " evolved.example, api.example, evolved.example ")
+    configured = Flask(__name__)
+    backend.register(configured, db_url="sqlite://", secret_key="test-secret")
+    assert configured.config["TRUSTED_HOSTS"] == ["evolved.example", "api.example"]
+    assert configured.test_client().get("/livez", headers={"Host": "evolved.example"}).status_code == 200
+
+
+def test_register_rejects_an_empty_trusted_host_override(monkeypatch):
+    monkeypatch.setenv("TOOLHUB_TRUSTED_HOSTS", " , ")
+    with pytest.raises(RuntimeError, match="TOOLHUB_TRUSTED_HOSTS must contain at least one host"):
+        backend.register(Flask(__name__), db_url="sqlite://", secret_key="test-secret")
 
 
 def test_register_refuses_to_start_without_a_session_secret(monkeypatch):
@@ -279,7 +306,7 @@ def test_register_allows_an_ephemeral_secret_only_in_development(monkeypatch):
 # decorator quietly left off — which is exactly how /v1/recent/owners/ shipped as
 # an unauthenticated upstream amplifier.
 PUBLIC_V1_ROUTES = {
-    "/healthz": "liveness probe, no data",
+    "/healthz": "legacy database-readiness alias, no application data",
     "/v1/config/": "public feature flags for the signed-out SPA",
     "/v1/digests/": "public immutable digest archive; local DB only",
     "/v1/digests/<cadence>/<edition_key>/": "public immutable digest edition; local DB only",
@@ -458,8 +485,8 @@ def test_recent_rss_feed_uses_local_recent_replica(client, monkeypatch):
     assert root.find("./channel/item/guid").text == "toolhub-recent:7"
 
 
-def test_cached_feed_links_ignore_a_forged_host_header(client, monkeypatch):
-    """A forged Host must not reach <link>/<guid> in a publicly cached feed.
+def test_cached_feed_rejects_a_forged_host_header(client, monkeypatch):
+    """A forged Host must not reach a publicly cached feed.
 
     Feeds go out as `Cache-Control: public, max-age=300`, so a Host-derived base
     URL is cache poisoning: one request decides what every later reader sees for
@@ -476,10 +503,7 @@ def test_cached_feed_links_ignore_a_forged_host_header(client, monkeypatch):
 
     resp = client.get("/feeds/recent.xml", headers={"Host": "evil.example"})
 
-    assert resp.status_code == 200
-    text = resp.get_data(as_text=True)
-    assert "evil.example" not in text
-    assert v1_api.DEFAULT_PUBLIC_BASE_URL in text
+    assert resp.status_code == 400
 
 
 def test_catalog_rss_feeds_use_matching_local_replica_surfaces(client, monkeypatch):
@@ -7465,13 +7489,11 @@ def test_oauth_login_refuses_to_derive_the_callback_from_request_headers(client,
     assert client.get("/oauth/login").status_code == 503  # no trusted callback → refuse to start the flow
 
 
-def test_oauth_login_ignores_a_poisoned_host_header(client, monkeypatch):
+def test_oauth_login_rejects_a_poisoned_host_header(client, monkeypatch):
     configure_oauth(monkeypatch)
     monkeypatch.setenv("TOOLHUB_EVOLVED_BASE_URL", "https://evolved.example")
     resp = client.get("/oauth/login", headers={"Host": "attacker.example", "X-Forwarded-Proto": "http"})
-    location = resp.headers["Location"]
-    assert "redirect_uri=https%3A%2F%2Fevolved.example%2Foauth%2Fcallback" in location
-    assert "attacker.example" not in location
+    assert resp.status_code == 400
 
 
 def test_oauth_callback_refuses_when_no_trusted_callback_is_configured(client, monkeypatch):

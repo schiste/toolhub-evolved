@@ -1,0 +1,2 @@
+{"module":"public_html.lib.core.markdown","symbol":"store:function restoreTokens(value, tokens) {","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:bkxxbjywdhjvpwcnzkyhozofcu","file":"public_html/lib/core/markdown.js"}
+{"module":"public_html.lib.core.markdown","symbol":"store:return restoreTokens(out, tokens);","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:fgnwovg2qngaldyb3snurpxfzu","file":"public_html/lib/core/markdown.js"}

@@ -1,4 +1,5 @@
 ruff==0.16.3
 pip-audit==2.9.0
+mutmut==3.7.0
 pytest==8.3.4
 pytest-cov==6.0.0

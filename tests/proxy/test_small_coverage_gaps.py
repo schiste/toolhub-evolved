@@ -26,7 +26,7 @@ def test_card_people_discards_invalid_people_and_relationships():
 def test_recent_feed_turns_local_replica_failures_into_a_gateway_error(monkeypatch):
     db.configure("sqlite://")
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test")
+    backend.register(application, db_url="sqlite://", secret_key="test", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     application.config["TESTING"] = True
 
     def fail(*_args, **_kwargs):

@@ -58,3 +58,34 @@ precision = 2
 show_missing = true
 exclude_also = ["if __name__ == .__main__.:"]
 
+[tool.mutmut]
+# Weekly mutation testing complements structural 100% coverage on the paths
+# where an incorrect decision has the largest security or data-integrity cost.
+source_paths = ["backend"]
+only_mutate = [
+  "backend/authz.py",
+  "backend/security.py",
+  "backend/token_crypto.py",
+  "backend/outbound.py",
+  "backend/v1_write.py",
+  "backend/sync.py",
+  "backend/inference_enrichment.py",
+  "backend/source_analysis_assessments.py"
+]
+pytest_add_cli_args = ["-q", "-x", "--disable-warnings"]
+pytest_add_cli_args_test_selection = [
+  "tests/proxy/test_backend.py",
+  "tests/proxy/test_crawl.py",
+  "tests/proxy/test_outbound.py",
+  "tests/proxy/test_outbound_api.py",
+  "tests/proxy/test_inference_enrichment.py",
+  "tests/proxy/test_mcp_server.py",
+  "tests/proxy/test_mutation_critical_paths.py",
+  "tests/proxy/test_source_analyzer.py",
+  "tests/proxy/test_toolinfo_discovery.py",
+  "tests/proxy/test_toolinfo_sources.py",
+  "tests/proxy/test_v1_facets.py"
+]
+timeout_multiplier = 5.0
+timeout_constant = 2.0
+use_git_change_detection = false

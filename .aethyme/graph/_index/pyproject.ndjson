@@ -1,0 +1,18 @@
+{"module":"pyproject","symbol":"`npm run coverage","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:3z4axdpnux2urwfohegr26vfcq","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"env:\"backend/authz.py\",","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:s4mytsolbm6a5uvdrt2b2ii2lu","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"env:\"backend/token_crypto.py\",","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:u233as3rfvbpzhnfeyrr5ocg34","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"proxy","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:bxxdvvkngzbsske5hmqviiovau","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"proxy:# The reverse proxy is small and security-sensitive, and it IS still held at","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:avx3gmxxez5v23dri6sgpk7ziq","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"proxy:# repository_enrichment is listed by name rather than the whole proxy/ tree:","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:teclnt2u4y3hv3tietsz5jo4ru","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"py311","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:outnttlamsm7yipkyvffspayvi","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_backend.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:wrerlarigpehup6sk6maj5xfvy","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_crawl.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:h6qvhyhg6shl4u66aohhafb4da","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_inference_enrichment.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:pnaruy5f77oga4dghxo6sb5bhu","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_mcp_server.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:4id72g4sabkygy6iuoqe7q7sfq","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_mutation_critical_paths.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:uconhyxzqrecbvuahdv7346pq4","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_outbound.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:jn4uak5b2irzibjj7zqc6hwrhi","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_outbound_api.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:53cmkncvz35cgypjoq4akfsdl4","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_source_analyzer.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:lza7e2oc7awoovex44i4rlhw3m","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_toolinfo_discovery.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:c33bzwahe5rguw3zm7iizsoj4m","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_toolinfo_sources.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:xashnforsnaywuoyh7iw4dbvnm","file":"pyproject.toml"}
+{"module":"pyproject","symbol":"tests/proxy/test_v1_facets.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:m3ysigeiboyhosrsqivupdvznm","file":"pyproject.toml"}

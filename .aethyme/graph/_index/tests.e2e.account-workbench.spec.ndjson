@@ -1,0 +1,3 @@
+{"module":"tests.e2e.account-workbench.spec","symbol":"keeps My tools tabs aligned and retired submit UI absent","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:woaerabebh2l3dmuq5tuiugp2y","file":"tests/e2e/account-workbench.spec.mjs"}
+{"module":"tests.e2e.account-workbench.spec","symbol":"keeps collection tabs free of duplicate section headings","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:5atkox6uiyioukhvt3x75oeyqu","file":"tests/e2e/account-workbench.spec.mjs"}
+{"module":"tests.e2e.account-workbench.spec","symbol":"validate:Schiste","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:hbfjjsfshrswl5exmkbwva3qr4","file":"tests/e2e/account-workbench.spec.mjs"}

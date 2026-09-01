@@ -186,9 +186,11 @@ final verification pass after those issues are fixed.
 - **Formatting / lint** — Prettier, ESLint (architecture-boundary rules + license
   headers, zero warnings), Stylelint (design-token enforcement), cspell.
 - **Types** — `tsc --checkJs` in **full strict mode** across the whole app.
-- **Tests** — Vitest (happy-dom), with a V8 **coverage gate** (statements ≥ 96 %,
-  branches ≥ 90 %, functions ≥ 98 %, lines ≥ 97 %); Playwright e2e (smoke +
-  axe accessibility).
+- **Tests** — Vitest (happy-dom), with a V8 **coverage ratchet** aimed explicitly
+  at 100 % (current floors: statements ≥ 90.44 %, branches ≥ 80.33 %, functions
+  ≥ 93.67 %, lines ≥ 92.73 %; thresholds may only rise); Playwright e2e (smoke +
+  axe accessibility). `npm run coverage:update` records improvements without
+  ever lowering a floor.
 - **Hygiene** — knip (dead code), jscpd (duplication), a small AST checker
   (`tools/checks.mjs`: XSS, a11y, dead code, floating promises, HTML balance),
   `npm run i18n:check`, a JS payload budget, and gitleaks secret scanning.
@@ -204,6 +206,15 @@ ever be wrong for most of them. Raise a floor when you write tests that earn it.
 The handful of genuinely equivalent mutants carry documented `// Stryker disable`
 comments — the project's only in-code suppressions — indexed in
 [EQUIVALENTS.md](EQUIVALENTS.md).
+
+Python mutation testing runs separately each Tuesday over the backend's
+authorization, CSRF/rate-limit, token encryption, outbound-request, official
+write, synchronization, enrichment, and source-assessment decisions. Mutmut's
+machine-readable result is checked against `.python-mutation-ratchet.json`;
+untested, suspicious, interrupted, or segfaulting mutants fail independently of
+the score, so infrastructure failures cannot masquerade as weak assertions. The
+initial full measurement caught 3,404 of 5,563 mutants (61.19 %); that committed
+floor may only rise as surviving mutants gain stronger assertions.
 
 ## Local hooks
 

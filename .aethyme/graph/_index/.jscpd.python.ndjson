@@ -1,0 +1,2 @@
+{"module":".jscpd.python","symbol":"env:\"minTokens\"","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:bk53lssa4kba7ocnhvmqliol5u","file":".jscpd.python.json"}
+{"module":".jscpd.python","symbol":"proxy/var/**","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:w7numlowgdqhyj7diazxdvy6jm","file":".jscpd.python.json"}

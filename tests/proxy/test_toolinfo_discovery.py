@@ -22,7 +22,7 @@ from backend.public_identity import PublicIdentityResolver, WikimediaIdentityPro
 @pytest.fixture
 def app():
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    backend.register(application, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     application.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     security.clear_rate_limits()
     return application

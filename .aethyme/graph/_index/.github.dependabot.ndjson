@@ -1,0 +1,2 @@
+{"module":".github.dependabot","symbol":"/proxy","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:vjbuqercemlbpduazcau37qxwa","file":".github/dependabot.yml"}
+{"module":".github.dependabot","symbol":"proxy:# CI actions, and the proxy's Python deps current, with security updates surfaced","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:quigcsc4pv2ijdlb5xhptu745m","file":".github/dependabot.yml"}

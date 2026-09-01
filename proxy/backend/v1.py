@@ -407,7 +407,7 @@ def _public_tool_record_payload(row: ToolRecord) -> dict:
 
 @v1_bp.route("/healthz")
 def healthz() -> Response:
-    """Liveness + database reachability (used by uptime monitoring)."""
+    """Legacy database-readiness probe; new monitors use /readyz."""
     try:
         with db.session_scope() as s:
             s.execute(text("SELECT 1"))

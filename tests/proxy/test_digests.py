@@ -1165,7 +1165,7 @@ def test_meta_base_title_rejects_wikitext_control_characters(monkeypatch):
 
 def _web_client():
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    backend.register(application, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     application.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     return application.test_client()
 

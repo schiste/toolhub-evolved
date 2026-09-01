@@ -1,0 +1,5 @@
+{"module":"tests.e2e.rtl.spec","symbol":"keeps search cards, status flags, and quick-view inside the RTL viewport","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:lnvv5iojjkbau3eazxcdr4lb2q","file":"tests/e2e/rtl.spec.mjs"}
+{"module":"tests.e2e.rtl.spec","symbol":"keeps signed-in account disclosure inside the RTL viewport","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:ejsr4fva27wcgpclfm5jwvrj4y","file":"tests/e2e/rtl.spec.mjs"}
+{"module":"tests.e2e.rtl.spec","symbol":"keeps the recent table inside the RTL viewport","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:fmfsvk3djeok4oiqubflxt6aoa","file":"tests/e2e/rtl.spec.mjs"}
+{"module":"tests.e2e.rtl.spec","symbol":"mirrors the core shell and language menu without horizontal overflow","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:qqmdwocanuymh7tjmyjt3q3upu","file":"tests/e2e/rtl.spec.mjs"}
+{"module":"tests.e2e.rtl.spec","symbol":"validate:RTL User","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:lr2axidaxu7rlyf7ak7j4bm2na","file":"tests/e2e/rtl.spec.mjs"}

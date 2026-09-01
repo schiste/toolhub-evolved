@@ -1,0 +1,13 @@
+{"module":".github.workflows.ci","symbol":"Link/route + XSS + a11y + dead-code + floating-promise + HTML-balance checks","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:q2s46v5j6yof2j74echxbgch3e","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"PYTHONPATH","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:nt76ag4moncu3omruj57e4r7se","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"Proxy tests + whole-tree coverage ratchet","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:p3bxehuz3oe2zyayxn7di5c2aa","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"Reverse proxy stays fully covered","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:fox5ahjozxipyo4xu2ezyhoniq","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"env:secrets","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:pa67grxsq2bcm5d5kctdthqqqq","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"pip-audit -r proxy/requirements.txt --strict","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:h43vx36hxdlytdwqm5h23zsena","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"proxy pytest tests/proxy -q --cov --cov-report","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:k6dnm5zlsbrssrs23jekgmjrpy","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"proxy/app.py,proxy/crawl.py","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:hx4lr6u3h6tyfqfm77jdwy6tnm","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"proxy:# reverse proxy and the static-file traversal guard stay at 100%","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:tkyhd3lunapjbc2xvsdhus2upa","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"proxy:# tests/proxy only, and .aethyme/gates.toml triggered on the same path.","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:ikipttijch6acaflvga5uaquey","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"proxy:pip install -r proxy/requirements.txt","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:sa3vur3d67567olrrrbo3kignu","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"ruff check proxy","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:g7b7cfqcsntqxnbufvyvaczvha","file":".github/workflows/ci.yml"}
+{"module":".github.workflows.ci","symbol":"ruff format --check proxy","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:bte6tbh6mwq2wbreq23pitztwm","file":".github/workflows/ci.yml"}

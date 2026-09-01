@@ -54,7 +54,8 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
 - **Backend** (`proxy/backend/`): ToolsDB/SQLite via SQLAlchemy, official
   Toolhub OAuth 2.0, stored per-user Toolhub grants, sessions + CSRF + rate
   limiting, the `/v1` overlay API, `/v1/write/*` official-first lifecycle,
-  `/v1/search/tools/`, `/v1/moderation/public-data/`, `/healthz`, and the
+  `/v1/search/tools/`, `/v1/moderation/public-data/`, `/livez`, `/readyz`,
+  `/metricsz`, and the legacy `/healthz` readiness path, plus the
   `/toolinfo.json` feeder feed. The lower level `/v1/toolhub/*` bridge remains
   available for compatibility and smoke checks.
 - **Author and maintainer verification**: the complete Toolhub and Toolforge
@@ -277,7 +278,8 @@ clean; the audit's remaining WCAG findings closed or explicitly waived.
   checks for private local drafts, overlays, lists, crawler URLs, account data,
   thanks, health targets, and media submissions.
 - Cross-cutting: per-user and per-IP rate limits on writes, input validation
-  (reuse toolinfo 1.2.2 schema), structured logs, `/healthz`.
+  (reuse toolinfo 1.2.2 schema), request-correlated logs, `/livez`, `/readyz`,
+  and `/metricsz`.
 - Test story: the proxy tests extend to `/v1` (Flask test client + a throwaway
   MariaDB via container in CI); coverage gates stay at current thresholds.
 
@@ -362,9 +364,10 @@ via a documented one-liner.
   drives implementation work.
 - **Backups**: nightly Jobs-framework `mariadb-dump` of ToolsDB to the tool's
   home (NFS is replicated), 14-day rotation; documented restore drill (do one).
-- **Monitoring**: external uptime check on `/healthz` (e.g. UptimeRobot free
-  tier) + the existing post-deploy smoke loop in `tools/deploy.sh`; error log
-  review cadence.
+- **Monitoring**: separate external `/livez` and `/readyz` probes, per-worker
+  `/metricsz` aggregation, request-id correlation, and the existing post-deploy
+  smoke loop in `tools/deploy.sh`; SLOs and paging thresholds live in the
+  runbook.
 - **Policy & legal**: privacy policy rewritten for real server-side user data
   (what we store, retention, deletion — add self-serve account deletion);
   Toolforge rules & Wikimedia Cloud Services ToU compliance check; naming that

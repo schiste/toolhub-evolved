@@ -1,0 +1,1 @@
+{"module":"tests.e2e.person-profile-pagination.spec","symbol":"pages compact summaries without issuing Toolhub detail requests","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:vs25mqiozvbpksbqfezvbuk6iu","file":"tests/e2e/person-profile-pagination.spec.mjs"}

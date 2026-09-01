@@ -31,7 +31,7 @@ GADGETS = schedule.GADGET_LANE
 @pytest.fixture(autouse=True)
 def _database():
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    backend.register(application, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     with application.app_context():
         yield
 

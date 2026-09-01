@@ -45,6 +45,10 @@ def _clear_cache(monkeypatch):
 @pytest.fixture
 def client():
     proxy_app.app.config["TESTING"] = True
+    proxy_app.app.config["TRUSTED_HOSTS"] = [
+        *proxy_app.backend.LOCAL_TRUSTED_HOSTS,
+        *proxy_app.backend.DEFAULT_TRUSTED_HOSTS,
+    ]
     return proxy_app.app.test_client()
 
 

@@ -15,7 +15,7 @@ from backend.sync import REVIEW_APPROVED
 @pytest.fixture
 def app():
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    backend.register(application, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
     application.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     security.clear_rate_limits()
     # Both value and coverage caches are per-process with a 15-minute TTL;

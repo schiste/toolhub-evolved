@@ -1,0 +1,61 @@
+# Python mutation testing for the security and data-integrity decision paths.
+name: Python mutation
+
+on:
+    schedule:
+        - cron: "19 5 * * 2"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: python-mutation-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    critical-backend:
+        name: Critical backend mutation
+        runs-on: ubuntu-latest
+        timeout-minutes: 180
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-python@v7
+              with:
+                  python-version: "3.13"
+                  cache: pip
+                  cache-dependency-path: |
+                      proxy/requirements.txt
+                      tools/python-quality-requirements.txt
+            - name: Install runtime and mutation toolchain
+              run: pip install -r proxy/requirements.txt -r tools/python-quality-requirements.txt
+            - name: Baseline selected critical tests
+              run: |
+                  PYTHONPATH=proxy pytest \
+                    tests/proxy/test_backend.py \
+                    tests/proxy/test_crawl.py \
+                    tests/proxy/test_outbound.py \
+                    tests/proxy/test_outbound_api.py \
+                    tests/proxy/test_inference_enrichment.py \
+                    tests/proxy/test_mcp_server.py \
+                    tests/proxy/test_mutation_critical_paths.py \
+                    tests/proxy/test_source_analyzer.py \
+                    tests/proxy/test_toolinfo_discovery.py \
+                    tests/proxy/test_toolinfo_sources.py \
+                    tests/proxy/test_v1_facets.py -q
+            - name: Mutate critical backend decisions
+              run: |
+                  # Production imports this package as `backend` with proxy/ on
+                  # sys.path. The temporary root alias makes Mutmut generate the
+                  # same module names, then its mutants/ path wins at import time.
+                  ln -s proxy/backend backend
+                  trap 'unlink backend' EXIT
+                  PYTHONPATH="$GITHUB_WORKSPACE/proxy:$GITHUB_WORKSPACE" \
+                    mutmut run --max-children 2
+            - name: Export and enforce mutation ratchet
+              if: always()
+              run: |
+                  mutmut export-cicd-stats
+                  python tools/python_mutation_ratchet.py --format markdown >> "$GITHUB_STEP_SUMMARY"
+                  cat mutants/mutmut-cicd-stats.json
+                  python tools/python_mutation_ratchet.py

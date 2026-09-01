@@ -1,0 +1,4 @@
+{"module":"proxy.backend.job_contract","symbol":"EXIT_OK","kind":"global_variable","node_id":"global_variable:toolhub-evolved:jm2sf2vckwda7grnbzmrctxmgm","file":"proxy/backend/job_contract.py"}
+{"module":"proxy.backend.job_contract","symbol":"EXIT_SKIPPED","kind":"global_variable","node_id":"global_variable:toolhub-evolved:zvshq6inm27pg5rctmvzkm6gk4","file":"proxy/backend/job_contract.py"}
+{"module":"proxy.backend.job_contract","symbol":"EXIT_SWEEP_FAILED","kind":"global_variable","node_id":"global_variable:toolhub-evolved:y2kzpfbpd4q5ecy7pi7uqda45i","file":"proxy/backend/job_contract.py"}
+{"module":"proxy.backend.job_contract","symbol":"annotations","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:oziy6k2sqq6eszznoaur5bdrlq","file":"proxy/backend/job_contract.py"}

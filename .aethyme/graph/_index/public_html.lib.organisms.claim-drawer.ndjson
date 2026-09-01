@@ -1,0 +1,2 @@
+{"module":"public_html.lib.organisms.claim-drawer","symbol":"validate:Publish a short challenge token in the matching toolinfo record, then ask Evolved to verify it.","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:wjykhxh2yvhy55kwb4h5e2frwm","file":"public_html/lib/organisms/claim-drawer.js"}
+{"module":"public_html.lib.organisms.claim-drawer","symbol":"validate:claim.challengeBody","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:6bbeswna75djqmx3n6zd5cvi4u","file":"public_html/lib/organisms/claim-drawer.js"}

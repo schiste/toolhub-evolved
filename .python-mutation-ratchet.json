@@ -1,0 +1,12 @@
+{
+	"minimumScore": 61.19,
+	"areaMinimumScores": {
+		"authentication": 87.85,
+		"outboundIo": 68.15,
+		"dataIntegrity": 60.38
+	},
+	"maximumNoTests": 0,
+	"maximumSuspicious": 0,
+	"maximumSegfault": 0,
+	"maximumInterrupted": 0
+}

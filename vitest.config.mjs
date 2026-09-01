@@ -4,6 +4,7 @@
 // V8 coverage provider backs both the coverage gate and Stryker's vitest-runner
 // (per-test coverage → fast incremental mutation across the whole app).
 import { defineConfig } from "vitest/config";
+import coverageRatchet from "./.coverage-ratchet.json" with { type: "json" };
 
 export default defineConfig({
 	test: {
@@ -17,7 +18,7 @@ export default defineConfig({
 		coverage: {
 			provider: "v8",
 			include: ["public_html/**/*.js"],
-			reporter: ["text", "html"],
+			reporter: ["text", "html", "json-summary"],
 			// Honest floor (a RATCHET: may be raised, never lowered), not a vanity
 			// 100. Branch coverage caps below 100 because documented
 			// equivalent-mutant defensive guards (e.g. `if (!el)` that never
@@ -31,7 +32,7 @@ export default defineConfig({
 			// at all. A gate that always fails protects nothing — same call as
 			// the fail_under reset documented in pyproject.toml. Raise these in
 			// the same commit that adds the tests.
-			thresholds: { statements: 89, branches: 77.5, functions: 91.9, lines: 91.4 }
+			thresholds: coverageRatchet.minimum
 		}
 	}
 });
