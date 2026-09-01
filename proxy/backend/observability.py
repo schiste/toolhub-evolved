@@ -18,6 +18,12 @@ from backend import db
 REQUEST_ID_HEADER = "X-Request-ID"
 REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 LATENCY_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
+# request.method is whatever token the client sent, so it is the one label a
+# stranger controls. Anything off this list collapses to OTHER, which keeps the
+# counter -- and the cost of sorting it for /metricsz -- bounded by the route
+# table rather than by traffic.
+KNOWN_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE", "CONNECT"})
+OTHER_METHOD = "OTHER"
 METRICS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 HTTP_SERVICE_UNAVAILABLE = 503
 
@@ -54,10 +60,11 @@ class RequestMetrics:
         """Record one completed request under normalized finite labels."""
         bounded_duration = max(0.0, duration_seconds)
         status_class = f"{status // 100}xx"
+        bounded_method = method if method in KNOWN_METHODS else OTHER_METHOD
         with self._lock:
             self._request_total += 1
             self._duration_seconds += bounded_duration
-            self._routes[(method, route, status_class)] += 1
+            self._routes[(bounded_method, route, status_class)] += 1
             for index, upper_bound in enumerate(LATENCY_BUCKETS):
                 if bounded_duration <= upper_bound:
                     self._latency_buckets[index] += 1

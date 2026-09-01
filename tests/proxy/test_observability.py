@@ -93,10 +93,32 @@ def test_metrics_are_bounded_normalized_and_prometheus_compatible(client) -> Non
     body = response.get_data(as_text=True)
     assert response.headers["Cache-Control"] == "no-store"
     assert response.mimetype == "text/plain"
-    assert 'method="G\\"ET",route="/odd\\\\route\\n",status_class="2xx"} 1' in body
+    assert 'method="OTHER",route="/odd\\\\route\\n",status_class="2xx"} 1' in body
     assert 'method="POST",route="/slow",status_class="5xx"} 1' in body
     assert 'toolhub_http_request_duration_seconds_bucket{le="+Inf"} 2' in body
     assert "toolhub_http_request_duration_seconds_sum 10.000000" in body
 
     observability.reset_metrics()
     assert observability.metrics.snapshot().request_total == 0
+
+
+def test_an_unknown_request_method_cannot_grow_the_metrics_counter() -> None:
+    """The method label is the one series label a stranger fully controls.
+
+    Route comes from the app's own url_map and status_class from a division, so
+    both are bounded by the code. request.method is whatever token arrived on the
+    wire, so without an allowlist every junk verb opens a new permanent series in
+    a process-lifetime Counter -- unbounded worker memory, and a /metricsz render
+    whose sort cost grows with the traffic that attacked it.
+    """
+    observability.reset_metrics()
+    for verb in ("GET", "POST", "PATCH", "DELETE", "HEAD", "PUT", "OPTIONS", "TRACE", "CONNECT"):
+        observability.metrics.observe(verb, "/", 200, 0.01)
+    known = len(observability.metrics.snapshot().routes)
+    assert known == len(observability.KNOWN_METHODS)
+
+    for index in range(200):
+        observability.metrics.observe(f"JUNK{index}", "/", 200, 0.01)
+    routes = observability.metrics.snapshot().routes
+    assert len(routes) == known + 1
+    assert dict(routes)[(observability.OTHER_METHOD, "/", "2xx")] == 200
