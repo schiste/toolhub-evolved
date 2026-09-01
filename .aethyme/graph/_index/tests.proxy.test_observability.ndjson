@@ -16,6 +16,7 @@
 {"module":"tests.proxy.test_observability","symbol":"client.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:gev66pzbntip7ze3v2gohmnwei","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"client.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:j6oal6q7lkufmdhfu7gnychak4","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"client.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:k22tyxo7tuuurydndpndnpchuy","file":"tests/proxy/test_observability.py"}
+{"module":"tests.proxy.test_observability","symbol":"client.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:u7vip5r7xw5nccptvxf3qinx6i","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"dict","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:x6mahq2ksftunxtrsijtjlm6yu","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ajt7fwqxapx7sssh62afwtprsa","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"logging","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zockfpee5yejs2jqv66feg2hmm","file":"tests/proxy/test_observability.py"}
@@ -32,6 +33,8 @@
 {"module":"tests.proxy.test_observability","symbol":"observability.reset_metrics","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ovgb7ptxpyhrm6rhfnklx2uup4","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"observability.reset_metrics","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qyht252cy6mn7clponau7canmm","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"observability.reset_metrics","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yqwu24affbe2ahz7qyao3cu2yu","file":"tests/proxy/test_observability.py"}
+{"module":"tests.proxy.test_observability","symbol":"os","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:g7vwiegudkyl526viihbha3qfi","file":"tests/proxy/test_observability.py"}
+{"module":"tests.proxy.test_observability","symbol":"os.getpid","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:phdfe4o3y3e5fp5mlema7uufk4","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"pytest","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5tncoj35pbm2ylktzsrlvf3aum","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"range","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nzlcinrlnq43yxnccw6fzy66vu","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"ready.get_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6snvwm75gga3jsxhxx6l655miu","file":"tests/proxy/test_observability.py"}
@@ -39,6 +42,8 @@
 {"module":"tests.proxy.test_observability","symbol":"rule.endpoint.startswith","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pgdym3znxbed4d6u7iluj7dlay","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"sorted","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:huq5is5kpoqdl7dm3xdqlae2fm","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"sys","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2qbcm4jimrrthz2rr4igebbkzy","file":"tests/proxy/test_observability.py"}
+{"module":"tests.proxy.test_observability","symbol":"test_a_scrape_says_which_worker_it_came_from","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:h36yo6zhjkhm5r7sxwprpl2zui","file":"tests/proxy/test_observability.py"}
+{"module":"tests.proxy.test_observability","symbol":"test_a_scrape_says_which_worker_it_came_from","kind":"function","node_id":"function:toolhub-evolved:bs6xevyb6thg5dn44ba7rxps4i","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"test_an_unknown_request_method_cannot_grow_the_metrics_counter","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:icl676e43sst5r7gnldsu7dtku","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"test_an_unknown_request_method_cannot_grow_the_metrics_counter","kind":"function","node_id":"function:toolhub-evolved:paqaehrxqc32m5p67cmnqmttb4","file":"tests/proxy/test_observability.py"}
 {"module":"tests.proxy.test_observability","symbol":"test_database_probe_folds_dependency_failures_into_unready","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:dptteqbuuypd2ieujpihr3vgnq","file":"tests/proxy/test_observability.py"}

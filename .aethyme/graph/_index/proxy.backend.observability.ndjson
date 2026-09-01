@@ -60,6 +60,8 @@
 {"module":"proxy.backend.observability","symbol":"monotonic","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xvpu2bsf2chbqljuoosgpwe474","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"observability_bp","kind":"global_variable","node_id":"global_variable:toolhub-evolved:szdj6hmyrie5svrq63kw7vjsky","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"observe","kind":"method","node_id":"method:toolhub-evolved:fhaaplwzw7bfzpa5kp5ln6sndi","file":"proxy/backend/observability.py"}
+{"module":"proxy.backend.observability","symbol":"os","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ggroo3ezzllkomwg3pbusdxweu","file":"proxy/backend/observability.py"}
+{"module":"proxy.backend.observability","symbol":"os.getpid","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3ablfz3ewmi2flmqoflhyrvgay","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"re","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lzzlmnjjoqbt4jlfx3ta4m6afa","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"readyz","kind":"function","node_id":"function:toolhub-evolved:yu32t7mjjgcmly4es7xlmdq4ia","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"register","kind":"function","node_id":"function:toolhub-evolved:k57563xg6p273h47v27r2w6f7m","file":"proxy/backend/observability.py"}
