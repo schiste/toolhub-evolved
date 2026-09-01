@@ -2,6 +2,7 @@
 import { esc } from "../lib/core/dom.js";
 import { mountJsonReport } from "../lib/organisms/json-report.js";
 import { t } from "../lib/core/i18n.js";
+import { formatCount as count, formatDateTime } from "../lib/core/util.js";
 import { button } from "../lib/atoms/button.js";
 import { loadingRegion, skeletonLine } from "../lib/molecules/skeleton.js";
 
@@ -10,17 +11,7 @@ export const STYLESHEET = "/styles/data-layer.css";
 const SKELETON_ROWS = 8;
 
 /** @param {unknown} value */
-function count(value) {
-	return new Intl.NumberFormat().format(Number(value) || 0);
-}
-
-/** @param {unknown} value */
-function dateLabel(value) {
-	const date = new Date(String(value || ""));
-	return Number.isNaN(date.getTime())
-		? t("dataLayer.dateUnavailable", "Date unavailable")
-		: new Intl.DateTimeFormat(undefined, { dateStyle: "long", timeStyle: "short" }).format(date);
-}
+const dateLabel = (value) => formatDateTime(value, t("dataLayer.dateUnavailable", "Date unavailable"));
 
 /** @param {string} value */
 function fieldLabel(value) {

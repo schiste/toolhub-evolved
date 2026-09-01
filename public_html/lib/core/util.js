@@ -54,3 +54,21 @@ export function fromCsv(s) {
 		.map((x) => x.trim())
 		.filter(Boolean);
 }
+
+/* The statistics and data-layer reports both print catalogue counts and the
+   moment their snapshot was taken, and each had grown its own byte-identical
+   copy of these two. The only thing that differed was the message key for an
+   unreadable date, so the fallback arrives as an argument: util.js is generic
+   and stays out of the i18n catalogue. */
+/** @param {unknown} value @returns {string} */
+export function formatCount(value) {
+	return new Intl.NumberFormat().format(Number(value) || 0);
+}
+
+/** @param {unknown} value @param {string} unavailable @returns {string} */
+export function formatDateTime(value, unavailable) {
+	const date = new Date(String(value || ""));
+	return Number.isNaN(date.getTime())
+		? unavailable
+		: new Intl.DateTimeFormat(undefined, { dateStyle: "long", timeStyle: "short" }).format(date);
+}

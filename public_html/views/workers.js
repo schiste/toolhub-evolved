@@ -2,6 +2,7 @@
 import { esc } from "../lib/core/dom.js";
 import { mountJsonReport } from "../lib/organisms/json-report.js";
 import { t } from "../lib/core/i18n.js";
+import { formatCount as count } from "../lib/core/util.js";
 import { button } from "../lib/atoms/button.js";
 import { loadingRegion, skeletonLine } from "../lib/molecules/skeleton.js";
 
@@ -313,11 +314,6 @@ const TREND_MIN_POINTS = 2;
 
 const SPARK_WIDTH = 120;
 const SPARK_HEIGHT = 28;
-
-/** @param {unknown} value */
-function count(value) {
-	return new Intl.NumberFormat().format(Number(value) || 0);
-}
 
 /**
  * Split one run's summary into what it did, where things now stand, and prose.
