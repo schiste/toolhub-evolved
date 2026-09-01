@@ -23,7 +23,11 @@ MAX_P95_SECONDS = 0.5
 MAX_CATALOG_AGE_SECONDS = 2 * 60 * 60
 HTTP_OK = 200
 SAMPLE_PATTERN = re.compile(r"^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(?P<labels>.*)\})?\s+(?P<value>\S+)$")
-LABEL_PATTERN = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:\\.|[^"])*)"')
+# Both alternatives must not match the same first character: with `[^"]` able to
+# match a backslash that `\\.` also starts on, every added `\\!` doubles the ways
+# to split the same text, and an unterminated label set backtracks exponentially.
+# Excluding the backslash from the negated class makes the split unique.
+LABEL_PATTERN = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"')
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,7 @@
 
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -85,3 +86,20 @@ def test_collection_writes_a_machine_readable_snapshot(tmp_path: Path, monkeypat
     assert report["probes"] == {"live": True, "ready": True}
     assert report["metrics"]["requestTotal"] == 98
     assert report["catalog"]["ageSeconds"] == 60
+
+
+def test_label_parsing_stays_linear_on_a_malformed_label_set() -> None:
+    """An unterminated label set must fail fast, not backtrack exponentially.
+
+    /metricsz is fetched from production over the network, so the parser's input
+    is not fully trusted. The earlier pattern let `[^"]` and `\\.` both match a
+    backslash, so each added `\\!` doubled the ways to split the same text and a
+    51-character string took over a second; the fix makes the split unique.
+    """
+    hostile = 'A="' + "\\!" * 24
+    started = time.monotonic()
+    assert monitor.LABEL_PATTERN.findall(hostile) == []
+    assert time.monotonic() - started < 0.5
+
+    escaped = r'route="/v1/say \"hi\"",method="GET"'
+    assert monitor.LABEL_PATTERN.findall(escaped) == [("route", r"/v1/say \"hi\""), ("method", "GET")]
