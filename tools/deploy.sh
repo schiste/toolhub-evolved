@@ -38,6 +38,20 @@ ln -sfn "$REPO_DIR/proxy/uwsgi.ini" "$HOME/www/python/uwsgi.ini"
 # source is served (still gzipped at the edge) — never a broken deploy. Toolforge
 # has no Node, so we minify CSS with pure-Python rcssmin in the webservice venv.
 VENV_PY="$HOME/www/python/venv/bin/python"
+# Building dist/ is best-effort: without the venv the raw source is still served,
+# which is a supported deployment. The post-deploy smoke check is not optional in
+# that path -- it is what decides whether to roll back -- so resolve an interpreter
+# for it here. post_deploy_smoke.py imports only the standard library, so the
+# system python3 runs it fine. Fail now, before the restart, rather than letting a
+# missing command report every raw-source deploy as a smoke failure.
+TOOL_PY="$VENV_PY"
+if [ ! -x "$TOOL_PY" ]; then
+	TOOL_PY="$(command -v python3 || true)"
+fi
+if [ -z "$TOOL_PY" ]; then
+	echo "No Python interpreter available to run the post-deploy smoke check; aborting before restart." >&2
+	exit 1
+fi
 deployment_diagnostics="$HOME/deployment-diagnostics.jsonl"
 deploy_started="$(date +%s.%N)"
 failure_phase="bootstrap"
@@ -206,7 +220,7 @@ fi
 
 echo "Verifying production API contracts ..."
 failure_phase="smoke"
-if ! "$VENV_PY" "$REPO_DIR/tools/post_deploy_smoke.py" --base-url "$BASE_URL"; then
+if ! "$TOOL_PY" "$REPO_DIR/tools/post_deploy_smoke.py" --base-url "$BASE_URL"; then
 	echo "Rollback criterion met: readiness, catalog, capability, or write-guard smoke failed." >&2
 	echo "Restore $deploy_head_before, restart the webservice, and inspect $deployment_diagnostics." >&2
 	exit 1
