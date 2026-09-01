@@ -3,12 +3,14 @@
 {"module":"proxy.backend.observability","symbol":"Counter","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:o3x42ybm7gvfrhmd6qbqsm3nta","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"Flask","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qapfbz23vegzoxyiarhhczbegi","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"HTTP_SERVICE_UNAVAILABLE","kind":"global_variable","node_id":"global_variable:toolhub-evolved:smqpmzxdlo3bq2kfdidh6azkau","file":"proxy/backend/observability.py"}
+{"module":"proxy.backend.observability","symbol":"KNOWN_METHODS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:bdpu55uo5pku6jt4r3tsnhbtnm","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"LATENCY_BUCKETS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:4dr3fbmrggvwcsblssmm5k35b4","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"Lock","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:d64runzmuzskz3zcz7lphbwuki","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"Lock","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ldzfcedpjb7y4i3i7dzavukk4u","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"METRICS_CONTENT_TYPE","kind":"global_variable","node_id":"global_variable:toolhub-evolved:whpfup35d7vjq7ctg6frhsk6pq","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"MetricsSnapshot","kind":"class","node_id":"class:toolhub-evolved:jbqkgtkpu7j4fbxg7i2wesgpoy","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"MetricsSnapshot","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:p2mgarrldgnneuyyt4ci5xqcfe","file":"proxy/backend/observability.py"}
+{"module":"proxy.backend.observability","symbol":"OTHER_METHOD","kind":"global_variable","node_id":"global_variable:toolhub-evolved:6wfawuzl7ylbag7enetubp4hoa","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"REQUEST_ID_HEADER","kind":"global_variable","node_id":"global_variable:toolhub-evolved:o6jihysm6ibv7aydzlxoraxmyu","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"REQUEST_ID_PATTERN","kind":"global_variable","node_id":"global_variable:toolhub-evolved:ue42l7svbhkevqy4gqk3a6pfze","file":"proxy/backend/observability.py"}
 {"module":"proxy.backend.observability","symbol":"REQUEST_ID_PATTERN.fullmatch","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:32itzrhca7dlo5yps4bg4x6say","file":"proxy/backend/observability.py"}
