@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-deploy-that-checks-itself -->
 <!-- Release title: The Deploy That Checks Itself -->
-<!-- Source range: ea9baf5..3e2a6f10 (3 commits) -->
+<!-- Source range: ea9baf5..ab04a445 (6 commits) -->
 
 # What's New for Users
 
