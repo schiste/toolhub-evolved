@@ -160,9 +160,10 @@ def toolinfo_record(gadget: WikiGadget) -> dict[str, Any]:
         # The licence follows from that same date. It is the one field here the
         # wiki does not state per gadget and still binds for every one of them,
         # and the version depends on when the code was first published -- see
-        # `wiki_sources.content_license`.
-        if license_id := wiki_sources.content_license(created):
-            record["license"] = license_id
+        # `wiki_sources.content_license`. Always named, never blank: the only
+        # thing that function rejects is a malformed date, and `iso_timestamp`
+        # has already ruled one out to get here.
+        record["license"] = wiki_sources.content_license(created)
     if touched := wiki_replica.iso_timestamp(gadget.touched_at_wiki or ""):
         # The newest current revision among the code pages: when the gadget was
         # last actually changed. Distinct from `last_seen_at` on the inventory

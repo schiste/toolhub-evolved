@@ -444,16 +444,17 @@ def invalidate_list_collection() -> int:
     return _delete_where(ApiCache.path.in_([_LIST_COLLECTION_PATH, _RECENT_COLLECTION_PATH]))
 
 
-def _expire_where(clause: ColumnElement[bool] | None) -> int:
+def _expire_where(clause: ColumnElement[bool]) -> int:
     """End the fresh window of matching rows, leaving their bodies servable as stale.
 
     The counterpart to `_delete_where` for a payload this service builds itself
     rather than fetches. Deleting an upstream copy is free -- the next request
     refetches it. Deleting a derived one throws away the only copy there is, and
     the next visitor pays the whole build with the page open in front of them.
+
+    Unlike `_delete_where` the clause is always a real one: the derived payloads
+    are addressed by fixed paths, not by a tool name that may not resolve.
     """
-    if clause is None:
-        return 0
     try:
         with db.session_scope() as s:
             return int(s.execute(update(ApiCache).where(clause).values(expires_at=utcnow())).rowcount or 0)

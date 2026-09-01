@@ -1705,10 +1705,11 @@ def _scan_gadget_declaration(
     """
     entry = declaration.entry
     evidence_line = declaration.line
+    # Never blank: `GadgetEntry.values` already strips each slot and drops the
+    # empty ones, so a hand-edited `dependencies=,jquery.ui,` arrives here as the
+    # one module it names.
     for raw in entry.values(GADGET_DEPENDENCIES_OPTION):
         module = raw.strip()
-        if not module:
-            continue
         _put_dependency(
             findings,
             ecosystem=GADGET_MODULE_ECOSYSTEM,
@@ -1718,10 +1719,9 @@ def _scan_gadget_declaration(
             reason="MediaWiki:Gadgets-definition loads this ResourceLoader module before the gadget runs.",
             evidence=_evidence(GADGET_DEFINITION_PAGE_TITLE, declaration.line_number, evidence_line, module),
         )
+    # Blank slots are gone for the same reason as the modules above.
     for raw in entry.values(GADGET_RIGHTS_OPTION):
         right = raw.strip().lower()
-        if not right:
-            continue
         value, label, described = _gadget_right_row(right)
         reason = f"MediaWiki:Gadgets-definition serves this gadget only to users with the {right} right."
         if not described:

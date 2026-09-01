@@ -479,14 +479,19 @@ def _create_missing_tables() -> None:
     again is the right answer, where failing the run discards a whole reconcile
     pass over a race that had already resolved itself.
     """
-    for attempt in range(SCHEMA_CREATE_ATTEMPTS):
+    for _attempt in range(SCHEMA_CREATE_ATTEMPTS - 1):
         try:
             Base.metadata.create_all(engine())
         except SQLAlchemyError as error:
-            if attempt == SCHEMA_CREATE_ATTEMPTS - 1 or not _is_table_exists_error(error):
+            if not _is_table_exists_error(error):
                 raise
         else:
             return
+        # A concurrent creator won this table; looking again skips it and
+        # creates whatever is still missing.
+    # The last attempt is written outside the loop because it has no retry
+    # behind it: whatever it raises is the answer.
+    Base.metadata.create_all(engine())
 
 
 def init_schema() -> None:

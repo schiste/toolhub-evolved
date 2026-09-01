@@ -215,10 +215,9 @@ def parse_json(text: str) -> dict[str, Any] | None:
     """
     stripped = text.strip()
     if stripped.startswith("```"):
-        parts = stripped.split("```")
-        if len(parts) < 2:  # noqa: PLR2004 - an unterminated fence has no body to read
-            return None
-        stripped = parts[1]
+        # At least two parts, always: the fence that `startswith` just found is
+        # a separator, so the body after it is `parts[1]` even when it is empty.
+        stripped = stripped.split("```")[1]
         stripped = stripped.removeprefix("json")
     try:
         parsed = json.loads(stripped.strip())

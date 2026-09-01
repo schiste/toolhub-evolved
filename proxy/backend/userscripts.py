@@ -495,9 +495,9 @@ def similarity(left: str, right: str) -> float:
     limits = [max(hashes) for hashes, cut in ((mine, mine_cut), (theirs, theirs_cut)) if cut]
     ceiling = min(limits) if limits else None
     both = mine | theirs
+    # Never empty: `mine` and `theirs` both have hashes, and a ceiling is the
+    # largest hash of one of them, so that hash is in `both` and within range.
     compared = sorted(hash_ for hash_ in both if ceiling is None or hash_ <= ceiling)[:SKETCH_SIZE]
-    if not compared:
-        return 0.0
     return sum(1 for hash_ in compared if hash_ in mine and hash_ in theirs) / len(compared)
 
 

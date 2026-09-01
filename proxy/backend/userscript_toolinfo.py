@@ -189,9 +189,10 @@ def toolinfo_record(entry: UserScriptDirectoryEntry, content_model: str = "", do
     if created := wiki_replica.iso_timestamp(entry.created_at_wiki or ""):
         record["created_date"] = created
         # And the licence, which follows from that date rather than from the
-        # page -- see `wiki_sources.content_license`.
-        if license_id := wiki_sources.content_license(created):
-            record["license"] = license_id
+        # page -- see `wiki_sources.content_license`. It always names one: a
+        # malformed date is all that function rejects, and `iso_timestamp`
+        # rejected those already.
+        record["license"] = wiki_sources.content_license(created)
     if touched := wiki_replica.iso_timestamp(entry.touched_at_wiki or ""):
         record["modified_date"] = touched
     if docs_title:
