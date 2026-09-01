@@ -1277,7 +1277,9 @@ correlated but is not itself an availability incident.
 The GitHub monitor is the immediate external sentinel and audit trail. Its
 `/metricsz` ratio alerts require at least 100 requests in the sampled worker so
 one error after a restart does not page. It measures the interval between runs
-rather than the worker's lifetime, keeping one baseline per `pid` — the pod runs
+rather than the worker's lifetime -- for latency as well as errors, by
+differencing the duration histogram and reading p95 off the result, since a
+percentile cannot itself be subtracted -- keeping one baseline per `pid` — the pod runs
 four workers and a scrape reaches whichever one answered, so a worker seen for
 the first time reports its lifetime totals rather than a difference against
 another worker's. Because those counters are per-worker

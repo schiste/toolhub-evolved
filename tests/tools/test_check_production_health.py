@@ -39,6 +39,8 @@ def test_metrics_parser_and_alert_thresholds_are_exact() -> None:
         "p95UpperBoundSeconds": 1.0,
         "processUptimeSeconds": 120.0,
         "workerId": "4101",
+        "latencyBuckets": {"0.05": 50.0, "0.5": 94.0, "1": 100.0, "+Inf": 100.0},
+        "durationCount": 100.0,
     }
     alerts = monitor.evaluate(
         {
@@ -107,15 +109,29 @@ def test_label_parsing_stays_linear_on_a_malformed_label_set() -> None:
     assert monitor.LABEL_PATTERN.findall(escaped) == [("route", r"/v1/say \"hi\""), ("method", "GET")]
 
 
-def _metrics(requests: int, errors: int, uptime: float | None = 600.0, worker: str | None = "4101") -> dict:
+def _metrics(
+    requests: int,
+    errors: int,
+    uptime: float | None = 600.0,
+    worker: str | None = "4101",
+    slow: int = 0,
+) -> dict:
+    """One scrape. `slow` is how many of those requests fell in the top bucket."""
+    buckets = {"0.05": float(requests - slow), "0.5": float(requests - slow), "+Inf": float(requests)}
     return {
         "requestTotal": requests,
         "serverErrorTotal": errors,
         "serverErrorShare": errors / requests if requests else 0.0,
-        "p95UpperBoundSeconds": 0.05,
+        "p95UpperBoundSeconds": p95_of(buckets, requests),
         "processUptimeSeconds": uptime,
         "workerId": worker,
+        "latencyBuckets": buckets,
+        "durationCount": float(requests),
     }
+
+
+def p95_of(buckets: dict, count: float) -> float | None:
+    return monitor.p95_from_buckets(buckets, count)
 
 
 def _baselines(*scrapes: dict) -> dict:
@@ -236,7 +252,13 @@ def test_a_scheduled_run_advances_the_baseline_it_measured_against(
     }
     monkeypatch.setattr(monitor, "_get", lambda _base, path, *, timeout: payloads[path])
     state = tmp_path / "window.json"
-    prior = {"requestTotal": 60, "serverErrorTotal": 2, "processUptimeSeconds": 60}
+    prior = {
+        "requestTotal": 60,
+        "serverErrorTotal": 2,
+        "processUptimeSeconds": 60,
+        "latencyBuckets": {"0.05": 30.0, "0.5": 56.0, "1": 60.0, "+Inf": 60.0},
+        "durationCount": 60.0,
+    }
     state.write_text(json.dumps({"workers": {"4101": prior, "4102": prior}}), "utf-8")
     output = tmp_path / "health.json"
 
@@ -246,11 +268,21 @@ def test_a_scheduled_run_advances_the_baseline_it_measured_against(
     assert report["metrics"]["windowSource"] == "interval"
     assert report["metrics"]["windowRequestTotal"] == 40
     assert report["metrics"]["windowServerErrorTotal"] == 0
+    # 40 requests in the interval, 20 of them over 0.05s and 2 over 0.5s: the
+    # percentile is read off that difference, not off the worker's whole history.
+    assert report["metrics"]["windowSampleTotal"] == 40
+    assert report["metrics"]["windowP95UpperBoundSeconds"] == 0.5
     # The worker that answered is updated; the one that did not keeps its own.
     assert json.loads(state.read_text(encoding="utf-8")) == {
         "workers": {
             "4102": prior,
-            "4101": {"requestTotal": 100, "serverErrorTotal": 2, "processUptimeSeconds": 120.0},
+            "4101": {
+                "requestTotal": 100,
+                "serverErrorTotal": 2,
+                "processUptimeSeconds": 120.0,
+                "latencyBuckets": {"0.05": 50.0, "0.5": 94.0, "1": 100.0, "+Inf": 100.0},
+                "durationCount": 100.0,
+            },
         }
     }
 
@@ -266,7 +298,9 @@ def test_a_failed_scrape_leaves_the_baseline_alone(tmp_path: Path, monkeypatch: 
 
     monkeypatch.setattr(monitor, "_get", fake_get)
     state = tmp_path / "window.json"
-    baseline = {"workers": {"4101": {"requestTotal": 100, "serverErrorTotal": 2, "processUptimeSeconds": 120.0}}}
+    baseline = {
+        "workers": {"4101": {"requestTotal": 100, "serverErrorTotal": 2, "processUptimeSeconds": 120.0}}
+    }
     state.write_text(json.dumps(baseline), encoding="utf-8")
 
     monitor.main(["--base-url", "https://example.test", "--state", str(state)])
@@ -339,3 +373,84 @@ def test_a_returning_worker_refreshes_its_place_rather_than_duplicating(tmp_path
     stored = monitor.load_window_state(state)
     assert list(stored) == ["4102", "4101"]
     assert stored["4101"]["requestTotal"] == 30
+
+
+def test_a_recovered_latency_burst_stops_paging_once_the_interval_is_fast() -> None:
+    """A percentile over a lifetime histogram is as sticky as a lifetime ratio.
+
+    Ten thousand requests, six hundred of them slow, leaves the lifetime p95 in
+    the top bucket for good: the slow ones are more than 5% of everything the
+    worker ever served, so the rule keeps paging through a fully recovered
+    interval in which nothing was slow at all.
+    """
+    previous = _metrics(10_000, 0, slow=600)
+    current = _metrics(11_000, 0, slow=600)
+
+    lifetime = monitor.evaluate(
+        {"probes": {"live": True, "ready": True}, "metrics": current, "catalog": {"ageSeconds": 0}}
+    )
+    assert [alert.code for alert in lifetime] == ["http-p95"]
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+    assert windowed["windowSampleTotal"] == 1000
+    assert windowed["windowP95UpperBoundSeconds"] == 0.05
+    assert (
+        monitor.evaluate({"probes": {"live": True, "ready": True}, "metrics": windowed, "catalog": {"ageSeconds": 0}})
+        == []
+    )
+
+
+def test_a_long_fast_history_cannot_hide_a_latency_regression() -> None:
+    """The mirror failure: 200 slow requests out of 100,000 stay under the
+    lifetime 95th percentile, even when every request in this interval was slow."""
+    previous = _metrics(100_000, 0)
+    current = _metrics(100_200, 0, slow=200)
+
+    assert (
+        monitor.evaluate({"probes": {"live": True, "ready": True}, "metrics": current, "catalog": {"ageSeconds": 0}})
+        == []
+    )
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+    assert windowed["windowSampleTotal"] == 200
+    alerts = monitor.evaluate(
+        {"probes": {"live": True, "ready": True}, "metrics": windowed, "catalog": {"ageSeconds": 0}}
+    )
+    assert [alert.code for alert in alerts] == ["http-p95"]
+
+
+def test_a_quiet_interval_never_pages_on_latency() -> None:
+    """Below the minimum sample the interval says nothing about the percentile."""
+    previous = _metrics(1000, 0)
+    windowed = monitor.apply_window(_metrics(1050, 0, slow=50), _baselines(previous))
+
+    assert windowed["windowSampleTotal"] == 50
+    assert windowed["windowP95UpperBoundSeconds"] == monitor.math.inf
+    assert (
+        monitor.evaluate({"probes": {"live": True, "ready": True}, "metrics": windowed, "catalog": {"ageSeconds": 0}})
+        == []
+    )
+
+
+def test_a_restart_reads_the_percentile_off_the_new_histogram() -> None:
+    previous = _metrics(9000, 0, slow=500)
+    current = _metrics(200, 0, uptime=5.0, slow=200)
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+
+    assert windowed["windowSource"] == "restart"
+    assert windowed["windowSampleTotal"] == 200
+    assert windowed["windowP95UpperBoundSeconds"] == monitor.math.inf
+
+
+def test_an_operator_run_without_a_baseline_still_evaluates_latency() -> None:
+    """evaluate() falls back to the lifetime percentile when no window was applied."""
+    alerts = monitor.evaluate(
+        {
+            "probes": {"live": True, "ready": True},
+            "metrics": _metrics(1000, 0, slow=100),
+            "catalog": {"ageSeconds": 0},
+        }
+    )
+
+    assert [alert.code for alert in alerts] == ["http-p95"]

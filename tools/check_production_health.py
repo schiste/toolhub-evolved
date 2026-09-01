@@ -66,6 +66,15 @@ def parse_metrics(body: str) -> list[Sample]:
     return samples
 
 
+def p95_from_buckets(buckets: dict[str, float], count: float) -> float | None:
+    """Read the 95th percentile off a cumulative histogram, or None with no samples."""
+    target = count * 0.95
+    bounds = sorted(
+        (math.inf if raw_bound == "+Inf" else float(raw_bound), cumulative) for raw_bound, cumulative in buckets.items()
+    )
+    return next((bound for bound, cumulative in bounds if count and cumulative >= target), None)
+
+
 def summarize_metrics(samples: list[Sample]) -> dict[str, float | int | None]:
     """Reduce one worker scrape to the SLO signals used by alert rules."""
     route_samples = [sample for sample in samples if sample.name == "toolhub_http_requests_total"]
@@ -75,15 +84,15 @@ def summarize_metrics(samples: list[Sample]) -> dict[str, float | int | None]:
         (sample.value for sample in samples if sample.name == "toolhub_http_request_duration_seconds_count"),
         0.0,
     )
-    target = count * 0.95
-    buckets = []
-    for sample in samples:
-        if sample.name != "toolhub_http_request_duration_seconds_bucket":
-            continue
-        raw_bound = sample.labels.get("le", "+Inf")
-        bound = math.inf if raw_bound == "+Inf" else float(raw_bound)
-        buckets.append((bound, sample.value))
-    p95 = next((bound for bound, cumulative in sorted(buckets) if count and cumulative >= target), None)
+    # Kept as the raw cumulative counts rather than only the percentile they
+    # imply: a percentile is not subtractable, so measuring latency over an
+    # interval means differencing the buckets and reading p95 off the result.
+    buckets = {
+        sample.labels.get("le", "+Inf"): sample.value
+        for sample in samples
+        if sample.name == "toolhub_http_request_duration_seconds_bucket"
+    }
+    p95 = p95_from_buckets(buckets, count)
     uptime = next(
         (sample.value for sample in samples if sample.name == "toolhub_process_uptime_seconds"),
         None,
@@ -101,6 +110,8 @@ def summarize_metrics(samples: list[Sample]) -> dict[str, float | int | None]:
         "p95UpperBoundSeconds": p95,
         "processUptimeSeconds": uptime,
         "workerId": worker,
+        "latencyBuckets": buckets,
+        "durationCount": count,
     }
 
 
@@ -122,7 +133,8 @@ def save_window_state(path: Path, metrics: dict[str, Any], baselines: dict[str, 
     # Re-inserting at the end keeps the mapping in least-recently-seen order, so
     # truncating from the front evicts retired pids before live ones.
     updated = {key: value for key, value in baselines.items() if key != worker}
-    updated[worker] = {key: metrics[key] for key in ("requestTotal", "serverErrorTotal", "processUptimeSeconds")}
+    remembered = ("requestTotal", "serverErrorTotal", "processUptimeSeconds", "latencyBuckets", "durationCount")
+    updated[worker] = {key: metrics[key] for key in remembered}
     kept = dict(list(updated.items())[-MAX_TRACKED_WORKERS:])
     path.write_text(json.dumps({"workers": kept}) + "\n", encoding="utf-8")
 
@@ -136,6 +148,12 @@ def apply_window(metrics: dict[str, Any], baselines: dict[str, Any]) -> dict[str
     can serve hundreds of 5xx in one interval without crossing 1%, and a burst
     during startup keeps paging long after the incident is over. Subtracting the
     previous scrape measures the interval instead.
+
+    Latency has the same two failures for the same reason, so the duration
+    histogram is windowed alongside the counters. A percentile cannot be
+    subtracted, so it is the cumulative buckets that are differenced and the p95
+    that is then read off the interval -- and the minimum-sample guard applies to
+    that interval's own count, not to everything the worker has ever served.
 
     The subtraction is only meaningful within one process. Toolforge runs four
     uWSGI workers, each with its own counters, and a scrape reports whichever one
@@ -153,6 +171,8 @@ def apply_window(metrics: dict[str, Any], baselines: dict[str, Any]) -> dict[str
     """
     requests = metrics["requestTotal"]
     errors = metrics["serverErrorTotal"]
+    buckets = metrics.get("latencyBuckets") or {}
+    samples = metrics.get("durationCount") or 0.0
     previous = baselines.get(metrics.get("workerId"))
     source = "lifetime"
     if isinstance(previous, dict):
@@ -169,11 +189,16 @@ def apply_window(metrics: dict[str, Any], baselines: dict[str, Any]) -> dict[str
         if not restarted:
             requests -= prior_requests
             errors -= prior_errors
+            prior_buckets = previous.get("latencyBuckets") or {}
+            buckets = {bound: value - prior_buckets.get(bound, 0.0) for bound, value in buckets.items()}
+            samples -= previous.get("durationCount") or 0.0
     return {
         **metrics,
         "windowRequestTotal": requests,
         "windowServerErrorTotal": errors,
         "windowServerErrorShare": errors / requests if requests else 0.0,
+        "windowSampleTotal": samples,
+        "windowP95UpperBoundSeconds": p95_from_buckets(buckets, samples),
         "windowSource": source,
     }
 
@@ -192,8 +217,9 @@ def evaluate(report: dict[str, Any]) -> list[Alert]:
     window_share = metrics.get("windowServerErrorShare", metrics["serverErrorShare"])
     if window_requests >= MIN_METRIC_SAMPLE and window_share >= MAX_5XX_SHARE:
         alerts.append(Alert("http-5xx", f"sampled HTTP 5xx share is {window_share:.2%} (limit < 1%)"))
-    p95 = metrics["p95UpperBoundSeconds"]
-    if metrics["requestTotal"] >= MIN_METRIC_SAMPLE and p95 is not None and p95 > MAX_P95_SECONDS:
+    p95 = metrics.get("windowP95UpperBoundSeconds", metrics["p95UpperBoundSeconds"])
+    samples = metrics.get("windowSampleTotal", metrics["requestTotal"])
+    if samples >= MIN_METRIC_SAMPLE and p95 is not None and p95 > MAX_P95_SECONDS:
         alerts.append(Alert("http-p95", f"sampled HTTP p95 exceeds {MAX_P95_SECONDS:g}s (bucket {p95:g}s)"))
     age = report["catalog"].get("ageSeconds")
     if age is None or age >= MAX_CATALOG_AGE_SECONDS:
@@ -229,6 +255,8 @@ def collect(base_url: str, *, timeout: float) -> dict[str, Any]:
             "p95UpperBoundSeconds": None,
             "processUptimeSeconds": None,
             "workerId": None,
+            "latencyBuckets": {},
+            "durationCount": 0.0,
         },
         "catalog": {"ageSeconds": None},
         "collectionErrors": [],
