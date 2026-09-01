@@ -575,11 +575,19 @@ def _mediawiki_metadata(payload: dict[str, Any]) -> HostMetadata:
     site policy, not a maintainer retiring the code -- so archived stays None
     and wiki tools are scored on activity alone.
 
-    The license is deliberately dropped. MediaWiki reports the wiki's *text*
-    license here, which is the CC BY-SA banner on the page, not the license of
-    the JavaScript the page contains; storing it would answer "what licence is
-    this gadget under" with a confident wrong answer. toolinfo carries the real
-    one.
+    The license this payload reports is deliberately dropped, and that is a
+    narrower claim than it may read as. What the API hands back is the wiki's
+    display banner -- an unversioned name, localised, sometimes a local
+    variant -- attached to whatever page was fetched. It cannot say which
+    version of CC BY-SA binds a page first written in 2009 versus one written
+    last year, and stamping the banner on would answer "what licence is this
+    gadget under" with a confident wrong answer.
+
+    The Terms of Use do answer it, and `wiki_sources.content_license` reads
+    that answer off the page's creation date rather than off this payload. The
+    two are not in tension: this function refuses a display string, that one
+    resolves the actual term and its version. See its docstring for why
+    Section 7 covers JavaScript and why creation, not last edit, decides.
     """
     return HostMetadata(pushed_at=_instant(_mapping(payload.get("latest")).get("timestamp")))
 
