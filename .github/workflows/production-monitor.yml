@@ -32,8 +32,25 @@ jobs:
             - name: Exercise alert rules
               if: inputs.exercise_alerts
               run: python tools/check_production_health.py --exercise-alerts
+            # Each scheduled run gets a fresh runner, so the previous scrape has to be
+            # carried in a cache: the 5xx rule is evaluated over the interval between
+            # runs, and without a baseline it would divide process-lifetime counters.
+            # The key is unique per run and the prefix restores the newest earlier one,
+            # which is the standard rolling-cache pattern for a mutable file.
+            - name: Restore the previous scrape
+              uses: actions/cache/restore@v4
+              with:
+                  path: production-window.json
+                  key: production-monitor-window-${{ github.run_id }}
+                  restore-keys: production-monitor-window-
             - name: Collect health and metrics
-              run: python tools/check_production_health.py --output production-health.json
+              run: python tools/check_production_health.py --output production-health.json --state production-window.json
+            - name: Save this scrape as the next baseline
+              if: always() && hashFiles('production-window.json') != ''
+              uses: actions/cache/save@v4
+              with:
+                  path: production-window.json
+                  key: production-monitor-window-${{ github.run_id }}
             - name: Preserve external snapshot
               if: always() && hashFiles('production-health.json') != ''
               uses: actions/upload-artifact@v6

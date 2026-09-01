@@ -93,6 +93,62 @@ def summarize_metrics(samples: list[Sample]) -> dict[str, float | int | None]:
     }
 
 
+def load_window_state(path: Path) -> dict[str, Any] | None:
+    """Read the previous scrape, treating an absent or unreadable file as no baseline."""
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def save_window_state(path: Path, metrics: dict[str, Any]) -> None:
+    """Record the counters this run observed so the next run can subtract them."""
+    state = {key: metrics[key] for key in ("requestTotal", "serverErrorTotal", "processUptimeSeconds")}
+    path.write_text(json.dumps(state, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def apply_window(metrics: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
+    """Narrow the alerting window from the process lifetime to the monitoring interval.
+
+    /metricsz exposes process-lifetime counters, so dividing the current totals
+    answers "what share of every request this worker ever served was a 5xx", not
+    the interval the alert documents. A worker with 100k clean requests behind it
+    can serve hundreds of 5xx in one interval without crossing 1%, and a burst
+    during startup keeps paging long after the incident is over. Subtracting the
+    previous scrape measures the interval instead.
+
+    A restart resets the counters, so a scrape whose totals or uptime moved
+    backwards is reported whole: those totals *are* the interval since the
+    restart. Without a baseline the lifetime totals are kept unchanged, which is
+    the documented behavior for a one-off operator run.
+    """
+    requests = metrics["requestTotal"]
+    errors = metrics["serverErrorTotal"]
+    source = "lifetime"
+    if previous is not None:
+        prior_requests = previous.get("requestTotal") or 0
+        prior_errors = previous.get("serverErrorTotal") or 0
+        prior_uptime = previous.get("processUptimeSeconds")
+        uptime = metrics["processUptimeSeconds"]
+        restarted = (
+            prior_requests > requests
+            or prior_errors > errors
+            or (uptime is not None and prior_uptime is not None and uptime < prior_uptime)
+        )
+        source = "restart" if restarted else "interval"
+        if not restarted:
+            requests -= prior_requests
+            errors -= prior_errors
+    return {
+        **metrics,
+        "windowRequestTotal": requests,
+        "windowServerErrorTotal": errors,
+        "windowServerErrorShare": errors / requests if requests else 0.0,
+        "windowSource": source,
+    }
+
+
 def evaluate(report: dict[str, Any]) -> list[Alert]:
     """Evaluate immediate sentinels and sampled counterparts of documented SLOs."""
     alerts = []
@@ -101,8 +157,12 @@ def evaluate(report: dict[str, Any]) -> list[Alert]:
     if not report["probes"]["ready"]:
         alerts.append(Alert("readiness", "/readyz did not return a healthy response"))
     metrics = report["metrics"]
-    if metrics["requestTotal"] >= MIN_METRIC_SAMPLE and metrics["serverErrorShare"] >= MAX_5XX_SHARE:
-        alerts.append(Alert("http-5xx", f"sampled HTTP 5xx share is {metrics['serverErrorShare']:.2%} (limit < 1%)"))
+    # Falls back to the lifetime totals so a report that never went through
+    # apply_window (an operator run without --state) still evaluates the rule.
+    window_requests = metrics.get("windowRequestTotal", metrics["requestTotal"])
+    window_share = metrics.get("windowServerErrorShare", metrics["serverErrorShare"])
+    if window_requests >= MIN_METRIC_SAMPLE and window_share >= MAX_5XX_SHARE:
+        alerts.append(Alert("http-5xx", f"sampled HTTP 5xx share is {window_share:.2%} (limit < 1%)"))
     p95 = metrics["p95UpperBoundSeconds"]
     if metrics["requestTotal"] >= MIN_METRIC_SAMPLE and p95 is not None and p95 > MAX_P95_SECONDS:
         alerts.append(Alert("http-p95", f"sampled HTTP p95 exceeds {MAX_P95_SECONDS:g}s (bucket {p95:g}s)"))
@@ -187,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--state", type=Path, help="baseline file used to measure the interval between runs")
     parser.add_argument("--exercise-alerts", action="store_true")
     args = parser.parse_args(argv)
     if args.exercise_alerts:
@@ -198,6 +259,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if detected == expected else 1
 
     report = collect(args.base_url, timeout=args.timeout)
+    scraped = not any(error.startswith("/metricsz:") for error in report["collectionErrors"])
+    if args.state and scraped:
+        report["metrics"] = apply_window(report["metrics"], load_window_state(args.state))
+        # Written before evaluating so a paging run still advances the baseline;
+        # a failed scrape is skipped entirely, because saving its zeroed defaults
+        # would make the next interval look like the counters had jumped.
+        save_window_state(args.state, report["metrics"])
     alerts = evaluate(report)
     report["alerts"] = [asdict(alert) for alert in alerts]
     rendered = json.dumps(report, indent=2, sort_keys=True)
