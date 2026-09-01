@@ -251,6 +251,7 @@
 		"geolocation",
 		"getentities",
 		"getlist",
+		"getpid",
 		"gitiles",
 		"gitlinks",
 		"gitweb",

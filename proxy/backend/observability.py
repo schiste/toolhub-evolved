@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -129,6 +130,14 @@ def _prometheus_label(value: str) -> str:
 def render_metrics(snapshot: MetricsSnapshot) -> str:
     """Render one worker snapshot in Prometheus text exposition format."""
     lines = [
+        # Toolforge runs four uWSGI workers and each keeps its own counters, so a
+        # scrape reports whichever process answered it. Without an identity in the
+        # exposition, a consumer that subtracts two scrapes has no way to tell a
+        # second worker from the same worker moving on, and the difference between
+        # unrelated processes is not a measurement of anything.
+        "# HELP toolhub_worker_info Identity of the worker process that served this scrape.",
+        "# TYPE toolhub_worker_info gauge",
+        f'toolhub_worker_info{{pid="{os.getpid()}"}} 1',
         "# HELP toolhub_process_uptime_seconds Worker uptime in seconds.",
         "# TYPE toolhub_process_uptime_seconds gauge",
         f"toolhub_process_uptime_seconds {snapshot.uptime_seconds:.6f}",

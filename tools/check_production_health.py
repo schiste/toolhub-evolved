@@ -21,6 +21,10 @@ MIN_METRIC_SAMPLE = 100
 MAX_5XX_SHARE = 0.01
 MAX_P95_SECONDS = 0.5
 MAX_CATALOG_AGE_SECONDS = 2 * 60 * 60
+# Four live workers, plus room for the pids a few restarts leave behind. The
+# baseline file is a cache, so bounding it matters more than remembering a
+# process that has not answered a scrape in a long time.
+MAX_TRACKED_WORKERS = 16
 HTTP_OK = 200
 SAMPLE_PATTERN = re.compile(r"^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(?P<labels>.*)\})?\s+(?P<value>\S+)$")
 # Both alternatives must not match the same first character: with `[^"]` able to
@@ -84,31 +88,46 @@ def summarize_metrics(samples: list[Sample]) -> dict[str, float | int | None]:
         (sample.value for sample in samples if sample.name == "toolhub_process_uptime_seconds"),
         None,
     )
+    # None on a deployment that predates the info metric; apply_window treats that
+    # as an unidentifiable scrape rather than guessing which worker it came from.
+    worker = next(
+        (sample.labels.get("pid") for sample in samples if sample.name == "toolhub_worker_info"),
+        None,
+    )
     return {
         "requestTotal": request_total,
         "serverErrorTotal": server_errors,
         "serverErrorShare": server_errors / request_total if request_total else 0.0,
         "p95UpperBoundSeconds": p95,
         "processUptimeSeconds": uptime,
+        "workerId": worker,
     }
 
 
-def load_window_state(path: Path) -> dict[str, Any] | None:
-    """Read the previous scrape, treating an absent or unreadable file as no baseline."""
+def load_window_state(path: Path) -> dict[str, Any]:
+    """Read the per-worker baselines, treating anything unreadable as none at all."""
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None
-    return state if isinstance(state, dict) else None
+        return {}
+    workers = state.get("workers") if isinstance(state, dict) else None
+    return workers if isinstance(workers, dict) else {}
 
 
-def save_window_state(path: Path, metrics: dict[str, Any]) -> None:
-    """Record the counters this run observed so the next run can subtract them."""
-    state = {key: metrics[key] for key in ("requestTotal", "serverErrorTotal", "processUptimeSeconds")}
-    path.write_text(json.dumps(state, sort_keys=True) + "\n", encoding="utf-8")
+def save_window_state(path: Path, metrics: dict[str, Any], baselines: dict[str, Any]) -> None:
+    """Record this worker's counters alongside the other workers' baselines."""
+    worker = metrics.get("workerId")
+    if worker is None:
+        return
+    # Re-inserting at the end keeps the mapping in least-recently-seen order, so
+    # truncating from the front evicts retired pids before live ones.
+    updated = {key: value for key, value in baselines.items() if key != worker}
+    updated[worker] = {key: metrics[key] for key in ("requestTotal", "serverErrorTotal", "processUptimeSeconds")}
+    kept = dict(list(updated.items())[-MAX_TRACKED_WORKERS:])
+    path.write_text(json.dumps({"workers": kept}) + "\n", encoding="utf-8")
 
 
-def apply_window(metrics: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
+def apply_window(metrics: dict[str, Any], baselines: dict[str, Any]) -> dict[str, Any]:
     """Narrow the alerting window from the process lifetime to the monitoring interval.
 
     /metricsz exposes process-lifetime counters, so dividing the current totals
@@ -118,15 +137,25 @@ def apply_window(metrics: dict[str, Any], previous: dict[str, Any] | None) -> di
     during startup keeps paging long after the incident is over. Subtracting the
     previous scrape measures the interval instead.
 
+    The subtraction is only meaningful within one process. Toolforge runs four
+    uWSGI workers, each with its own counters, and a scrape reports whichever one
+    answered it -- so baselines are kept per worker. Differencing across two
+    workers would invent a ratio out of unrelated totals when they happen to be
+    ordered, and look exactly like a restart when they are not: both a missed
+    incident and a false page, from the same arithmetic.
+
     A restart resets the counters, so a scrape whose totals or uptime moved
     backwards is reported whole: those totals *are* the interval since the
-    restart. Without a baseline the lifetime totals are kept unchanged, which is
-    the documented behavior for a one-off operator run.
+    restart. That check stays inside the worker's own baseline, where it also
+    covers a reused pid. A worker seen for the first time -- and any scrape from
+    a deployment that does not identify its worker -- keeps the lifetime totals
+    unchanged, which is the documented behavior for a one-off operator run.
     """
     requests = metrics["requestTotal"]
     errors = metrics["serverErrorTotal"]
+    previous = baselines.get(metrics.get("workerId"))
     source = "lifetime"
-    if previous is not None:
+    if isinstance(previous, dict):
         prior_requests = previous.get("requestTotal") or 0
         prior_errors = previous.get("serverErrorTotal") or 0
         prior_uptime = previous.get("processUptimeSeconds")
@@ -199,6 +228,7 @@ def collect(base_url: str, *, timeout: float) -> dict[str, Any]:
             "serverErrorShare": 0.0,
             "p95UpperBoundSeconds": None,
             "processUptimeSeconds": None,
+            "workerId": None,
         },
         "catalog": {"ageSeconds": None},
         "collectionErrors": [],
@@ -261,11 +291,12 @@ def main(argv: list[str] | None = None) -> int:
     report = collect(args.base_url, timeout=args.timeout)
     scraped = not any(error.startswith("/metricsz:") for error in report["collectionErrors"])
     if args.state and scraped:
-        report["metrics"] = apply_window(report["metrics"], load_window_state(args.state))
+        baselines = load_window_state(args.state)
+        report["metrics"] = apply_window(report["metrics"], baselines)
         # Written before evaluating so a paging run still advances the baseline;
         # a failed scrape is skipped entirely, because saving its zeroed defaults
         # would make the next interval look like the counters had jumped.
-        save_window_state(args.state, report["metrics"])
+        save_window_state(args.state, report["metrics"], baselines)
     alerts = evaluate(report)
     report["alerts"] = [asdict(alert) for alert in alerts]
     rendered = json.dumps(report, indent=2, sort_keys=True)

@@ -16,6 +16,7 @@ import check_production_health as monitor  # noqa: E402
 
 
 METRICS = """\
+toolhub_worker_info{pid="4101"} 1
 # TYPE toolhub_process_uptime_seconds gauge
 toolhub_process_uptime_seconds 120
 toolhub_http_requests_total{method="GET",route="/",status_class="2xx"} 98
@@ -37,6 +38,7 @@ def test_metrics_parser_and_alert_thresholds_are_exact() -> None:
         "serverErrorShare": 0.02,
         "p95UpperBoundSeconds": 1.0,
         "processUptimeSeconds": 120.0,
+        "workerId": "4101",
     }
     alerts = monitor.evaluate(
         {
@@ -105,14 +107,20 @@ def test_label_parsing_stays_linear_on_a_malformed_label_set() -> None:
     assert monitor.LABEL_PATTERN.findall(escaped) == [("route", r"/v1/say \"hi\""), ("method", "GET")]
 
 
-def _metrics(requests: int, errors: int, uptime: float | None = 600.0) -> dict:
+def _metrics(requests: int, errors: int, uptime: float | None = 600.0, worker: str | None = "4101") -> dict:
     return {
         "requestTotal": requests,
         "serverErrorTotal": errors,
         "serverErrorShare": errors / requests if requests else 0.0,
         "p95UpperBoundSeconds": 0.05,
         "processUptimeSeconds": uptime,
+        "workerId": worker,
     }
+
+
+def _baselines(*scrapes: dict) -> dict:
+    """The per-worker baseline map apply_window reads, keyed the way it keys it."""
+    return {scrape["workerId"]: scrape for scrape in scrapes}
 
 
 def test_a_long_clean_history_cannot_absorb_a_burst_of_errors() -> None:
@@ -130,7 +138,7 @@ def test_a_long_clean_history_cannot_absorb_a_burst_of_errors() -> None:
     )
     assert [alert.code for alert in lifetime] == []
 
-    windowed = monitor.apply_window(current, previous)
+    windowed = monitor.apply_window(current, _baselines(previous))
     assert windowed["windowSource"] == "interval"
     assert windowed["windowRequestTotal"] == 300
     assert windowed["windowServerErrorShare"] == 1.0
@@ -145,7 +153,7 @@ def test_a_recovered_burst_stops_paging_once_the_interval_is_clean() -> None:
     previous = _metrics(200, 100)
     current = _metrics(1200, 100)
 
-    windowed = monitor.apply_window(current, previous)
+    windowed = monitor.apply_window(current, _baselines(previous))
 
     assert windowed["windowRequestTotal"] == 1000
     assert windowed["windowServerErrorShare"] == 0.0
@@ -156,7 +164,7 @@ def test_a_recovered_burst_stops_paging_once_the_interval_is_clean() -> None:
 
 
 def test_without_a_baseline_the_lifetime_totals_are_reported_unchanged() -> None:
-    windowed = monitor.apply_window(_metrics(500, 10), None)
+    windowed = monitor.apply_window(_metrics(500, 10), {})
 
     assert windowed["windowSource"] == "lifetime"
     assert windowed["windowRequestTotal"] == 500
@@ -165,7 +173,7 @@ def test_without_a_baseline_the_lifetime_totals_are_reported_unchanged() -> None
 
 def test_a_quiet_interval_reports_a_zero_share_rather_than_dividing_by_zero() -> None:
     previous = _metrics(500, 5)
-    windowed = monitor.apply_window(_metrics(500, 5), previous)
+    windowed = monitor.apply_window(_metrics(500, 5), _baselines(previous))
 
     assert windowed["windowRequestTotal"] == 0
     assert windowed["windowServerErrorShare"] == 0.0
@@ -191,7 +199,7 @@ def test_a_restart_reports_the_new_counters_whole(previous: dict, current: dict)
     ):
         current = {**current, "processUptimeSeconds": 5.0}
 
-    windowed = monitor.apply_window(current, previous)
+    windowed = monitor.apply_window(current, _baselines(previous))
 
     assert windowed["windowSource"] == "restart"
     assert windowed["windowRequestTotal"] == current["requestTotal"]
@@ -200,15 +208,21 @@ def test_a_restart_reports_the_new_counters_whole(previous: dict, current: dict)
 
 def test_an_unreadable_or_foreign_baseline_is_treated_as_no_baseline(tmp_path: Path) -> None:
     missing = tmp_path / "absent.json"
-    assert monitor.load_window_state(missing) is None
+    assert monitor.load_window_state(missing) == {}
 
     corrupt = tmp_path / "corrupt.json"
     corrupt.write_text("{not json", encoding="utf-8")
-    assert monitor.load_window_state(corrupt) is None
+    assert monitor.load_window_state(corrupt) == {}
 
     foreign = tmp_path / "foreign.json"
     foreign.write_text("[1, 2, 3]", encoding="utf-8")
-    assert monitor.load_window_state(foreign) is None
+    assert monitor.load_window_state(foreign) == {}
+
+    # A file written before baselines were keyed per worker: its flat counters
+    # belong to an unknown process, so they are not a baseline for any of them.
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(json.dumps({"requestTotal": 10, "serverErrorTotal": 0}), encoding="utf-8")
+    assert monitor.load_window_state(legacy) == {}
 
 
 def test_a_scheduled_run_advances_the_baseline_it_measured_against(
@@ -222,7 +236,8 @@ def test_a_scheduled_run_advances_the_baseline_it_measured_against(
     }
     monkeypatch.setattr(monitor, "_get", lambda _base, path, *, timeout: payloads[path])
     state = tmp_path / "window.json"
-    state.write_text(json.dumps({"requestTotal": 60, "serverErrorTotal": 2, "processUptimeSeconds": 60}), "utf-8")
+    prior = {"requestTotal": 60, "serverErrorTotal": 2, "processUptimeSeconds": 60}
+    state.write_text(json.dumps({"workers": {"4101": prior, "4102": prior}}), "utf-8")
     output = tmp_path / "health.json"
 
     monitor.main(["--base-url", "https://example.test", "--output", str(output), "--state", str(state)])
@@ -231,10 +246,12 @@ def test_a_scheduled_run_advances_the_baseline_it_measured_against(
     assert report["metrics"]["windowSource"] == "interval"
     assert report["metrics"]["windowRequestTotal"] == 40
     assert report["metrics"]["windowServerErrorTotal"] == 0
+    # The worker that answered is updated; the one that did not keeps its own.
     assert json.loads(state.read_text(encoding="utf-8")) == {
-        "requestTotal": 100,
-        "serverErrorTotal": 2,
-        "processUptimeSeconds": 120.0,
+        "workers": {
+            "4102": prior,
+            "4101": {"requestTotal": 100, "serverErrorTotal": 2, "processUptimeSeconds": 120.0},
+        }
     }
 
 
@@ -249,9 +266,76 @@ def test_a_failed_scrape_leaves_the_baseline_alone(tmp_path: Path, monkeypatch: 
 
     monkeypatch.setattr(monitor, "_get", fake_get)
     state = tmp_path / "window.json"
-    baseline = {"requestTotal": 100, "serverErrorTotal": 2, "processUptimeSeconds": 120.0}
+    baseline = {"workers": {"4101": {"requestTotal": 100, "serverErrorTotal": 2, "processUptimeSeconds": 120.0}}}
     state.write_text(json.dumps(baseline), encoding="utf-8")
 
     monitor.main(["--base-url", "https://example.test", "--state", str(state)])
 
     assert json.loads(state.read_text(encoding="utf-8")) == baseline
+
+
+def test_two_workers_are_never_subtracted_from_each_other() -> None:
+    """Production runs four workers and /metricsz answers for whichever one served
+    the scrape, so consecutive scrapes routinely come from different processes.
+
+    The two orderings fail in opposite directions. When the new worker's totals
+    are the larger pair, the difference is an arbitrary number attached to no
+    interval -- here a clean 0.5% that hides a worker which is in fact serving
+    5% errors. When they are the smaller pair, the counters look like they went
+    backwards and the scrape is misread as a restart.
+    """
+    busy = _metrics(100_000, 5_000, worker="4101")
+    quiet = _metrics(90_000, 4_500, worker="4102")
+
+    unrelated = monitor.apply_window(busy, _baselines(quiet))
+    assert unrelated["windowSource"] == "lifetime"
+    assert unrelated["windowRequestTotal"] == 100_000
+    assert unrelated["windowServerErrorShare"] == 0.05
+
+    backwards = monitor.apply_window(quiet, _baselines(busy))
+    assert backwards["windowSource"] == "lifetime"
+    assert backwards["windowRequestTotal"] == 90_000
+
+    # Each worker still measures its own interval against its own baseline.
+    later = monitor.apply_window(_metrics(100_400, 5_100, worker="4101"), _baselines(busy, quiet))
+    assert later["windowSource"] == "interval"
+    assert later["windowRequestTotal"] == 400
+    assert later["windowServerErrorTotal"] == 100
+
+
+def test_a_scrape_that_does_not_name_its_worker_is_not_stored(tmp_path: Path) -> None:
+    """A deployment predating the info metric would otherwise have all four
+    workers writing over one shared baseline -- the bug this keying removes."""
+    state = tmp_path / "window.json"
+    anonymous = _metrics(500, 10, worker=None)
+
+    assert monitor.apply_window(anonymous, {})["windowSource"] == "lifetime"
+    monitor.save_window_state(state, anonymous, {})
+
+    assert not state.exists()
+
+
+def test_the_baseline_file_cannot_grow_without_bound(tmp_path: Path) -> None:
+    """Every restart retires a pid. Keeping the map in least-recently-seen order
+    means the cap evicts those before any worker still answering scrapes."""
+    state = tmp_path / "window.json"
+    baselines: dict = {}
+    for pid in range(monitor.MAX_TRACKED_WORKERS + 4):
+        monitor.save_window_state(state, _metrics(10, 0, worker=str(pid)), baselines)
+        baselines = monitor.load_window_state(state)
+
+    assert len(baselines) == monitor.MAX_TRACKED_WORKERS
+    assert list(baselines) == [str(pid) for pid in range(4, monitor.MAX_TRACKED_WORKERS + 4)]
+
+
+def test_a_returning_worker_refreshes_its_place_rather_than_duplicating(tmp_path: Path) -> None:
+    state = tmp_path / "window.json"
+    monitor.save_window_state(state, _metrics(10, 0, worker="4101"), {})
+    first = monitor.load_window_state(state)
+    monitor.save_window_state(state, _metrics(20, 1, worker="4102"), first)
+    second = monitor.load_window_state(state)
+    monitor.save_window_state(state, _metrics(30, 2, worker="4101"), second)
+
+    stored = monitor.load_window_state(state)
+    assert list(stored) == ["4102", "4101"]
+    assert stored["4101"]["requestTotal"] == 30

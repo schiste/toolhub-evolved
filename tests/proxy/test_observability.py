@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -100,6 +101,18 @@ def test_metrics_are_bounded_normalized_and_prometheus_compatible(client) -> Non
 
     observability.reset_metrics()
     assert observability.metrics.snapshot().request_total == 0
+
+
+def test_a_scrape_says_which_worker_it_came_from(client) -> None:
+    """Toolforge runs four workers, each counting only its own requests, and a
+    scrape reaches exactly one of them. A consumer measuring an interval has to
+    subtract two scrapes of the *same* process: across two workers the difference
+    is unrelated totals, which reads as an invented ratio or a phantom restart.
+    The pid is what makes those two scrapes comparable.
+    """
+    body = client.get("/metricsz").get_data(as_text=True)
+
+    assert f'toolhub_worker_info{{pid="{os.getpid()}"}} 1' in body
 
 
 def test_an_unknown_request_method_cannot_grow_the_metrics_counter() -> None:

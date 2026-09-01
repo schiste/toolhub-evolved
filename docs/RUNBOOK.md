@@ -1244,7 +1244,10 @@ then point a local `TOOLHUB_DB_URL` at the restore-test DB and check
 - Scrape `/metricsz` from every worker and aggregate it outside the process. It
   exposes normalized route/status counters and a request-duration histogram;
   counters reset on worker restart and never contain paths, query strings,
-  message bodies, identities, or credentials. Every response also carries a
+  message bodies, identities, or credentials. Each scrape also carries
+  `toolhub_worker_info{pid="..."}`, naming the worker that answered it: the
+  counters are process-local, so two scrapes are only comparable when that pid
+  matches. Every response also carries a
   sanitized or generated `X-Request-ID`, repeated in the normalized completion
   log for correlation.
 - `webservice status` / `toolforge jobs list` for platform state;
@@ -1273,7 +1276,11 @@ correlated but is not itself an availability incident.
 
 The GitHub monitor is the immediate external sentinel and audit trail. Its
 `/metricsz` ratio alerts require at least 100 requests in the sampled worker so
-one error after a restart does not page. Because those counters are per-worker
+one error after a restart does not page. It measures the interval between runs
+rather than the worker's lifetime, keeping one baseline per `pid` — the pod runs
+four workers and a scrape reaches whichever one answered, so a worker seen for
+the first time reports its lifetime totals rather than a difference against
+another worker's. Because those counters are per-worker
 and reset on restart, use a durable multi-worker Prometheus service for exact
 30-day SLO and burn-rate accounting; the endpoint and thresholds are compatible
 with that upgrade.
