@@ -405,3 +405,42 @@ def test_an_absurdly_long_interwiki_map_is_bounded():
         for index in range(wiki_api.MAX_INTERWIKI_PREFIXES + 50)
     ]
     assert len(wiki_api.interwiki_hosts(_siteinfo(interwiki=entries))) == wiki_api.MAX_INTERWIKI_PREFIXES
+
+
+def test_a_message_the_wiki_defines_as_blank_says_nothing_about_its_gadget():
+    payload = {
+        "query": {
+            "allmessages": [
+                {"name": "gadget-Popups", "content": "  \n "},
+                {"name": "gadget-Gone", "missing": True},
+                {"name": "gadget-Purge", "content": "Purges the page."},
+            ]
+        }
+    }
+
+    # "The wiki says nothing about this gadget" and "the wiki says this gadget
+    # does nothing" are different facts, and only the first is true here.
+    assert wiki_api.messages(payload) == {"gadget-Purge": "Purges the page."}
+
+
+def test_a_spelling_a_wiki_leaves_empty_reserves_no_interwiki_prefix():
+    payload = {
+        "query": {
+            "namespaces": {
+                "2": {"id": 2, "canonical": "User", "name": ""},
+                "4": {"id": 4, "canonical": "", "name": "Wikipedia"},
+            },
+            "namespacealiases": [{"id": 2, "alias": "  "}, {"id": 2, "alias": "U"}],
+            "interwikimap": [
+                {"prefix": "user", "url": "https://elsewhere.example/wiki/$1"},
+                {"prefix": "wikipedia", "url": "https://en.wikipedia.org/wiki/$1"},
+                {"prefix": "u", "url": "https://u.example/wiki/$1"},
+                {"prefix": "d", "url": "https://www.wikidata.org/wiki/$1"},
+            ],
+        }
+    }
+
+    # An empty spelling is the prefix of every title there is, so admitting one
+    # to the reserved set would reserve every interwiki prefix at once. Only the
+    # three names this wiki actually uses -- User, Wikipedia, U -- are taken.
+    assert wiki_api.interwiki_hosts(payload) == {"d": "www.wikidata.org"}

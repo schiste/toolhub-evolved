@@ -267,3 +267,31 @@ def test_the_inventory_is_bounded(monkeypatch):
 
     assert summary["declared"] == 5
     assert summary["added"] == 2
+
+
+def test_a_message_nobody_asked_for_is_ignored_rather_than_stored():
+    """MediaWiki normalizes message keys, so a reply is matched, never trusted."""
+
+    class Chatty(FakeWiki):
+        def request(self, domain, method, params):
+            if params.get("meta") == "allmessages":
+                return {
+                    "query": {
+                        "allmessages": [
+                            {"name": "Gadget-Popups", "content": "Navigation popups."},
+                            # Not in this batch, and on a real wiki not a gadget
+                            # message at all -- a key sharing the prefix.
+                            {"name": "Gadget-section-appearance", "content": "Appearance"},
+                        ]
+                    }
+                }
+            return super().request(domain, method, params)
+
+    wiki = Chatty()
+    gadget_inventory.ingest(wiki.request, FRWIKI)
+
+    assert {name: row.description for name, row in stored().items()} == {
+        "Popups": "Navigation popups.",
+        "Purge": "",
+        "Internals": "",
+    }

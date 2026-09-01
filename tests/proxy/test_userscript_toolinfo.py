@@ -431,3 +431,55 @@ def test_an_undated_script_publishes_no_licence_either():
     record = catalogued()["userscript-fr.wikipedia.org-lupin-popups.js"]
     assert "created_date" not in record
     assert "license" not in record
+
+
+# --- reading a page whose model the census never recorded ---
+
+
+def _entry(basename="popups.js", owner="Lupin", first_author="", created="", wiki=FRWIKI):
+    """One directory entry, unstored: `toolinfo_record` reads it, not the table."""
+    return UserScriptDirectoryEntry(
+        wiki=wiki,
+        title=f"User:{owner}/{basename}",
+        owner=owner,
+        basename=basename,
+        tier=TIER_ACTIVE,
+        demand=1,
+        position=1,
+        created_at_wiki=created,
+        first_author_wiki=first_author,
+    )
+
+
+def test_a_page_stored_before_the_census_recorded_a_model_is_read_by_its_suffix():
+    # The wiki's own answer is the one that cannot be wrong, so it wins wherever
+    # there is one. Rows written before the census asked for it have none, and
+    # the name is all that is left to go on.
+    record = userscript_toolinfo.toolinfo_record(_entry(basename="common.css"), content_model="")
+
+    assert record["technology_used"] == ["CSS"]
+
+
+def test_a_page_with_neither_a_model_nor_a_known_suffix_claims_no_language():
+    record = userscript_toolinfo.toolinfo_record(_entry(basename="Sandbox"), content_model="")
+
+    # Silence, not a guess: `technology_used` is a claim about what the page is
+    # written in, and nothing here supports one.
+    assert "technology_used" not in record
+
+
+def test_a_script_page_with_no_owner_and_no_first_author_is_published_unattributed():
+    # Both names come from the wiki and either can be missing -- a title the
+    # replica has not resolved leaves the owner blank too. An `author` entry
+    # naming nobody is worse than none at all.
+    record = userscript_toolinfo.toolinfo_record(_entry(owner="", first_author=""))
+
+    assert "author" not in record
+
+
+def test_a_dated_page_always_publishes_the_licence_that_date_implies():
+    record = userscript_toolinfo.toolinfo_record(_entry(created="20090101000000"))
+
+    # 3.0, not 4.0: the 2023 Terms could not relicense a page published in 2009.
+    assert record["created_date"] == "2009-01-01T00:00:00Z"
+    assert record["license"] == "CC-BY-SA-3.0"

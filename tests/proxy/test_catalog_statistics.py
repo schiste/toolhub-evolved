@@ -1009,3 +1009,49 @@ def test_a_tool_with_no_projection_row_still_counts_from_its_canonical_record():
 
     assert payload["catalog"]["totalTools"] == 1
     assert _described(payload) == 1
+
+
+def test_an_unresolved_maintainer_counts_as_an_unattributed_tool_but_not_an_author():
+    with db.session_scope() as session:
+        _tool(session, "t", {"title": "T"})
+        session.add(
+            UnresolvedAttributionEvidence(
+                tool_name="t",
+                observed_label="Ops Team",
+                normalized_label="ops team",
+                relationship_type=PERSON_REL_MAINTAINER,
+                source="test",
+            )
+        )
+        session.flush()
+        payload = catalog_statistics.build_snapshot(session)
+
+    # Both relationships leave a person unidentified, and both are worth
+    # counting -- but only an unresolved author leaves the tool without an
+    # answer to "who wrote this", which is the narrower number.
+    assert payload["identities"]["unresolvedTools"] == 1
+    assert payload["catalog"]["unresolvedAuthorTools"] == 0
+    assert payload["identities"]["unresolvedLabels"] == 1
+
+
+def test_evidence_that_normalized_to_nothing_names_no_label_to_resolve():
+    with db.session_scope() as session:
+        _tool(session, "t", {"title": "T"})
+        session.add(
+            UnresolvedAttributionEvidence(
+                tool_name="t",
+                observed_label="‎",
+                normalized_label="",
+                relationship_type=PERSON_REL_AUTHOR,
+                source="test",
+            )
+        )
+        session.flush()
+        payload = catalog_statistics.build_snapshot(session)
+
+    # The tool still has an author nobody has identified, so it is counted. The
+    # label is not: there is no string here for a registry to look up, and
+    # counting it would put a permanently unresolvable entry in the funnel.
+    assert payload["catalog"]["unresolvedAuthorTools"] == 1
+    assert payload["identities"]["unresolvedLabels"] == 0
+    assert payload["attribution"]["distinctLabels"] == 0

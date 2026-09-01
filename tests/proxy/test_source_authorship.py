@@ -154,3 +154,13 @@ def test_merge_tolerates_a_missing_or_older_stored_result():
 
     assert merged["provider"] == "anthropic"
     assert merged["schemaVersion"] == source_authorship.SCHEMA_VERSION
+
+
+def test_a_listing_entry_that_names_no_path_is_skipped_rather_than_matched():
+    """`"./"` and `"  "` are entries a tree listing produces, not filenames."""
+    result = source_authorship.detect(["./", "  ", "", "./CLAUDE.md"])
+
+    # The bare `./` is the repository root, and stripping its prefix leaves
+    # nothing to match. Letting "" through would ask `MARKER_FILES` for the
+    # empty name on every listing there is.
+    assert _evidence(result) == ["CLAUDE.md"]

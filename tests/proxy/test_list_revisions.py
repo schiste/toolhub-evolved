@@ -5,6 +5,8 @@ import re
 import sys
 from pathlib import Path
 
+from sqlalchemy.exc import SQLAlchemyError
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
@@ -362,3 +364,137 @@ def test_recent_payload_groups_and_names_before_it_pages() -> None:
     assert payload["count"] == 2
     assert payload["results"][0]["toolsAdded"] == ["alpha", "beta"]
     assert payload["results"][1]["toolsAdded"] == ["gamma"]
+
+
+# --- edges the ordinary feed does not reach -----------------------------
+
+
+def test_a_timestamp_without_an_offset_is_read_as_utc_not_as_local_time() -> None:
+    naive = {**_row(2, stamp="2026-08-20T09:00:00Z"), "timestamp": "2026-08-20T09:00:00"}
+    grouped = list_revisions.group_list_activity([naive, _row(1, stamp="2026-08-20T08:00:00Z")])
+
+    # Reading a bare stamp in the machine's zone would move it across midnight
+    # for half the planet, and split one day's edits into two rows there only.
+    assert len(grouped) == 1
+
+
+def test_an_editor_upstream_spells_as_a_bare_name_still_keys_the_group() -> None:
+    named = {**_row(2, stamp="2026-08-20T10:00:00Z"), "user": "Editor"}
+    other = {**_row(1, stamp="2026-08-20T09:00:00Z"), "user": "Someone else"}
+    grouped = list_revisions.group_list_activity([named, {**named, "id": 1}, other])
+
+    # Two rows, not one: the bare string is still an identity, so it separates
+    # editors exactly as the object form does.
+    assert len(grouped) == 2
+    assert grouped[0]["revisionIds"] == [2, 1]
+
+
+def test_a_revision_with_no_usable_id_joins_its_day_without_polluting_the_lookup() -> None:
+    grouped = list_revisions.group_list_activity(
+        [_row(2, stamp="2026-08-20T10:00:00Z"), {**_row(1, stamp="2026-08-20T09:00:00Z"), "id": None}]
+    )
+
+    # The row is still part of the day, but only ids that could be looked up
+    # are collected -- a None in this list would become a failed query later.
+    assert len(grouped) == 1
+    assert grouped[0]["revisionIds"] == [2]
+
+
+def test_a_database_the_reader_cannot_reach_costs_tool_names_not_the_page(monkeypatch) -> None:
+    _fresh_db()
+
+    def unreachable():
+        raise SQLAlchemyError("replica down")
+
+    monkeypatch.setattr(list_revisions.db, "session_scope", unreachable)
+    named = list_revisions.attach_tool_changes(
+        list_revisions.group_list_activity([_row(2, stamp="2026-08-20T10:00:00Z")])
+    )
+
+    # The generic upstream comment is still rendered underneath, so the row
+    # says less rather than nothing.
+    assert named[0]["toolsAdded"] == []
+    assert named[0]["comment"] == "Added tool to list"
+
+
+def test_a_patch_that_names_no_tool_is_recorded_as_having_changed_none(monkeypatch) -> None:
+    _fresh_db()
+    upstream = _Upstream({(5, 6): {"operations": [{"op": "add", "path": "/tools/-", "value": {"name": "   "}}]}})
+    _install(monkeypatch, upstream)
+
+    # A blank name is not a tool. Storing it would put an empty chip in the feed.
+    assert list_revisions.resolve_revision(861, 6, 5) == list_revisions.REASON_NO_TOOL_CHANGE
+    with db.session_scope() as session:
+        assert session.get(ListRevisionChange, 6).added == []
+
+
+def test_a_write_that_fails_still_reports_what_the_diff_said(monkeypatch) -> None:
+    _fresh_db()
+    upstream = _Upstream({(5, 6): {"operations": [{"op": "add", "path": "/tools/-", "value": "beta"}]}})
+    _install(monkeypatch, upstream)
+
+    def unreachable():
+        raise SQLAlchemyError("write blocked")
+
+    monkeypatch.setattr(list_revisions.db, "session_scope", unreachable)
+
+    # The caller's tally stays true to the diff it read; the row is simply not
+    # persisted, and the next run resolves it again.
+    assert list_revisions.resolve_revision(861, 6, 5) == ""
+
+
+def test_pending_revisions_ignores_rows_that_are_not_upstream_list_revisions() -> None:
+    _fresh_db()
+    tool = {"content_type": "tool", "content_id": "alpha", "id": 9, "parent_id": None}
+
+    assert list_revisions.pending_revisions([tool]) == []
+
+
+def test_pending_revisions_ignores_a_list_row_whose_ids_are_not_numbers() -> None:
+    _fresh_db()
+    unnumbered = {**_row(2, stamp="2026-08-20T10:00:00Z"), "content_id": "861"}
+
+    # `content_id` is the list to diff against. A string there is not a list
+    # anyone can request, and asking anyway would spend a request to learn so.
+    assert list_revisions.pending_revisions([unnumbered]) == []
+
+
+def test_pending_revisions_asks_nothing_of_the_database_when_the_feed_has_no_lists() -> None:
+    _fresh_db()
+
+    assert list_revisions.pending_revisions([]) == []
+
+
+def test_ingest_pauses_between_upstream_requests_but_not_before_the_first(monkeypatch) -> None:
+    _fresh_db()
+    _install(monkeypatch, _Upstream({}))
+    pauses: list[float] = []
+
+    list_revisions.ingest(
+        [_row(1, stamp="2026-08-20T09:00:00Z", parent=0), _row(2, stamp="2026-08-20T10:00:00Z", parent=1)],
+        pause=pauses.append,
+    )
+
+    # Two revisions, one pause: upstream is volunteer-run, and the first
+    # request has nothing to be polite about.
+    assert pauses == [list_revisions.REQUEST_PAUSE_SECONDS]
+
+
+def test_ingest_counts_a_revision_that_changed_no_tool_apart_from_one_that_named_some(monkeypatch) -> None:
+    _fresh_db()
+    upstream = _Upstream(
+        {
+            (0, 1): {"operations": [{"op": "add", "path": "/tools/-", "value": "alpha"}]},
+            (1, 2): {"operations": [{"op": "replace", "path": "/title", "value": "New title"}]},
+        }
+    )
+    _install(monkeypatch, upstream)
+
+    counts = list_revisions.ingest(
+        [_row(1, stamp="2026-08-20T09:00:00Z", parent=0), _row(2, stamp="2026-08-20T10:00:00Z", parent=1)],
+        pause=lambda _seconds: None,
+    )
+
+    # "Resolved and found nothing" is its own outcome: it is not a failure, and
+    # it must not be counted as a rename either.
+    assert counts == {"pending": 2, "named": 1, "uneventful": 1, "unreadable": 0}

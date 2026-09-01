@@ -7995,6 +7995,41 @@ def test_a_failure_that_is_not_a_lock_race_still_stops_the_batch(monkeypatch):
     assert attempted == ["alpha", "beta"]
 
 
+def test_a_database_error_that_is_not_a_lock_race_still_stops_the_batch(monkeypatch):
+    """The absorbing clause is about lock contention, not about SQL failing."""
+    _seed_summary_rows(("alpha", "beta", "gamma"))
+    attempted = []
+
+    def build_one(name, _build_summary):
+        attempted.append(name)
+        if name == "beta":
+            raise OperationalError("UPDATE tool_summary_cache", {}, Exception(1146, "table doesn't exist"))
+
+    monkeypatch.setattr(tool_summaries, "_build_one", build_one)
+    with pytest.raises(OperationalError):
+        tool_summaries.refresh(["alpha", "beta", "gamma"], lambda _s, _n: {})
+    # A missing table is not evidence about one tool, so gamma is not tried and
+    # then reported as though it had been.
+    assert attempted == ["alpha", "beta"]
+
+
+def test_a_tool_with_no_cached_row_loses_its_lock_race_without_inventing_one(monkeypatch):
+    # `refresh` is handed names, not rows. A name whose row has been evicted
+    # since the queue was built has nowhere to record the failure, and creating
+    # a row here would publish a summary-less tool carrying only an error.
+    _seed_summary_rows(("alpha",))
+    monkeypatch.setattr(db, "LOCK_RETRY_BACKOFF_SECONDS", 0)
+
+    def build_one(_name, _build_summary):
+        raise _lock_wait_timeout()
+
+    monkeypatch.setattr(tool_summaries, "_build_one", build_one)
+
+    assert tool_summaries.refresh(["never-cached"], lambda _s, _n: {}) == 0
+    with db.session_scope() as s:
+        assert {row.tool_name for row in s.execute(select(ToolSummaryCache)).scalars()} == {"alpha"}
+
+
 def test_invalidating_the_graph_keeps_a_copy_to_serve_while_it_rebuilds(client, monkeypatch):
     # Deleting the row put the next visitor on the full synchronous build --
     # about 3.8s in production -- every time an enrichment pass changed a facet.

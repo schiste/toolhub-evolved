@@ -509,3 +509,17 @@ def test_the_offline_fallback_reads_a_query_the_same_way():
     assert [row["toolName"] for row in canonical_tools.search("editor alpha")] == ["alpha"]
     assert [row["toolName"] for row in canonical_tools.search("alpha wikidata")] == ["alpha"]
     assert canonical_tools.search("editor wikipedia") == []
+
+
+def test_the_scheduled_jobs_read_every_stored_row_without_paging_or_enrichment():
+    """`collection_payload` pages and enriches for a reader; a job wants the rows."""
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/lists/?page_size=50&page=1",
+        api_cache.CacheableResponse(
+            200,
+            "application/json",
+            json.dumps({"results": [{"id": 1, "title": "One"}, {"id": 2, "title": "Two"}]}).encode(),
+        ),
+    )
+
+    assert [row["title"] for row in catalog_read.replica_rows("/api/lists/")] == ["One", "Two"]

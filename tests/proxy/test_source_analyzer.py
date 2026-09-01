@@ -1539,6 +1539,14 @@ def test_mobile_subdomain_does_not_become_the_wiki_m():
     assert source_analyzer._project_from_host("en.m.wikipedia.org", "m", "wikipedia") is None
 
 
+def test_a_subdomain_that_is_not_a_language_code_is_not_a_wiki_either():
+    """`test` and `test2` are listed by name; the digit is what rules the rest out."""
+    assert source_analyzer._project_from_host("test3.wikipedia.org", "test3", "wikipedia") is None
+    # Otherwise the fallthrough publishes `test3wiki`, a database name that
+    # exists nowhere, as a wiki the tool is said to work on.
+    assert source_analyzer._project_from_host("v2.wikipedia.org", "v2", "wikipedia") is None
+
+
 # --- F1: the reading budget reserves slots for context -----------------------
 
 
@@ -2188,6 +2196,34 @@ def test_a_clone_has_no_gadget_row_at_all() -> None:
     assert "gadgetHidden" not in report["wikiPage"]
 
 
+def test_a_row_that_states_no_scope_makes_the_unqualified_default_claim() -> None:
+    # Every report this analyzer writes carries the three gadget fields together
+    # or not at all, so a row holding `gadgetDefault` without a scope list is one
+    # that reached the assessments from somewhere else -- a stored report written
+    # before the scope field existed. It is read as "no limits stated", which is
+    # what the definition line said before anyone thought to record them.
+    signals = source_analysis_assessments._gadget_reach_signals({"wikiPage": {"gadgetDefault": True}})
+    assert [signal["label"] for signal in signals] == ["Enabled for all users by default"]
+    assert not signals[0]["detail"].endswith("limits it by .")
+
+
+def test_several_declared_limits_are_read_as_prose_rather_than_a_list() -> None:
+    # `namespaces=0|rights=patrol|skins=vector` is three separate narrowings of
+    # one `default`, and the sentence has to name all three: dropping any of them
+    # widens the claim the signal makes about who loads the gadget.
+    page = {"gadgetDefault": True, "gadgetScope": ["namespaces", "rights", "skins"]}
+    signal = source_analysis_assessments._gadget_reach_signals({"wikiPage": page})[0]
+    assert signal["label"] == "Enabled by default for part of the wiki"
+    assert signal["detail"].endswith("The definition limits it by namespace, user right and skin.")
+
+
+def test_a_wiki_page_that_is_not_a_row_reports_no_reach_at_all() -> None:
+    # Reach is read off the row, and a report whose wikiPage is a bare title
+    # states nothing about it. Silence is the honest answer: the alternative is
+    # asserting opt-in reach for a gadget whose definition line was never read.
+    assert source_analysis_assessments._gadget_reach_signals({"wikiPage": "MediaWiki:Gadget-tool.js"}) == []
+
+
 def test_an_unmeasured_right_is_reported_rather_than_dropped() -> None:
     definition = "* tool[ResourceLoader|rights=abusefilter-modify]|tool.js\n"
     declaration = wiki_sources.gadget_declaration(definition, "tool.js")
@@ -2202,6 +2238,60 @@ def test_an_unmeasured_right_is_reported_rather_than_dropped() -> None:
     rows = {row["value"]: row for row in report["accessRights"]}
     assert rows["abusefilter-modify"]["label"] == "abusefilter-modify"
     assert rows["abusefilter-modify"]["category"] == "restricted"
+
+
+def test_an_empty_slot_in_a_definition_option_declares_nothing() -> None:
+    # `dependencies=` and `rights=` are comma-separated, and a definition line
+    # edited by hand leaves empty slots behind -- a trailing comma, a removed
+    # module. An empty name is not a module and an empty right is not a gate,
+    # and the analyzer relies on the definition parser having dropped them
+    # already rather than checking a second time.
+    definition = "* tool[ResourceLoader|dependencies=,jquery.ui,|rights=,patrol,]|tool.js\n"
+    declaration = wiki_sources.gadget_declaration(definition, "tool.js")
+    page = wiki_sources.WikiSource(
+        domain="en.wikipedia.org", title="MediaWiki:Gadget-tool.js", kind=wiki_sources.KIND_GADGET
+    )
+    report = source_analyzer.analyze_source_files(
+        [{"path": "MediaWiki:Gadget-tool.js", "content": "var x = 1;\n"}],
+        wiki_page=page,
+        gadget_declaration=declaration,
+    )
+    assert [row["value"] for row in report["dependencies"]] == ["resourceloader:jquery.ui"]
+    assert [row["value"] for row in report["accessRights"]] == ["patrol"]
+
+
+def test_the_declared_right_count_needs_a_row_to_count_from() -> None:
+    # The measurement reads the wikiPage row off the report rather than off the
+    # declaration, so it has to answer for a report whose row is not one. Zero,
+    # not a crash: this number is a denominator, and a report that states no
+    # rights contributes nothing to it.
+    assert source_analyzer._wiki_page_strings("MediaWiki:Gadget-tool.js", "gadgetRights") == []
+    assert source_analyzer._wiki_page_strings({"gadgetRights": "patrol"}, "gadgetRights") == []
+
+
+def test_a_constraint_that_is_neither_a_table_nor_a_string_states_no_version() -> None:
+    # Poetry writes a list when one dependency carries several constraints:
+    # `flask = [{version = "^2", python = "<3.11"}, {version = "^3"}]`. No single
+    # version answers for that, and inventing one from the first entry would
+    # publish a bound the manifest did not state.
+    assert source_analyzer._mapping_version_spec([{"version": "^3"}]) is None
+    assert source_analyzer._mapping_version_spec({"version": "^3"}) == "^3"
+
+
+def test_a_composer_manifest_with_only_dev_requirements_names_no_runtime() -> None:
+    # The PHP runtime is read out of `require`, and a manifest that has only
+    # `require-dev` has not stated one. Reporting the dev section's PHP bound as
+    # the tool's runtime would claim a deployment requirement nobody declared.
+    report = analyze_source_files(
+        [
+            {
+                "path": "composer.json",
+                "content": '{"require-dev":{"php":">=8.3","phpunit/phpunit":"^10"}}',
+            }
+        ]
+    )
+    assert [row["value"] for row in report["dependencies"]] == ["composer:phpunit/phpunit"]
+    assert "PHP" not in {row["value"] for row in report["technology"]}
 
 
 def test_the_definition_page_is_trusted_like_a_manifest() -> None:

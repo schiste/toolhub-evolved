@@ -651,3 +651,30 @@ def test_an_address_with_no_database_is_not_an_address():
     known = {"fr.wikipedia.org": wiki_replica.Address(dbname="", section="s6")}
     _user, found = wiki_replica.resolve(["fr.wikipedia.org"], connect=connector(rows, [], []), known=known)
     assert found["fr.wikipedia.org"].dbname == "frwiki"
+
+
+def test_a_reader_holding_a_connection_another_already_dropped_drops_nothing_twice():
+    """Two wikis share a section, so they share the handle and both can fail on it."""
+
+    class Broken(PooledConnection):
+        def cursor(self):
+            raise RuntimeError("MySQL server has gone away")
+
+    opened = []
+
+    def connect(user, target):
+        opened.append(target.host)
+        return Broken([], [], [], target.database, [])
+
+    user = wiki_replica.Credentials(user="s1", password="p")
+    with wiki_replica.pooled(connect) as borrow:
+        first = borrow(user, wiki_replica.target_for("frwiki", "s6"))
+        second = borrow(user, wiki_replica.target_for("dewiki", "s6"))
+        with pytest.raises(RuntimeError):
+            first.cursor()
+        # The pool already forgot this host. The second reader is holding the
+        # same dead connection and drops it too, and finding nothing there is
+        # the ordinary case rather than a second failure.
+        with pytest.raises(RuntimeError):
+            second.cursor()
+    assert opened == ["s6.analytics.db.svc.wikimedia.cloud"]

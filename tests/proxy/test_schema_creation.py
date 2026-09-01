@@ -3,6 +3,7 @@
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -73,3 +74,64 @@ def test_a_create_that_failed_for_another_reason_is_raised_at_once(monkeypatch):
         db._create_missing_tables()
 
     assert len(calls) == 1
+
+
+# --- naming the connection that holds a lock ---
+
+
+class _FakeConnection:
+    """One connection that answers IS_USED_LOCK, or refuses to."""
+
+    def __init__(self, answer):
+        self._answer = answer
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def scalar(self, _statement, _params):
+        if isinstance(self._answer, Exception):
+            raise self._answer
+        return self._answer
+
+
+def _mysql(monkeypatch, answer):
+    """Point `db.engine` at something that looks like MariaDB and answers `answer`."""
+
+    class Engine:
+        dialect = SimpleNamespace(name="mariadb")
+
+        def connect(self):
+            return _FakeConnection(answer)
+
+    monkeypatch.setattr(db, "engine", Engine)
+
+
+def test_the_connection_holding_a_lock_is_named_in_the_skip_report(monkeypatch):
+    _mysql(monkeypatch, 4172)
+
+    assert db.advisory_lock_holder("people-reconcile") == 4172
+
+
+def test_a_lock_nobody_holds_names_nobody(monkeypatch):
+    _mysql(monkeypatch, None)
+
+    assert db.advisory_lock_holder("people-reconcile") is None
+
+
+def test_a_lock_whose_holder_cannot_be_named_is_still_reported_as_a_skip(monkeypatch):
+    # This only ever runs on the failure path of a job that is about to skip.
+    # The report is worth more with the field missing than not written at all.
+    _mysql(monkeypatch, OperationalError("SELECT IS_USED_LOCK", {}, Exception(2006, "gone away")))
+
+    assert db.advisory_lock_holder("people-reconcile") is None
+
+
+def test_sqlite_is_not_asked_a_question_only_mariadb_answers():
+    db.configure("sqlite://")
+
+    # `IS_USED_LOCK` is not SQL everywhere. Asking would raise on the one path
+    # that exists to keep a skip report from failing.
+    assert db.advisory_lock_holder("people-reconcile") is None

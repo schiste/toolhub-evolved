@@ -244,3 +244,36 @@ def test_junk_in_the_interwiki_column_does_not_reach_the_peel():
         # read off a title, and a row written before that was true would
         # otherwise silently never match.
         assert wiki_prefixes.resolver(session)(DEWIKI).interwiki == {"en": "en.wikipedia.org"}
+
+
+# --- reading rows an older version of this code wrote --------------------
+
+
+def _store(wiki=DEWIKI, **fields):
+    with db.session_scope() as session:
+        session.add(WikiTitlePrefixes(wiki=wiki, **fields))
+
+
+def test_a_row_whose_json_is_not_the_shape_this_code_writes_is_read_as_nothing():
+    # The columns are JSON written by an earlier version of this module as much
+    # as by this one. A spelling that is not a string reaches `re.escape` and
+    # raises inside a census that has nothing to do with namespaces.
+    _store(namespaces={"User": True}, interwiki=["en"], status=wiki_prefixes.STATUS_READ, read_at=utcnow())
+
+    with db.session_scope() as session:
+        prefixes = wiki_prefixes.stored_prefixes(session, DEWIKI)
+
+    assert prefixes.namespaces == ()
+    assert prefixes.interwiki == {}
+
+
+def test_a_wiki_that_has_never_been_asked_has_no_prefixes_and_is_stale():
+    with db.session_scope() as session:
+        assert wiki_prefixes.stored_prefixes(session, DEWIKI) == userscripts.WikiPrefixes()
+    assert wiki_prefixes.is_stale(None) is True
+
+
+def test_a_row_that_records_neither_a_reading_nor_an_attempt_is_asked_again():
+    # Both clocks unset: the row says nothing about when this wiki was last
+    # tried, so treating it as fresh would pin it out of every future pass.
+    assert wiki_prefixes.is_stale(WikiTitlePrefixes(wiki=DEWIKI, read_at=None, checked_at=None)) is True

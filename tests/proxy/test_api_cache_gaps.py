@@ -43,3 +43,17 @@ def test_mark_failure_records_the_bounded_diagnostic():
     with db.session_scope() as session:
         row = session.scalar(select(ApiCache).where(ApiCache.url == url))
         assert row.last_error == "x" * 2000
+
+
+def test_expiring_the_derived_graph_fails_closed_when_storage_is_unavailable(monkeypatch):
+    @contextmanager
+    def broken_session():
+        raise SQLAlchemyError("database unavailable")
+        yield
+
+    monkeypatch.setattr(db, "session_scope", broken_session)
+
+    # Nothing was retired, and the caller is told so. Reporting a count here
+    # would say the graph had been invalidated when the stale copy is still
+    # being served.
+    assert api_cache.invalidate_graph() == 0

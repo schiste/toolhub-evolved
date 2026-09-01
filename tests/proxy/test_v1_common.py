@@ -1458,3 +1458,16 @@ def test_source_technology_summary_stops_at_the_public_cap():
         ]
     }
     assert len(v1c.source_technology_summary(report)) == v1c.MAX_PUBLIC_TECHNOLOGIES
+
+
+def test_a_user_script_grant_reaches_the_browser_not_just_the_page():
+    """`@grant GM_cookie` is the user-script spelling of a browser-wide capability."""
+    reach = source_analysis_common.browser_permission_reach
+
+    # The scanner prefixes a finding with where it read it, so the tier lookup
+    # has to see past `grant:` to the capability itself. Reading these as `page`
+    # would file a script that can take the reader's cookies alongside one that
+    # restyles a table.
+    assert reach("grant:GM_cookie") == source_analysis_common.BROWSER_PERMISSION_REACH_BROWSER
+    assert reach("grant:GM.xmlHttpRequest") == source_analysis_common.BROWSER_PERMISSION_REACH_BROWSER
+    assert reach("grant:GM_addStyle") == source_analysis_common.BROWSER_PERMISSION_REACH_PAGE

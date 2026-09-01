@@ -687,3 +687,25 @@ def test_a_chunked_pass_stops_at_the_tail_instead_of_re_reading_the_head():
         _verified_maintainer_edge(session, "toola", "Ada")
 
     assert people_reconcile.reconverge_in_chunks(limit=500, chunk=25)["examined"] == 1
+
+
+def test_a_pass_that_spends_its_whole_limit_stops_without_reading_past_it():
+    # The other exit. A short chunk means the backlog ran out and the loop breaks
+    # at the tail; here every chunk is full and the ceiling is what ends the pass,
+    # which is the case that has to leave rows behind rather than wrap around.
+    # `limit` is the promise the job makes about how much work one run does, so
+    # examining a row past it would break the bound the standalone job runs under.
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada", "42", wiki_username="Ada")
+        for tool in ("toola", "toolb", "toolc"):
+            _canonical_author_label(session, tool, "Ada")
+            _verified_maintainer_edge(session, tool, "Ada")
+
+    assert people_reconcile.reconverge_in_chunks(limit=2, chunk=1) == {
+        "examined": 2,
+        "promoted": 2,
+        "tools": 2,
+    }
+    with db.session_scope() as session:
+        promoted = [tool for tool in ("toola", "toolb", "toolc") if _author_person_ids(session, tool) == {ada.id}]
+    assert len(promoted) == 2

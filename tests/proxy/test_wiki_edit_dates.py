@@ -284,3 +284,34 @@ def test_one_wikis_outage_does_not_hide_another_wikis_dates():
     written = edits.backfill_gadgets([FRWIKI, METAWIKI], connect=replica.connect)
     assert written == {METAWIKI: 1}
     assert gadget_stamps() == {"HotCat": ""}
+
+
+def test_a_wiki_meta_p_does_not_name_is_skipped_and_the_other_scripts_run():
+    store("Utilisateur:Lupin/popups.js")
+    store("User:Zoe/toc.js", wiki=METAWIKI)
+    replica = Replica(
+        {"metawiki": [("Zoe/toc.js", "20250505050505")]},
+        dbnames={METAWIKI: "metawiki"},
+    )
+
+    written = edits.backfill_scripts([FRWIKI, METAWIKI], connect=replica.connect)
+
+    assert written == {METAWIKI: 1}
+    assert script_stamps() == {"Utilisateur:Lupin/popups.js": ""}
+
+
+def test_one_wikis_outage_does_not_hide_another_wikis_script_dates():
+    store("Utilisateur:Lupin/popups.js")
+    store("User:Zoe/toc.js", wiki=METAWIKI)
+    replica = Replica(
+        {"metawiki": [("Zoe/toc.js", "20250505050505")]},
+        unreachable=("frwiki",),
+    )
+
+    written = edits.backfill_scripts([FRWIKI, METAWIKI], connect=replica.connect)
+
+    # The wiki that answered is stamped and the one that did not is left as it
+    # was. Letting the outage out of here would abandon every wiki after it.
+    assert written == {METAWIKI: 1}
+    assert script_stamps() == {"Utilisateur:Lupin/popups.js": ""}
+    assert script_stamps(METAWIKI) == {"User:Zoe/toc.js": "20250505050505"}

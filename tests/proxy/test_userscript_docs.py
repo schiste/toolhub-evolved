@@ -196,6 +196,46 @@ def test_an_answer_that_is_not_a_query_at_all_finds_nothing():
     assert docs.resolved({"error": {"code": "maxlag"}}, ("User:Tom/script",)) == {}
 
 
+def test_a_page_list_that_is_not_a_list_answers_about_nothing():
+    """Without `formatversion=2` the API keys pages by pageid instead of listing them."""
+    payload = {"query": {"pages": {"2678531": {"pageid": 2678531, "title": "User:Tom/helper"}}}}
+    # Reading that shape as a list would mean iterating the pageid strings and
+    # concluding every page asked about is missing. Answering about none of them
+    # is the difference between "not found" and "found nothing".
+    assert docs.resolved(payload, ("User:Tom/helper",)) == {}
+
+
+def test_a_hop_the_wiki_reported_only_half_of_is_not_followed():
+    # A hop needs both ends. One with only a `from` names no destination, and
+    # treating the title as its own target would report the redirect source as
+    # the documentation page.
+    payload = {
+        "query": {
+            "redirects": [{"from": "User:Tom/helper"}, {"from": "User:Ann/tool", "to": "Help:Tool"}],
+            "pages": [{"pageid": 1, "title": "Help:Tool"}, {"pageid": 2, "title": "User:Tom/helper"}],
+        }
+    }
+    assert docs.resolved(payload, ("User:Tom/helper", "User:Ann/tool")) == {
+        "User:Tom/helper": "User:Tom/helper",
+        "User:Ann/tool": "Help:Tool",
+    }
+
+
+def test_a_redirect_chain_longer_than_the_hop_budget_lands_nowhere():
+    # Wikis hold double and triple redirects, and a loop is a redirect a bot has
+    # not fixed yet. Following forever would hang the run; stopping short and
+    # publishing whichever title the budget ran out on would name a page the
+    # reader was only passing through.
+    chain = [f"User:Tom/hop{index}" for index in range(6)]
+    payload = {
+        "query": {
+            "redirects": [{"from": source, "to": target} for source, target in zip(chain, chain[1:], strict=False)],
+            "pages": [{"pageid": 1, "title": chain[-1]}],
+        }
+    }
+    assert docs.resolved(payload, (chain[0],)) == {}
+
+
 # --- asking one wiki -------------------------------------------------------
 
 
@@ -278,6 +318,27 @@ def test_the_request_cap_leaves_the_rest_of_the_wiki_pending():
     counts = docs.resolve(wiki.request, ENWIKI, limit=1)
     assert counts["requests"] == 1
     assert sum(1 for _title, (_docs, checked) in stored().items() if checked) == 50
+
+
+def test_a_run_whose_budget_matches_the_backlog_stops_without_asking_for_more():
+    # The other way the loop ends. Every other test either runs out of pages or
+    # is cut short mid-batch; here the last chunk of the batch spends the last
+    # request, so the budget is what stops it -- and it must stop rather than
+    # ask `pending` for a batch it has no request left to send.
+    store(*(f"User:Tom/script{index:03d}.js" for index in range(50)))
+    wiki = Wiki()
+    counts = docs.resolve(wiki.request, ENWIKI, limit=1)
+    assert counts["requests"] == 1
+    assert len(wiki.asked) == 1
+    assert counts["checked"] == 50
+
+
+def test_a_batch_with_nothing_to_stamp_writes_nothing():
+    # `apply_docs` opens a session per batch, and a batch cut short before its
+    # first request has no page to stamp. Asking the database for rows matching
+    # an empty list is a query that can only return nothing.
+    with db.session_scope() as session:
+        assert docs.apply_docs(session, {}, (), utcnow()) == 0
 
 
 def test_a_wiki_that_stops_answering_leaves_the_unasked_pages_pending():

@@ -730,3 +730,201 @@ def test_a_nonsense_concurrency_setting_never_opens_more_sockets_than_the_cap(mo
     assert enrichment.concurrency() == enrichment.DEFAULT_CONCURRENCY
     monkeypatch.setenv("LIFTWING_CONCURRENCY", "0")
     assert enrichment.concurrency() == 1
+
+
+# --- replies that are not the shape the contract assumes -------------------
+
+
+@pytest.mark.parametrize(
+    "response",
+    ["not a mapping", {}, {"choices": "not a list"}, {"choices": []}, {"choices": [{}]}],
+    ids=["not-a-dict", "no-choices", "choices-not-a-list", "no-choices-at-all", "choice-without-message"],
+)
+def test_a_response_that_is_not_a_chat_completion_yields_no_text(response):
+    # The endpoint is reached over the network and its body is untrusted JSON:
+    # an error envelope must read as "no answer", never raise inside a sweep
+    # that still has hundreds of pages to get through.
+    assert enrichment.model_text(response) == ""
+
+
+def test_an_unterminated_fence_leaves_nothing_to_parse():
+    assert enrichment.parse_json("```") is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [42, {"text": "a description"}, ["a description"]],
+    ids=["number", "object", "array"],
+)
+def test_a_description_that_is_not_prose_is_refused_by_type(value):
+    assert enrichment.check({"description": value}).get("description").reason.startswith("not a string")
+
+
+def test_a_description_carrying_a_link_is_refused():
+    # A description is rendered on the tool page. A URL the model invented
+    # there is a link this site would be publishing on somebody else's behalf.
+    verdict = enrichment.check({"description": "A gadget documented at https://example.invalid/docs page."})
+    assert verdict["description"] == enrichment.Checked("", "contains a URL")
+
+
+def test_keywords_offered_as_anything_but_a_list_are_refused_by_type():
+    assert enrichment.check({"keywords": "links, css"})["keywords"].reason == "not a list (str)"
+
+
+def test_a_keyword_list_mixing_prose_and_junk_keeps_only_the_strings():
+    accepted = enrichment.accept({"keywords": ["links", 7, None, {"tag": "css"}, "css"]})
+
+    assert accepted["keywords"] == ["links", "css"]
+
+
+def test_a_reply_that_parsed_to_nothing_stores_nothing():
+    # `accept` is the last gate before a value is written under a person's
+    # name, so it has to hold for the empty reply as well as the bad one.
+    assert enrichment.accept(None) == {}
+    assert enrichment.accept({}) == {}
+
+
+def test_reading_source_for_an_empty_wave_asks_the_database_nothing():
+    with db.session_scope() as session:
+        assert enrichment.with_source(session, []) == []
+
+
+# --- binding the caller to the configured endpoint -------------------------
+
+
+LIFTWING_ENDPOINT = (
+    "https://api.wikimedia.org/service/lw/inference/v1/models/llm-qwen36-27b/openai/v1/chat/completions"
+)
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+        self.raised = False
+
+    def raise_for_status(self):
+        self.raised = True
+
+    def json(self):
+        return self.payload
+
+
+class _FakeSession:
+    """One `requests.Session`, recording how many of it a run opens."""
+
+    opened: list["_FakeSession"] = []
+
+    def __init__(self):
+        type(self).opened.append(self)
+        self.posts = []
+
+    def post(self, url, *, json, headers, timeout):
+        self.posts.append((url, json, headers, timeout))
+        return _FakeResponse(reply(REAL_REPLY))
+
+
+@pytest.fixture
+def _liftwing(monkeypatch):
+    monkeypatch.setenv("LIFTWING_API_URL", LIFTWING_ENDPOINT)
+    monkeypatch.setenv("LIFTWING_MODEL", "llm-qwen36-27b")
+    monkeypatch.delenv("LIFTWING_USER_AGENT", raising=False)
+    monkeypatch.delenv("LIFTWING_TIMEOUT_SECONDS", raising=False)
+    _FakeSession.opened = []
+    monkeypatch.setattr(enrichment.requests, "Session", _FakeSession)
+
+
+def test_the_caller_posts_to_the_allowlisted_endpoint_and_identifies_this_tool(_liftwing):
+    ask = enrichment.liftwing_caller()
+
+    assert enrichment.model_text(ask({"messages": []})) == REAL_REPLY
+
+    url, _payload, headers, timeout = _sole_post()
+    assert url == LIFTWING_ENDPOINT
+    # Wikimedia asks every client to say who it is, on both header spellings.
+    assert headers["User-Agent"] == enrichment.DEFAULT_USER_AGENT
+    assert headers["Api-User-Agent"] == enrichment.DEFAULT_USER_AGENT
+    assert timeout == enrichment.DEFAULT_TIMEOUT_SECONDS
+
+
+def _sole_post():
+    """The single request the one opened session recorded."""
+    [session] = _FakeSession.opened
+    return session.posts[0]
+
+
+def test_one_thread_reuses_its_connection_across_pages(_liftwing):
+    ask = enrichment.liftwing_caller()
+
+    ask({"messages": []})
+    ask({"messages": []})
+
+    # A bare `requests.post` would pay a TLS handshake per page, which at this
+    # concurrency is most of what the endpoint sees.
+    assert len(_FakeSession.opened) == 1
+
+
+def test_each_worker_thread_gets_a_connection_of_its_own(_liftwing):
+    ask = enrichment.liftwing_caller()
+    started = threading.Barrier(2, timeout=10)
+
+    def call():
+        started.wait()
+        ask({"messages": []})
+
+    threads = [threading.Thread(target=call) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    # One shared Session across threads is not documented as safe; thread-local
+    # storage is what buys pooling without that question.
+    assert len(_FakeSession.opened) == 2
+
+
+def test_a_timeout_below_a_second_is_raised_to_one(_liftwing, monkeypatch):
+    monkeypatch.setenv("LIFTWING_TIMEOUT_SECONDS", "0")
+    ask = enrichment.liftwing_caller()
+    ask({"messages": []})
+
+    assert _sole_post()[3] == 1
+
+
+def test_the_configured_model_is_empty_when_inference_is_switched_off(monkeypatch):
+    monkeypatch.delenv("LIFTWING_MODEL", raising=False)
+    assert enrichment.configured_model() == ""
+    monkeypatch.setenv("LIFTWING_MODEL", "  llm-qwen36-27b  ")
+    assert enrichment.configured_model() == "llm-qwen36-27b"
+
+
+def test_a_wave_whose_pages_all_vanished_costs_no_request(monkeypatch):
+    """Every page in a slice can go away between the window and the wave.
+
+    The census rewrites pages mid-run, so a slice can be emptied by deletions
+    or by bodies shrinking below the floor. That is not the end of the sweep --
+    the waves behind it are still worth asking about.
+    """
+    for index in range(4):
+        store(f"User:Anomie/s{index}.js", basename=f"s{index}.js", fingerprint=f"f{index}")
+    monkeypatch.setenv("LIFTWING_CONCURRENCY", "2")
+    asked: list[object] = []
+    monkeypatch.setattr(enrichment, "liftwing_caller", lambda: (lambda payload: asked.append(payload) or reply(REAL_REPLY)))
+    monkeypatch.setattr(enrichment, "configured_model", lambda: "llm-qwen36-27b")
+    monkeypatch.setattr(catalog_projection, "refresh_tool_names", lambda names: {})  # noqa: ARG005
+    real_with_source = enrichment.with_source
+    emptied = []
+
+    def with_source(session, candidates):
+        """Empty the first wave only, as deletions mid-run would."""
+        if not emptied:
+            emptied.append(candidates)
+            return []
+        return real_with_source(session, candidates)
+
+    monkeypatch.setattr(enrichment, "with_source", with_source)
+
+    result = enrichment.sweep(limit=enrichment.BATCH)
+
+    # The first wave is skipped without a request; the second is still asked.
+    assert result["counts"]["asked"] == 2
+    assert len(asked) == 2
