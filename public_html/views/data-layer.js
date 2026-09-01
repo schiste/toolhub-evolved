@@ -163,6 +163,7 @@ function summaryHTML(payload) {
 /** @param {any} payload */
 function fieldsHTML(payload) {
 	const tools = Number(payload?.tools) || 0;
+	/** @type {any[]} */
 	const fields = Array.isArray(payload?.fields) ? payload.fields : [];
 	const rows = fields
 		.map(
