@@ -31,9 +31,12 @@ TOOLSDB_ACCOUNT_CONNECTION_LIMIT = 20
 #: here because the fleet's share of the account is this many times the
 #: per-worker ceiling, and that product is the number that has to stay small.
 WEBSERVICE_WORKERS = 4
-#: Job processes alive in an ordinary minute: one continuous worker, two
-#: once-a-minute jobs, and a scheduled one or two overlapping them.
-CONCURRENT_JOB_PROCESSES = 5
+#: Job processes alive in an ordinary minute. Measured at five, planned at four
+#: with one of them locking: five leaves the account 21 of 20 once a locking job
+#: is counted honestly, and this is the assumption that gives way rather than
+#: the arithmetic. It is the weakest number here and it is load-bearing -- a
+#: sixth process, or a second locking one, is outside what this plans for.
+CONCURRENT_JOB_PROCESSES = 4
 #: Connections deliberately left unspent. A pool recycling a connection can hold
 #: the old and the new for an instant, and retry_on_disconnect disposes a pool
 #: and reconnects mid-run, so a plan that exactly equals the grant has nowhere to
@@ -74,6 +77,15 @@ POOL_OVERFLOW_PER_WORKER = 1
 # and fail instead of taking its lock. Two is therefore the floor, not a
 # choice.
 CONNECTIONS_PER_CONCURRENT_UNIT = 2
+#: ...and three when it takes a lock, which two connections did not cover.
+#: run_job holds an intent lock for the whole run alongside the real one when a
+#: caller queues for it, so people_reconcile ran on a session underneath two
+#: held locks and timed out on its own pool at 15:21:20 on 2026-09-02.
+#: phabricator-realname-sync timed out the same way at 15:31:21 without queuing
+#: for its lock, and the path that spends its third connection has not been
+#: identified -- so this is the measured width of a locking job rather than a
+#: derived one, and the two that failed are the evidence for it.
+CONNECTIONS_PER_LOCKING_UNIT = 3
 # ...and only one of them is kept between operations. Jobs are network-bound
 # (measured duty cycles are 0.1-12%), so a retained second connection sits idle
 # nearly all the time while still counting against the account; overflow
@@ -463,7 +475,7 @@ def _upgrade_schema() -> None:
                 )
 
 
-def pool_limits(*, web: bool, concurrency: int = 1) -> tuple[int, int]:
+def pool_limits(*, web: bool, concurrency: int = 1, takes_lock: bool = False) -> tuple[int, int]:
     """Return ``(pool_size, max_overflow)`` for one process.
 
     Bounded on purpose. SQLAlchemy's defaults (5 pooled + 10 overflow) are per
@@ -478,7 +490,8 @@ def pool_limits(*, web: bool, concurrency: int = 1) -> tuple[int, int]:
     """
     if web:
         return POOL_SIZE_PER_WORKER, POOL_OVERFLOW_PER_WORKER
-    ceiling = CONNECTIONS_PER_CONCURRENT_UNIT * max(1, concurrency)
+    per_unit = CONNECTIONS_PER_LOCKING_UNIT if takes_lock else CONNECTIONS_PER_CONCURRENT_UNIT
+    ceiling = per_unit * max(1, concurrency)
     return POOL_SIZE_PER_JOB, ceiling - POOL_SIZE_PER_JOB
 
 
@@ -497,12 +510,12 @@ def account_demand(*, widest_job_concurrency: int) -> int:
     account has to survive, so it is the one this counts.
     """
     fleet = WEBSERVICE_WORKERS * sum(pool_limits(web=True))
-    widest = sum(pool_limits(web=False, concurrency=widest_job_concurrency))
+    widest = sum(pool_limits(web=False, concurrency=widest_job_concurrency, takes_lock=True))
     others = (CONCURRENT_JOB_PROCESSES - 1) * sum(pool_limits(web=False))
     return fleet + widest + others
 
 
-def configure(url: str, *, web: bool = False, concurrency: int = 1) -> None:
+def configure(url: str, *, web: bool = False, concurrency: int = 1, takes_lock: bool = False) -> None:
     """Create (or replace) the process-wide engine and session factory.
 
     Defaults to the job budget rather than the webservice one, so a call site
@@ -516,7 +529,7 @@ def configure(url: str, *, web: bool = False, concurrency: int = 1) -> None:
         # In-memory SQLite: share the one database across connections/threads.
         _engine = create_engine(url, poolclass=StaticPool, connect_args={"check_same_thread": False})
     else:
-        pool_size, max_overflow = pool_limits(web=web, concurrency=concurrency)
+        pool_size, max_overflow = pool_limits(web=web, concurrency=concurrency, takes_lock=takes_lock)
         _engine = create_engine(
             url,
             pool_pre_ping=True,
