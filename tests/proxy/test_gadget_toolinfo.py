@@ -28,7 +28,12 @@ DEFINITION = """
 @pytest.fixture(autouse=True)
 def _database():
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
+    backend.register(
+        application,
+        db_url="sqlite://",
+        secret_key="test-secret",
+        trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS,
+    )
     with application.app_context():
         yield
 
@@ -288,6 +293,22 @@ def test_a_gadget_reaches_the_catalogue_projection_like_any_other_tool():
     assert effective["for_wikis"] == [FRWIKI]
     assert ("tool_type", "gadget") in facets
     assert ("wiki", FRWIKI) in facets
+
+
+def test_a_gadget_reaches_the_projection_without_waiting_for_the_sweep():
+    gadget_inventory.ingest(FakeWiki().request, FRWIKI)
+    gadget_toolinfo.synchronize(FRWIKI)
+
+    # Deliberately no `refresh_candidates()`: nothing in that sweep notices a
+    # canonical record the census just rewrote, so a gadget renamed or
+    # relicensed on its wiki would keep its old projection until the projection
+    # version happened to change.
+    with db.session_scope() as session:
+        row = session.get(CatalogToolProjection, "gadget-fr.wikipedia.org-popups")
+        effective = row.effective_record if row else None
+
+    assert effective is not None
+    assert effective["title"] == "Popups"
 
 
 def test_the_projection_says_a_wiki_declared_this_not_toolhub():

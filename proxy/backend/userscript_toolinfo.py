@@ -273,8 +273,9 @@ def _wanted(
 
 def _write(
     session: Session, wiki: str, entries: list[UserScriptDirectoryEntry], now: datetime
-) -> tuple[dict[str, int], list[str]]:
+) -> tuple[dict[str, int], list[str], list[str]]:
     counts = dict.fromkeys(COUNT_FIELDS, 0)
+    written: list[str] = []
     wanted = _wanted(entries, _content_models(session, wiki), _docs_titles(session, wiki), counts)
     prefix = canonical_tools.escape_like(wiki_prefix(wiki))
     ours = {
@@ -301,6 +302,7 @@ def _write(
             counts["unchanged"] += 1
             continue
         _describe(row, record, now)
+        written.append(name)
         counts["written"] += 1
     retired = sorted(name for name in ours if name not in wanted)
     for name in retired:
@@ -309,7 +311,7 @@ def _write(
         # asserted this tool exists has stopped saying so.
         session.delete(ours[name])
         counts["retired"] += 1
-    return counts, retired
+    return counts, retired, written
 
 
 def live(session: Session, wiki: str) -> list[UserScriptDirectoryEntry]:
@@ -327,16 +329,26 @@ def synchronize(wiki: str) -> dict[str, Any]:
     re-deciding what counts as a tool costs seconds and never depends on a wiki
     being reachable.
     """
-    from backend import api_cache, catalog_facets  # noqa: PLC0415 - avoid backend startup cycles.
+    from backend import api_cache, catalog_facets, catalog_projection  # noqa: PLC0415 - avoid backend startup cycles.
     from backend.people_reconcile import enqueue_tool_names_in_session  # noqa: PLC0415
 
     now = utcnow()
     with db.session_scope() as session:
-        counts, retired = _write(session, wiki, live(session, wiki), now)
+        counts, retired, written = _write(session, wiki, live(session, wiki), now)
         if retired:
             enqueue_tool_names_in_session(session, retired, reason="userscript_retired")
         if counts["written"] or retired:
             catalog_facets.mark_dirty(session)
     for name in retired:
         api_cache.invalidate_tool(name)
+    if written:
+        # The projection is what every read surface actually serves, and
+        # nothing else will tell it this record moved: `refresh_candidates`
+        # notices a version bump, an error, or a newer analysis report, and a
+        # census writes none of those. Left unsent, a licence or a title the
+        # census stored sits in the canonical row indefinitely -- which is how
+        # 41,826 rows came to be newer than the projection reporting on them.
+        # Bounded by construction: `_write` skips a row whose record is
+        # unchanged, so a steady-state pass sends nothing at all.
+        catalog_projection.refresh_tool_names(written)
     return {"wiki": wiki, **counts}

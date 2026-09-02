@@ -30,17 +30,22 @@ from backend.models import (
     UserScriptPage,
     utcnow,
 )
-from backend.sync import REVIEW_APPROVED, SOURCE_WIKI_GADGET
+from backend.sync import REVIEW_APPROVED, SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 _log = logging.getLogger(__name__)
 
+# 5: user-script rows are attributed to the wiki that hosts them rather than
+# to Toolhub. Every version-4 row synthesized from a wiki names the wrong
+# source, so they must all re-project; and because the projection had no way to
+# notice a changed canonical record until this version either, the re-projection
+# is also what finally carries every licence the census has been storing.
 # 4: purpose annotations (tasks, audiences) are lifted out of `annotations`.
 # Version 3 was already used for Wikimedia user-script maintainership, so
 # existing version-3 rows must all re-project.
-PROJECTION_VERSION = 4
+PROJECTION_VERSION = 5
 # Measured 2026-08-27: this sweep costs 0.046s a tool and was capped at 500,
 # so it finished in 23 seconds of its hour against a catalogue of 53,178. The cap is
 # a safety rail against a runaway loop, not a throughput setting; sized here so
@@ -73,7 +78,15 @@ FILL_ONLY_SOURCES = frozenset({SOURCE_INFERENCE})
 # that rather than assume. Labelling a synthesized gadget record
 # `official_toolhub` would have every card, facet and evidence panel say
 # Toolhub asserted something it has never heard of.
-PROJECTION_SOURCE_BY_ROW = {SOURCE_WIKI_GADGET: SOURCE_GADGET}
+#
+# Every row source that this module synthesizes belongs here. Falling through to
+# the `SOURCE_CANONICAL` default is not a neutral outcome: it is that same false
+# claim, made silently. User scripts went that way for 37,863 rows, which is why
+# the mapping is now written as one entry per wiki source rather than one entry.
+PROJECTION_SOURCE_BY_ROW = {
+    SOURCE_WIKI_GADGET: SOURCE_GADGET,
+    SOURCE_WIKI_USERSCRIPT: SOURCE_WIKIMEDIA_USER_SCRIPT,
+}
 
 LIST_FIELDS = (
     "keywords",

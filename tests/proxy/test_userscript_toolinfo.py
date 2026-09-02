@@ -11,8 +11,14 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import db, userscript_toolinfo  # noqa: E402
-from backend.models import CanonicalToolCache, UserScriptDirectoryEntry, UserScriptPage, utcnow  # noqa: E402
+from backend import catalog_projection, db, userscript_toolinfo  # noqa: E402
+from backend.models import (  # noqa: E402
+    CanonicalToolCache,
+    CatalogToolProjection,
+    UserScriptDirectoryEntry,
+    UserScriptPage,
+    utcnow,
+)
 from backend.sync import (  # noqa: E402
     LIFECYCLE_ACTIVE,
     LIFECYCLE_ARCHIVED,
@@ -28,7 +34,12 @@ FRWIKI = "fr.wikipedia.org"
 @pytest.fixture(autouse=True)
 def _database():
     application = Flask(__name__)
-    backend.register(application, db_url="sqlite://", secret_key="test-secret", trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS)
+    backend.register(
+        application,
+        db_url="sqlite://",
+        secret_key="test-secret",
+        trusted_hosts=backend.LOCAL_TRUSTED_HOSTS + backend.DEFAULT_TRUSTED_HOSTS,
+    )
     with application.app_context():
         yield
 
@@ -483,3 +494,57 @@ def test_a_dated_page_always_publishes_the_licence_that_date_implies():
     # 3.0, not 4.0: the 2023 Terms could not relicense a page published in 2009.
     assert record["created_date"] == "2009-01-01T00:00:00Z"
     assert record["license"] == "CC-BY-SA-3.0"
+
+
+# --- reaching the projection every read surface serves ---
+
+
+def _projected(name="userscript-fr.wikipedia.org-lupin-popups.js"):
+    with db.session_scope() as session:
+        row = session.get(CatalogToolProjection, name)
+        return row.effective_record, row.provenance
+
+
+def test_the_projection_says_a_wiki_hosts_this_script_not_toolhub():
+    a_script(created="20090101000000")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    _effective, provenance = _projected()
+
+    # Toolhub has never heard of this page. A row source missing from
+    # `PROJECTION_SOURCE_BY_ROW` falls through to `official_toolhub`, which put
+    # that claim in Toolhub's mouth on every user-script card and evidence
+    # panel -- and at confidence 100, outranking the sources that had looked.
+    assert {entry["source"] for entry in provenance["title"]} == {catalog_projection.SOURCE_WIKIMEDIA_USER_SCRIPT}
+    assert (
+        provenance["title"][0]["confidence"]
+        == catalog_projection.SOURCE_CONFIDENCE[catalog_projection.SOURCE_WIKIMEDIA_USER_SCRIPT]
+    )
+
+
+def test_a_licence_the_census_stored_reaches_the_projection_without_a_sweep():
+    a_script(created="20090101000000")
+    userscript_toolinfo.synchronize(FRWIKI)
+
+    effective, _provenance = _projected()
+
+    # No `refresh_candidates()` here on purpose. That sweep re-projects on a
+    # version bump, an error, or a newer analysis report, and a census writes
+    # none of the three, so the producer has to send the names it wrote. Until
+    # it did, a licence resolved from the page's creation date sat in the
+    # canonical row while the catalogue went on reporting the field as missing.
+    assert effective["license"] == "CC-BY-SA-3.0"
+
+
+def test_a_pass_that_changed_nothing_asks_for_no_reprojection(monkeypatch):
+    a_script()
+    userscript_toolinfo.synchronize(FRWIKI)
+    sent = []
+    monkeypatch.setattr(catalog_projection, "refresh_tool_names", sent.append)
+
+    summary = userscript_toolinfo.synchronize(FRWIKI)
+
+    # What keeps the notification affordable: a wiki whose scripts have not
+    # moved re-projects nothing, so the hourly census costs what it always did.
+    assert summary["unchanged"] == 1
+    assert sent == []
