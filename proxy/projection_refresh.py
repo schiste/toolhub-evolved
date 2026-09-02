@@ -271,7 +271,9 @@ def main(argv: list[str] | None = None) -> int:
         default=int(os.environ.get("PROJECTION_MAX_AGE_SECONDS", DEFAULT_MAX_AGE_SECONDS)),
     )
     args = parser.parse_args(argv)
-    job_runner.configure(concurrency=PARALLEL_SYNC_WORKERS)
+    # Its own phases take advisory locks -- catalog-sync and people-reconcile --
+    # so it is a locking job even though it does not go through run_job.
+    job_runner.configure(concurrency=PARALLEL_SYNC_WORKERS, takes_lock=True)
     report = run(force=args.force, full_sources=args.full_sources, max_age_seconds=args.max_age_seconds)
     sys.stdout.write("projection-refresh: " + json.dumps(report, sort_keys=True) + "\n")
     return 0

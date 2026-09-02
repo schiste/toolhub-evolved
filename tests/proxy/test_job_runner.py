@@ -697,8 +697,8 @@ def test_the_remote_phase_of_an_identities_run_happens_before_the_lock(monkeypat
     monkeypatch.setattr(entrypoint.db, "advisory_lock", lock)
     monkeypatch.setattr(entrypoint.db, "advisory_lock_holder", lambda _name: None)
     monkeypatch.setattr(entrypoint.db, "session_scope", contextlib.nullcontext)
-    monkeypatch.setattr(entrypoint.job_runner, "configure", lambda: None)
-    monkeypatch.setattr(job_runner, "configure", lambda: None)
+    monkeypatch.setattr(entrypoint.job_runner, "configure", lambda **_: None)
+    monkeypatch.setattr(job_runner, "configure", lambda **_: None)
     monkeypatch.setattr(
         entrypoint.people_reconcile,
         "resolve_remote_batches",
@@ -729,8 +729,8 @@ def test_a_full_pass_still_resolves_inside_the_lock(monkeypatch):
     monkeypatch.setattr(entrypoint.db, "advisory_lock", lock)
     monkeypatch.setattr(entrypoint.db, "advisory_lock_holder", lambda _name: None)
     monkeypatch.setattr(entrypoint.db, "session_scope", contextlib.nullcontext)
-    monkeypatch.setattr(entrypoint.job_runner, "configure", lambda: None)
-    monkeypatch.setattr(job_runner, "configure", lambda: None)
+    monkeypatch.setattr(entrypoint.job_runner, "configure", lambda **_: None)
+    monkeypatch.setattr(job_runner, "configure", lambda **_: None)
     monkeypatch.setattr(
         entrypoint.people_reconcile,
         "resolve_remote_batches",
@@ -804,6 +804,21 @@ def test_a_skipped_run_hands_over_no_summary(monkeypatch, tmp_path):
 # search fan-out rather than as anything a job reported.
 
 
+def test_a_locking_job_gets_a_third_connection_for_the_lock_it_queues_behind():
+    # run_job holds an intent lock for the whole run alongside the real one when
+    # a caller queues, so the body's session is a third connection. Two was the
+    # ceiling that timed people-attribution-reconverge out on its own pool at
+    # 15:21:20 on 2026-09-02, and phabricator-realname-sync at 15:31:21.
+    assert sum(db.pool_limits(web=False, takes_lock=True)) == 3
+
+
+def test_run_job_declares_the_lock_it_takes_to_the_pool_that_has_to_hold_it():
+    # The declaration has to come from run_job: it is the code that takes the
+    # lock, and a job that forgets to mention it gets a pool too small to run in.
+    source = Path(job_runner.__file__).read_text(encoding="utf-8")
+    assert "configure(takes_lock=lock)" in source
+
+
 def test_a_job_gets_a_connection_for_its_lock_and_another_for_its_session():
     # advisory_lock() holds a connection for as long as its body runs and the
     # body then opens a session, so a one-connection ceiling would not deadlock
@@ -844,13 +859,12 @@ def test_the_account_supplies_the_fleet_and_the_widest_job_beside_it():
     assert demand + db.ACCOUNT_HEADROOM <= db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
 
 
-def test_widening_the_parallel_job_again_would_leave_the_account_no_headroom():
-    # The guard the previous version of this test did not provide. Two units for
-    # projection_refresh plans exactly 20 of the 20 connections granted, which is
-    # the state production was in when it returned a max_user_connections 500 --
-    # not over the line, but with nothing left for a recycle or a retry. That has
-    # to fail here, or it comes back.
-    assert db.account_demand(widest_job_concurrency=2) == db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
+def test_widening_the_parallel_job_again_would_overrun_the_account():
+    # The guard the earlier version of this test did not provide. It was first
+    # written asserting the old setting exceeded the grant and failed, because
+    # back when a locking job was counted at two the old setting spent exactly
+    # the grant rather than passing it -- "spends everything" is what explains an
+    # intermittent failure, and it is why ACCOUNT_HEADROOM exists at all.
     assert db.account_demand(widest_job_concurrency=2) + db.ACCOUNT_HEADROOM > db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
 
 
@@ -872,4 +886,4 @@ def test_projection_refresh_tells_the_pool_the_same_width_it_tells_its_thread_po
 
     source = Path(projection_refresh.__file__).read_text(encoding="utf-8")
     assert "ThreadPoolExecutor(max_workers=PARALLEL_SYNC_WORKERS" in source
-    assert "job_runner.configure(concurrency=PARALLEL_SYNC_WORKERS)" in source
+    assert "job_runner.configure(concurrency=PARALLEL_SYNC_WORKERS, takes_lock=True)" in source
