@@ -1,5 +1,6 @@
 {"module":"proxy.backend.db","symbol":"Base","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bari2fb2mafbyvh23zbeb53tgq","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"Base.metadata.create_all","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tccambxbkdukjexcfusaire3qq","file":"proxy/backend/db.py"}
+{"module":"proxy.backend.db","symbol":"CONNECTIONS_PER_CONCURRENT_UNIT","kind":"global_variable","node_id":"global_variable:toolhub-evolved:3d47g2fdcknbytvuywhaqe44ne","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"Callable","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yiflm7fvl6h26rzhxbxuyos3s4","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"DEFAULT_LOCK_RETRIES","kind":"global_variable","node_id":"global_variable:toolhub-evolved:uirknqatyvl4jh47dsby7oj4oy","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"Engine","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5dfyhmuwkruqcmkw7uloh6cnnu","file":"proxy/backend/db.py"}
@@ -7,6 +8,7 @@
 {"module":"proxy.backend.db","symbol":"LOCK_RETRY_BACKOFF_SECONDS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:lskcbgt2pulgw3gnfy53cxptny","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"POOL_OVERFLOW_PER_WORKER","kind":"global_variable","node_id":"global_variable:toolhub-evolved:wcpu6zdcmjnsndbc6o6iipubgm","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"POOL_RECYCLE_SECONDS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:e5np37ibswy5uyjoe3q4sty4xm","file":"proxy/backend/db.py"}
+{"module":"proxy.backend.db","symbol":"POOL_SIZE_PER_JOB","kind":"global_variable","node_id":"global_variable:toolhub-evolved:gubymvo4cwbitfmvp4qir6iqpq","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"POOL_SIZE_PER_WORKER","kind":"global_variable","node_id":"global_variable:toolhub-evolved:3vdgxrg73wuf5nsoypitgtmaqy","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"POOL_TIMEOUT_SECONDS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:xqfwuc4hzzl32dt2yxchccshge","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"RuntimeError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4dvvyfniyv7j63a37a4tuus47m","file":"proxy/backend/db.py"}
@@ -17,8 +19,10 @@
 {"module":"proxy.backend.db","symbol":"StaticPool","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:dpzh32t2wooianteud374oemia","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"T","kind":"global_variable","node_id":"global_variable:toolhub-evolved:bznakd7523qjspfc7bivyfh6he","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"TABLE_EXISTS_ERRNO","kind":"global_variable","node_id":"global_variable:toolhub-evolved:cig5nmv7smf7mf3aooiuifzdve","file":"proxy/backend/db.py"}
+{"module":"proxy.backend.db","symbol":"TOOLSDB_ACCOUNT_CONNECTION_LIMIT","kind":"global_variable","node_id":"global_variable:toolhub-evolved:phy3xkvhiuiwytbqbgqcbcdnmu","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"TRANSIENT_LOCK_ERRNOS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:grwqq6ce3wr4icaouhrk273eni","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"TypeVar","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nrfmietenpm45xp5vbq4dln5lq","file":"proxy/backend/db.py"}
+{"module":"proxy.backend.db","symbol":"WEBSERVICE_WORKERS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:x2ebqrkq5yxsdbhbrwfczzwtyy","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"_create_missing_tables","kind":"function","node_id":"function:toolhub-evolved:alqqcsea4tczgtirb2msganetq","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"_create_missing_tables","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:dzs5mf3rftauxc7dt2jbrf274m","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"_engine","kind":"global_variable","node_id":"global_variable:toolhub-evolved:ag3g57qeohzwj7wa3msjkisxiq","file":"proxy/backend/db.py"}
@@ -62,8 +66,11 @@
 {"module":"proxy.backend.db","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:r2sin6sxlm5zwaj75xzz22sw3m","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"is_transient_lock_error","kind":"function","node_id":"function:toolhub-evolved:wkjllspd7dv2lodkbnbnln3vka","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"is_transient_lock_error","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:y3fygy5zraxbnue5hkypvau5pe","file":"proxy/backend/db.py"}
+{"module":"proxy.backend.db","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:j4muwhzpddk4np6wi5w2lxxgq4","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nfw3pgwujsokcsf2vtyocmzetq","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:q3ujrz2wbjmzxvwcaakygf3g7e","file":"proxy/backend/db.py"}
+{"module":"proxy.backend.db","symbol":"pool_limits","kind":"function","node_id":"function:toolhub-evolved:msnofzszqhn5m6efvvrfg34hx4","file":"proxy/backend/db.py"}
+{"module":"proxy.backend.db","symbol":"pool_limits","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:x2v2xm37xqqwmutidivhth77sa","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"range","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nekz3bvtyscdgeyvgv72vd3iiq","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"range","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xhpsz4kd2hi7szscsh3wfciab4","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"run_with_lock_retry","kind":"function","node_id":"function:toolhub-evolved:telvi3dxaqwkuklivxopszvqxu","file":"proxy/backend/db.py"}
