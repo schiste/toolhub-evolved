@@ -24,20 +24,39 @@ T = TypeVar("T")
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
-# Per-process connection budget. One ToolsDB account allows 20 connections, and
-# two kinds of process spend them. Sizing both from the same pair of numbers
-# said a job costs what a webservice worker costs, which is what exhausted the
-# account: the webservice is budgeted to want 16 of the 20 on its own, so the
-# jobs have to fit in what is left rather than in a worker-shaped pool each.
+#: What the tool account may hold open across every process at once. Not ours
+#: to raise -- it is the ToolsDB grant, and the numbers below are shares of it.
+TOOLSDB_ACCOUNT_CONNECTION_LIMIT = 20
+#: uwsgi workers the Toolforge webservice runs, each of four threads. Declared
+#: here because the fleet's share of the account is this many times the
+#: per-worker ceiling, and that product is the number that has to stay small.
+WEBSERVICE_WORKERS = 4
+
+# Per-process connection budget. One account allows 20 connections and two
+# kinds of process spend them. Sizing both from the same pair of numbers said a
+# job costs what a webservice worker costs, which is what exhausted the
+# account.
 #
-# The webservice is four uwsgi workers of four threads, so 16 requests really
-# can be in flight at once and a parallel page fan-out really does ask for
-# that. Most requests are static files or shared-cache hits and never take a
-# connection at all, so a small pool is not the bottleneck; exceeding the
-# account limit would be, and it fails as connection errors rather than as
-# slowness.
-POOL_SIZE_PER_WORKER = 2
-POOL_OVERFLOW_PER_WORKER = 2
+# The webservice is a fleet, not a process: at 2 + 2 it claimed 16 of the 20 on
+# its own and left four for every job together, so a routine minute -- a page
+# fan-out during a scheduled run -- put the account over and returned HTTP 500.
+# Four threads per worker means a worker can still want more than it may have;
+# the extra requests now wait on pool_timeout for a connection that exists
+# instead of racing for one the database will refuse. Waiting is usually the
+# better failure, because most requests are static files or shared-cache hits
+# that take no connection at all.
+#
+# It is not free. Measured on 2026-09-02, 28.8% of requests took over a second
+# and the slowest took 28.9s (/v1/catalog/search/facets/?include_archived=1,
+# then /v1/coverage/ at 11.4s), so one such request can hold a worker's
+# connection for longer than POOL_TIMEOUT_SECONDS and make its neighbors fail
+# waiting. That trade is deliberate -- a queue timeout is bounded, local to one
+# worker and attributable, where exhausting the account failed requests at
+# random across the whole fleet -- but it is only sound while the slow tail
+# stays small. Those endpoints need a cache or a cheaper query; until then this
+# ceiling is doing more work than it should have to.
+POOL_SIZE_PER_WORKER = 1
+POOL_OVERFLOW_PER_WORKER = 1
 # A job process is not a webservice worker and must not be budgeted like one.
 # One unit of work needs two connections rather than one: advisory_lock() holds
 # a connection of its own for as long as its body runs, and the body then opens
