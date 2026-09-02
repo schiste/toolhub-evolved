@@ -80,7 +80,9 @@ def include_archived(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or 
 
 
 def _filtered_statement(params: Any) -> Select[tuple[CanonicalToolCache]]:  # noqa: ANN401
-    statement = select(CanonicalToolCache) if include_archived(params) else catalog_facets.default_population()
+    statement = (
+        catalog_facets.complete_population() if include_archived(params) else catalog_facets.default_population()
+    )
     predicate = search_predicate(params.get("q"))
     if predicate is not None:
         statement = statement.where(predicate)
@@ -103,21 +105,33 @@ def _facet_payload(session: Any, filtered: Any) -> dict[str, Any]:  # noqa: ANN4
     return catalog_facets.dynamic_payload(session, filtered)
 
 
-def _has_catalog_filters(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
-    """Whether this request departs from the population the global cache counts.
+def _departs_from_published_populations(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
+    """Whether this request narrows the catalog past any published aggregate.
 
-    The cached aggregate is built over `default_population()`, so asking for
-    archived tools widens the result set past what that cache describes and the
-    facets have to be counted for real. Reporting `False` here would serve
-    bucket counts for a different set of tools than the page lists.
+    `include_archived` is deliberately absent. It chooses between the two
+    populations the catalog publishes counts for rather than departing from
+    both, and treating it as a departure is what made every archived-inclusive
+    request count the whole catalog live -- 28.9s in production on 2026-09-02,
+    on the widest population there is. Every other filter here narrows to a set
+    no published aggregate describes, and serving a cached payload for one of
+    those would label the page with counts for different tools.
     """
     if str(params.get("q") or "").strip():
-        return True
-    if include_archived(params):
         return True
     if selected_statuses(params) != STATUS_VALUES:
         return True
     return any(_values(params, f"{field}__term") for field in FACET_FIELDS)
+
+
+def _has_catalog_filters(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
+    """Whether this request departs from the default catalog view.
+
+    Wider than `_departs_from_published_populations` by exactly
+    `include_archived`, because this answers a different question: whether the
+    row count being reported is the whole local catalog, which is what decides
+    the shape of the `replica` block.
+    """
+    return _departs_from_published_populations(params) or include_archived(params)
 
 
 def _include_facets(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
@@ -125,8 +139,8 @@ def _include_facets(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or m
 
 
 def _facets_for(session: Any, filtered: Any, params: Any) -> dict[str, Any]:  # noqa: ANN401
-    if not _has_catalog_filters(params):
-        cached = catalog_facets.cached_global_payload(session)
+    if not _departs_from_published_populations(params):
+        cached = catalog_facets.cached_global_payload(session, include_archived=include_archived(params))
         if cached is not None:
             return cached
     return _facet_payload(session, filtered)

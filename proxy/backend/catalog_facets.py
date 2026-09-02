@@ -28,6 +28,12 @@ if TYPE_CHECKING:
 
 STATE_KEY = "official_catalog"
 CACHE_KEY = "catalog:facets:v2"
+#: The same aggregate over every lifecycle, for readers who asked to see
+#: archived tools. It is a second published payload rather than a widening of
+#: the first because the two label different result pages and a reader may ask
+#: for either; counting the wider one per request cost 28.9s in production on
+#: 2026-09-02, which is the whole reason this key exists.
+CACHE_KEY_COMPLETE = "catalog:facets:v2:complete"
 DIRTY_KEY = "catalog:facets:dirty:v2"
 CACHE_VERSION = 2
 FACET_BUCKET_LIMIT = 50
@@ -59,6 +65,16 @@ def default_population() -> Select:
     has judged badly.
     """
     return select(CanonicalToolCache).where(CanonicalToolCache.lifecycle != LIFECYCLE_ARCHIVED)
+
+
+def complete_population() -> Select:
+    """Every catalogued row, archived included.
+
+    What `include_archived` asks for. Named beside `default_population()` so the
+    pair reads as the two populations the catalog publishes counts for, rather
+    than as one definition and one bare `select` inlined wherever it is needed.
+    """
+    return select(CanonicalToolCache)
 
 
 def selected_statuses(params: Any) -> frozenset[str]:  # noqa: ANN401 - Flask MultiDict or mapping
@@ -157,9 +173,14 @@ def dynamic_payload(session: Session, filtered: Select) -> dict[str, Any]:
     return payload_from_rows(_aggregate_rows(session, filtered))
 
 
-def cached_global_payload(session: Session) -> dict[str, Any] | None:
-    """Return the last atomically published global aggregate, if usable."""
-    row = session.get(ApiCacheMeta, CACHE_KEY)
+def cached_global_payload(session: Session, *, include_archived: bool = False) -> dict[str, Any] | None:
+    """Return the last atomically published global aggregate, if usable.
+
+    ``include_archived`` picks which published population answers the request.
+    Defaulting to the narrower one keeps a caller that has not thought about
+    archived tools from being handed counts for a page it is not showing.
+    """
+    row = session.get(ApiCacheMeta, CACHE_KEY_COMPLETE if include_archived else CACHE_KEY)
     if row is None:
         return None
     try:
@@ -212,34 +233,54 @@ def _touch_dirty(session: Session, value: str, now: datetime) -> bool:
     return bool(result.rowcount)
 
 
+#: Every aggregate this module publishes, with the population each one counts.
+#: One pass rebuilds them together so both describe the same generation; a
+#: reader toggling `include_archived` compares two counts of one catalog.
+PUBLISHED_POPULATIONS = ((CACHE_KEY, default_population), (CACHE_KEY_COMPLETE, complete_population))
+
+
+def _bucket_count(facets: dict[str, Any]) -> int:
+    return sum(
+        len(group[public_field]["buckets"])
+        for key, group in facets.items()
+        if (public_field := key.removeprefix("_filter_")) in group
+    )
+
+
 def rebuild_global_payload(*, force: bool = False) -> int:
-    """Atomically replace the global facet aggregate outside request paths."""
+    """Atomically replace the global facet aggregates outside request paths."""
     with db.advisory_lock("catalog-facets-v1", timeout_seconds=30 if force else 0) as acquired:
         if not acquired:
             return 0
         with db.session_scope() as session:
             dirty = session.get(ApiCacheMeta, DIRTY_KEY)
-            existing = session.get(ApiCacheMeta, CACHE_KEY)
-            if not force and dirty is None and existing is not None:
+            existing = {key: session.get(ApiCacheMeta, key) for key, _ in PUBLISHED_POPULATIONS}
+            # A payload this version introduced is absent on the first pass
+            # after the deploy that introduced it, and nothing marks the catalog
+            # dirty to announce that. Treating a missing payload as work is what
+            # publishes it at all, rather than waiting for the next edit.
+            if not force and dirty is None and all(row is not None for row in existing.values()):
                 return 0
-            facets = dynamic_payload(session, default_population())
             state = session.get(ToolCatalogSyncState, STATE_KEY)
-            wrapper = {
-                "version": CACHE_VERSION,
-                "generation": int(state.snapshot_generation or 0) if state is not None else 0,
-                "builtAt": utcnow().isoformat(timespec="seconds") + "Z",
-                "facets": facets,
-            }
-            value = json.dumps(wrapper, sort_keys=True, separators=(",", ":"))
-            if existing is None:
-                session.add(ApiCacheMeta(key=CACHE_KEY, value=value))
-            else:
-                existing.value = value
-                existing.updated_at = utcnow()
+            generation = int(state.snapshot_generation or 0) if state is not None else 0
+            built_at = utcnow().isoformat(timespec="seconds") + "Z"
+            published = 0
+            for key, population in PUBLISHED_POPULATIONS:
+                facets = dynamic_payload(session, population())
+                wrapper = {
+                    "version": CACHE_VERSION,
+                    "generation": generation,
+                    "builtAt": built_at,
+                    "facets": facets,
+                }
+                value = json.dumps(wrapper, sort_keys=True, separators=(",", ":"))
+                row = existing[key]
+                if row is None:
+                    session.add(ApiCacheMeta(key=key, value=value))
+                else:
+                    row.value = value
+                    row.updated_at = utcnow()
+                published += _bucket_count(facets)
             if dirty is not None:
                 session.delete(dirty)
-            return sum(
-                len(group[public_field]["buckets"])
-                for key, group in facets.items()
-                if (public_field := key.removeprefix("_filter_")) in group
-            )
+            return published

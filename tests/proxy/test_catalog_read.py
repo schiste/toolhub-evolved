@@ -342,7 +342,15 @@ def test_default_facet_counts_describe_the_default_population():
     ]
 
 
-def test_asking_for_archived_recounts_facets_instead_of_serving_the_cache(monkeypatch):
+def test_asking_for_archived_serves_a_published_aggregate_instead_of_recounting(monkeypatch):
+    """The counts still describe the widened page; they just arrive published.
+
+    Recounting them per request aggregated the widest population in the catalog
+    on every archived-inclusive request -- 28.9s in production on 2026-09-02,
+    the slowest request of the day. The bucket assertion is unchanged from when
+    this test demanded the recount, because it is the part that was never in
+    question: what changed is that no live count may produce it.
+    """
     _archive("gamma", title="Gamma script")
     assert catalog_facets.rebuild_global_payload(force=True) > 0
     seen: list[bool] = []
@@ -353,11 +361,50 @@ def test_asking_for_archived_recounts_facets_instead_of_serving_the_cache(monkey
 
     payload = catalog_read.search_payload({"page_size": "50", "include_archived": "1"})
 
-    assert seen, "widening the population past the cache must recount"
+    assert not seen, "the archived population is published; it must not be counted per request"
     assert payload["facets"]["_filter_tool_type"]["tool_type"]["buckets"] == [
         {"key": "web-app", "doc_count": 2},
         {"key": "bot", "doc_count": 1},
     ]
+
+
+def test_a_narrowing_filter_still_recounts(monkeypatch):
+    """Only include_archived selects between published aggregates.
+
+    Every other filter narrows to a set neither aggregate describes, so serving
+    one would label the page with counts for different tools.
+    """
+    _archive("gamma", title="Gamma script")
+    assert catalog_facets.rebuild_global_payload(force=True) > 0
+    seen: list[bool] = []
+    original = catalog_read._facet_payload
+    monkeypatch.setattr(
+        catalog_read, "_facet_payload", lambda *args: (seen.append(True), original(*args))[1]
+    )
+
+    catalog_read.search_payload({"page_size": "50", "include_archived": "1", "tool_type__term": "bot"})
+
+    assert seen, "a filter no published aggregate describes must be counted"
+
+
+def test_a_payload_absent_after_deploy_is_published_without_a_dirty_marker():
+    """The archived aggregate is new, and nothing marks the catalog dirty for it.
+
+    The first pass after the deploy that added it sees a clean catalog and an
+    already-built default payload. Rebuilding only on a dirty marker would leave
+    the new key missing until something happened to edit the catalog, and every
+    archived request would count live in the meantime -- the exact cost this
+    change exists to remove.
+    """
+    _archive("gamma", title="Gamma script")
+    assert catalog_facets.rebuild_global_payload(force=True) > 0
+    with db.session_scope() as session:
+        session.delete(session.get(ApiCacheMeta, catalog_facets.CACHE_KEY_COMPLETE))
+
+    assert catalog_facets.rebuild_global_payload() > 0
+
+    with db.session_scope() as session:
+        assert catalog_facets.cached_global_payload(session, include_archived=True) is not None
 
 
 @pytest.mark.parametrize("value", ["1", "true", "yes", "TRUE", "Yes"])
