@@ -24,13 +24,32 @@ T = TypeVar("T")
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
-# Per-worker connection budget. Four webservice workers x (2 + 2) = 16, inside
-# ToolsDB's 20-per-account limit with headroom for the scheduled jobs. Most
-# requests are static files or shared-cache hits and never take a connection at
-# all, so a small pool is not the bottleneck; exceeding the account limit would
-# be, and it fails as connection errors rather than as slowness.
+# Per-process connection budget. One ToolsDB account allows 20 connections, and
+# two kinds of process spend them. Sizing both from the same pair of numbers
+# said a job costs what a webservice worker costs, which is what exhausted the
+# account: the webservice is budgeted to want 16 of the 20 on its own, so the
+# jobs have to fit in what is left rather than in a worker-shaped pool each.
+#
+# The webservice is four uwsgi workers of four threads, so 16 requests really
+# can be in flight at once and a parallel page fan-out really does ask for
+# that. Most requests are static files or shared-cache hits and never take a
+# connection at all, so a small pool is not the bottleneck; exceeding the
+# account limit would be, and it fails as connection errors rather than as
+# slowness.
 POOL_SIZE_PER_WORKER = 2
 POOL_OVERFLOW_PER_WORKER = 2
+# A job process is not a webservice worker and must not be budgeted like one.
+# One unit of work needs two connections rather than one: advisory_lock() holds
+# a connection of its own for as long as its body runs, and the body then opens
+# a session -- so a job given a single connection would wait out pool_timeout
+# and fail instead of taking its lock. Two is therefore the floor, not a
+# choice.
+CONNECTIONS_PER_CONCURRENT_UNIT = 2
+# ...and only one of them is kept between operations. Jobs are network-bound
+# (measured duty cycles are 0.1-12%), so a retained second connection sits idle
+# nearly all the time while still counting against the account; overflow
+# connections are closed on return, which is what a burst wants.
+POOL_SIZE_PER_JOB = 1
 # ToolsDB drops idle connections; recycle below that so a pooled connection is
 # never handed out already dead.
 POOL_RECYCLE_SECONDS = 280
@@ -415,8 +434,32 @@ def _upgrade_schema() -> None:
                 )
 
 
-def configure(url: str) -> None:
-    """Create (or replace) the process-wide engine and session factory."""
+def pool_limits(*, web: bool, concurrency: int = 1) -> tuple[int, int]:
+    """Return ``(pool_size, max_overflow)`` for one process.
+
+    Bounded on purpose. SQLAlchemy's defaults (5 pooled + 10 overflow) are per
+    process, so four webservice workers alone would reach 60 against an account
+    that allows 20, and the pool would hand out connections the database then
+    refuses.
+
+    ``concurrency`` is how many units of work the caller runs at once, not how
+    many connections it wants: the two-per-unit conversion belongs here, next to
+    the reason for it, so a caller that grows a thread pool says so in the units
+    it already thinks in and cannot silently under-ask.
+    """
+    if web:
+        return POOL_SIZE_PER_WORKER, POOL_OVERFLOW_PER_WORKER
+    ceiling = CONNECTIONS_PER_CONCURRENT_UNIT * max(1, concurrency)
+    return POOL_SIZE_PER_JOB, ceiling - POOL_SIZE_PER_JOB
+
+
+def configure(url: str, *, web: bool = False, concurrency: int = 1) -> None:
+    """Create (or replace) the process-wide engine and session factory.
+
+    Defaults to the job budget rather than the webservice one, so a call site
+    added later and left undeclared costs the account two connections instead
+    of four.
+    """
     global _engine, _session_factory  # noqa: PLW0603 — module-level singleton by design
     if _engine is not None:
         _engine.dispose()
@@ -424,17 +467,12 @@ def configure(url: str) -> None:
         # In-memory SQLite: share the one database across connections/threads.
         _engine = create_engine(url, poolclass=StaticPool, connect_args={"check_same_thread": False})
     else:
-        # Bounded on purpose. ToolsDB allows 20 connections per tool account, and
-        # SQLAlchemy's defaults (5 pooled + 10 overflow) are per process — with
-        # four webservice workers that is up to 60, so under load the pool would
-        # hand out connections the database then refuses. Keep every worker's
-        # ceiling low enough that the whole webservice fits in the budget with
-        # room left for the scheduled jobs, which connect from their own pods.
+        pool_size, max_overflow = pool_limits(web=web, concurrency=concurrency)
         _engine = create_engine(
             url,
             pool_pre_ping=True,
-            pool_size=POOL_SIZE_PER_WORKER,
-            max_overflow=POOL_OVERFLOW_PER_WORKER,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
             pool_recycle=POOL_RECYCLE_SECONDS,
             pool_timeout=POOL_TIMEOUT_SECONDS,
         )

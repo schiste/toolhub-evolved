@@ -58,15 +58,20 @@ def database_url() -> str:
     return os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL
 
 
-def configure() -> None:
+def configure(*, concurrency: int = 1) -> None:
     """Prepare the shared database exactly as run_job() does.
 
     For the few entrypoints whose flow genuinely differs — a lock result folded
     into their own summary, or a real sweep-incomplete exit code — this shares
     the part that must not vary without forcing the rest into a shape that does
     not fit them.
+
+    ``concurrency`` is how many units of work the job runs at once. One is the
+    truth for every job that does its work on the calling thread, which is all
+    of them but projection_refresh; a job that grows a thread pool has to say
+    so here too, or its threads contend for a pool sized for one of them.
     """
-    db.configure(database_url())
+    db.configure(database_url(), concurrency=concurrency)
     db.init_schema()
 
 
