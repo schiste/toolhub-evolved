@@ -32,6 +32,7 @@
 {"module":"proxy.backend.gadget_toolinfo","symbol":"canonical_tools","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:mzbed45nmbzemasty44lx6svtu","file":"proxy/backend/gadget_toolinfo.py"}
 {"module":"proxy.backend.gadget_toolinfo","symbol":"canonical_tools.escape_like","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:o3dh54lteeffhhgi4uqe33qe7i","file":"proxy/backend/gadget_toolinfo.py"}
 {"module":"proxy.backend.gadget_toolinfo","symbol":"catalog_facets.mark_dirty","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4fccb4gq4ug2c6xeqjsbsct36i","file":"proxy/backend/gadget_toolinfo.py"}
+{"module":"proxy.backend.gadget_toolinfo","symbol":"catalog_projection.refresh_tool_names","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:iei2s3l2sykyeupogjbplvfphi","file":"proxy/backend/gadget_toolinfo.py"}
 {"module":"proxy.backend.gadget_toolinfo","symbol":"db","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zspeowytp2mx4qwoml2auntnse","file":"proxy/backend/gadget_toolinfo.py"}
 {"module":"proxy.backend.gadget_toolinfo","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:fajkr7xacuznl56ygs6ze3zafy","file":"proxy/backend/gadget_toolinfo.py"}
 {"module":"proxy.backend.gadget_toolinfo","symbol":"dict.fromkeys","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cvec5yiikapzdi7evjuh7xkjaq","file":"proxy/backend/gadget_toolinfo.py"}
@@ -74,3 +75,4 @@
 {"module":"proxy.backend.gadget_toolinfo","symbol":"wiki_sources.page_url","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:k5dxdqtpvdlif5u6c6snbizteu","file":"proxy/backend/gadget_toolinfo.py"}
 {"module":"proxy.backend.gadget_toolinfo","symbol":"without_format_marks","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:i5c7llb6tdrhykfimr2dzbgvee","file":"proxy/backend/gadget_toolinfo.py"}
 {"module":"proxy.backend.gadget_toolinfo","symbol":"without_format_marks","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xmmikibuhbgxvu5nqxzphss2xi","file":"proxy/backend/gadget_toolinfo.py"}
+{"module":"proxy.backend.gadget_toolinfo","symbol":"written.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:n3je2oq5374nhde7eztqqwxp7i","file":"proxy/backend/gadget_toolinfo.py"}

@@ -44,6 +44,7 @@
 {"module":"proxy.backend.userscript_toolinfo","symbol":"canonical_tools","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7wqdky4m3uy32vhd6ogsmgybzq","file":"proxy/backend/userscript_toolinfo.py"}
 {"module":"proxy.backend.userscript_toolinfo","symbol":"canonical_tools.escape_like","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7ghuqlm5wni7xcjvhxdfh2cs6e","file":"proxy/backend/userscript_toolinfo.py"}
 {"module":"proxy.backend.userscript_toolinfo","symbol":"catalog_facets.mark_dirty","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2sc2bcjey3cythl2nj4ervnpp4","file":"proxy/backend/userscript_toolinfo.py"}
+{"module":"proxy.backend.userscript_toolinfo","symbol":"catalog_projection.refresh_tool_names","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lesee6dgytm3isrh4m3nfoaqxa","file":"proxy/backend/userscript_toolinfo.py"}
 {"module":"proxy.backend.userscript_toolinfo","symbol":"content_model.casefold","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:szcra2447prdbvmhkddjmp2rme","file":"proxy/backend/userscript_toolinfo.py"}
 {"module":"proxy.backend.userscript_toolinfo","symbol":"db","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ojx7vfnpmundp3jocpag5z5s4i","file":"proxy/backend/userscript_toolinfo.py"}
 {"module":"proxy.backend.userscript_toolinfo","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yumpzax4cjlauyhrvltpfnsthq","file":"proxy/backend/userscript_toolinfo.py"}
@@ -91,3 +92,4 @@
 {"module":"proxy.backend.userscript_toolinfo","symbol":"wiki_sources.page_url","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:m2xyr47nyu7x7rutlgg6h5p7za","file":"proxy/backend/userscript_toolinfo.py"}
 {"module":"proxy.backend.userscript_toolinfo","symbol":"without_format_marks","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7b26afbjf6fmjzrhi6ts7o2skq","file":"proxy/backend/userscript_toolinfo.py"}
 {"module":"proxy.backend.userscript_toolinfo","symbol":"without_format_marks","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:dq4rn6x6vmbp73omuepqiji2ei","file":"proxy/backend/userscript_toolinfo.py"}
+{"module":"proxy.backend.userscript_toolinfo","symbol":"written.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kr3ikischkv46v4rfgfph5fr5u","file":"proxy/backend/userscript_toolinfo.py"}

@@ -37,6 +37,7 @@
 {"module":"proxy.backend.catalog_projection","symbol":"SOURCE_REPOSITORY","kind":"global_variable","node_id":"global_variable:toolhub-evolved:r5hk457n5xjt4o6drqe3c5vofa","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"SOURCE_WIKIMEDIA_USER_SCRIPT","kind":"global_variable","node_id":"global_variable:toolhub-evolved:5ecotnef3thsjigp4vhbuk6thy","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"SOURCE_WIKI_GADGET","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hayhqaaoubfle7g6pie53n4s4u","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"SOURCE_WIKI_USERSCRIPT","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ir2zvtfvpcymfdqvfxwfuwgcqa","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"SQLAlchemyError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:i6ubdmqfyai4mqeztj6h6y46pi","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"STATUS_ERROR","kind":"global_variable","node_id":"global_variable:toolhub-evolved:hcbcb3sjpiw5cceofriymspfra","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"STATUS_READY","kind":"global_variable","node_id":"global_variable:toolhub-evolved:i5mujfwbempupqcnduefg7sexa","file":"proxy/backend/catalog_projection.py"}
