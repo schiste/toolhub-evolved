@@ -820,13 +820,22 @@ def test_a_job_that_runs_work_in_parallel_is_budgeted_per_unit_not_per_process()
     assert pool_size + max_overflow == 4
 
 
-def test_a_job_retains_fewer_idle_connections_than_a_webservice_worker():
-    # Jobs are network-bound (measured duty cycles are 0.1-12%), so a retained
-    # connection is idle nearly all the time while still counting against the
-    # account. Overflow connections are closed when returned; pooled ones are not.
-    job_pool_size, _ = db.pool_limits(web=False, concurrency=2)
-    web_pool_size, _ = db.pool_limits(web=True)
-    assert job_pool_size < web_pool_size
+def test_the_webservice_fleet_leaves_most_of_the_account_to_the_jobs():
+    # The webservice is four workers, so its share of the account is four times
+    # its per-worker ceiling -- the product, not the ceiling, is what has to stay
+    # small. At 2 + 2 it claimed 16 of 20 and left four for every job together,
+    # which is the arithmetic that returned HTTP 500s on 2026-09-02. Half the
+    # account is the line: the jobs need the rest, and there are always several.
+    fleet = db.WEBSERVICE_WORKERS * sum(db.pool_limits(web=True))
+    assert fleet * 2 <= db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
+
+
+def test_the_fleet_and_the_jobs_beside_it_fit_in_the_account():
+    # Five job processes is a routine minute: one continuous worker, two
+    # once-a-minute jobs, and a scheduled one or two overlapping them.
+    fleet = db.WEBSERVICE_WORKERS * sum(db.pool_limits(web=True))
+    jobs = 5 * sum(db.pool_limits(web=False))
+    assert fleet + jobs <= db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
 
 
 def test_an_undeclared_call_site_costs_the_account_a_job_pool_not_a_worker_pool(monkeypatch):
