@@ -795,3 +795,56 @@ def test_a_skipped_run_hands_over_no_summary(monkeypatch, tmp_path):
     job_runner.run_job("example-job", lambda: {"counts": {"done": 4}}, lock=True)
 
     assert not handoff.exists()
+
+
+# --- ToolsDB connection budget -------------------------------------------
+#
+# One account allows 20 connections. Sizing job processes like webservice
+# workers spent them twice over, which surfaced as HTTP 500s on the catalog
+# search fan-out rather than as anything a job reported.
+
+
+def test_a_job_gets_a_connection_for_its_lock_and_another_for_its_session():
+    # advisory_lock() holds a connection for as long as its body runs and the
+    # body then opens a session, so a one-connection ceiling would not deadlock
+    # visibly -- it would wait out pool_timeout and fail the six jobs that take
+    # a lock. Two is the floor for a job that runs its work on one thread.
+    pool_size, max_overflow = db.pool_limits(web=False)
+    assert pool_size + max_overflow == 2
+
+
+def test_a_job_that_runs_work_in_parallel_is_budgeted_per_unit_not_per_process():
+    # projection_refresh runs two account generations side by side and each one
+    # takes a lock plus a session.
+    pool_size, max_overflow = db.pool_limits(web=False, concurrency=2)
+    assert pool_size + max_overflow == 4
+
+
+def test_a_job_retains_fewer_idle_connections_than_a_webservice_worker():
+    # Jobs are network-bound (measured duty cycles are 0.1-12%), so a retained
+    # connection is idle nearly all the time while still counting against the
+    # account. Overflow connections are closed when returned; pooled ones are not.
+    job_pool_size, _ = db.pool_limits(web=False, concurrency=2)
+    web_pool_size, _ = db.pool_limits(web=True)
+    assert job_pool_size < web_pool_size
+
+
+def test_an_undeclared_call_site_costs_the_account_a_job_pool_not_a_worker_pool(monkeypatch):
+    # The expensive budget is the one that has to be asked for by name.
+    monkeypatch.setenv("TOOLHUB_DB_URL", "mysql+pymysql://user:pw@example.invalid/db")
+    try:
+        db.configure(job_runner.database_url())
+        assert db.engine().pool.size() == db.POOL_SIZE_PER_JOB
+        db.configure(job_runner.database_url(), web=True)
+        assert db.engine().pool.size() == db.POOL_SIZE_PER_WORKER
+    finally:
+        db.configure("sqlite://")
+
+
+def test_projection_refresh_tells_the_pool_the_same_width_it_tells_its_thread_pool():
+    # Two numbers that must agree, in two files. This is the one that notices.
+    import projection_refresh
+
+    source = Path(projection_refresh.__file__).read_text(encoding="utf-8")
+    assert "ThreadPoolExecutor(max_workers=PARALLEL_SYNC_WORKERS" in source
+    assert "job_runner.configure(concurrency=PARALLEL_SYNC_WORKERS)" in source

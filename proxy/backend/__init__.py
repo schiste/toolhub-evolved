@@ -120,7 +120,7 @@ def register(
         TRUSTED_HOSTS=_trusted_hosts(trusted_hosts),
     )
     token_crypto.configure(app.secret_key)
-    db.configure(url)
+    db.configure(url, web=True)
     db.init_schema()
     proxy_hops = int(os.environ.get("TOOLHUB_PROXYFIX_X_FOR", "0") or 0)
     if proxy_hops:
