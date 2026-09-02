@@ -31,6 +31,16 @@ TOOLSDB_ACCOUNT_CONNECTION_LIMIT = 20
 #: here because the fleet's share of the account is this many times the
 #: per-worker ceiling, and that product is the number that has to stay small.
 WEBSERVICE_WORKERS = 4
+#: Job processes alive in an ordinary minute: one continuous worker, two
+#: once-a-minute jobs, and a scheduled one or two overlapping them.
+CONCURRENT_JOB_PROCESSES = 5
+#: Connections deliberately left unspent. A pool recycling a connection can hold
+#: the old and the new for an instant, and retry_on_disconnect disposes a pool
+#: and reconnects mid-run, so a plan that exactly equals the grant has nowhere to
+#: put either. Production was running at exactly 20 of 20 on 2026-09-02 and
+#: returned a max_user_connections 500 the moment anything transient appeared:
+#: fitting is not the same as fitting with room, and only the second is a budget.
+ACCOUNT_HEADROOM = 2
 
 # Per-process connection budget. One account allows 20 connections and two
 # kinds of process spend them. Sizing both from the same pair of numbers said a
@@ -470,6 +480,26 @@ def pool_limits(*, web: bool, concurrency: int = 1) -> tuple[int, int]:
         return POOL_SIZE_PER_WORKER, POOL_OVERFLOW_PER_WORKER
     ceiling = CONNECTIONS_PER_CONCURRENT_UNIT * max(1, concurrency)
     return POOL_SIZE_PER_JOB, ceiling - POOL_SIZE_PER_JOB
+
+
+def account_demand(*, widest_job_concurrency: int) -> int:
+    """Return the connections the account must supply with everything busy at once.
+
+    The webservice fleet, plus the widest job that declares concurrency, plus
+    the rest of an ordinary minute's jobs at a single unit each.
+
+    Counting every job at a single unit is what made this arithmetic wrong the
+    first time: projection_refresh declares two units and so costs four
+    connections where the others cost two, and the sum that ignored it read 18
+    of 20 when the truth was exactly 20. Production returned a
+    max_user_connections 500 from that overlap on 2026-09-02 while a budget test
+    asserting the wrong sum passed. The widest declared job is the one the
+    account has to survive, so it is the one this counts.
+    """
+    fleet = WEBSERVICE_WORKERS * sum(pool_limits(web=True))
+    widest = sum(pool_limits(web=False, concurrency=widest_job_concurrency))
+    others = (CONCURRENT_JOB_PROCESSES - 1) * sum(pool_limits(web=False))
+    return fleet + widest + others
 
 
 def configure(url: str, *, web: bool = False, concurrency: int = 1) -> None:
