@@ -47,12 +47,22 @@ IDENTITY_RULES_VERSION = projection_policy.module_fingerprint(
     namespace="identity-publication-policy-v1",
 )
 DEFAULT_MAX_AGE_SECONDS = 21_600
-# The two account generations run side by side, and each one holds an advisory
-# lock while its own session works underneath it. That makes this a connection
-# budget as much as a thread count, so the pool is sized from this same number
-# in main() -- raising it here without raising it there is what would starve
-# the threads it adds.
-PARALLEL_SYNC_WORKERS = 2
+# The two account generations can run side by side, and each one holds an
+# advisory lock while its own session works underneath it. That makes this a
+# connection budget as much as a thread count: the pool is sized from this same
+# number in main(), so raising it here without raising it there would starve the
+# threads it adds -- and raising it at all spends connections the account does
+# not have.
+#
+# One, therefore, and the syncs run in turn. At two this job cost four
+# connections where every other job costs two, which put the account at exactly
+# its 20-connection limit whenever this ran beside the once-a-minute jobs; the
+# deploy on 2026-09-02 returned a 500 from that overlap while this job was
+# refreshing. This runs every six hours and the generations are network-bound,
+# so serializing them costs wall-clock nobody is waiting on. The executor stays
+# because the width is a budget decision rather than a structural one: if the
+# account grows, this number is the only thing that has to change.
+PARALLEL_SYNC_WORKERS = 1
 EARLIEST_IDENTITY_CHANGE = datetime(1970, 1, 1)  # noqa: DTZ001 - database timestamps are intentionally naive UTC
 
 

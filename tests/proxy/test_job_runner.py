@@ -830,12 +830,28 @@ def test_the_webservice_fleet_leaves_most_of_the_account_to_the_jobs():
     assert fleet * 2 <= db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
 
 
-def test_the_fleet_and_the_jobs_beside_it_fit_in_the_account():
-    # Five job processes is a routine minute: one continuous worker, two
-    # once-a-minute jobs, and a scheduled one or two overlapping them.
-    fleet = db.WEBSERVICE_WORKERS * sum(db.pool_limits(web=True))
-    jobs = 5 * sum(db.pool_limits(web=False))
-    assert fleet + jobs <= db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
+def test_the_account_supplies_the_fleet_and_the_widest_job_beside_it():
+    # The version of this that counted five *typical* jobs passed while
+    # production returned a max_user_connections 500: projection_refresh
+    # declares two units, so it costs four connections where the others cost
+    # two, and the real total was 20 of 20 rather than the 18 this asserted.
+    # Reading the width from the job itself is what makes raising it fail here
+    # rather than in production.
+    import projection_refresh
+
+    demand = db.account_demand(widest_job_concurrency=projection_refresh.PARALLEL_SYNC_WORKERS)
+
+    assert demand + db.ACCOUNT_HEADROOM <= db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
+
+
+def test_widening_the_parallel_job_again_would_leave_the_account_no_headroom():
+    # The guard the previous version of this test did not provide. Two units for
+    # projection_refresh plans exactly 20 of the 20 connections granted, which is
+    # the state production was in when it returned a max_user_connections 500 --
+    # not over the line, but with nothing left for a recycle or a retry. That has
+    # to fail here, or it comes back.
+    assert db.account_demand(widest_job_concurrency=2) == db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
+    assert db.account_demand(widest_job_concurrency=2) + db.ACCOUNT_HEADROOM > db.TOOLSDB_ACCOUNT_CONNECTION_LIMIT
 
 
 def test_an_undeclared_call_site_costs_the_account_a_job_pool_not_a_worker_pool(monkeypatch):
