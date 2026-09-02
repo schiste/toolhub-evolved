@@ -995,3 +995,35 @@ def test_local_proxy_can_serve_a_stale_but_usable_replica_row(client):
     assert response.status_code == 200
     assert response.get_json() == {"stale": True}
     assert response.headers["X-Toolhub-Evolved-Cache"] == "stale"
+
+
+# ---- robots ----------------------------------------------------------------
+
+
+def test_robots_txt_is_served_as_itself_and_not_as_the_spa_shell(client):
+    """A path that exists must win over the clean-route fallback.
+
+    Every unmatched path answers with index.html so deep links work, and a
+    crawler handed HTML under /robots.txt reads it as "no rules" rather than as
+    an error -- the file would be silently absent while appearing to be served.
+    """
+    resp = client.get("/robots.txt")
+
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"].startswith("text/plain")
+    assert b"<!doctype html" not in resp.data.lower()
+
+
+def test_robots_txt_withholds_the_duplicate_and_expensive_routes(client):
+    """The rules that exist to keep the crawl off three copies of one catalogue.
+
+    /edit and /history restate a tool's own page, and faceted search asks for ten
+    paginated queries at once. Losing any of these lines silently restores the
+    crawl volume this file was added to remove, and nothing else would notice.
+    """
+    body = client.get("/robots.txt").data.decode("utf-8")
+    directives = {line.strip() for line in body.splitlines() if not line.lstrip().startswith("#")}
+
+    assert "User-agent: *" in directives
+    for rule in ("Disallow: /*/edit", "Disallow: /*/history", "Disallow: /search", "Disallow: /v1/"):
+        assert rule in directives, f"{rule} is the point of the file"
