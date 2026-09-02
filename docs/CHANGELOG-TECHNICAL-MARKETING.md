@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: one-row-took-twenty-thousand -->
 <!-- Release title: One Row Took Twenty Thousand -->
-<!-- Source range: 1e782c81..e4cda7c1 (1 commit) -->
+<!-- Source range: 1e782c81..71a081fa (2 commits) -->
 
 # Technical and Marketing Notes
 
