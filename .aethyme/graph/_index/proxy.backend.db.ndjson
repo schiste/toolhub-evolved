@@ -3,6 +3,7 @@
 {"module":"proxy.backend.db","symbol":"Base.metadata.create_all","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tccambxbkdukjexcfusaire3qq","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"CONCURRENT_JOB_PROCESSES","kind":"global_variable","node_id":"global_variable:toolhub-evolved:fnaev7yibmsyvhj4naq33zhvkq","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"CONNECTIONS_PER_CONCURRENT_UNIT","kind":"global_variable","node_id":"global_variable:toolhub-evolved:3d47g2fdcknbytvuywhaqe44ne","file":"proxy/backend/db.py"}
+{"module":"proxy.backend.db","symbol":"CONNECTIONS_PER_LOCKING_UNIT","kind":"global_variable","node_id":"global_variable:toolhub-evolved:jebs3lfc5huxschcmzixpzd4zm","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"Callable","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yiflm7fvl6h26rzhxbxuyos3s4","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"DEFAULT_LOCK_RETRIES","kind":"global_variable","node_id":"global_variable:toolhub-evolved:uirknqatyvl4jh47dsby7oj4oy","file":"proxy/backend/db.py"}
 {"module":"proxy.backend.db","symbol":"Engine","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5dfyhmuwkruqcmkw7uloh6cnnu","file":"proxy/backend/db.py"}
