@@ -58,7 +58,7 @@ def database_url() -> str:
     return os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL
 
 
-def configure(*, concurrency: int = 1) -> None:
+def configure(*, concurrency: int = 1, takes_lock: bool = False) -> None:
     """Prepare the shared database exactly as run_job() does.
 
     For the few entrypoints whose flow genuinely differs — a lock result folded
@@ -71,7 +71,7 @@ def configure(*, concurrency: int = 1) -> None:
     of them but projection_refresh; a job that grows a thread pool has to say
     so here too, or its threads contend for a pool sized for one of them.
     """
-    db.configure(database_url(), concurrency=concurrency)
+    db.configure(database_url(), concurrency=concurrency, takes_lock=takes_lock)
     db.init_schema()
 
 
@@ -230,7 +230,10 @@ def run_job(  # noqa: PLR0913 - one keyword per job-shape difference, which is t
     the same race twice is contending with something a third attempt will not
     outlast, and saying so is more useful than a third.
     """
-    configure()
+    # A locking run holds more connections than a plain one, and only the caller
+    # knows which it is: run_job takes the lock itself, so it is the one place
+    # that can say so without every entrypoint repeating it.
+    configure(takes_lock=lock)
     # Only the lock budget needs the clock, and reading it unconditionally would
     # make every other caller pay for a feature it did not ask for.
     started = time.monotonic() if retry_on_lock_timeout else 0.0
