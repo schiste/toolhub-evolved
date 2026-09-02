@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
@@ -225,6 +227,65 @@ def test_facet_cache_rejects_invalid_envelopes_and_caps_buckets(monkeypatch):
 
     monkeypatch.setattr(db, "advisory_lock", locked_out)
     assert catalog_facets.rebuild_global_payload() == 0
+
+
+def test_mark_dirty_survives_a_snapshot_that_cannot_see_the_marker(monkeypatch):
+    """A read that misses a committed marker must not cost the caller its batch.
+
+    This is the deploy failure, reproduced through its actual mechanism. InnoDB
+    fixes a transaction's REPEATABLE READ snapshot at its first read, which for
+    a 20,000-tool projection batch is minutes before it marks the aggregate
+    dirty at the end. A marker committed by a concurrent job in that window is
+    invisible to `session.get`, so the old read-then-insert hit the primary key
+    and rolled 20,000 computed projections back into STATUS_ERROR. Making
+    `get` lie the same way is what tells the two implementations apart: the
+    marker is stamped by UPDATE, which reads the latest committed row.
+    """
+    with db.session_scope() as session:
+        catalog_facets.mark_dirty(session)
+
+    real_get = Session.get
+
+    def blind_to_the_marker(self, entity, ident, *args, **kwargs):
+        if entity is ApiCacheMeta and ident == catalog_facets.DIRTY_KEY:
+            return None
+        return real_get(self, entity, ident, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "get", blind_to_the_marker)
+
+    with db.session_scope() as session:
+        session.add(CatalogFacetValue(tool_name="raced", field="tool_type", value="web-app", label="web-app"))
+        catalog_facets.mark_dirty(session)
+
+    monkeypatch.undo()
+    with db.session_scope() as session:
+        assert session.scalar(select(func.count()).select_from(ApiCacheMeta)) == 1
+        assert session.get(CanonicalToolCache, "alpha") is not None
+        raced = session.scalars(select(CatalogFacetValue.tool_name).where(CatalogFacetValue.tool_name == "raced"))
+        assert list(raced) == ["raced"]
+
+
+def test_mark_dirty_losing_the_insert_race_keeps_the_caller_batch(monkeypatch):
+    """A marker that arrives between the UPDATE and the INSERT costs the marker, not the batch.
+
+    This is the failure that put 20,000 projections into STATUS_ERROR twice in
+    one deploy: one bookkeeping row raised IntegrityError and took the whole
+    transaction's computed work down with it. Forcing the UPDATE to report a
+    miss while the row really exists reproduces that window exactly.
+    """
+    with db.session_scope() as session:
+        catalog_facets.mark_dirty(session)
+
+    monkeypatch.setattr(catalog_facets, "_touch_dirty", lambda *_args, **_kwargs: False)
+
+    with db.session_scope() as session:
+        session.add(CatalogFacetValue(tool_name="raced", field="tool_type", value="web", label="Web"))
+        catalog_facets.mark_dirty(session)
+
+    with db.session_scope() as session:
+        assert session.scalar(select(func.count()).select_from(ApiCacheMeta)) == 1
+        survivors = session.scalars(select(CatalogFacetValue.tool_name).where(CatalogFacetValue.tool_name == "raced"))
+        assert list(survivors) == ["raced"]
 
 
 def _archive(name: str, *, title: str) -> None:

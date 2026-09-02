@@ -13,13 +13,16 @@ import json
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import and_, distinct, func, or_, select
+from sqlalchemy import and_, distinct, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 
 from backend import db, facet_names
 from backend.models import ApiCacheMeta, CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
 from backend.sync import LIFECYCLE_ARCHIVED
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sqlalchemy.orm import Session
     from sqlalchemy.sql import Select
 
@@ -170,14 +173,43 @@ def cached_global_payload(session: Session) -> dict[str, Any] | None:
 
 
 def mark_dirty(session: Session) -> None:
-    """Record that a background projection pass must republish aggregates."""
-    row = session.get(ApiCacheMeta, DIRTY_KEY)
-    value = utcnow().isoformat(timespec="seconds") + "Z"
-    if row is None:
-        session.add(ApiCacheMeta(key=DIRTY_KEY, value=value))
-    else:
-        row.value = value
-        row.updated_at = utcnow()
+    """Record that a background projection pass must republish aggregates.
+
+    A locking write, never a read-then-insert. `session.get` answers from the
+    transaction's REPEATABLE READ snapshot, which InnoDB fixes at the
+    transaction's first read -- minutes earlier for a 20,000-tool projection
+    batch, which calls this once at the end. A concurrent job that inserted the
+    marker in that window stayed invisible to the snapshot, so the INSERT hit
+    the primary key and rolled the whole batch back into STATUS_ERROR: one
+    bookkeeping row discarded 20,000 computed projections, twice, during a
+    single deploy. UPDATE reads the latest committed row rather than the
+    snapshot, so its rowcount reports whether the marker really exists.
+
+    The INSERT that follows a miss still races anything that commits between
+    the two statements, so it runs inside a SAVEPOINT and falls back to the
+    same UPDATE. The explicit flush first is what keeps that safe: it lands the
+    caller's pending rows in the enclosing transaction, so rolling the SAVEPOINT
+    back can only ever undo this marker, never the batch that asked for it.
+    """
+    now = utcnow()
+    value = now.isoformat(timespec="seconds") + "Z"
+    if _touch_dirty(session, value, now):
+        return
+    session.flush()
+    try:
+        with session.begin_nested():
+            session.add(ApiCacheMeta(key=DIRTY_KEY, value=value))
+            session.flush()
+    except IntegrityError:
+        _touch_dirty(session, value, now)
+
+
+def _touch_dirty(session: Session, value: str, now: datetime) -> bool:
+    """Stamp the existing dirty marker, reporting whether one was there."""
+    result = session.execute(
+        update(ApiCacheMeta).where(ApiCacheMeta.key == DIRTY_KEY).values(value=value, updated_at=now)
+    )
+    return bool(result.rowcount)
 
 
 def rebuild_global_payload(*, force: bool = False) -> int:
