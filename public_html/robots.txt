@@ -1,0 +1,27 @@
+# Toolhub Evolved catalogues 53,271 tools. Every one of them also answers at
+# /edit and /history, so crawling all three multiplies the catalogue by three
+# without indexing anything a tool's own page does not already say. Measured on
+# 2026-09-01, that came to 531 /edit and 509 /history page loads in a day, and
+# each page load fans out into several database-backed API calls.
+#
+# The tool pages themselves, author pages and the home page stay open: this
+# withholds the duplicates and the traps, not the catalogue.
+User-agent: *
+
+# Same tool, different angle. Both are reachable from the tool page for a reader
+# who wants them, and neither is worth its own index entry.
+Disallow: /*/edit
+Disallow: /*/history
+
+# Faceted search is a crawl trap: the parameter combinations are effectively
+# unbounded and each result page requests ten paginated API calls at once, which
+# is the heaviest thing a visitor can ask this site to do.
+Disallow: /search
+Disallow: /*?q=
+
+# The JSON API backs the pages above rather than standing on its own.
+Disallow: /v1/
+
+# Honoured by Bing, Yandex and most others; Google ignores it and is throttled
+# through Search Console instead.
+Crawl-delay: 5
