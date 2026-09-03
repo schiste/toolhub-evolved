@@ -1,11 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: two-locks-and-a-session -->
-<!-- Release title: Two Locks And A Session -->
-<!-- Source range: f1fdf6e8..5fa7b46c (3 commits) -->
+<!-- Release id: measured-not-reasoned -->
+<!-- Release title: Measured, Not Reasoned -->
+<!-- Source range: 2dc71230..0b0af976 (3 commits) -->
 
 # What's New for Users
 
-- Several of the site's background jobs had been failing, and three had stopped running altogether. None is anything a visitor sees directly: they work out which people are behind which tools, keep contributors' real names in step with Phabricator, and reconcile identities across sources. They had been failing since a change made the previous day to stop the site as a whole running out of database connections. That part worked and still does -- more than fifteen thousand requests since, without a single failure -- but the allowance handed to each background job turned out to be one short of what several of them need, so they ran out instead.
-- The allowance is now measured against what those jobs actually hold rather than what they were assumed to hold. A job that waits its turn keeps two claims open at once while it works, not one, and the work it does on top of those makes three things in hand where the budget allowed for two. Nothing about what these jobs do has changed; only what they are permitted while they do it. The three that had stopped have been restarted.
-- Separately, the site's development dependencies picked up seven published security advisories overnight, none of them in anything that runs in production. Two were already fixed in what was installed and only looked unfixed because a lockfile recorded older versions; the rest are now forced to patched releases. One of them had been pinned to an exact version that a later advisory grew to include, which is the kind of thing that goes unnoticed until something checks.
+- The background job that works out which contributor is behind which tool is running again. It had stopped overnight: the site stops a job that fails three times in a row, on the assumption something is properly wrong with it, and this one had. Nothing a visitor sees was affected, and no data was lost -- the work simply did not advance while it was stopped.
+- The cause was an allowance that had been guessed at twice. Each of these jobs reserves a small number of simultaneous conversations with the database, and the figure had been worked out by reading the code rather than watching it run. Reading gave two, then three; the job actually needs four, because it quietly claims a third thing partway through its work that no amount of reading the surrounding code revealed. It now gets what it was measured using.
+- Three further jobs that also claim exclusive access -- the catalogue synchronizer and the two account synchronizers -- had the same allowance without ever being told they needed it, and have been corrected as well. A check now reads the code for every job that claims exclusive access, so the next one added cannot be forgotten in the way these three were.
