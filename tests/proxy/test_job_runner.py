@@ -804,12 +804,14 @@ def test_a_skipped_run_hands_over_no_summary(monkeypatch, tmp_path):
 # search fan-out rather than as anything a job reported.
 
 
-def test_a_locking_job_gets_a_third_connection_for_the_lock_it_queues_behind():
-    # run_job holds an intent lock for the whole run alongside the real one when
-    # a caller queues, so the body's session is a third connection. Two was the
-    # ceiling that timed people-attribution-reconverge out on its own pool at
-    # 15:21:20 on 2026-09-02, and phabricator-realname-sync at 15:31:21.
-    assert sum(db.pool_limits(web=False, takes_lock=True)) == 3
+def test_a_locking_job_gets_the_four_connections_it_was_measured_holding():
+    # Not derived -- measured. Two came from reading advisory_lock, three from
+    # reading run_job's intent lock on top, and both were wrong: people_reconcile
+    # takes a third advisory lock fourteen frames below the entrypoint, which no
+    # reading of the scaffold finds. Instrumenting the pool on production on
+    # 2026-09-03 gave a peak of 4 for people-identity-reconcile, 3 for
+    # source-attestations and projection-refresh, 2 for the rest.
+    assert sum(db.pool_limits(web=False, takes_lock=True)) == 4
 
 
 def test_run_job_declares_the_lock_it_takes_to_the_pool_that_has_to_hold_it():
