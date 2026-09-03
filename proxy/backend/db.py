@@ -77,15 +77,27 @@ POOL_OVERFLOW_PER_WORKER = 1
 # and fail instead of taking its lock. Two is therefore the floor, not a
 # choice.
 CONNECTIONS_PER_CONCURRENT_UNIT = 2
-#: ...and three when it takes a lock, which two connections did not cover.
-#: run_job holds an intent lock for the whole run alongside the real one when a
-#: caller queues for it, so people_reconcile ran on a session underneath two
-#: held locks and timed out on its own pool at 15:21:20 on 2026-09-02.
-#: phabricator-realname-sync timed out the same way at 15:31:21 without queuing
-#: for its lock, and the path that spends its third connection has not been
-#: identified -- so this is the measured width of a locking job rather than a
-#: derived one, and the two that failed are the evidence for it.
-CONNECTIONS_PER_LOCKING_UNIT = 3
+#: ...and four when it takes a lock, which is measured rather than reasoned.
+#: Two was derived from advisory_lock plus a session, and three from run_job's
+#: intent lock on top; both were arrived at by reading the scaffold, and both
+#: were wrong, because people_reconcile.run() takes a *third* advisory lock
+#: (source_attestations.SOURCE_WRITER_LOCK) fourteen frames below the entrypoint
+#: where no reading of run_job would find it.
+#:
+#: Instrumenting the pool settled it. Peak concurrent checkouts, measured on
+#: production on 2026-09-03 with the ceiling lifted so nothing could fail on the
+#: number being measured:
+#:
+#:     people-identity-reconcile  4      catalog-sync         2
+#:     source-attestations        3      statistics-refresh   2
+#:     projection-refresh         3      catalog-projection   2
+#:
+#: Four is the worst observed, not a proven maximum: a contended run, a fired
+#: retry, or a branch none of those runs took could hold more. It also spends
+#: the last of the account -- 8 + 4 + 6 = 18, and 18 + ACCOUNT_HEADROOM is
+#: exactly the 20 granted. A fifth would not fit, so the next job that nests
+#: another lock is a conversation about the grant, not about this constant.
+CONNECTIONS_PER_LOCKING_UNIT = 4
 # ...and only one of them is kept between operations. Jobs are network-bound
 # (measured duty cycles are 0.1-12%), so a retained second connection sits idle
 # nearly all the time while still counting against the account; overflow
