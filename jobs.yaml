@@ -35,9 +35,14 @@
   # /api/crawler/urls/, fetch each registered feed, and map tool names back to
   # the feed Toolhub crawls. This is canonical provenance evidence; root/sitemap
   # discovery remains a secondary self-hosted metadata check.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name toolinfo-source-index -- /usr/bin/env TOOLINFO_SOURCE_INDEX_LIMIT=150 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolinfo_sources.py
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name toolinfo-source-index --stale-after 1800 -- /usr/bin/env TOOLINFO_SOURCE_INDEX_LIMIT=150 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolinfo_sources.py
   image: python3.13
   schedule: "11 */6 * * *"
+  # 900s against a measured max of 392s over the last twelve runs (median
+  # 336s, min 54s): roughly 2.3x headroom. Declared so the job is bounded at
+  # all, and because lock_retry_deadline_seconds spends half a declared
+  # timeout and returns zero without one -- the retry below needs this to exist.
+  timeout: 900
   emails: onfailure
 
 - name: source-attestations

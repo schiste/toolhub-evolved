@@ -38,7 +38,12 @@ COMMAND = re.compile(r"^  command: (.*)$", re.M)
 RUN_COMMAND = re.compile(r'--command "([^"]*)"')
 # How the jobs framework composes a container command, read off a live CronJob:
 #   /bin/sh -c -- 'exec 1>>NAME.out; exec 2>>NAME.err; <command from jobs.yaml>'
-WRAPPER = "exec 1>>{out}; exec 2>>{err}; {command}"
+# Paths are single-quoted because this repository is worked in through broker
+# worktrees under ~/Library/Application Support/, and an unquoted path with a
+# space splits into two words: the guard is never started, no lock is ever
+# taken, and the failure looks like the guard misbehaving rather than the
+# harness never running it.
+WRAPPER = "exec 1>>'{out}'; exec 2>>'{err}'; {command}"
 
 
 def declared_commands() -> list[str]:
@@ -109,7 +114,7 @@ def test_the_guard_releases_its_lock_when_only_the_wrapper_is_signalled(tmp_path
     mandatory rather than tidy.
     """
     lock = tmp_path / "guard" / ".example.lock"
-    guarded = f"exec sh {GUARD} --job-name example --stale-after 99999 -- sleep 60"
+    guarded = f"exec sh '{GUARD}' --job-name example --stale-after 99999 -- sleep 60"
 
     wrapper = _wrapped_run(tmp_path, guarded)
     assert _wait_for(lock.exists), "the guard never took its lock"

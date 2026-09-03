@@ -32,7 +32,16 @@ def main() -> int:
             f"items={summary['items']}\n"
         )
 
-    return job_runner.run_job("toolinfo-source-index", body)
+    # Mirrors a remote listing into local tables and re-decides each mapping
+    # from what it just fetched, so a run the database rolled back for a lock
+    # left nothing behind and a second attempt reaches the same state. It writes
+    # tool_relationship_evidence, which six jobs contend on, and it is one of
+    # the two that genuinely failed on errno 1205 rather than absorbing it.
+    return job_runner.run_job(
+        "toolinfo-source-index",
+        body,
+        retry_on_lock_timeout=job_runner.lock_retry_deadline_seconds("toolinfo-source-index"),
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - job entrypoint, exercised via main() in tests

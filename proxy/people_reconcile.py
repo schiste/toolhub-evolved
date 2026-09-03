@@ -9,7 +9,7 @@ import time
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from backend import db, job_catalog, job_runner, people_reconcile, wikimedia_user_reconciliation
+from backend import db, job_runner, people_reconcile, wikimedia_user_reconciliation
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -67,7 +67,8 @@ MODE_JOB_NAMES = {
 }
 #: A retry needs at least as long as the attempt it replaces, so it is offered
 #: only in the first half of the declared timeout.
-LOCK_RETRY_BUDGET_FRACTION = 2
+#: Re-exported from job_runner, where the budget rule now lives.
+LOCK_RETRY_BUDGET_FRACTION = job_runner.LOCK_RETRY_BUDGET_FRACTION
 
 
 def _mode_job_name(args: argparse.Namespace) -> str:
@@ -93,17 +94,10 @@ def _lock_retry_deadline_seconds(args: argparse.Namespace) -> int:
     InnoDB lock wait expires 50s in, and on 2026-08-29 that ended a 205s
     --identities-only pass on `UPDATE person_identifiers` and cost the hour.
 
-    Zero for a mode nothing schedules, and zero when jobs.yaml does not declare
-    the job, rather than a guessed ceiling: a budget invented here is exactly
-    how a retry ends up running past a timeout it never knew about.
+    The budget itself is `job_runner.lock_retry_deadline_seconds`, shared since
+    toolinfo_sources needed the same rule; this only picks the mode's job name.
     """
-    name = _mode_job_name(args)
-    if not name:
-        return 0
-    declared = next((job for job in job_catalog.load() if job.name == name), None)
-    if declared is None or declared.timeout_seconds <= 0:
-        return 0
-    return declared.timeout_seconds // LOCK_RETRY_BUDGET_FRACTION
+    return job_runner.lock_retry_deadline_seconds(_mode_job_name(args))
 
 
 def _lock_wait_seconds(args: argparse.Namespace) -> int:
