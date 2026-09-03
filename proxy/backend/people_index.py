@@ -1022,6 +1022,26 @@ def _upsert_relationship_evidence(  # noqa: PLR0913 - source evidence fields sta
 
     Shared by live ingest and by backlog re-evaluation so the two paths cannot
     drift into recording the same observation differently.
+
+    Writes only when something actually differs. The defect
+    `_stamp_identifier_if_changed` describes, a third table over: this row is
+    re-derived by every pass and rewritten by `people-reconcile-incremental`
+    every minute, and confirming an unchanged observation is overwhelmingly the
+    common case. Assigning the columns unconditionally marked the instance dirty
+    and issued an UPDATE that took a row lock to store the values already there.
+    `tool_relationship_evidence` is written by six jobs, and errno 1205 -- lock
+    wait timeout -- had failed runs 179 times across ten of them by 2026-09-03,
+    72 in maintainer-backfill alone.
+
+    `checked_at` is included in the suppression rather than stamped anyway, and
+    that is a deliberate change of meaning: it now records when the observation
+    last *changed*, not when it was last confirmed. Two ORDER BY clauses in this
+    module rank supporting evidence by it, so an unchanged row now sorts below a
+    recently changed one, and `checkedAt` in the relationship payload may lag.
+    Nothing filters or expires on it -- `expires_at` carries that -- so the cost
+    is ordering and display, paid to stop the writes. Stamping it on every pass
+    is what made a no-op write unavoidable, so keeping it would have kept the
+    lock.
     """
     row = s.execute(
         select(ToolRelationshipEvidence).where(
@@ -1033,6 +1053,7 @@ def _upsert_relationship_evidence(  # noqa: PLR0913 - source evidence fields sta
             ToolRelationshipEvidence.evidence_key == evidence_key,
         )
     ).scalar_one_or_none()
+    created = row is None
     if row is None:
         row = ToolRelationshipEvidence(
             tool_name=tool_name,
@@ -1044,23 +1065,31 @@ def _upsert_relationship_evidence(  # noqa: PLR0913 - source evidence fields sta
             first_seen_at=observation.get("first_seen_at") or now,
         )
         s.add(row)
-    row.verification_status = _clean(observation.get("verification_status"), 32) or AUTHOR_CLAIM_UNVERIFIED
-    row.observed_name = _clean(observation.get("display_name"))
-    row.confidence = max(0, min(100, int(observation.get("confidence") or 0)))
-    row.toolhub_canonical = bool(observation.get("toolhub_canonical"))
-    row.evidence_url = _clean(observation.get("evidence_url"), 2000) or None
     raw_payload = observation.get("evidence_payload")
     evidence_payload = dict(raw_payload) if isinstance(raw_payload, dict) else {}
     evidence_payload["identityResolution"] = {
         "action": identity_decision.action,
         "reason": identity_decision.reason,
     }
-    row.evidence_payload = evidence_payload
-    row.checked_at = observation.get("checked_at") or now
-    row.expires_at = observation.get("expires_at")
-    row.withdrawn_at = None
-    row.last_error = _clean(observation.get("last_error"), 2000) or None
-    row.updated_at = now
+    observed = {
+        "verification_status": _clean(observation.get("verification_status"), 32) or AUTHOR_CLAIM_UNVERIFIED,
+        "observed_name": _clean(observation.get("display_name")),
+        "confidence": max(0, min(100, int(observation.get("confidence") or 0))),
+        "toolhub_canonical": bool(observation.get("toolhub_canonical")),
+        "evidence_url": _clean(observation.get("evidence_url"), 2000) or None,
+        "evidence_payload": evidence_payload,
+        "expires_at": observation.get("expires_at"),
+        "withdrawn_at": None,
+        "last_error": _clean(observation.get("last_error"), 2000) or None,
+    }
+    changed = created
+    for field, value in observed.items():
+        if getattr(row, field) != value:
+            setattr(row, field, value)
+            changed = True
+    if changed:
+        row.checked_at = observation.get("checked_at") or now
+        row.updated_at = now
     return row
 
 
