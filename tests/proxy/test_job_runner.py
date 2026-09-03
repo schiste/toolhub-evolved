@@ -887,3 +887,31 @@ def test_projection_refresh_tells_the_pool_the_same_width_it_tells_its_thread_po
     source = Path(projection_refresh.__file__).read_text(encoding="utf-8")
     assert "ThreadPoolExecutor(max_workers=PARALLEL_SYNC_WORKERS" in source
     assert "job_runner.configure(concurrency=PARALLEL_SYNC_WORKERS, takes_lock=True)" in source
+
+
+def test_every_entrypoint_that_takes_a_lock_declares_it_to_its_pool():
+    """A lock the pool was not told about is a pool one connection too small.
+
+    `run_job` declares the lock it takes, which covers the jobs that go through
+    it. Five entrypoints take an advisory lock on their own instead, and the
+    first fix reached only the one that happened to be open in the editor at the
+    time: catalog-sync, account-sync and toolforge-account-sync kept a
+    two-connection pool and catalog-sync timed out on it at 00:33:58 on
+    2026-09-03. Reading the source is worth more than remembering, because the
+    next entrypoint to take a lock will be written by someone who never saw this.
+    """
+    proxy = Path(__file__).resolve().parents[2] / "proxy"
+    undeclared = []
+    for path in sorted(proxy.glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        if "db.advisory_lock(" not in source:
+            continue
+        # Either the scaffold takes the lock and declares it, or the entrypoint
+        # configures its own engine and has to say so in that call.
+        if "run_job(" in source and "lock=True" in source:
+            continue
+        if "takes_lock=True" in source:
+            continue
+        undeclared.append(path.name)
+
+    assert not undeclared, f"these take an advisory lock without declaring it to the pool: {undeclared}"

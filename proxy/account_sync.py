@@ -413,7 +413,10 @@ def main(argv: list[str] | None = None) -> int:
         default=_env_float("ACCOUNT_SYNC_MIN_INTERVAL_SECONDS", DEFAULT_MIN_INTERVAL_SECONDS),
     )
     args = parser.parse_args(argv)
-    job_runner.configure()
+    # Takes its own advisory lock below rather than through run_job, so the
+    # pool has to be told here or the lock and the session it works under
+    # will not both fit.
+    job_runner.configure(takes_lock=True)
     runner = run_complete if args.complete else run
     kwargs = {"page_size": args.page_size, "min_interval_seconds": args.min_interval}
     if not args.complete:

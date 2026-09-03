@@ -904,7 +904,12 @@ def main(argv: list[str] | None = None) -> int:
         help="with --complete, reuse a snapshot completed within this many seconds",
     )
     args = parser.parse_args(argv)
-    job_runner.configure()
+    # Takes its own advisory lock below rather than through run_job, so the
+    # pool has to be told here. Missing this cost catalog-sync a
+    # QueuePool timeout at 00:33:58 on 2026-09-03, after the release that
+    # widened locking jobs reached everything that locks via run_job but
+    # not the three entrypoints that lock on their own.
+    job_runner.configure(takes_lock=True)
     with db.advisory_lock("toolhub-evolved:catalog-sync") as acquired:
         if not acquired:
             summary = {"status": "locked", "completed": False}

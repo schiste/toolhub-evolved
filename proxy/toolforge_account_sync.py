@@ -331,7 +331,9 @@ def run(*, loader: LdapLoader | None = None) -> dict[str, int | str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args(argv)
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
+    # Configures the engine directly rather than through job_runner, and
+    # takes an advisory lock below, so it declares the width itself.
+    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL, takes_lock=True)
     db.init_schema()
     summary = run()
     sys.stdout.write("toolforge-account-sync: " + json.dumps(summary, sort_keys=True) + "\n")
