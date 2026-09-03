@@ -19,12 +19,10 @@
 {"module":"proxy.people_reconcile","symbol":"db","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:boixe22rxxnkccaet6zxh2vrce","file":"proxy/people_reconcile.py"}
 {"module":"proxy.people_reconcile","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3pryln64v2kn3zqwgyloxha4rm","file":"proxy/people_reconcile.py"}
 {"module":"proxy.people_reconcile","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rwa2jtkrl6btginp4iedoelo6e","file":"proxy/people_reconcile.py"}
-{"module":"proxy.people_reconcile","symbol":"job_catalog","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:u7wnsjuvfl4qazcvhrn6qavy3y","file":"proxy/people_reconcile.py"}
-{"module":"proxy.people_reconcile","symbol":"job_catalog.load","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qa45se3wszf6quakwxb5unyrce","file":"proxy/people_reconcile.py"}
 {"module":"proxy.people_reconcile","symbol":"job_runner","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6cbyummmugkypqisfdzub5fshy","file":"proxy/people_reconcile.py"}
+{"module":"proxy.people_reconcile","symbol":"job_runner.lock_retry_deadline_seconds","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yxeledljdwdanysojwhm2sd22y","file":"proxy/people_reconcile.py"}
 {"module":"proxy.people_reconcile","symbol":"job_runner.run_job","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:olduto24vmqrj4qg5t4lidnzgm","file":"proxy/people_reconcile.py"}
 {"module":"proxy.people_reconcile","symbol":"main","kind":"function","node_id":"function:toolhub-evolved:y3j5oj5lbzek5us62aksmmat4a","file":"proxy/people_reconcile.py"}
-{"module":"proxy.people_reconcile","symbol":"next","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pw7ptyx3hfuldni5zmj4hiurqu","file":"proxy/people_reconcile.py"}
 {"module":"proxy.people_reconcile","symbol":"os","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:46rscnvydusyuftjhjo3k3v5fu","file":"proxy/people_reconcile.py"}
 {"module":"proxy.people_reconcile","symbol":"os.environ.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:b7ng7nrsyu2syqlebutqaekbze","file":"proxy/people_reconcile.py"}
 {"module":"proxy.people_reconcile","symbol":"parser.add_argument","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cwjfbbedgbgtfq7arreqjzhtty","file":"proxy/people_reconcile.py"}
