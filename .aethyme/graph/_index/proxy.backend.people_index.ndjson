@@ -399,6 +399,7 @@
 {"module":"proxy.backend.people_index","symbol":"func.max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tv2kgbjepacsnolpnz6cagz7uy","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"func.min","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:63uj76ko57lg7yucjhubpxd3me","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"getattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tusanlkaqfqgylsai4jxnypgae","file":"proxy/backend/people_index.py"}
+{"module":"proxy.backend.people_index","symbol":"getattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yqxtmqtei7ee3ovwhkmgjyo7rm","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"getattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yvy7jefdullrbzgowknq7di2ye","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"grouped.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hed524lckujsaz4j52qnp7v33q","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"grouped.setdefault","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ln6dwnldbptni3enyxlpsvwtqi","file":"proxy/backend/people_index.py"}
@@ -485,6 +486,7 @@
 {"module":"proxy.backend.people_index","symbol":"observation.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2ndgwnc5acdzewj3nsdqkveydu","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"observation.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7wvu7hqfuhc5ajctm76qv4ssii","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"observation.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zhu4g7h6i5ezvb4ladohul34ye","file":"proxy/backend/people_index.py"}
+{"module":"proxy.backend.people_index","symbol":"observed.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ub6a23lqfun6ir4wkslzi46yoi","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"or_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2fejobdeq4djv4zvy4htc2yz4q","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"or_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2lkdanb74i2lckd5ludbt7lbmm","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"or_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:fdpdq3rarwjmy62elucbpl72o4","file":"proxy/backend/people_index.py"}
@@ -659,6 +661,7 @@
 {"module":"proxy.backend.people_index","symbol":"set","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rqt2pcy5ut2izojq33zfuutpzm","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"set","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tq6nn6ynrxem2cobpe6b74pxp4","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"set","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yklqjxunytog5q57rxfd4tsp34","file":"proxy/backend/people_index.py"}
+{"module":"proxy.backend.people_index","symbol":"setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:f2gzyg5qjjy2o6udyin6px6zse","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kmetvdw65prjeu3gbhhjyvnoeu","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"sorted","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:65k6fcgnqmmstau23htpgtbz3a","file":"proxy/backend/people_index.py"}
 {"module":"proxy.backend.people_index","symbol":"sorted","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7brkfsgatvxu3sx4coxll2dpsi","file":"proxy/backend/people_index.py"}
