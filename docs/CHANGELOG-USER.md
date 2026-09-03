@@ -1,11 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: measured-not-reasoned -->
-<!-- Release title: Measured, Not Reasoned -->
-<!-- Source range: 2dc71230..0b0af976 (3 commits) -->
+<!-- Release id: the-write-that-changed-nothing -->
+<!-- Release title: The Write That Changed Nothing -->
+<!-- Source range: a3e51ef3..efcd266a (2 commits) -->
 
 # What's New for Users
 
-- The background job that works out which contributor is behind which tool is running again. It had stopped overnight: the site stops a job that fails three times in a row, on the assumption something is properly wrong with it, and this one had. Nothing a visitor sees was affected, and no data was lost -- the work simply did not advance while it was stopped.
-- The cause was an allowance that had been guessed at twice. Each of these jobs reserves a small number of simultaneous conversations with the database, and the figure had been worked out by reading the code rather than watching it run. Reading gave two, then three; the job actually needs four, because it quietly claims a third thing partway through its work that no amount of reading the surrounding code revealed. It now gets what it was measured using.
-- Three further jobs that also claim exclusive access -- the catalogue synchronizer and the two account synchronizers -- had the same allowance without ever being told they needed it, and have been corrected as well. A check now reads the code for every job that claims exclusive access, so the next one added cannot be forgotten in the way these three were.
+- Several background jobs had been failing intermittently for weeks, and one cause of that is now removed. None is anything a visitor sees: they work out which people are behind which tools, keep contributor names in step with external sources, and re-check evidence as it ages. Between them they had lost 179 runs to the same underlying problem, and one job alone had lost 72.
+- The cause was a write that changed nothing. Every pass over the evidence records re-saved every field, whether or not anything about it had altered, and confirming that nothing changed is by far the most common outcome — one of these passes runs every minute. Each of those pointless saves briefly locked the record, and the other jobs that needed the same records waited behind them until they gave up. The records are now only saved when something about them has actually changed.
+- One visible consequence is worth naming. Each piece of evidence carries a "checked at" time, and because confirming a record no longer writes to it, that time now tells you when the evidence last _changed_ rather than when it was last confirmed. Nothing expires or is hidden on the basis of it — a separate expiry date does that — but where several pieces of evidence support the same fact, the ordering between them can differ from before.
