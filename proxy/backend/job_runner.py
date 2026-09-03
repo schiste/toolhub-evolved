@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.exc import DBAPIError
 
-from backend import DEFAULT_DB_URL, db, job_contract
+from backend import DEFAULT_DB_URL, db, job_catalog, job_contract
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -56,6 +56,28 @@ def database_url() -> str:
     the local SQLite default; keeping one spelling keeps that behaviour uniform.
     """
     return os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL
+
+
+#: How much of a job's timeout a lock retry may spend. Half leaves the first
+#: attempt's own budget intact for the second.
+LOCK_RETRY_BUDGET_FRACTION = 2
+
+
+def lock_retry_deadline_seconds(job_name: str | None) -> int:
+    """How late into a job's timeout a lock abort may still be retried.
+
+    Zero for a job nothing schedules, and zero when jobs.yaml declares no
+    timeout, rather than a guessed ceiling: a budget invented here is exactly
+    how a retry ends up running past a timeout it never knew about. A caller
+    that wants the retry has to declare a timeout first, which is the honest
+    order -- an unbounded job has no budget to spend half of.
+    """
+    if not job_name:
+        return 0
+    declared = next((job for job in job_catalog.load() if job.name == job_name), None)
+    if declared is None or declared.timeout_seconds <= 0:
+        return 0
+    return declared.timeout_seconds // LOCK_RETRY_BUDGET_FRACTION
 
 
 def configure(*, concurrency: int = 1, takes_lock: bool = False) -> None:

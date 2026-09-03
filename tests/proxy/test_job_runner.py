@@ -917,3 +917,27 @@ def test_every_entrypoint_that_takes_a_lock_declares_it_to_its_pool():
         undeclared.append(path.name)
 
     assert not undeclared, f"these take an advisory lock without declaring it to the pool: {undeclared}"
+
+
+def test_a_job_without_a_declared_timeout_gets_no_retry_budget():
+    """The rule that made this change need a timeout first.
+
+    A retry budget is half a declared timeout. Inventing one for an unbounded
+    job is how a retry runs past a limit it never knew about, so the helper
+    returns zero and the caller has to declare the timeout to get the retry.
+    """
+    assert job_runner.lock_retry_deadline_seconds("no-such-job") == 0
+    assert job_runner.lock_retry_deadline_seconds(None) == 0
+
+
+def test_the_source_index_declares_the_timeout_its_retry_spends_half_of():
+    """toolinfo-source-index opted into the lock retry, so it needs a bound.
+
+    900s against a measured max of 392s over twelve runs. If the timeout is
+    ever removed the retry silently becomes a no-op, which is the failure this
+    pins: the budget must be a real number, not zero.
+    """
+    budget = job_runner.lock_retry_deadline_seconds("toolinfo-source-index")
+
+    assert budget > 0, "the source index lost its declared timeout, so its lock retry does nothing"
+    assert budget == 900 // job_runner.LOCK_RETRY_BUDGET_FRACTION
