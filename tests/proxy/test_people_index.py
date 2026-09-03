@@ -965,3 +965,72 @@ def test_a_newly_created_identifier_carries_a_timestamp():
         row = _current_identifier(s, people_index.NS_TOOLHUB_USER_ID, "ada-3")
         assert row.last_seen_at is not None
         assert row.last_seen_at >= before
+
+
+def _count_evidence_updates(fn):
+    """Run fn(session) and return the UPDATEs it issued against the evidence table.
+
+    Counting statements rather than comparing values is the whole point: the
+    values were always correct, and it was the writes that were wasted. A test
+    that asserted on the row would have passed throughout the defect.
+    """
+    from sqlalchemy import event
+
+    emitted = []
+
+    def _record(conn, cursor, statement, parameters, context, many):  # noqa: PLR0913 - SQLAlchemy's signature
+        if statement.lstrip().upper().startswith("UPDATE TOOL_RELATIONSHIP_EVIDENCE"):
+            emitted.append(statement)
+
+    engine = db.engine()
+    event.listen(engine, "before_cursor_execute", _record)
+    try:
+        with db.session_scope() as session:
+            fn(session)
+    finally:
+        event.remove(engine, "before_cursor_execute", _record)
+    return len(emitted)
+
+
+def _observe(session, *, confidence=90):
+    from backend import people_policy
+
+    return people_index._upsert_relationship_evidence(
+        session,
+        tool_name="probe-tool",
+        person_id=1,
+        role=PERSON_REL_MAINTAINER,
+        source=SYNC_OFFICIAL,
+        method="toolinfo_verified_author_anchor",
+        evidence_key="probe-key",
+        observation={"display_name": "Ada", "confidence": confidence, "verification_status": AUTHOR_CLAIM_VERIFIED},
+        identity_decision=people_policy.IdentityDecision(action="bind", reason="stable-id", confidence=100),
+        now=utcnow(),
+    )
+
+
+def test_confirming_an_unchanged_observation_issues_no_update():
+    """The write that six jobs contend on, and that nothing needed.
+
+    tool_relationship_evidence is rewritten by people-reconcile-incremental every
+    minute and by five other jobs; errno 1205 lock-wait timeouts had failed runs
+    179 times by 2026-09-03. Assigning the columns unconditionally took a row
+    lock to store what was already there.
+    """
+    _count_evidence_updates(_observe)  # first pass creates the row
+
+    updates = _count_evidence_updates(_observe)
+
+    assert updates == 0, f"an unchanged observation still issued {updates} UPDATE(s)"
+
+
+def test_a_changed_observation_still_writes():
+    """Suppression must not swallow a real change."""
+    _count_evidence_updates(_observe)
+
+    updates = _count_evidence_updates(lambda s: _observe(s, confidence=42))
+
+    assert updates == 1
+    with db.session_scope() as session:
+        row = session.execute(select(ToolRelationshipEvidence)).scalar_one()
+        assert row.confidence == 42
