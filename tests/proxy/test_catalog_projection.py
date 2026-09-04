@@ -1697,8 +1697,25 @@ def test_inference_never_replaces_a_scalar_another_source_asserted():
     assert inferred[0]["effective"] is False
 
 
-def test_inference_never_extends_a_list_another_source_asserted():
-    """The union merge that every other list source gets must not apply here."""
+def test_inference_never_extends_a_list_other_than_keywords():
+    """The union merge that every other list source gets still must not apply here.
+
+    `keywords` is the single exception and is tested below. Every other list
+    field keeps the original guarantee: an inferred value never joins a list
+    somebody else asserted.
+    """
+    effective, _evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-c",
+        [
+            _row(catalog_projection.SOURCE_CANONICAL, {"audiences": ["editors"]}),
+            _row(catalog_projection.SOURCE_INFERENCE, {"audiences": ["developers", "readers"]}),
+        ],
+    )
+    assert effective["audiences"] == ["editors"]
+
+
+def test_inference_extends_a_keyword_list_that_is_below_the_floor():
+    """One keyword usually means the page mentioned one, not that one was chosen."""
     effective, _evidence, _validation, _stamps = catalog_projection._assemble(
         "tool-c",
         [
@@ -1706,7 +1723,57 @@ def test_inference_never_extends_a_list_another_source_asserted():
             _row(catalog_projection.SOURCE_INFERENCE, {"keywords": ["links", "css"]}),
         ],
     )
-    assert effective["keywords"] == ["citations"]
+    assert effective["keywords"] == ["citations", "links", "css"]
+
+
+def test_inference_leaves_a_keyword_list_at_the_floor_alone():
+    """Two is enough to suggest somebody chose them, so nothing is added."""
+    effective, _evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-d",
+        [
+            _row(catalog_projection.SOURCE_CANONICAL, {"keywords": ["citations", "references"]}),
+            _row(catalog_projection.SOURCE_INFERENCE, {"keywords": ["links", "css"]}),
+        ],
+    )
+    assert effective["keywords"] == ["citations", "references"]
+
+
+def test_inferred_keywords_stop_at_the_ceiling():
+    """The list is capped in total, not by how many the model happened to offer."""
+    effective, _evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-e",
+        [
+            _row(catalog_projection.SOURCE_CANONICAL, {"keywords": ["citations"]}),
+            _row(
+                catalog_projection.SOURCE_INFERENCE,
+                {"keywords": ["a", "b", "c", "d", "e", "f", "g", "h"]},
+            ),
+        ],
+    )
+    assert len(effective["keywords"]) == catalog_projection.KEYWORD_FILL_CEILING
+    assert effective["keywords"][0] == "citations"
+
+
+def test_a_merged_keyword_still_says_it_was_inferred():
+    """The exception waives the fill-only rule, not the provenance.
+
+    Each value keeps its own evidence entry, so a reader can tell which keyword
+    a maintainer supplied and which a model proposed. That per-value marking is
+    what makes extending this list safe where a blanket union would not be.
+    """
+    effective, evidence, _validation, _stamps = catalog_projection._assemble(
+        "tool-f",
+        [
+            _row(catalog_projection.SOURCE_CANONICAL, {"keywords": ["citations"]}),
+            _row(catalog_projection.SOURCE_INFERENCE, {"keywords": ["links"]}),
+        ],
+    )
+    assert effective["keywords"] == ["citations", "links"]
+    by_value = {item["value"]: item for item in evidence["keywords"]}
+    assert by_value["citations"]["source"] == catalog_projection.SOURCE_CANONICAL
+    assert by_value["links"]["source"] == catalog_projection.SOURCE_INFERENCE
+    assert by_value["links"]["effective"] is True
+    assert by_value["links"]["confidence"] == catalog_projection.SOURCE_CONFIDENCE[catalog_projection.SOURCE_INFERENCE]
 
 
 def test_inference_fills_a_list_nobody_asserted():
@@ -1732,13 +1799,16 @@ def test_human_curation_still_outranks_inference():
 
 
 def test_inference_is_gap_only_regardless_of_append_order():
-    """The guarantee must not depend on the inference row being appended last."""
-    effective, _evidence, _validation, _stamps = catalog_projection._assemble(
-        "tool-f",
-        [
-            _row(catalog_projection.SOURCE_INFERENCE, {"description": "Model text.", "keywords": ["a"]}),
-            _row(catalog_projection.SOURCE_CANONICAL, {"description": "Canonical text.", "keywords": ["b"]}),
-        ],
-    )
-    assert effective["description"] == "Canonical text."
-    assert effective["keywords"] == ["b"]
+    """The guarantee must not depend on the inference row being appended last.
+
+    The scalar is still gap-only and the keyword list still puts the asserted
+    value first, whichever order the rows arrive in. Only `keywords` extends,
+    and only because one keyword is below KEYWORD_FILL_FLOOR.
+    """
+    inference = _row(catalog_projection.SOURCE_INFERENCE, {"description": "Model text.", "keywords": ["a"]})
+    canonical = _row(catalog_projection.SOURCE_CANONICAL, {"description": "Canonical text.", "keywords": ["b"]})
+
+    for rows in ([inference, canonical], [canonical, inference]):
+        effective, _evidence, _validation, _stamps = catalog_projection._assemble("tool-g", rows)
+        assert effective["description"] == "Canonical text."
+        assert effective["keywords"] == ["b", "a"]

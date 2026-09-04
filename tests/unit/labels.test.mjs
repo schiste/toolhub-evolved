@@ -170,3 +170,29 @@ test("glanceChips() singular 'language' for exactly one ui language", () => {
 		'<span class="glance" dir="auto">en.wp</span><span class="glance">1 language</span>'
 	);
 });
+
+test("keywordTags marks an inferred keyword and leaves the maintainer's alone", () => {
+	const tool = { keywords: ["citations", "links"] };
+	const projection = {
+		provenance: {
+			keywords: [
+				{ value: "citations", source: "official_toolhub", effective: true },
+				{ value: "links", source: "llm_inference", effective: true }
+			]
+		}
+	};
+
+	const html = keywordTags(tool, { projection });
+
+	// One mark, on the inferred tag only.
+	assert.equal(html.match(/source-mark/g)?.length, 1);
+	assert.match(html, /links<\/a><sup class="source-mark"/);
+	assert.match(html, /citations<\/a><a class="tag"/);
+});
+
+test("keywordTags without a projection marks nothing rather than implying provenance", () => {
+	// A caller that never had the projection cannot tell the sources apart, and
+	// an unmarked list would claim they are all a maintainer's.
+	const html = keywordTags({ keywords: ["citations", "links"] }, {});
+	assert.equal(html.includes("source-mark"), false);
+});
