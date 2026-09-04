@@ -1273,3 +1273,26 @@ def test_a_ready_gadget_row_carrying_no_payload_publishes_nothing():
             )
         )
     assert sources_for(GADGET_TOOL) == {}
+
+
+def test_a_gadget_keyword_records_which_text_the_model_read():
+    """Both lanes publish under `llm_inference`, so the source alone cannot say.
+
+    Without the lane the tool page tells roughly 10,000 gadget keywords they
+    were read off source code -- and `wiki_gadgets` stores none to read.
+    """
+    store_gadget_inference(keywords=("clipboard",))
+    sources = sources_for(GADGET_TOOL)[GADGET_TOOL]
+    _record, evidence, _validation, _times = catalog_projection._assemble(GADGET_TOOL, sources)
+    entry = evidence["keywords"][0]
+    assert entry["source"] == catalog_projection.SOURCE_INFERENCE
+    assert entry["lane"] == LANE_GADGET
+
+
+def test_a_user_script_keyword_records_no_lane():
+    """Absent rather than defaulted, so rows written before this keep their shape."""
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REPLY))
+    sources = sources_for(TOOL)[TOOL]
+    _record, evidence, _validation, _times = catalog_projection._assemble(TOOL, sources)
+    assert all("lane" not in entry for entry in evidence["keywords"])

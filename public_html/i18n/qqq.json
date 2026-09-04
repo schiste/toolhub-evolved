@@ -1353,6 +1353,7 @@
 	"sourceMark.curation": "Origin phrase substituted into sourceMark.aria: a correction reviewed inside Toolhub Evolved.",
 	"sourceMark.gadget": "Origin phrase substituted into sourceMark.aria: the wiki's own gadget definition page.",
 	"sourceMark.inference": "Tooltip on the discreet non-toolinfo marker when a field's value was read off the tool's source code by a language model rather than declared by its authors.",
+	"sourceMark.inferenceGadget": "Message shown in the source mark interface for inference gadget.",
 	"sourceMark.repository": "Origin phrase substituted into sourceMark.aria: analysis of the tool's source repository.",
 	"sourceMark.userScript": "Origin phrase substituted into sourceMark.aria: the wiki page a user script's author documents it on.",
 	"static.about.catalogIntro": "Message shown in the static interface for about › catalog intro.",

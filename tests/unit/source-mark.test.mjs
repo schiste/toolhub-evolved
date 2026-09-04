@@ -129,3 +129,39 @@ test("valueMark says nothing when there is no projection to consult", () => {
 	assert.equal(valueMark("keywords", "links", null), "");
 	assert.equal(valueMark("keywords", "links", { provenance: {} }), "");
 });
+
+/* Both inference lanes publish under `llm_inference`, and they do not read the
+   same thing: a user script's answer comes from its source code, a gadget's
+   from the description its wiki shows -- `wiki_gadgets` stores no source. One
+   label for both told roughly 10,000 gadget keywords they came from source code
+   nobody opened, which is the confusion the mark exists to prevent. */
+test("a gadget's inferred keyword says which text was actually read", () => {
+	const projection = {
+		provenance: {
+			keywords: [{ value: "clipboard", source: "llm_inference", lane: "gadget", effective: true }]
+		}
+	};
+	const html = valueMark("keywords", "clipboard", projection);
+	assert.match(html, /gadget&#39;s own description/);
+	assert.doesNotMatch(html, /source code/);
+});
+
+test("a user script's inferred keyword still says source code", () => {
+	const projection = {
+		provenance: { keywords: [{ value: "links", source: "llm_inference", effective: true }] }
+	};
+	assert.match(valueMark("keywords", "links", projection), /source code/);
+});
+
+test("a lane on a transcribing source does not borrow the inference wording", () => {
+	// `lane` says which text a model was given. A future source that recorded
+	// one must not inherit a sentence about a language model that never ran.
+	const projection = {
+		provenance: {
+			keywords: [{ value: "x", source: "wikimedia_user_script", lane: "gadget", effective: true }]
+		}
+	};
+	const html = valueMark("keywords", "x", projection);
+	assert.match(html, /wiki page beside the script/);
+	assert.doesNotMatch(html, /language model/);
+});
