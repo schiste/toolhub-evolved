@@ -17,6 +17,8 @@
 {"module":"proxy.backend.catalog_projection","symbol":"FACET_FIELDS.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:w6xhl4eobji57x2hkutp4pszie","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"FILL_ONLY_SOURCES","kind":"global_variable","node_id":"global_variable:toolhub-evolved:vgoor2iyb7cimmomyzabemqw4m","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"INFERENCE_READY","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:q4l6jfqkzjb6isnwjxj35pxxza","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"KEYWORD_FILL_CEILING","kind":"global_variable","node_id":"global_variable:toolhub-evolved:wzndlj6zksw2twojyd7j3rvglu","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"KEYWORD_FILL_FLOOR","kind":"global_variable","node_id":"global_variable:toolhub-evolved:zqq2ulensm65qwnbwr7qa4bm7m","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"LIST_FIELDS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:tawnnd3hgigifnhc3w53qk77sy","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"MAX_REFRESH_TOOLS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:n2wpgv43yh6je3izn3ghfxymze","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"PROJECTED_FIELDS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:7dznbaeiusp7h25tm6sfniyw7i","file":"proxy/backend/catalog_projection.py"}
