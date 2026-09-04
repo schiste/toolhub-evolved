@@ -369,3 +369,67 @@ def test_a_breaker_already_tripped_is_ignored_once_no_breaker_is_set(tmp_path):
 
     assert result.returncode == 7
     assert marker.read_text().splitlines() == ["run"]
+
+
+def _guard_env(state_dir: Path, heartbeat: str = "1") -> dict[str, str]:
+    """The guard's environment with a heartbeat fast enough to observe.
+
+    The real interval is 30s. Every threshold in the tests below is expressed in
+    the same small units so a run can outlive its own stale-after in seconds.
+    """
+    return {
+        "HOME": str(state_dir),
+        "TOOLHUB_JOB_GUARD_DIR": str(state_dir / "guard"),
+        "TOOLHUB_JOB_GUARD_HEARTBEAT_SECONDS": heartbeat,
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+    }
+
+
+def test_a_running_job_keeps_its_own_lock_fresh(tmp_path):
+    """Liveness is measured now, not inferred from how long the job may run.
+
+    The threshold here is 2s and the run takes 6, so under the old rule the lock
+    would have looked abandoned four times over while its owner was still
+    working -- and the next tick would have started a second concurrent run.
+    Watching the mtime advance is what says the owner is still there.
+    """
+    lock = tmp_path / "guard" / ".example.lock"
+    holder = subprocess.Popen(
+        ["sh", str(GUARD), "--job-name", "example", "--stale-after", "2", "--", "sh", "-c", "sleep 6"],
+        cwd=ROOT,
+        env=_guard_env(tmp_path),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        while not lock.exists():
+            time.sleep(0.1)
+        time.sleep(2.5)
+        first = lock.stat().st_mtime
+        # Past the 2s threshold again: a lock nobody touched would be reclaimable.
+        time.sleep(2.5)
+        assert lock.stat().st_mtime > first, "the lock went stale while its owner was still running"
+    finally:
+        holder.wait(timeout=30)
+    assert not lock.exists(), "a completed run must hand its lock back"
+
+
+def test_the_heartbeat_never_leaves_the_lock_behind_as_a_file(tmp_path):
+    """A plain `touch` on a reclaimed lock would create one, and mkdir could not take it.
+
+    That failure is permanent: every later run would skip on a path that is no
+    longer a directory. The child removes the lock underneath the heartbeat to
+    force the race the real reclaim path opens.
+    """
+    lock = tmp_path / "guard" / ".example.lock"
+    result = subprocess.run(
+        ["sh", str(GUARD), "--job-name", "example", "--stale-after", "2", "--",
+         "sh", "-c", f"rmdir {lock}; sleep 4"],
+        cwd=ROOT,
+        env=_guard_env(tmp_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert not lock.is_file(), "the heartbeat recreated the lock as a file"

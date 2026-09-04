@@ -6,18 +6,39 @@ set -eu
 JOB_NAME=""
 MAX_FAILURES=3
 RESET=0
-# The backstop for a lock whose owner died without releasing it. A signalled
-# run hands its own lock back below, so this now covers only the ways a run
-# can stop without getting to run any code at all: SIGKILL after the grace
+# How long a lock may go untouched before a later run treats it as abandoned.
+# A signalled run hands its own lock back below, so this covers only the ways a
+# run can stop without getting to run any code at all: SIGKILL after the grace
 # period, an eviction, a node going away. The lock would otherwise block every
 # later invocation forever, and because a skip exits 0 the failure mail never
-# fires: one killed run silently retires the job. Keep this above the job's
-# own timeout so a slow run is never mistaken for an abandoned one: jobs.yaml
-# sets --stale-after to twice each job's timeout, since the platform kills at
-# the timeout and nothing alive can hold a lock past twice it. A value at or
-# below the timeout would be worse than none, reclaiming a lock from a run
-# still doing work. This default covers jobs that declare no timeout.
-STALE_AFTER=3600
+# fires: one killed run silently retires the job.
+#
+# This is measured from the owner's last heartbeat, not from when the lock was
+# taken, which is what makes one number right for every job. It used to be
+# derived -- twice each job's timeout, on the reasoning that nothing alive can
+# hold a lock past twice the point the platform kills it. That is sound for the
+# question "could this still be running", and wrong for the question that
+# actually matters, "how long is the job silent afterwards": the threshold has
+# to be crossed *and then noticed by a run*, so a job whose schedule is tighter
+# than its own threshold loses every tick in between. Measured across jobs.yaml
+# on 2026-09-04, one abandoned lock cost inference-enrichment 1 run,
+# people-reconcile-incremental 10, and api-cache-invalidator -- a minute
+# schedule against the 3600s default -- a full 60.
+#
+# A heartbeat answers the liveness question directly, so the window can be
+# short without ever reclaiming from a run still doing work: a live owner keeps
+# touching its lock however long it takes, and a dead one stops immediately.
+#
+# 330 rather than a round 300 because a threshold is only ever compared against
+# it by a run, so one that lands on a schedule is decided by jitter rather than
+# by the clock -- 300 would sit exactly on digest-deliver's five minutes. See
+# test_no_reclaim_threshold_lands_on_the_schedule_it_will_be_measured_against.
+STALE_AFTER=330
+# How often the owner touches its lock while it works. Eleven of these fit inside
+# STALE_AFTER, so a reclaim needs ten consecutive misses -- comfortably more
+# than an NFS attribute cache can hide, and the directory these locks live on is
+# NFS. Overridable for tests, which cannot wait out real intervals.
+HEARTBEAT_SECONDS="${TOOLHUB_JOB_GUARD_HEARTBEAT_SECONDS:-30}"
 # Tripping the breaker used to be permanent: a transient upstream blip that
 # failed three runs retired the job until someone ran --reset by hand, and the
 # skip exits 0 so nothing said so. The crawler sat disabled from 2026-08-03 to
@@ -136,7 +157,37 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
 	fi
 fi
 child=""
+heartbeat=""
+# Touch the lock while this run works, so its age means "silent since" rather
+# than "started at". Backgrounded rather than woven into the child's own loop
+# because the guard wraps arbitrary commands and cannot ask them to check in.
+# It exits on its own if the lock disappears, so a reclaimed owner stops
+# refreshing a directory that now belongs to somebody else.
+if [ "$STALE_AFTER" -gt 0 ] && [ "$HEARTBEAT_SECONDS" -gt 0 ]; then
+	# Detached from this run's stdout and stderr, not merely silent. Killing the
+	# subshell does not kill the `sleep` it is blocked in, and an orphaned sleep
+	# holding the job's output pipe keeps any caller that reads to EOF waiting
+	# out the full interval after the run is over -- which is every caller that
+	# captures output, the test harness included.
+	(
+		while sleep "$HEARTBEAT_SECONDS"; do
+			# -c so this can only ever update an existing directory. A plain
+			# touch would recreate a reclaimed lock as a *file*, which mkdir can
+			# never take again -- the job would be locked out permanently by the
+			# very thing meant to keep it running.
+			touch -c "$LOCK_DIR" 2>/dev/null || exit 0
+			[ -d "$LOCK_DIR" ] || exit 0
+		done
+	) >/dev/null 2>&1 </dev/null &
+	heartbeat=$!
+fi
 cleanup() {
+	# Stop the heartbeat before releasing, or it can recreate the directory it
+	# was touching a moment after rmdir and lock the job out for good.
+	if [ -n "$heartbeat" ]; then
+		kill "$heartbeat" 2>/dev/null || true
+		wait "$heartbeat" 2>/dev/null || true
+	fi
 	rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 terminated() {
