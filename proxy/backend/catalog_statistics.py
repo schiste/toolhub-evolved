@@ -717,6 +717,18 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
     }
 
 
+def _stored_snapshot(session: Session) -> tuple[Any, dict[str, Any] | None]:
+    """Return the cache row and its decoded payload, or None when unusable."""
+    cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
+    if cached is None:
+        return None, None
+    try:
+        decoded = json.loads(cached.value)
+    except json.JSONDecodeError:
+        return cached, None
+    return cached, decoded if isinstance(decoded, dict) else None
+
+
 def snapshot(*, force: bool = False) -> dict[str, Any]:
     """Return the shared cached snapshot, preferring a stale one to a rebuild.
 
@@ -736,18 +748,25 @@ def snapshot(*, force: bool = False) -> dict[str, Any]:
     turning cache contention into a 500.
     """
     now = utcnow()
+    # One connection on the path almost every request takes. Holding the
+    # rebuild lock here too cost two, which is a webservice worker's whole pool,
+    # so a single request starved its own worker and the next one waited out
+    # pool_timeout. The lock decides who may rebuild; reading the stored copy
+    # is not rebuilding.
+    with db.session_scope() as session:
+        cached, cached_payload = _stored_snapshot(session)
+        if cached_payload is not None and not force and cached.updated_at >= now - SNAPSHOT_STALE_LIMIT:
+            return cached_payload
+
+    # Missing, or stale past the bound on how long a dead refresh job may
+    # freeze the page. Only here is the lock worth its connection.
     with (
         db.advisory_lock("catalog-statistics-refresh", timeout_seconds=2) as acquired,
         db.session_scope() as session,
     ):
-        cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
-        cached_payload: dict[str, Any] | None = None
-        if cached is not None:
-            try:
-                decoded = json.loads(cached.value)
-            except json.JSONDecodeError:
-                decoded = None
-            cached_payload = decoded if isinstance(decoded, dict) else None
+        # Re-read first: whoever held the lock while this request queued for it
+        # has probably just stored a fresh copy.
+        cached, cached_payload = _stored_snapshot(session)
         if cached_payload is not None and not force:
             serve_stale = cached.updated_at >= now - SNAPSHOT_STALE_LIMIT or not acquired
             if serve_stale:

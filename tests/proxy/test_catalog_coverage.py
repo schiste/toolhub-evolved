@@ -299,3 +299,65 @@ def test_a_cold_cache_serves_a_rebuild_without_storing_it_over_the_running_job(m
     # pass that holds the lock rather than racing it to write.
     assert served["tools"] == 1
     assert _stored() is None
+
+
+def _lock_takes(monkeypatch, fn):
+    """Run fn() and return how many times it entered the rebuild lock.
+
+    Counting connections cannot see this defect: `db.advisory_lock` returns
+    immediately without a connection on any dialect but MariaDB, so on SQLite
+    the extra connection the lock costs in production simply does not exist. The
+    structure is what is testable here -- whether the common path enters the
+    lock at all -- and the structure is what was wrong.
+    """
+    taken = []
+    real = db.advisory_lock
+
+    @contextmanager
+    def _counting(name, **kwargs):
+        taken.append(name)
+        with real(name, **kwargs) as acquired:
+            yield acquired
+
+    monkeypatch.setattr(db, "advisory_lock", _counting)
+    fn()
+    return len(taken)
+
+
+def test_serving_a_cached_coverage_snapshot_does_not_take_the_rebuild_lock(monkeypatch):
+    """The lock is a connection of its own, held for the whole block.
+
+    A webservice worker's pool is two connections. Taking the lock to read a
+    stored snapshot spent both, so one /v1/coverage/ request starved its own
+    worker and the request behind it waited out pool_timeout and returned 500 --
+    10,423ms on 2026-09-02, which is POOL_TIMEOUT_SECONDS, not a slow query.
+    Reading the stored copy is not rebuilding, so it must not take the lock.
+    """
+    catalog_coverage.snapshot(force=True)  # store one
+
+    taken = _lock_takes(monkeypatch, catalog_coverage.snapshot)
+
+    assert taken == 0, f"serving a cached snapshot entered the rebuild lock {taken} time(s)"
+
+
+def test_a_missing_coverage_snapshot_still_takes_the_lock_to_rebuild(monkeypatch):
+    """Suppression must not disable the stampede protection it was hiding behind."""
+    with db.session_scope() as session:
+        row = session.get(ApiCacheMeta, catalog_coverage.SNAPSHOT_KEY)
+        if row is not None:
+            session.delete(row)
+
+    taken = _lock_takes(monkeypatch, catalog_coverage.snapshot)
+
+    assert taken == 1
+
+
+def test_serving_a_cached_statistics_snapshot_does_not_take_the_rebuild_lock(monkeypatch):
+    """catalog_statistics documented itself as sharing this contract, and shared the defect."""
+    from backend import catalog_statistics
+
+    catalog_statistics.snapshot(force=True)
+
+    taken = _lock_takes(monkeypatch, catalog_statistics.snapshot)
+
+    assert taken == 0
