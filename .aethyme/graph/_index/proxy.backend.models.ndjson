@@ -32,6 +32,8 @@
 {"module":"proxy.backend.models","symbol":"IssueReport","kind":"class","node_id":"class:toolhub-evolved:bgdjr3qrje6at6puylzwkwgw6i","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"JSON","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xovkl7zxceh6rbhie2t4ek56p4","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"JobRun","kind":"class","node_id":"class:toolhub-evolved:3bpfgxiz3mmdu2j6b3gtyohale","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"LANE_GADGET","kind":"global_variable","node_id":"global_variable:toolhub-evolved:r2rgcdidetdx7qb7jgpbgdrp6e","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"LANE_USER_SCRIPT","kind":"global_variable","node_id":"global_variable:toolhub-evolved:4gtp2wiejzt3xuxiwyuqsfphiu","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"LARGE_TEXT","kind":"global_variable","node_id":"global_variable:toolhub-evolved:nwfol4abcmh5mmykmj3l6bbl5y","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"LIFECYCLE_UNKNOWN","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:uwojm2cfzs7xnfka55garcvpnq","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"LIFECYCLE_VALUES","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:64u6urfsp5x6ldwwmeebvzkoee","file":"proxy/backend/models.py"}
