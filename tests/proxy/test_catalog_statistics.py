@@ -1055,3 +1055,33 @@ def test_evidence_that_normalized_to_nothing_names_no_label_to_resolve():
     assert payload["catalog"]["unresolvedAuthorTools"] == 1
     assert payload["identities"]["unresolvedLabels"] == 0
     assert payload["attribution"]["distinctLabels"] == 0
+
+
+def test_a_request_that_loses_the_rebuild_lock_serves_stale_rather_than_rebuilding(monkeypatch):
+    """The stampede protection, on the path the lock is now taken for.
+
+    Past SNAPSHOT_STALE_LIMIT a request is entitled to rebuild, so it takes the
+    lock. Whoever loses that race must still serve the stored copy: the point of
+    the lock is that one worker pays for the whole-catalog pass while the others
+    keep answering, and turning cache contention into a rebuild queue is what it
+    exists to prevent. Only reachable now that the lock is taken on the rebuild
+    path alone, which is why it needed a test of its own.
+    """
+    with db.session_scope() as session:
+        _tool(session, "t", {"title": "T"})
+    catalog_statistics.snapshot()
+    with db.session_scope() as session:
+        _tool(session, "second", {"title": "Second"})
+        row = session.get(ApiCacheMeta, catalog_statistics.SNAPSHOT_KEY)
+        row.updated_at = utcnow() - catalog_statistics.SNAPSHOT_STALE_LIMIT - timedelta(minutes=1)
+
+    @contextlib.contextmanager
+    def _lost(name, **kwargs):
+        yield False
+
+    monkeypatch.setattr(db, "advisory_lock", _lost)
+
+    payload = catalog_statistics.snapshot()
+
+    # The stale copy, not a rebuild: one tool, not two.
+    assert payload["catalog"]["totalTools"] == 1
