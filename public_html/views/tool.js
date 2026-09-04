@@ -560,6 +560,45 @@ function repositoryDataSection(repository) {
 	return `<details class="catalog-evidence__field"><summary>${esc(t("tool.repositoryDataField", "Repository data"))}</summary><ul>${items}</ul></details>`;
 }
 
+/* ---- Listing completeness, where there is a listing -----------------------
+   The nine-field checklist grades a record against what a maintainer could
+   have filled in, which only means something for a record somebody maintains.
+   About 3,800 catalogued pages are a person's skin file, a copy of somebody
+   else's library, or one tool's saved settings -- catalogued because the census
+   admits every script page in user space, and every one of them was being shown
+   a meter reading 2/9 and seven omissions nobody can fix. A checklist nobody is
+   addressed by is worse than none: a reader cannot tell it from one addressed
+   to a maintainer who really has neglected their listing. */
+/* Literal keys, one per shape, because the i18n extractor reads the source
+   rather than running it: a key built from a variable is invisible to it and
+   would ship a panel no translator ever sees. */
+/** @type {Record<string, () => string>} */
+const SHAPE_NOTES = {
+	"skin-config": () => t("tool.pageKindSkinConfig", "A personal skin configuration page rather than a listed tool."),
+	"tool-settings": () => t("tool.pageKindToolSettings", "One tool's saved settings rather than a tool of its own."),
+	"vendored-library": () => t("tool.pageKindVendoredLibrary", "A copy of a library that is maintained elsewhere."),
+	component: () => t("tool.pageKindComponent", "Part of another script rather than a tool of its own.")
+};
+
+/**
+ * @param {{ filled: number, total: number, items: Array<{ key: string, label: string, ok: boolean }> }} complete
+ * @param {Record<string, any> | null | undefined} projection
+ */
+function completenessPanel(complete, projection) {
+	const describe = SHAPE_NOTES[String(projection?.shape || "")];
+	if (!describe) {
+		return `<div class="panel">
+					<h2 class="panel__title">${t("tool.listingCompleteness", "Listing completeness")}</h2>
+					${completenessMeter(complete)}
+					${completenessList(complete)}
+				</div>`;
+	}
+	return `<div class="panel">
+					<h2 class="panel__title">${esc(t("tool.pageKindTitle", "About this page"))}</h2>
+					<p class="muted">${esc(describe())}</p>
+				</div>`;
+}
+
 /**
  * @param {Record<string, any> | null | undefined} projection
  * @param {Record<string, any> | null | undefined} [repository]
@@ -1052,11 +1091,7 @@ export async function viewTool(name) {
 					<h2 class="panel__title">${t("tool.maintainersTitle", "Maintainer relationships")}</h2>
 					<div class="maint-list">${maintList}</div>
 				</div>
-				<div class="panel">
-					<h2 class="panel__title">${t("tool.listingCompleteness", "Listing completeness")}</h2>
-					${completenessMeter(complete)}
-					${completenessList(complete)}
-				</div>
+				${completenessPanel(complete, projection)}
 				<div data-evolved-signals-slot></div>
 				<div data-media-slot></div>
 			</aside>

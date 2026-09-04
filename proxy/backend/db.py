@@ -403,6 +403,19 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # string means "asked, and nothing was refused". The sweep uses that
             # difference to find the rows worth asking about once more.
             "reply": f"{text_col} NULL",
+            # Which lane produced the row, because the two cannot be re-checked
+            # the same way: a user-script row is compared against
+            # `user_script_pages.fingerprint`, a gadget row against a hash of
+            # the description the wiki shows now. Defaulted rather than
+            # nullable -- every row stored before this column came from the
+            # user-script lane, which is what the default already says.
+            "lane": "VARCHAR(16) NOT NULL DEFAULT 'user_script'",
+        },
+        "catalog_tool_projection": {
+            # Empty means "a standalone tool", which is what every row stored
+            # before this column was implicitly claiming, so the default states
+            # the old behaviour rather than a new one.
+            "shape": "VARCHAR(32) NOT NULL DEFAULT ''",
         },
         "job_runs": {
             # The summary the job printed for this run. Nullable because the row

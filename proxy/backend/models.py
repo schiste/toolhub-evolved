@@ -599,6 +599,12 @@ class CatalogToolProjection(Base):
     validation: Mapped[dict] = mapped_column(JSON, default=dict)
     source_timestamps: Mapped[dict] = mapped_column(JSON, default=dict)
     search_text: Mapped[str] = mapped_column(Text, default="")
+    # What this record is, when it is not a standalone tool -- see
+    # `backend.tool_shape`. Stored rather than derived on read because the
+    # judgement needs the page's title and the model's verdict, neither of which
+    # a reader of the projection has, and because a list view would otherwise
+    # make the same two joins per row.
+    shape: Mapped[str] = mapped_column(String(32), default="")
     projection_version: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     refreshed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
@@ -2151,6 +2157,13 @@ class WikiLaneState(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+# The lanes `ToolInference.lane` distinguishes. Declared here rather than in
+# `inference_enrichment` because the column's default needs them and the model
+# layer cannot import the worker that fills it.
+LANE_USER_SCRIPT = "user_script"
+LANE_GADGET = "gadget"
+
+
 class ToolInference(Base):
     """What a language model said one tool does, read off that tool's own source.
 
@@ -2177,18 +2190,28 @@ class ToolInference(Base):
         # The sweep's whole selection is "pages with no current inference", as a
         # join on these two columns. Without the index that join reads the table.
         Index("ix_tool_inference_page_fingerprint", "page_id", "source_fingerprint"),
+        # Coverage and the gadget sweep both count by lane across the whole
+        # table, which the index above cannot serve: it leads on `page_id`.
+        Index("ix_tool_inference_lane", "lane"),
     )
     tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
     # Only the fields validation accepted, under their toolinfo names, so the
     # projection can treat this payload exactly like any other source's.
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
-    # The page this was read from, in the lane that produced it -- today only
-    # `user_script_pages`. A second lane would need its own join column here
-    # rather than reusing this one, since the ids are not comparable.
+    # Which lane produced this row. The two are re-checked against different
+    # things -- see `source_fingerprint` -- so a reader that treats them alike
+    # would either re-ask every gadget every sweep or never re-ask one at all.
+    lane: Mapped[str] = mapped_column(String(16), default=LANE_USER_SCRIPT)
+    # The row this was read from, in the table its own lane owns:
+    # `user_script_pages.id` for `user_script`, `wiki_gadgets.id` for `gadget`.
+    # The ids are not comparable across lanes, which is exactly why `lane` has
+    # to be read with this column and never without it.
     page_id: Mapped[int] = mapped_column(Integer, default=0)
-    # The body's fingerprint at the time it was read. A page whose fingerprint
-    # still matches is never re-sent: the source has not moved, so neither would
-    # the answer, and re-sending 37,791 unchanged scripts is the entire cost.
+    # What the answer was read from, at the time it was read: the body's
+    # fingerprint in the user-script lane, a hash of the gadget's description in
+    # the gadget lane. Either way a source that still matches is never re-sent,
+    # because the answer would not move and re-asking the corpus is the whole
+    # cost.
     source_fingerprint: Mapped[str] = mapped_column(String(64), default="")
     model: Mapped[str] = mapped_column(String(64), default="")
     status: Mapped[str] = mapped_column(String(16), default="")

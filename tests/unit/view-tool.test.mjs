@@ -1822,3 +1822,40 @@ test("viewTool ignores a creation date it cannot read rather than printing an in
 	assert.ok(!r.html.includes("Created "));
 	assert.ok(!r.html.includes("Invalid Date"));
 });
+
+/* The listing checklist grades a record against what a maintainer could have
+   filled in, and about 3,800 catalogued pages have no maintainer to address:
+   a person's skin file, a copy of somebody else's library, one tool's saved
+   settings. Each was being shown a meter and a list of unfixable omissions. */
+test("viewTool replaces the listing checklist on a page that is not a tool", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("skinfile", { title: "monobook.js", catalogProjection: { shape: "skin-config" } })
+	);
+	const r = await tool.viewTool("skinfile");
+	assert.ok(!r.html.includes("Listing completeness"));
+	assert.ok(!r.html.includes("complete-list"));
+	assert.ok(r.html.includes("About this page"));
+	assert.ok(r.html.includes("A personal skin configuration page rather than a listed tool."));
+});
+
+test("viewTool names each kind of non-tool page in its own words", async () => {
+	const expected = {
+		"tool-settings": "One tool&#39;s saved settings rather than a tool of its own.",
+		"vendored-library": "A copy of a library that is maintained elsewhere.",
+		component: "Part of another script rather than a tool of its own."
+	};
+	for (const [shape, note] of Object.entries(expected)) {
+		h.getTool.mockResolvedValue(toolFixture("p", { title: "P", catalogProjection: { shape } }));
+		const r = await tool.viewTool("p");
+		assert.ok(r.html.includes(note), `${shape} should say: ${note}`);
+	}
+});
+
+test("viewTool keeps the checklist for a real tool and for an unclassified one", async () => {
+	for (const projection of [{ shape: "" }, {}, null]) {
+		h.getTool.mockResolvedValue(toolFixture("real", { title: "Real", catalogProjection: projection }));
+		const r = await tool.viewTool("real");
+		assert.ok(r.html.includes("Listing completeness"), `shape ${JSON.stringify(projection)}`);
+		assert.ok(!r.html.includes("About this page"));
+	}
+});
