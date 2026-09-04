@@ -1,11 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: unable-to-look -->
-<!-- Release title: Unable To Look -->
-<!-- Source range: 157c237d..67e630d6 (3 commits) -->
+<!-- Release id: one-keyword-is-not-a-choice -->
+<!-- Release title: One Keyword Is Not A Choice -->
+<!-- Source range: 3476655e..39ec460f (2 commits) -->
 
 # What's New for Users
 
-- The data coverage page and the statistics page could each fail with an error under no particular load. Both serve a summary a background job prepares in advance, and both were also claiming the exclusive right to rebuild that summary every time somebody merely read it. Each web worker is allowed two simultaneous conversations with the database; claiming the rebuild right used one and reading the summary used the other, so a single visitor to either page used everything that worker had, and the next request to reach it waited ten seconds and gave up. Reading now costs one conversation, and the rebuild right is claimed only when there is something to rebuild.
-- Nothing about how fresh those pages are has changed. The same job refreshes them on the same schedule, a reader still sees the last stored copy rather than waiting for a rebuild, and when a rebuild is genuinely needed one worker performs it while the others carry on serving what they have.
-- Separately, the automated check that scans this project's dependencies for known security problems no longer stops all work when the service it consults is unreachable. That service was down for much of this morning, and because the check could not tell "a problem was found" apart from "nobody answered", every change was blocked regardless of content. It now says clearly when it could not look, and still refuses anything with a real problem.
+- User scripts that arrived with only one keyword now get a few more. A keyword list of one is almost never somebody's decision that one was enough — it is what the script's wiki page happened to mention. The catalogue already had a reading of what these scripts do, taken from their own source code, and it was being held back rather than shown. It is now added to lists that had fewer than two keywords, up to six in total.
+- Every keyword added this way is marked. A small dagger sits beside it, saying on hover that it was read off the source code by a language model rather than written by the tool's authors. The keywords a maintainer did supply carry no mark, as before, and a tool that already had two or more keywords is left exactly as it was.
+- The mark matters more than the keywords do. These lists feed search and the filters beside it, so an unmarked guess would be indistinguishable from something a maintainer chose — which is why the catalogue had been refusing to add them at all. Adding them and saying where they came from is the trade; adding them silently was not on offer.
