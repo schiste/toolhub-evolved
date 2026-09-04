@@ -1200,3 +1200,53 @@ def test_a_reclassified_page_counts_as_a_change():
     run(lambda payload: reply(REAL_REFUSAL))
     assert catalog_projection.refresh_tool_names([name])["changed"] == 1
     assert catalog_projection.projection_payload(name)["shape"] == tool_shape.SHAPE_SKIN
+
+
+def test_the_gadget_request_asks_for_english_tags_and_nothing_else():
+    """The prompt is the only thing standing between a shape rule and a lane
+    that rejects every non-English wiki.
+
+    Asserted on the request this module would really send, not on
+    `build_gadget_prompt` alone: the system turn carries the English
+    instruction and the user turn carries the description, and a change that
+    moved one without the other would still pass a test of either half.
+    """
+    payload = enrichment.payload_for("m", "ab.wikipedia.org", "markblocked", RU_DESCRIPTION, lane=LANE_GADGET)
+    system, user = (message["content"] for message in payload["messages"])
+    assert "English" in system
+    assert '"keywords"' in user
+    # The requested key, not the word: the prompt says "the description a wiki
+    # shows" because that is the input it is handing over.
+    assert '"description"' not in user
+    assert RU_DESCRIPTION in user
+    # A gadget answer is eight short tags; the user-script ceiling has to hold
+    # three sentences as well, and paying for that here would be waste.
+    assert payload["max_tokens"] < enrichment.payload_for("m", ENWIKI, "t", BODY)["max_tokens"]
+
+
+def test_the_gadget_window_stops_at_the_limit():
+    """A wave is `concurrency()` calls; a window that ignored `limit` would read
+    the whole inventory into memory to ask about six of them."""
+    for index in range(4):
+        gadget(f"gadget{index}")
+    with db.session_scope() as session:
+        assert len(enrichment.gadget_pending(session, limit=2)) == 2
+
+
+def test_each_lane_is_counted_against_its_own_denominator():
+    """A tally of the whole table under a user-script denominator is a lie.
+
+    `by_status` counted every row and `eligiblePages` counted user-script pages
+    only, so the first gadget answered would have moved `ready` toward a number
+    larger than the pages it is measured against -- and a lane 83% read would
+    have looked finished. The same failure the docstring already describes,
+    running the other way.
+    """
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REPLY))
+    store_gadget_inference()
+    counts = enrichment.coverage()
+    assert counts["ready"] == 1
+    assert counts["gadgetsReady"] == 1
+    assert counts["eligiblePages"] == 1
+    assert counts["gadgetsEligible"] == 1

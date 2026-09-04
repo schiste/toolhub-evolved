@@ -925,7 +925,15 @@ def _republish(tool_names: list[str]) -> dict[str, int]:
 
 
 def coverage() -> dict[str, int]:
-    """Return how much of the user-script lane has been read, by outcome.
+    """Return how much of each lane has been read, by outcome.
+
+    Every count is scoped to one lane, which the row counts were not when the
+    gadget lane was added: `by_status` was a tally of the whole table against a
+    denominator of user-script pages only, so the first gadget answered would
+    have pushed `ready` toward a figure larger than `eligiblePages` and made a
+    lane that is 83% read look finished. That is the same failure this
+    docstring already describes in the other direction, and it is why the two
+    lanes are counted separately rather than summed.
 
     `eligiblePages` counts exactly what `pending` would consider -- copies,
     stylesheets and pages too short to describe excluded. The two have to
@@ -938,8 +946,24 @@ def coverage() -> dict[str, int]:
     """
     with db.session_scope() as session:
         by_status = dict(
-            session.execute(select(ToolInference.status, func.count()).group_by(ToolInference.status)).all()
+            session.execute(
+                select(ToolInference.status, func.count())
+                .where(ToolInference.lane == LANE_USER_SCRIPT)
+                .group_by(ToolInference.status)
+            ).all()
         )
+        gadget_by_status = dict(
+            session.execute(
+                select(ToolInference.status, func.count())
+                .where(ToolInference.lane == LANE_GADGET)
+                .group_by(ToolInference.status)
+            ).all()
+        )
+        gadgets_eligible = session.execute(
+            select(func.count())
+            .select_from(WikiGadget)
+            .where(WikiGadget.deleted_at.is_(None), WikiGadget.description != "")
+        ).scalar_one()
         eligible = session.execute(
             select(func.count())
             .select_from(UserScriptPage)
@@ -960,4 +984,8 @@ def coverage() -> dict[str, int]:
         "ready": int(by_status.get(STATUS_READY, 0)),
         "rejected": int(by_status.get(STATUS_REJECTED, 0)),
         "error": int(by_status.get(STATUS_ERROR, 0)),
+        "gadgetsEligible": int(gadgets_eligible),
+        "gadgetsReady": int(gadget_by_status.get(STATUS_READY, 0)),
+        "gadgetsRejected": int(gadget_by_status.get(STATUS_REJECTED, 0)),
+        "gadgetsError": int(gadget_by_status.get(STATUS_ERROR, 0)),
     }
