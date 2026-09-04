@@ -414,6 +414,12 @@ def _add_gadget_inference_sources(s: Session, names: list[str], sources: dict[st
             {
                 "payload": row.payload,
                 "source": SOURCE_INFERENCE,
+                # Both lanes publish under `llm_inference`, because both are the
+                # same kind of claim and the projection ranks them alike. The
+                # lane travels beside it so the tool page can say which text was
+                # actually read: this one read the maintainer's description, and
+                # a mark that said "source code" of it would be false.
+                "lane": LANE_GADGET,
                 "url": gadget_toolinfo.gadget_url(gadget.wiki, gadget.name),
                 "observed": row.checked_at,
             }
@@ -566,6 +572,11 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
                     "effective": False,
                     **validation,
                 }
+                # Absent unless a source declares one, so every row written
+                # before this existed keeps the shape it had and no reader has
+                # to tell "no lane" from "the old default".
+                if lane := source_row.get("lane"):
+                    entry["lane"] = lane
                 evidence[field].append(entry)
             if source == SOURCE_CURATION:
                 curations[field] = payload.get(field)

@@ -44,6 +44,21 @@ const DERIVED_LABELS = {
 };
 
 /**
+ * What a language model read, where the source alone does not say.
+ *
+ * Both inference lanes publish under `llm_inference`, because both are the same
+ * kind of claim and the projection ranks them alike. They do not read the same
+ * thing: a user script's answer comes from its source code, and a gadget's from
+ * the description its wiki shows -- `wiki_gadgets` stores no source to read. One
+ * label for both would have told roughly 10,000 gadget keywords that they came
+ * from source code that was never opened, which is exactly the confusion the
+ * mark exists to prevent.
+ */
+const INFERENCE_LANE_LABELS = {
+	gadget: () => t("sourceMark.inferenceGadget", "read off the gadget's own description by a language model")
+};
+
+/**
  * Return the row that actually supplied a field's displayed value.
  *
  * The projection marks one row `effective` and keeps the rest as supporting
@@ -121,7 +136,14 @@ export function valueMark(field, value, projection) {
 function markFor(row) {
 	const source = row && typeof row.source === "string" ? row.source : "";
 	if (!source || TOOLINFO_SOURCES.has(source)) return "";
-	const describe = /** @type {Record<string, () => string>} */ (DERIVED_LABELS)[source];
+	// Scoped to the inference source rather than read off any row that happens
+	// to carry a lane: `lane` describes which text a model was given, so a
+	// future transcribing source that recorded one would otherwise inherit a
+	// sentence about a language model that never ran.
+	const lane = source === "llm_inference" && row && typeof row.lane === "string" ? row.lane : "";
+	const describe =
+		/** @type {Record<string, () => string>} */ (INFERENCE_LANE_LABELS)[lane] ||
+		/** @type {Record<string, () => string>} */ (DERIVED_LABELS)[source];
 	const origin = describe ? describe() : source;
 	const label = t("sourceMark.aria", "Not from a toolinfo.json: $1", origin);
 	return `<sup class="source-mark" role="note" title="${esc(label)}" aria-label="${esc(label)}">†</sup>`;

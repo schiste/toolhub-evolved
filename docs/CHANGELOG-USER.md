@@ -1,13 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: not-every-page-is-a-tool -->
-<!-- Release title: Not Every Page Is A Tool -->
-<!-- Source range: 4395a010..HEAD -->
+<!-- Release id: say-what-was-actually-read -->
+<!-- Release title: Say What Was Actually Read -->
+<!-- Source range: 71dfd289..HEAD -->
 
 # What's New for Users
 
-- Gadgets can now have keywords. All 10,882 gadgets in the catalogue had none at all — no wiki writes them down, so there was nothing to copy. They are now read from the description the gadget's own wiki shows on its preferences screen, which about 86% of gadgets have. The description itself is untouched: a maintainer wrote it, and it stays exactly as they wrote it.
-- Those keywords come back in English even where the description does not. Most gadget descriptions are written in the wiki's own language, and filters that worked only for English would be filters for English speakers. Each keyword carries the same small dagger as the rest of the catalogue's machine-read metadata, saying on hover where it came from.
-- Pages that are not tools no longer pretend to be. About 3,800 catalogued pages are somebody's personal skin file, a copy of a library maintained elsewhere, one tool's saved settings, or a piece of a script that lives on the next page along. Each was being shown a "Listing completeness" scorecard grading it against nine fields and listing everything its author had failed to fill in.
-- Those pages now say what they are instead. In place of the scorecard they carry a short line — a personal skin configuration page, a copy of a library maintained elsewhere, and so on. Nothing is hidden or removed: the pages stay in the catalogue, stay searchable, and keep every other panel. Only the checklist goes, because a checklist addressed to nobody cannot be told apart from one addressed to a maintainer who really has neglected their listing.
-- A page is treated as a real tool unless there is reason to think otherwise. Filenames that mean the same thing on every wiki decide on their own; everything else waits until the catalogue has tried to read the page and reported that it could not say what it does. A page nobody has looked at yet keeps its checklist.
+- The mark on a gadget's keywords now says where they really came from. Hovering one used to read "read off the source code by a language model", which was not true of a gadget: its keywords are read from the description its own wiki shows, and the catalogue holds no copy of a gadget's source code to read. The mark now says so.
+- A user script's keywords are unchanged and still say "source code", because that is what was read for them. The two kinds of reading now look different on the page because they are different, which is the entire reason the mark is there.
+- Nothing else about the marks changed. A keyword a maintainer supplied still carries no mark, and the dagger still sits quietly beside the value rather than adding colour or a box to it.

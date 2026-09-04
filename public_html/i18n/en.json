@@ -1353,6 +1353,7 @@
 	"sourceMark.curation": "a reviewed Toolhub Evolved correction",
 	"sourceMark.gadget": "read from the wiki's gadget definition",
 	"sourceMark.inference": "read off the source code by a language model",
+	"sourceMark.inferenceGadget": "read off the gadget's own description by a language model",
 	"sourceMark.repository": "read from the tool's repository",
 	"sourceMark.userScript": "read from the wiki page beside the script",
 	"static.about.catalogIntro": "Toolhub is a community-managed catalog of software tools used in the Wikimedia movement. Technical volunteers document the tools they build, and all Wikimedians can search the catalog, build lists, and share them.",
