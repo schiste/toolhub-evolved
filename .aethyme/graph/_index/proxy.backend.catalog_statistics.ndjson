@@ -87,6 +87,8 @@
 {"module":"proxy.backend.catalog_statistics","symbol":"_store","kind":"function","node_id":"function:toolhub-evolved:3q53ys2tfgzunfjdcqgqvqblzm","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"_store","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hyrn24myw5zgx7bih5vqwhhy2a","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"_store","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tc2g7ocadhmez2rsfklzdhejzu","file":"proxy/backend/catalog_statistics.py"}
+{"module":"proxy.backend.catalog_statistics","symbol":"_stored_snapshot","kind":"function","node_id":"function:toolhub-evolved:3m2uyn6tdejd72nnckzd6pnlqa","file":"proxy/backend/catalog_statistics.py"}
+{"module":"proxy.backend.catalog_statistics","symbol":"_stored_snapshot","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2kstwpieqm2jpxdyqc7zf5lb4u","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"_stream","kind":"function","node_id":"function:toolhub-evolved:yt47xdqy5b3aa7yxyrd44ypeba","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"_stream","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2cs7y5eucp2pyveakqlzrrgk3u","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"_stream","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:36z7n75dpifiobo4zye4nncs2e","file":"proxy/backend/catalog_statistics.py"}
@@ -139,12 +141,12 @@
 {"module":"proxy.backend.catalog_statistics","symbol":"field.replace","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:v6fertysdkkpgc3walrvkuneh4","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"handle_people.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:laxl7fshyjdk2t4vouxhehj24e","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"handle_people.setdefault","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qxfkecxgmvocvhj37jcyinhcee","file":"proxy/backend/catalog_statistics.py"}
+{"module":"proxy.backend.catalog_statistics","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2ii7nl2xxljjlqyzjlefvvyqkm","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4ja5q3eczcabcfngfhfpzu7ivy","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qy2pnjs53mxnvlrpwdjx7lqnmm","file":"proxy/backend/catalog_statistics.py"}
-{"module":"proxy.backend.catalog_statistics","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wimtahabzaahfqo25ti7lqhy3u","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lzrxbe4kqzcfjgsakmqkihczxi","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"json.dumps","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:imjzshtatw63lde6xvpqoybn2y","file":"proxy/backend/catalog_statistics.py"}
-{"module":"proxy.backend.catalog_statistics","symbol":"json.loads","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:arlziatqd5bsfc4dg3q3asdxhi","file":"proxy/backend/catalog_statistics.py"}
+{"module":"proxy.backend.catalog_statistics","symbol":"json.loads","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kxfbgxfcvge7n3ugw66nixa534","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"label.casefold","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:q4f44fl56r7ru2petdzn77eplq","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"labels.add","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:srgsdtfincqee6k2ahsw3rsqt4","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:26bautm7lp4ocobyi3lgkdavsq","file":"proxy/backend/catalog_statistics.py"}
@@ -180,7 +182,7 @@
 {"module":"proxy.backend.catalog_statistics","symbol":"session.add","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7lt2jwcutbyjwb47d6s563zli4","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"session.execute","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:y2fxkn7pmw54x52dbp5f4l2e3a","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"session.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7ozfniyatuftnij5aekblwiaui","file":"proxy/backend/catalog_statistics.py"}
-{"module":"proxy.backend.catalog_statistics","symbol":"session.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:thad5dwb25vjyfm5kleomwibwq","file":"proxy/backend/catalog_statistics.py"}
+{"module":"proxy.backend.catalog_statistics","symbol":"session.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:blaeqkxmw7hrk4wo7uua5msbu4","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"set","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bawt7jba2j6qwparpbyadhpbja","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"set","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:daujvfeb4mxckigponk3gd6qbe","file":"proxy/backend/catalog_statistics.py"}
 {"module":"proxy.backend.catalog_statistics","symbol":"set","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:df2lzn4ocg3nkfqf5yrwyxbbii","file":"proxy/backend/catalog_statistics.py"}
