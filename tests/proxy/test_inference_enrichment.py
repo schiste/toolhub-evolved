@@ -33,9 +33,17 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import catalog_projection, db, run_budget, userscripts  # noqa: E402
+from backend import catalog_projection, db, run_budget, tool_shape, userscripts  # noqa: E402
 from backend import inference_enrichment as enrichment  # noqa: E402
-from backend.models import ToolInference, UserScriptDirectoryEntry, UserScriptPage, utcnow  # noqa: E402
+from backend.models import (  # noqa: E402
+    LANE_GADGET,
+    ToolInference,
+    UserScriptDirectoryEntry,
+    UserScriptPage,
+    WikiGadget,
+    utcnow,
+)
+from backend.inference_enrichment import Candidate  # noqa: E402
 
 ENWIKI = "en.wikipedia.org"
 
@@ -935,3 +943,260 @@ def test_a_wave_whose_pages_all_vanished_costs_no_request(monkeypatch):
     # The first wave is skipped without a request; the second is still asked.
     assert result["counts"]["asked"] == 2
     assert len(asked) == 2
+
+
+# --- the gadget lane -------------------------------------------------------
+#
+# Lift Wing, llm-qwen36-27b, 2026-09-04, through this module's own gadget
+# prompt, for three gadgets whose descriptions their wikis write in Abkhaz
+# Wikipedia's Russian, Acehnese and French. They are kept verbatim for the
+# reason the user-script fixtures are: the one thing worth testing here is
+# whether a prompt that demands English tags gets them from a description that
+# is not in English, and a reply composed to prove that cannot.
+REAL_GADGET_REPLY_RU = '{"keywords": ["block", "user", "text", "formatting", "list"]}'
+REAL_GADGET_REPLY_ACE = '{"keywords": ["site notices", "announcements", "advanced"]}'
+REAL_GADGET_REPLY_FR = """{
+  "keywords": [
+    "categories",
+    "editing",
+    "categorization",
+    "maintenance",
+    "wiki",
+    "management",
+    "bulk",
+    "interface"
+  ]
+}"""
+
+RU_DESCRIPTION = "Markblocked: зачёркивать имена пользователей, которые заблокированы."
+
+
+def gadget(name="markblocked", *, wiki="ab.wikipedia.org", description=RU_DESCRIPTION, **kwargs):
+    """Seed one live declared gadget carrying a description."""
+    fields = {"wiki": wiki, "name": name, "name_key": name.casefold(), "description": description}
+    fields.update(kwargs)
+    with db.session_scope() as session:
+        row = WikiGadget(**fields)
+        session.add(row)
+        session.flush()
+        return row.id
+
+
+def test_non_english_description_yields_english_keywords():
+    """The whole reason the gadget prompt names English explicitly.
+
+    71% of gadget descriptions are written in their wiki's own language, and
+    `_KEYWORD_RE` admits ASCII only. A faithful Abkhaz tag would be dropped by
+    shape validation and stored as a rejection, which would read as the model
+    having failed when it had answered correctly.
+    """
+    accepted = enrichment.accept(enrichment.parse_json(REAL_GADGET_REPLY_RU), lane=LANE_GADGET)
+    assert accepted == {"keywords": ["block", "user", "text", "formatting", "list"]}
+    for reply_text in (REAL_GADGET_REPLY_ACE, REAL_GADGET_REPLY_FR):
+        tags = enrichment.accept(enrichment.parse_json(reply_text), lane=LANE_GADGET)["keywords"]
+        assert tags, "a real reply produced no keyword that survived shape validation"
+        assert all(tag.isascii() for tag in tags)
+
+
+def test_gadget_lane_cannot_store_a_description():
+    """A gadget already has a maintainer's sentence; this lane may not add one.
+
+    Structural, not a property of the prompt: a model that volunteers a
+    description anyway has it dropped, the same way an unasked-for `license` is.
+    """
+    reply_with_prose = '{"description": "%s", "keywords": ["categories"]}' % ("x" * 80)
+    assert enrichment.accept(enrichment.parse_json(reply_with_prose), lane=LANE_GADGET) == {
+        "keywords": ["categories"]
+    }
+    assert "description" in enrichment.accept(enrichment.parse_json(reply_with_prose))
+
+
+def test_description_fingerprint_ignores_reflowing():
+    """A rewrapped message is not a rewritten one.
+
+    10,049 gadgets re-asked over a stray newline would spend the lane's whole
+    budget returning the answers it already had.
+    """
+    assert enrichment.description_fingerprint("a  b\n c") == enrichment.description_fingerprint("a b c")
+    assert enrichment.description_fingerprint("a b") != enrichment.description_fingerprint("a c")
+
+
+def test_gadget_pending_skips_gadgets_with_no_description():
+    """21% of live gadgets have no description, so there is nothing to tag.
+
+    Excluded from the window rather than sent and rejected, so that `rejected`
+    keeps meaning "asked, and the answer was no good" in both lanes.
+    """
+    gadget("described")
+    gadget("undescribed", description="")
+    with db.session_scope() as session:
+        found = enrichment.gadget_pending(session, limit=10)
+    assert [candidate.title for candidate in found] == ["described"]
+    assert found[0].lane == LANE_GADGET
+
+
+def test_gadget_pending_skips_a_gadget_whose_answer_is_current():
+    """The fingerprint is what stops the lane paying for the same answer twice."""
+    gadget_id = gadget()
+    with db.session_scope() as session:
+        session.add(
+            ToolInference(
+                tool_name="gadget-ab-wikipedia-org-markblocked",
+                payload={"keywords": ["block"]},
+                lane=LANE_GADGET,
+                page_id=gadget_id,
+                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                status=enrichment.STATUS_READY,
+            )
+        )
+    with db.session_scope() as session:
+        assert enrichment.gadget_pending(session, limit=10) == []
+
+
+def test_gadget_pending_returns_a_gadget_whose_description_changed():
+    """A wiki that rewrites the message puts its gadget back in the window."""
+    gadget_id = gadget()
+    with db.session_scope() as session:
+        session.add(
+            ToolInference(
+                tool_name="gadget-ab-wikipedia-org-markblocked",
+                payload={"keywords": ["block"]},
+                lane=LANE_GADGET,
+                page_id=gadget_id,
+                source_fingerprint=enrichment.description_fingerprint("something the wiki used to say"),
+                status=enrichment.STATUS_READY,
+            )
+        )
+    with db.session_scope() as session:
+        assert [c.title for c in enrichment.gadget_pending(session, limit=10)] == ["markblocked"]
+
+
+def test_gadget_pending_skips_a_deleted_gadget():
+    gadget("gone", deleted_at=utcnow())
+    with db.session_scope() as session:
+        assert enrichment.gadget_pending(session, limit=10) == []
+
+
+def test_gadget_pending_skips_a_name_that_slugs_to_nothing():
+    """`gadget_toolinfo.tool_name` refuses a name with no Latin characters."""
+    gadget("гаджет")
+    with db.session_scope() as session:
+        assert enrichment.gadget_pending(session, limit=10) == []
+
+
+def test_interleave_gives_each_lane_half_of_every_wave():
+    """Concatenating would starve the newer lane behind ~8,000 unasked scripts."""
+    scripts = [Candidate(f"s{i}", i, ENWIKI, "t", "b", "f") for i in range(2)]
+    gadgets = [Candidate(f"g{i}", i, ENWIKI, "t", "b", "f", LANE_GADGET) for i in range(3)]
+    assert [c.tool_name for c in enrichment._interleave(scripts, gadgets)] == ["s0", "g0", "s1", "g1", "g2"]
+
+
+def test_with_source_passes_gadget_candidates_through():
+    """A gadget carries its own text; re-reading it would only widen the race."""
+    candidate = Candidate("gadget-x", 7, "ab.wikipedia.org", "markblocked", RU_DESCRIPTION, "fp", LANE_GADGET)
+    with db.session_scope() as session:
+        assert enrichment.with_source(session, [candidate]) == [candidate]
+
+
+GADGET_TOOL = "gadget-ab-wikipedia-org-markblocked"
+
+
+def store_gadget_inference(fingerprint_source=RU_DESCRIPTION, *, keywords=("block", "user")):
+    gadget_id = gadget()
+    with db.session_scope() as session:
+        session.add(
+            ToolInference(
+                tool_name=GADGET_TOOL,
+                payload={"keywords": list(keywords)},
+                lane=LANE_GADGET,
+                page_id=gadget_id,
+                source_fingerprint=enrichment.description_fingerprint(fingerprint_source),
+                status=enrichment.STATUS_READY,
+            )
+        )
+
+
+def test_gadget_keywords_reach_the_projection_as_a_fill_only_source():
+    """All 10,882 gadget records sit at zero keywords, which is the gap this fills."""
+    store_gadget_inference()
+    source = sources_for(GADGET_TOOL)[GADGET_TOOL][0]
+    assert source["source"] == catalog_projection.SOURCE_INFERENCE
+    assert source["source"] in catalog_projection.FILL_ONLY_SOURCES
+    assert source["payload"] == {"keywords": ["block", "user"]}
+    assert "Special:Gadgets" in source["url"]
+
+
+def test_a_gadget_reading_of_a_description_the_wiki_has_rewritten_is_dropped():
+    """Same rule the script arm applies to changed bytes, against changed words.
+
+    The row stays -- the sweep still knows the gadget was asked about -- but
+    nothing it says is published until it has been re-read.
+    """
+    store_gadget_inference("what the wiki said last month")
+    assert sources_for(GADGET_TOOL) == {}
+
+
+def test_a_deleted_gadget_publishes_no_keywords():
+    """A gadget the wiki has stopped declaring is not a tool to tag."""
+    store_gadget_inference()
+    with db.session_scope() as session:
+        session.query(WikiGadget).update({"deleted_at": utcnow()})
+    assert sources_for(GADGET_TOOL) == {}
+
+
+def test_the_two_lanes_do_not_read_each_others_rows():
+    """`page_id` means different tables per lane, so a cross-read is silent nonsense.
+
+    A user-script row whose `page_id` happens to equal a gadget's id must not
+    surface as that gadget's keywords, which is the whole reason `lane` is read
+    with `page_id` and never without it.
+    """
+    gadget_id = gadget()
+    with db.session_scope() as session:
+        session.add(
+            ToolInference(
+                tool_name=GADGET_TOOL,
+                payload={"keywords": ["from-the-wrong-lane"]},
+                lane=enrichment.LANE_USER_SCRIPT,
+                page_id=gadget_id,
+                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                status=enrichment.STATUS_READY,
+            )
+        )
+    assert sources_for(GADGET_TOOL) == {}
+
+
+# --- what the tool page is told the record is -------------------------------
+
+
+def test_a_declined_skin_file_is_projected_as_configuration():
+    """The checklist has to stop being addressed to somebody who is not there.
+
+    End to end rather than against `tool_shape` alone: the classification is
+    only worth anything if it survives the join from catalogue name back to the
+    page, which is the part that has no stored mapping to rely on.
+    """
+    store("User:DerHexer/monobook.js", owner="DerHexer", basename="monobook.js")
+    run(lambda payload: reply(REAL_REFUSAL))
+    catalog_projection.refresh_tool_names(["userscript-en.wikipedia.org-derhexer-monobook.js"])
+    payload = catalog_projection.projection_payload("userscript-en.wikipedia.org-derhexer-monobook.js")
+    assert payload["shape"] == tool_shape.SHAPE_SKIN
+
+
+def test_a_script_the_model_described_keeps_its_checklist():
+    """The other direction, and the one a wrong rule would break silently."""
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REPLY))
+    catalog_projection.refresh_tool_names([TOOL])
+    assert catalog_projection.projection_payload(TOOL)["shape"] == tool_shape.SHAPE_STANDALONE
+
+
+def test_a_reclassified_page_counts_as_a_change():
+    """A shape that flips has to republish, or the tool page keeps the old panel."""
+    store("User:DerHexer/monobook.js", owner="DerHexer", basename="monobook.js")
+    name = "userscript-en.wikipedia.org-derhexer-monobook.js"
+    catalog_projection.refresh_tool_names([name])
+    assert catalog_projection.projection_payload(name)["shape"] == tool_shape.SHAPE_STANDALONE
+    run(lambda payload: reply(REAL_REFUSAL))
+    assert catalog_projection.refresh_tool_names([name])["changed"] == 1
+    assert catalog_projection.projection_payload(name)["shape"] == tool_shape.SHAPE_SKIN

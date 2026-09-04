@@ -13,9 +13,20 @@ from urllib.parse import urlparse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend import catalog_facets, db, facet_names, wiki_sources, wikimedia_urls
+from backend import (
+    catalog_facets,
+    db,
+    facet_names,
+    gadget_toolinfo,
+    tool_shape,
+    wiki_sources,
+    wikimedia_urls,
+)
 from backend.inference_enrichment import STATUS_READY as INFERENCE_READY
+from backend.inference_enrichment import STATUS_REJECTED as INFERENCE_REJECTED
 from backend.models import (
+    LANE_GADGET,
+    LANE_USER_SCRIPT,
     CanonicalToolCache,
     CatalogCuration,
     CatalogFacetValue,
@@ -28,6 +39,7 @@ from backend.models import (
     ToolinfoSource,
     ToolinfoSourceItem,
     UserScriptPage,
+    WikiGadget,
     utcnow,
 )
 from backend.sync import REVIEW_APPROVED, SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT
@@ -342,7 +354,11 @@ def _add_inference_sources(s: Session, names: list[str], sources: dict[str, list
     inferences = s.execute(
         select(ToolInference, UserScriptPage)
         .join(UserScriptPage, ToolInference.page_id == UserScriptPage.id)
-        .where(ToolInference.tool_name.in_(names), ToolInference.status == INFERENCE_READY)
+        .where(
+            ToolInference.tool_name.in_(names),
+            ToolInference.status == INFERENCE_READY,
+            ToolInference.lane == LANE_USER_SCRIPT,
+        )
     ).all()
     for row, page in inferences:
         # A payload that no longer matches the page's current bytes is dropped
@@ -358,6 +374,50 @@ def _add_inference_sources(s: Session, names: list[str], sources: dict[str, list
                     "observed": row.checked_at,
                 }
             )
+    _add_gadget_inference_sources(s, names, sources)
+
+
+def _add_gadget_inference_sources(s: Session, names: list[str], sources: dict[str, list[dict[str, Any]]]) -> None:
+    """Add the keywords a model read off each gadget's own description.
+
+    Split from the user-script arm rather than folded into it because the two
+    validate against different things: a script's answer is checked against the
+    bytes it was read from, a gadget's against a hash of the description its
+    wiki shows now. One query cannot express both, since the gadget side has no
+    stored digest to join on -- `description_fingerprint` computes it per row.
+
+    The link is `page_id`, which in this lane holds `wiki_gadgets.id`; see
+    `ToolInference.page_id` for why the two lanes may share that column only
+    while `lane` is read with it.
+    """
+    from backend import inference_enrichment  # noqa: PLC0415 - deferred; that module imports from this one
+
+    rows = s.execute(
+        select(ToolInference, WikiGadget)
+        .join(WikiGadget, ToolInference.page_id == WikiGadget.id)
+        .where(
+            ToolInference.tool_name.in_(names),
+            ToolInference.status == INFERENCE_READY,
+            ToolInference.lane == LANE_GADGET,
+            WikiGadget.deleted_at.is_(None),
+        )
+    ).all()
+    for row, gadget in rows:
+        # Same rule as the script arm, against the source this lane actually
+        # read: a wiki that has since rewritten its description gets no keywords
+        # from the old one, and the gadget returns to the sweep's window.
+        if not (isinstance(row.payload, dict) and row.payload):
+            continue
+        if row.source_fingerprint != inference_enrichment.description_fingerprint(gadget.description):
+            continue
+        sources[row.tool_name].append(
+            {
+                "payload": row.payload,
+                "source": SOURCE_INFERENCE,
+                "url": gadget_toolinfo.gadget_url(gadget.wiki, gadget.name),
+                "observed": row.checked_at,
+            }
+        )
 
 
 def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
@@ -724,6 +784,34 @@ def _preserve_url_checks(record: dict, validation: dict, previous: Any) -> dict:
     return validation
 
 
+def _shapes_by_tool(s: Session, names: list[str]) -> dict[str, str]:
+    """Say which of these tools are not standalone tools at all.
+
+    One query for the batch, keyed on `ToolInference.tool_name`, which is the
+    only place a catalogue name and a user-script page are stored together:
+    `tool_name` slugs in Python and `user_script_pages` keeps no copy of it, so
+    a query starting from the page could not be narrowed to this batch and
+    would read all 166,399 of them per 500 tools.
+
+    Starting from the inference row means a page nobody has asked the model
+    about is not classified, and stays standalone. That is a real limit rather
+    than an oversight -- it also withholds the two name-only judgments from
+    those pages -- and it is the safe direction: the lane has read 83% of the
+    corpus, and the cost of waiting for the rest is a checklist shown on a page
+    that will stop showing one, not a checklist hidden from a maintainer.
+    """
+    rows = s.execute(
+        select(ToolInference.tool_name, ToolInference.status, UserScriptPage.title)
+        .join(UserScriptPage, ToolInference.page_id == UserScriptPage.id)
+        .where(
+            ToolInference.tool_name.in_(names),
+            ToolInference.lane == LANE_USER_SCRIPT,
+            UserScriptPage.deleted_at.is_(None),
+        )
+    ).all()
+    return {name: tool_shape.classify(title, declined=status == INFERENCE_REJECTED) for name, status, title in rows}
+
+
 def _mark_failures(names: list[str], error: BaseException) -> None:
     try:
         with db.session_scope() as s:
@@ -755,6 +843,7 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
             # Fetch reports once per batch before the per-tool loop
             reports = _latest_reports(s, names)
             source_map = _sources_by_tool(s, names, reports)
+            shapes = _shapes_by_tool(s, names)
             for name in names:
                 effective, provenance, validation, timestamps = _assemble(name, source_map.get(name, []))
                 row = s.get(CatalogToolProjection, name)
@@ -766,6 +855,7 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
                     row.effective_record != effective
                     or row.provenance != provenance
                     or row.validation != validation
+                    or row.shape != shapes.get(name, tool_shape.SHAPE_STANDALONE)
                     or row.projection_version != PROJECTION_VERSION
                 ):
                     changed += 1
@@ -774,6 +864,7 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
                 row.validation = validation
                 row.source_timestamps = timestamps
                 row.search_text = _search_text(effective)
+                row.shape = shapes.get(name, tool_shape.SHAPE_STANDALONE)
                 row.projection_version = PROJECTION_VERSION
                 row.status = STATUS_READY
                 row.refreshed_at = now
@@ -875,6 +966,9 @@ def projection_payload(name: str) -> dict[str, Any] | None:
     return {
         "toolName": row.tool_name,
         "record": row.effective_record,
+        # "" for a standalone tool. The tool page reads this to decide whether a
+        # listing checklist is addressed to anybody; see `backend.tool_shape`.
+        "shape": row.shape or "",
         "provenance": row.provenance,
         "validation": row.validation,
         "sourceTimestamps": row.source_timestamps,

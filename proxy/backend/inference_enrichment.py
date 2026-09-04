@@ -8,12 +8,19 @@ and `for_wikis` sat at 100%. Those two fields are not missing because nobody
 collected them. They are missing because no wiki page states them, and no
 amount of further crawling will produce one.
 
-This lane is user scripts only, and gadgets are the reason to say so out loud.
-A gadget *does* have a description on the wiki -- the interface message
-`MediaWiki:Gadget-<name>`, which 91% of declared gadgets have -- so it is read
-and transcribed by `backend.gadget_inventory` and never sent here. Where a real
-description exists, asking a model to compose a second one would replace a
-maintainer's sentence with a guess at it.
+Descriptions are read for user scripts only, and gadgets are the reason to say
+so out loud. A gadget *does* have a description on the wiki -- the interface
+message `MediaWiki:Gadget-<name>`, which 79% of live declared gadgets have -- so
+it is read and transcribed by `backend.gadget_inventory` and never composed
+here. Where a real description exists, asking a model to write a second one
+would replace a maintainer's sentence with a guess at it.
+
+Keywords are a different matter, and that is why there are two lanes. No wiki
+states a gadget's keywords, so all 10,882 gadget records sit at zero of them
+with nothing upstream to transcribe. The gadget lane therefore asks for
+keywords and nothing else, reading the maintainer's own description rather than
+source code -- `wiki_gadgets` stores no body to read. `FIELDS_BY_LANE` is what
+makes "keywords only" structural rather than a property of the prompt.
 
 So this module does the one thing the rest of the catalogue refuses to do: it
 asks a language model to read the source and say what the tool is for. That
@@ -36,9 +43,11 @@ projection, and the design follows from that:
   guess into a ranked fact. `accept()` applies shape rules instead, which are
   checkable.
 
-Re-inference is keyed on `UserScriptPage.fingerprint`. A page whose body has
-not changed is never sent twice, because the answer would not change either
-and the corpus is large enough that resending it is the whole cost.
+Re-inference is keyed on what the answer was read from: `UserScriptPage.fingerprint`
+in the user-script lane, `description_fingerprint` of the gadget's message in
+the gadget lane. A source that has not changed is never sent twice, because the
+answer would not change either and the corpus is large enough that resending it
+is the whole cost.
 """
 
 from __future__ import annotations
@@ -49,13 +58,23 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from hashlib import sha256
+from itertools import zip_longest
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import requests
 from sqlalchemy import case, func, or_, select
 
-from backend import db, digests, run_budget, userscripts
-from backend.models import ToolInference, UserScriptDirectoryEntry, UserScriptPage, utcnow
+from backend import db, digests, gadget_toolinfo, run_budget, userscripts
+from backend.models import (
+    LANE_GADGET,
+    LANE_USER_SCRIPT,
+    ToolInference,
+    UserScriptDirectoryEntry,
+    UserScriptPage,
+    WikiGadget,
+    utcnow,
+)
 from backend.userscript_toolinfo import STYLESHEET_MODELS, tool_name
 
 if TYPE_CHECKING:
@@ -88,6 +107,13 @@ DEFAULT_BUDGET = 2_400
 # informative than its first 24 KB for the purpose of saying what it does, and
 # the tail is usually data tables.
 MAX_SOURCE_CHARS = 24_000
+
+# How many gadget rows the window reads to find `limit` worth of work. The
+# fingerprint comparison happens in Python, so rows that turn out to be
+# current are only discovered after they are read; a window exactly the size
+# of the wave would return nothing the moment the lane caught up. Four is the
+# ratio at which one sweep still fills its wave when 3 in 4 gadgets are done.
+GADGET_WINDOW_SLACK = 4
 MIN_SOURCE_CHARS = 120
 # How many pages `infer` reads source for at once. `sweep` uses its wave width
 # instead, because a wave is already the unit it asks and commits in; this is
@@ -103,7 +129,13 @@ MAX_KEYWORD_CHARS = 40
 
 
 class Candidate(NamedTuple):
-    """One page the sweep may ask about, with everything the request needs."""
+    """One thing the sweep may ask about, with everything the request needs.
+
+    Shared by both lanes because the request is the same shape either way: a
+    name, some text, and the fingerprint of the text so the answer can be tied
+    to what produced it. Only `lane` decides which prompt the text goes into
+    and which fields the answer may carry -- see `build_prompt` and `FIELDS_BY_LANE`.
+    """
 
     tool_name: str
     page_id: int
@@ -111,6 +143,7 @@ class Candidate(NamedTuple):
     title: str
     body: str
     fingerprint: str
+    lane: str = LANE_USER_SCRIPT
 
 
 STATUS_READY = "ready"
@@ -161,6 +194,41 @@ SYSTEM_PROMPT = (
 )
 
 
+GADGET_SYSTEM_PROMPT = (
+    "You tag Wikimedia gadgets with topical keywords, given the description their own wiki shows. "
+    "You answer with a single JSON object and nothing else: no prose, no markdown fence. "
+    "You never invent facts. If the description does not support any keyword, return []. "
+    "Keywords are always in English, whatever language the description is written in."
+)
+
+
+def build_gadget_prompt(wiki: str, name: str, description: str) -> str:
+    """Return the user turn asking what one gadget's description is about.
+
+    Keywords only, and the omission is the point. A gadget already has a
+    description -- `MediaWiki:Gadget-<name>`, which the inventory transcribes --
+    so asking for a second one would offer a guess where a maintainer's sentence
+    already exists, which is the one thing this whole module refuses to do. The
+    keywords are additive instead: no wiki states them, so there is nothing to
+    overwrite.
+
+    English is demanded rather than hoped for. 71% of these descriptions are
+    written in the wiki's own language, and `_KEYWORD_RE` only admits ASCII, so
+    a faithful tag in Abkhaz would be dropped by shape validation and read as
+    the model having failed. Asking in the prompt is what makes the shape rule
+    and the request agree.
+    """
+    return (
+        "Below is the description a Wikimedia wiki shows for one of its gadgets.\n\n"
+        f"Gadget: {name}\nWiki: {wiki}\n\n"
+        "Return a JSON object with exactly this one key:\n\n"
+        f'- "keywords": array of up to {MAX_KEYWORDS} lowercase topical tags, in English. '
+        "[] if the description does not say enough to tag. "
+        'Do not include "gadget", the wiki name, or the gadget\'s own name.\n\n'
+        "DESCRIPTION:\n" + description[:MAX_SOURCE_CHARS]
+    )
+
+
 def build_prompt(wiki: str, title: str, body: str) -> str:
     """Return the user turn asking what one page's script is for."""
     return (
@@ -176,18 +244,27 @@ def build_prompt(wiki: str, title: str, body: str) -> str:
     )
 
 
-def payload_for(model: str, wiki: str, title: str, body: str) -> dict[str, Any]:
-    """Return the OpenAI-compatible chat body for one page."""
+def payload_for(model: str, wiki: str, title: str, body: str, *, lane: str = LANE_USER_SCRIPT) -> dict[str, Any]:
+    """Return the OpenAI-compatible chat body for one candidate.
+
+    `max_tokens` is smaller on the gadget lane because the answer is smaller:
+    eight short tags, with no description to compose. The user-script figure has
+    to hold three sentences as well.
+    """
+    if lane == LANE_GADGET:
+        system, user, ceiling = GADGET_SYSTEM_PROMPT, build_gadget_prompt(wiki, title, body), 200
+    else:
+        system, user, ceiling = SYSTEM_PROMPT, build_prompt(wiki, title, body), 700
     return {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_prompt(wiki, title, body)},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
         # Low but not zero: at 0 the model repeats a stock opening clause across
         # unrelated scripts, which reads as boilerplate in a directory listing.
         "temperature": 0.2,
-        "max_tokens": 700,
+        "max_tokens": ceiling,
     }
 
 
@@ -285,18 +362,30 @@ def _keywords(value: object) -> Checked:
 # 100% on this lane -- a guess there could only contradict something known.
 FIELDS: dict[str, Callable[[object], Checked]] = {"description": _description, "keywords": _keywords}
 
+# What each lane is allowed to come back with. The gadget lane is keywords only
+# because a gadget already has a maintainer's description; accepting one here
+# would let a guess stand beside a stated fact, and the allowlist is what makes
+# that structurally impossible rather than a property of the prompt. A model
+# that answers with a description anyway is not refused loudly -- the field is
+# simply not read, exactly as an unasked-for `license` is not.
+FIELDS_BY_LANE: dict[str, dict[str, Callable[[object], Checked]]] = {
+    LANE_USER_SCRIPT: FIELDS,
+    LANE_GADGET: {"keywords": _keywords},
+}
 
-def check(parsed: dict[str, Any] | None) -> dict[str, Checked]:
+
+def check(parsed: dict[str, Any] | None, *, lane: str = LANE_USER_SCRIPT) -> dict[str, Checked]:
     """Run every field's shape rules, keeping both halves of each verdict.
 
     Split from `accept` so a caller that needs to say why a reply produced
     nothing reads the same verdicts that decided it, rather than a second
     implementation of the same rules written to explain the first.
     """
-    return {field: validate((parsed or {}).get(field)) for field, validate in FIELDS.items()}
+    fields = FIELDS_BY_LANE.get(lane, FIELDS)
+    return {field: validate((parsed or {}).get(field)) for field, validate in fields.items()}
 
 
-def accept(parsed: dict[str, Any] | None) -> dict[str, Any]:
+def accept(parsed: dict[str, Any] | None, *, lane: str = LANE_USER_SCRIPT) -> dict[str, Any]:
     """Return only the fields that survive shape validation.
 
     A field that fails validation is simply absent, which the projection reads
@@ -306,7 +395,7 @@ def accept(parsed: dict[str, Any] | None) -> dict[str, Any]:
     """
     if not parsed:
         return {}
-    return {field: verdict.value for field, verdict in check(parsed).items() if verdict.value}
+    return {field: verdict.value for field, verdict in check(parsed, lane=lane).items() if verdict.value}
 
 
 def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
@@ -434,6 +523,80 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
     return found
 
 
+def description_fingerprint(description: str) -> str:
+    """Return the key a gadget answer is tied to: a hash of the text it read.
+
+    The gadget lane has no `fingerprint` column of its own to borrow -- the
+    inventory stores the description and not a digest of it -- so this computes
+    the same guarantee the user-script lane gets for free: an answer stays
+    current exactly while the words it was read from are unchanged, and a wiki
+    that rewrites its description puts that gadget back in the window.
+
+    Whitespace is collapsed first so a reflowed message is not mistaken for a
+    rewritten one; 10,049 descriptions re-asked over a stray newline would cost
+    the entire lane's budget for no new answer.
+    """
+    return sha256(" ".join((description or "").split()).encode("utf-8")).hexdigest()
+
+
+def gadget_pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
+    """Return the gadgets whose current description the model has not tagged.
+
+    A gadget is eligible on exactly one condition the user-script lane does not
+    share: it has a description. 21% do not -- the wiki declares the gadget and
+    never wrote `MediaWiki:Gadget-<name>` -- and for those there is no text to
+    tag and nothing this lane can do, so they are excluded here rather than sent
+    and rejected. That keeps `rejected` meaning "asked, and the answer was no
+    good" in both lanes.
+
+    Deliberately per gadget, not per gadget name. `hotcat` is declared on 434
+    wikis with 264 distinct descriptions between them, and asking once per name
+    would be 3.2x cheaper -- but it would publish one wiki's reading of a gadget
+    onto 433 others that may have diverged, and tie every row to a fingerprint
+    computed from text that is not theirs, so a local edit could never put the
+    gadget back in the window. The saving is not worth a keyword nobody on that
+    wiki can trace to their own page.
+
+    The join is on `page_id`, not on the catalogue name: `gadget_toolinfo.tool_name`
+    slugs in Python and no SQL expression reproduces it, so the id the gadget
+    lane stores in `page_id` is what makes this a join rather than a scan.
+
+    Never-asked gadgets sort first, exactly as in `pending`, and for the same
+    reason -- the fingerprint cannot be compared in SQL, so once every gadget
+    has an answer the window would otherwise fill with rows that are already
+    current and the sweep would stall while descriptions elsewhere went stale.
+    Ordering means the window holds real work while any exists, and only then
+    starts re-reading answered rows to find the ones whose description moved.
+    """
+    rows = session.execute(
+        select(WikiGadget.id, WikiGadget.wiki, WikiGadget.name, WikiGadget.description, ToolInference)
+        .outerjoin(
+            ToolInference,
+            (ToolInference.page_id == WikiGadget.id) & (ToolInference.lane == LANE_GADGET),
+        )
+        .where(
+            WikiGadget.deleted_at.is_(None),
+            WikiGadget.description != "",
+        )
+        .order_by(
+            case((ToolInference.tool_name.is_(None), 0), (ToolInference.status == STATUS_ERROR, 1), else_=2),
+            WikiGadget.id,
+        )
+        .limit(limit * GADGET_WINDOW_SLACK)
+    )
+    found: list[Candidate] = []
+    for gadget_id, wiki, name, description, row in rows:
+        if not (catalog_name := gadget_toolinfo.tool_name(wiki, name)):
+            continue
+        fingerprint = description_fingerprint(description)
+        if row is not None and row.source_fingerprint == fingerprint and row.status != STATUS_ERROR:
+            continue
+        found.append(Candidate(catalog_name, int(gadget_id), wiki, name, description, fingerprint, LANE_GADGET))
+        if len(found) == limit:
+            break
+    return found
+
+
 def with_source(session: Session, candidates: Sequence[Candidate]) -> list[Candidate]:
     """Return these candidates carrying their current source, dropping the rest.
 
@@ -452,13 +615,21 @@ def with_source(session: Session, candidates: Sequence[Candidate]) -> list[Candi
     """
     if not candidates:
         return []
+    # Gadget candidates already carry their text. A description is 83 characters
+    # at the median against a script's 3,785, so the memory argument that put
+    # this function here does not apply to them, and re-reading would only widen
+    # the window between reading the description and hashing it.
+    passthrough = [candidate for candidate in candidates if candidate.lane != LANE_USER_SCRIPT]
+    candidates = [candidate for candidate in candidates if candidate.lane == LANE_USER_SCRIPT]
+    if not candidates:
+        return passthrough
     rows = session.execute(
         select(UserScriptPage.id, UserScriptPage.body, UserScriptPage.fingerprint).where(
             UserScriptPage.id.in_([candidate.page_id for candidate in candidates])
         )
     )
     source = {int(page_id): (body, fingerprint) for page_id, body, fingerprint in rows}
-    ready: list[Candidate] = []
+    ready: list[Candidate] = list(passthrough)
     # Driven by `candidates`, not by `source`: `IN` does not promise an order,
     # and a wave that reordered itself between runs would make the sweep harder
     # to reason about for nothing.
@@ -494,6 +665,7 @@ def record(session: Session, candidate: Candidate, outcome: Outcome, *, model: s
         row = ToolInference(tool_name=candidate.tool_name)
         session.add(row)
     row.payload = outcome.accepted
+    row.lane = candidate.lane
     row.page_id = candidate.page_id
     row.source_fingerprint = candidate.fingerprint
     row.model = model[:64]
@@ -527,7 +699,7 @@ def _ask(
     than as an exception to handle.
     """
     try:
-        response = ask(payload_for(model, candidate.wiki, candidate.title, candidate.body))
+        response = ask(payload_for(model, candidate.wiki, candidate.title, candidate.body, lane=candidate.lane))
     except Exception as exc:  # noqa: BLE001 - one page's outage must not end the sweep
         return Outcome(STATUS_ERROR, {}, f"{type(exc).__name__}: {exc}")
     text = model_text(response)
@@ -540,7 +712,7 @@ def _ask(
         # reply at all.
         sample = " ".join(text.split())[:200]
         return Outcome(STATUS_REJECTED, {}, f"unparsed reply: {sample or '(empty)'}", collapsed)
-    verdicts = check(parsed)
+    verdicts = check(parsed, lane=candidate.lane)
     accepted = {field: verdict.value for field, verdict in verdicts.items() if verdict.value}
     # Written whatever the status, not only on rejection. A reply whose keywords
     # pass and whose description does not is stored `ready` carrying no
@@ -658,6 +830,23 @@ def concurrency() -> int:
     return max(1, min(MAX_CONCURRENCY, wanted))
 
 
+def _interleave(scripts: list[Candidate], gadgets: list[Candidate]) -> list[Candidate]:
+    """Return both lanes' work in one list, alternating while both have some.
+
+    Alternating rather than concatenating, because concatenating starves. About
+    8,000 user scripts are still unasked and `pending` returns up to `BATCH` of
+    them, so a gadget placed after them would wait weeks for the older lane to
+    drain -- and the gadget lane is the one with 10,882 records at zero
+    keywords. Alternating gives each lane half of every wave while both have
+    work, and hands the whole wave to whichever lane still has any once the
+    other runs dry.
+    """
+    merged: list[Candidate] = []
+    for pair in zip_longest(scripts, gadgets):
+        merged.extend(candidate for candidate in pair if candidate is not None)
+    return merged
+
+
 def sweep(limit: int = BATCH, *, budget: run_budget.Budget | None = None) -> dict[str, Any]:
     """Run one enrichment pass and return counts plus stored coverage.
 
@@ -685,7 +874,7 @@ def sweep(limit: int = BATCH, *, budget: run_budget.Budget | None = None) -> dic
     width = concurrency()
     counts = _counts()
     with db.session_scope() as session:
-        candidates = pending(session, limit=limit)
+        candidates = _interleave(pending(session, limit=limit), gadget_pending(session, limit=limit))
     enriched: list[str] = []
     with ThreadPoolExecutor(max_workers=width, thread_name_prefix="inference") as pool:
         for start in range(0, len(candidates), width):
@@ -702,6 +891,7 @@ def sweep(limit: int = BATCH, *, budget: run_budget.Budget | None = None) -> dic
                 for candidate, outcome in zip(wave, outcomes, strict=True):
                     counts["asked"] += 1
                     counts[outcome.status] += 1
+                    counts[f"{candidate.lane}Asked"] = counts.get(f"{candidate.lane}Asked", 0) + 1
                     record(session, candidate, outcome, model=model)
                     if outcome.status == STATUS_READY:
                         enriched.append(candidate.tool_name)
