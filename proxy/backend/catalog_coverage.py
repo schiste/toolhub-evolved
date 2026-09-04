@@ -201,6 +201,18 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
     }
 
 
+def _stored_snapshot(session: Session) -> tuple[Any, dict[str, Any] | None]:
+    """Return the cache row and its decoded payload, or None when unusable."""
+    cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
+    if cached is None:
+        return None, None
+    try:
+        decoded = json.loads(cached.value)
+    except json.JSONDecodeError:
+        return cached, None
+    return cached, decoded if isinstance(decoded, dict) else None
+
+
 def snapshot(*, force: bool = False) -> dict[str, Any]:
     """Return the shared cached coverage snapshot, preferring stale to a rebuild.
 
@@ -210,21 +222,28 @@ def snapshot(*, force: bool = False) -> dict[str, Any]:
     would otherwise freeze the page indefinitely.
     """
     now = utcnow()
+    # The common path reads the stored copy and nothing else, so it costs one
+    # connection. Taking the rebuild lock here as well cost two, which is a
+    # webservice worker's entire pool: one coverage request starved its own
+    # worker and the request behind it waited out pool_timeout and returned 500
+    # -- 10,423ms on 2026-09-02, which is POOL_TIMEOUT_SECONDS, not a slow
+    # query. The lock decides who may rebuild, and nothing here is rebuilding.
+    with db.session_scope() as session:
+        cached, cached_payload = _stored_snapshot(session)
+        if cached_payload is not None and not force and cached.updated_at >= now - SNAPSHOT_STALE_LIMIT:
+            return cached_payload
+
+    # Missing or stale enough that a dead refresh job would freeze the page.
+    # Only now is the lock worth a connection, and only the holder rebuilds, so
+    # a crowd never stampedes the whole-catalog pass.
     with (
         db.advisory_lock("catalog-coverage-refresh", timeout_seconds=2) as acquired,
         db.session_scope() as session,
     ):
-        cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
-        cached_payload: dict[str, Any] | None = None
-        if cached is not None:
-            try:
-                decoded = json.loads(cached.value)
-            except json.JSONDecodeError:
-                decoded = None
-            cached_payload = decoded if isinstance(decoded, dict) else None
-        # Serve the stored copy unless it is old enough that a dead refresh job
-        # would freeze the page -- and even then, only rebuild if this request
-        # holds the lock, so a crowd never stampedes the whole-catalog pass.
+        # Re-read: whoever held the lock while this request waited for it has
+        # very likely just stored a fresh copy, and rebuilding again would be
+        # the stampede the lock exists to prevent.
+        cached, cached_payload = _stored_snapshot(session)
         if (
             cached_payload is not None
             and not force
