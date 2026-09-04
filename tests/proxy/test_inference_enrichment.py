@@ -1250,3 +1250,26 @@ def test_each_lane_is_counted_against_its_own_denominator():
     assert counts["gadgetsReady"] == 1
     assert counts["eligiblePages"] == 1
     assert counts["gadgetsEligible"] == 1
+
+
+def test_a_ready_gadget_row_carrying_no_payload_publishes_nothing():
+    """`ready` with an empty payload is possible and must stay silent.
+
+    The status says the model was asked and answered; the payload says nothing
+    survived shape validation. Publishing an empty keyword list would put a
+    source in the evidence panel that contributed no value, and `_assemble`
+    would credit it for a field it never filled.
+    """
+    gadget_id = gadget()
+    with db.session_scope() as session:
+        session.add(
+            ToolInference(
+                tool_name=GADGET_TOOL,
+                payload={},
+                lane=LANE_GADGET,
+                page_id=gadget_id,
+                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                status=enrichment.STATUS_READY,
+            )
+        )
+    assert sources_for(GADGET_TOOL) == {}
