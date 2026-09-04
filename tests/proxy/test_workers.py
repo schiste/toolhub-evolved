@@ -252,11 +252,18 @@ def test_the_recorder_stores_a_run_and_keeps_history_bounded(tmp_path):
 RECLAIM_MARGIN_SECONDS = 120
 # Below this, a run that skips the boundary is retried soon enough that the extra
 # silence is not worth designing against: the whole cost of a miss is one interval.
-RECLAIM_CHECKED_ABOVE_SECONDS = 600
+# Lowered from 600 when the window stopped being per-job: one number now has to
+# clear every schedule at once, and the five-minute one is where a round value
+# lands first -- 300 would have sat exactly on digest-deliver's period.
+RECLAIM_CHECKED_ABOVE_SECONDS = 300
 
 
 def _guarded_stale_after() -> dict[str, int]:
-    """--stale-after per job name, read from the commands jobs.yaml declares."""
+    """--stale-after per job name, read from the commands jobs.yaml declares.
+
+    Expected to be empty now that liveness is measured rather than derived; see
+    `test_no_job_derives_its_reclaim_window_from_its_own_timeout`.
+    """
     declared = {}
     for line in (ROOT / "jobs.yaml").read_text().splitlines():
         stripped = line.strip()
@@ -269,6 +276,14 @@ def _guarded_stale_after() -> dict[str, int]:
     return declared
 
 
+def _guard_default(name: str) -> int:
+    """One of the guard's own default assignments, e.g. STALE_AFTER=300."""
+    text = (ROOT / "tools" / "job_guard.sh").read_text()
+    match = re.search(rf"^{name}=\"?\$?\{{?[A-Z_]*:?-?(\d+)", text, re.MULTILINE)
+    assert match, f"{name} default not found in job_guard.sh"
+    return int(match.group(1))
+
+
 def test_no_reclaim_threshold_lands_on_the_schedule_it_will_be_measured_against():
     """A lock is only ever inspected by a run, so its age is a multiple of the period.
 
@@ -279,15 +294,16 @@ def test_no_reclaim_threshold_lands_on_the_schedule_it_will_be_measured_against(
     that way for one release: stale-after 3600 on an hourly schedule, where the
     24 recorded reclaims ranged 3588-3613s -- 10 of them below the threshold
     they were being compared against, each costing another silent hour.
+
+    One number is graded now rather than one per job, because the window no
+    longer depends on the job -- see the next test.
     """
-    stale_after = _guarded_stale_after()
-    assert stale_after, "no guarded commands found; the jobs.yaml parser above is broken"
+    declared = _guard_default("STALE_AFTER")
     checked = []
     too_close = []
     for job in job_catalog.load():
-        declared = stale_after.get(job.name)
         period = job.expected_interval_minutes * 60
-        if declared is None or job.continuous or period < RECLAIM_CHECKED_ABOVE_SECONDS:
+        if job.continuous or period < RECLAIM_CHECKED_ABOVE_SECONDS:
             continue
         checked.append(job.name)
         first_look = -(-declared // period) * period
@@ -298,32 +314,31 @@ def test_no_reclaim_threshold_lands_on_the_schedule_it_will_be_measured_against(
     assert too_close == [], too_close
 
 
-def test_every_job_with_a_timeout_reclaims_its_lock_at_twice_that_timeout():
-    """A killed pod cannot release its guard lock, so the threshold is derived.
+def test_no_job_derives_its_reclaim_window_from_its_own_timeout():
+    """The window says how long a job stays silent, not whether a run could live.
 
-    Below the job's own timeout it would reclaim a lock from a run still doing
-    work; far above it, one killed run costs hours of silence. Twice the
-    timeout is the smallest value that cannot be a live run.
+    Twice the timeout answered "could this still be running", which age alone
+    cannot do better. It got the other question wrong: the threshold has to be
+    crossed *and then noticed by a run*, so a job scheduled tighter than its own
+    threshold loses every tick in between -- measured on 2026-09-04 as 1 lost run
+    for inference-enrichment, 10 for people-reconcile-incremental and 60 for
+    api-cache-invalidator. The guard heartbeats its lock instead, so one short
+    window is correct for every job however long it runs, and a per-job override
+    would only reintroduce the coupling.
     """
-    text = (ROOT / "jobs.yaml").read_text()
-    timeouts = {job.name: job.timeout_seconds for job in job_catalog.load()}
-    wrong = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("command:") or "--job-name" not in stripped:
-            continue
-        name_match = re.search(r"--job-name (\S+)", stripped)
-        if name_match is None:
-            continue
-        name = name_match.group(1)
-        timeout = timeouts.get(name) or 0
-        stale_match = re.search(r"--stale-after (\d+)", stripped)
-        declared = int(stale_match.group(1)) if stale_match else None
-        if timeout and declared != timeout * 2:
-            wrong.append(f"{name}: timeout={timeout} stale-after={declared} (expected {timeout * 2})")
-        if timeout and declared is not None and declared <= timeout:
-            wrong.append(f"{name}: stale-after {declared} would reclaim a live run")
-    assert wrong == [], wrong
+    assert _guarded_stale_after() == {}, "jobs.yaml is deriving a reclaim window again"
+
+
+def test_the_reclaim_window_leaves_room_for_several_missed_heartbeats():
+    """A single missed touch must not hand a live run's lock away.
+
+    The locks live on NFS, where an attribute cache can hide a fresh mtime for
+    tens of seconds, so the margin has to absorb more than one interval.
+    """
+    stale = _guard_default("STALE_AFTER")
+    heartbeat = _guard_default("HEARTBEAT_SECONDS")
+    assert heartbeat > 0
+    assert stale >= heartbeat * 5, f"stale-after {stale} allows only {stale // heartbeat} missed heartbeats"
 
 
 def test_a_worker_page_carries_what_each_run_said_it_did():
