@@ -505,9 +505,16 @@ def test_an_upstream_description_wins_and_the_model_is_kept_only_as_evidence():
     record, evidence = assembled(TOOL)
     assert record["description"] == "Classifies links."
     assert credited(evidence, "description") == catalog_projection.SOURCE_CANONICAL
-    # A list field is where a fill-only source would otherwise leak in: keywords
-    # union across sources, so "cannot overwrite" is not enough on its own.
-    assert record["keywords"] == ["ai"]
+    # Keywords are the one field where the fill-only rule yields, and only below
+    # KEYWORD_FILL_FLOOR: one keyword usually means the record mentioned one
+    # rather than that somebody chose one. What must not yield is provenance --
+    # the merged value keeps its own evidence row saying a model supplied it, and
+    # the tag carries a mark, so nothing here is published as the maintainer's.
+    assert record["keywords"][0] == "ai"
+    assert len(record["keywords"]) <= catalog_projection.KEYWORD_FILL_CEILING
+    keyword_sources = {item["value"]: item["source"] for item in evidence["keywords"] if item["effective"]}
+    assert keyword_sources["ai"] == catalog_projection.SOURCE_CANONICAL
+    assert set(keyword_sources.values()) >= {catalog_projection.SOURCE_INFERENCE}
     inferred = [item for item in evidence["description"] if item["source"] == catalog_projection.SOURCE_INFERENCE]
     assert inferred and not inferred[0]["effective"]
 

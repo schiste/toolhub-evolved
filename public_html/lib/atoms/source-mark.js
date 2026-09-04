@@ -72,7 +72,53 @@ function effectiveRow(rows) {
 export function sourceMark(field, projection) {
 	const provenance = projection?.provenance;
 	if (!provenance || typeof provenance !== "object") return "";
-	const row = effectiveRow(provenance[field]);
+	return markFor(effectiveRow(provenance[field]));
+}
+
+/**
+ * Return the mark for one value inside a list field, or "" when a maintainer supplied it.
+ *
+ * `sourceMark` answers for a whole field, which is right while a field has one
+ * source. `keywords` no longer does: below `KEYWORD_FILL_FLOOR` the projection
+ * lets inference extend a list somebody else started, so one list can hold a
+ * maintainer's word and a model's side by side. A per-field mark cannot say
+ * that -- it resolves to whichever row won the field, which is the maintainer's,
+ * and would print no mark at all while displaying the model's words as theirs.
+ *
+ * Values are matched the way the projection folds them, so the mark follows the
+ * value rather than its casing.
+ *
+ * @param {string} field toolinfo field name, e.g. `keywords`
+ * @param {unknown} value the single displayed value
+ * @param {Record<string, any> | null | undefined} projection
+ * @returns {string}
+ */
+export function valueMark(field, value, projection) {
+	const provenance = projection?.provenance;
+	if (!provenance || typeof provenance !== "object") return "";
+	const rows = provenance[field];
+	if (!Array.isArray(rows)) return "";
+	const wanted = String(value ?? "")
+		.trim()
+		.toLowerCase();
+	if (!wanted) return "";
+	const row = rows.find(
+		(candidate) =>
+			candidate &&
+			candidate.effective &&
+			String(candidate.value ?? "")
+				.trim()
+				.toLowerCase() === wanted
+	);
+	return markFor(row);
+}
+
+/**
+ * Render the footnote for one provenance row, or "" when it is a maintainer's.
+ *
+ * @param {Record<string, any> | null | undefined} row
+ */
+function markFor(row) {
 	const source = row && typeof row.source === "string" ? row.source : "";
 	if (!source || TOOLINFO_SOURCES.has(source)) return "";
 	const describe = /** @type {Record<string, () => string>} */ (DERIVED_LABELS)[source];

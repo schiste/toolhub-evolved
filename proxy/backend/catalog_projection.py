@@ -74,6 +74,26 @@ SOURCE_INFERENCE = "llm_inference"
 # where the source happens to be appended keeps it true if that order changes.
 FILL_ONLY_SOURCES = frozenset({SOURCE_INFERENCE})
 
+# The one exception, and it is deliberately narrow. `keywords` is the field
+# where "somebody already said something" is least likely to mean the list is
+# finished: a user script that arrived with a single keyword has one because
+# that is what its page happened to mention, not because a maintainer decided
+# one was enough. Below KEYWORD_FILL_FLOOR an inferred keyword may extend the
+# list, up to KEYWORD_FILL_CEILING entries in total.
+#
+# The floor reads the list as it stands before inference is merged, so a tool
+# with one curated keyword can reach the ceiling while a tool with two is left
+# alone entirely. That is the intended shape rather than a rounding of it: two
+# keywords is enough to suggest somebody chose them.
+#
+# Nothing about provenance is waived. Each merged value keeps its own evidence
+# entry carrying `source: inference` and `confidence: 40`, and `effective` is
+# computed per value, so a reader can always tell which keywords a maintainer
+# supplied and which a model proposed. That is the whole reason this exception
+# is safe to make here and would not be safe as a blanket union.
+KEYWORD_FILL_FLOOR = 2
+KEYWORD_FILL_CEILING = 6
+
 # A canonical row records where it came from, and the projection must report
 # that rather than assume. Labelling a synthesized gadget record
 # `official_toolhub` would have every card, facet and evidence panel say
@@ -490,9 +510,17 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
             if source == SOURCE_CURATION:
                 curations[field] = payload.get(field)
             elif fill_only and _values(effective.get(field)):
-                # Somebody already said something here. The value stays in
-                # `evidence` so the tool page can still show what was inferred.
-                continue
+                existing = _values(effective.get(field))
+                if field != "keywords" or len(existing) >= KEYWORD_FILL_FLOOR:
+                    # Somebody already said something here. The value stays in
+                    # `evidence` so the tool page can still show what was inferred.
+                    continue
+                merged = {_clean_text(item).casefold(): item for item in existing}
+                for value in field_values:
+                    if len(merged) >= KEYWORD_FILL_CEILING:
+                        break
+                    merged.setdefault(_clean_text(value).casefold(), value)
+                effective[field] = list(merged.values())
             elif field in LIST_FIELDS:
                 merged = {_clean_text(item).casefold(): item for item in _values(effective.get(field))}
                 for value in field_values:

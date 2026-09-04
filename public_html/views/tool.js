@@ -955,7 +955,7 @@ export async function viewTool(name) {
 	const projection = tool.catalogProjection;
 	const mark = (/** @type {string} */ field) => sourceMark(field, projection);
 	const description = renderMarkdown(tool.description);
-	const tags = keywordTags(tool, { empty: "—" });
+	const tags = keywordTags(tool, { empty: "—", projection });
 	const authors = authorInlineList(tool, peopleSummary);
 	const openToolUrl = safeHttpUrl(tool.url);
 

@@ -8,7 +8,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { sourceMark } from "../../public_html/lib/atoms/source-mark.js";
+import { sourceMark, valueMark } from "../../public_html/lib/atoms/source-mark.js";
 
 /** @param {string} source @param {Record<string, unknown>} [extra] */
 const projectionFor = (source, extra = {}) => ({
@@ -79,4 +79,53 @@ test("sourceMark() says nothing when there is no projection at all", () => {
 	assert.equal(sourceMark("user_docs_url", null), "");
 	assert.equal(sourceMark("user_docs_url", undefined), "");
 	assert.equal(sourceMark("user_docs_url", { provenance: "not an object" }), "");
+});
+
+/**
+ * The per-value mark, for a list that now holds two sources at once.
+ *
+ * Below KEYWORD_FILL_FLOOR the projection lets inference extend a keyword list
+ * somebody else started. A per-field mark resolves to whichever row won the
+ * field -- the maintainer's -- and would print nothing while displaying the
+ * model's words as theirs.
+ */
+const MIXED_KEYWORDS = {
+	provenance: {
+		keywords: [
+			{ value: "citations", source: "official_toolhub", effective: true },
+			{ value: "links", source: "llm_inference", effective: true },
+			{ value: "unused", source: "llm_inference", effective: false }
+		]
+	}
+};
+
+test("valueMark marks the inferred keyword in a mixed list", () => {
+	const mark = valueMark("keywords", "links", MIXED_KEYWORDS);
+	assert.match(mark, /source-mark/);
+	assert.match(mark, /language model/);
+});
+
+test("valueMark leaves the maintainer's keyword in the same list unmarked", () => {
+	assert.equal(valueMark("keywords", "citations", MIXED_KEYWORDS), "");
+});
+
+test("sourceMark alone would have marked neither, which is why valueMark exists", () => {
+	// The field's effective row is the maintainer's, so the whole list reads as
+	// theirs. This is the regression the per-value mark prevents.
+	assert.equal(sourceMark("keywords", MIXED_KEYWORDS), "");
+});
+
+test("valueMark follows the value rather than its casing", () => {
+	assert.match(valueMark("keywords", "  LINKS ", MIXED_KEYWORDS), /source-mark/);
+});
+
+test("valueMark ignores a value that was inferred but not published", () => {
+	// `unused` stayed evidence-only past the ceiling; nothing displays it, and a
+	// mark for it would attach to a tag that is not there.
+	assert.equal(valueMark("keywords", "nothing-like-this", MIXED_KEYWORDS), "");
+});
+
+test("valueMark says nothing when there is no projection to consult", () => {
+	assert.equal(valueMark("keywords", "links", null), "");
+	assert.equal(valueMark("keywords", "links", { provenance: {} }), "");
 });
