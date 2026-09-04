@@ -1,11 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: half-a-timeout-to-spend -->
-<!-- Release title: Half A Timeout To Spend -->
-<!-- Source range: b4b47523..fc770c83 (2 commits) -->
+<!-- Release id: permission-it-never-used -->
+<!-- Release title: Permission It Never Used -->
+<!-- Source range: 157c237d..674eca92 (2 commits) -->
 
 # What's New for Users
 
-- One of the background jobs that maps tools back to the feeds they come from can now recover from a database conflict instead of giving up. When several jobs write the same records at once the database picks one to undo, and this job had no way to try again; it simply failed and mailed somebody. It now retries once, within a budget that leaves its own time to finish.
-- Getting there needed the job to be given a time limit it had never had. It has run 120 feeds every six hours without any bound on how long that may take, so a run that hung would have hung indefinitely. The limit is fifteen minutes, set against a measured worst case of six and a half, and the job's lock is now released automatically at twice that if a run is ever killed part-way.
-- A correction to the previous release notes. They said 179 runs had been lost to database conflicts, with 72 from a single job. That was wrong and overstated it: most of those jobs already retry and recover without ever failing, and the job credited with 72 is one of them — its failure counter never left zero. The accurate statement is that 179 conflicts were recorded, an unknown share of them absorbed silently, and two jobs genuinely lost runs.
+- The data coverage page and the statistics page could each fail with an error while under no particular load. Both serve a summary that a background job works out in advance, and both were also claiming the exclusive right to rebuild that summary every time somebody merely read it. The site allows each of its web workers two simultaneous conversations with the database; claiming the rebuild right used one and reading the summary used the other, so a single visitor to either page used up everything that worker had and the next request to reach it waited ten seconds and gave up.
+- Reading now costs one conversation instead of two. The right to rebuild is claimed only when there is actually something to rebuild, which is when the stored summary is missing or has gone unrefreshed long enough that the job producing it has evidently stopped.
+- Nothing about how fresh those pages are has changed. The same background job refreshes them on the same schedule, a reader still sees the last stored copy rather than waiting for a rebuild, and when a rebuild is genuinely needed only one worker performs it while the others carry on serving what they have.
