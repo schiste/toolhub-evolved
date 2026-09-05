@@ -1,11 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-licence-line-says-so-too -->
-<!-- Release title: The Licence Line Says So Too -->
-<!-- Source range: 4f9c0f0c..HEAD -->
+<!-- Release id: one-empty-answer-is-not-a-blank-record -->
+<!-- Release title: One Empty Answer Is Not A Blank Record -->
+<!-- Source range: c2635a0e..HEAD -->
 
 # What's New for Users
 
-- A gadget's licence now says where it came from. It is read off the wiki's own gadget definition rather than written by a maintainer, and it was the last line in the details block still shown without the small dagger that says so — the type, the wikis and the technologies beside it all carried one.
-- The same slip had happened three times before this, always the same way. The keywords, then the wording on a gadget's keywords, then the audiences row: correct information, shown with nothing next to it saying it had been worked out rather than published. Each was noticed by somebody opening the page.
-- It is now checked automatically instead. Every line in that block is declared as either something the catalogue worked out — which must carry the mark — or something a maintainer published, which must not. A new line added without that decision being made stops the build.
+- A tool that already had a description was about to lose it, and now will not. The catalogue has been going back over its records to work out who each tool is for. Where it could not tell, it was filing the whole record as "nothing could be read here" — including the description and keywords it had read perfectly well the first time.
+- Nothing had disappeared from the site yet. Those records kept showing what they always showed; the loss would only have appeared the next time each page was rebuilt, which happens gradually. 1,479 records were affected and the count was growing by about 500 an hour.
+- The records have been restored, and the rule corrected. A record is now judged by everything it holds rather than by the last question asked of it, so a question that comes back empty leaves the rest of it alone.
+- A record that genuinely holds nothing is still marked as such. That distinction is what stops the catalogue asking the same unanswerable page over and over.

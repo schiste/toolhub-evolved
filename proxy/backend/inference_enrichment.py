@@ -896,7 +896,20 @@ def record(session: Session, candidate: Candidate, outcome: Outcome, *, model: s
     row.page_id = candidate.page_id
     row.source_fingerprint = candidate.fingerprint
     row.model = model[:64]
-    row.status = outcome.status
+    # The status describes the row, not the question just put to it. A partial
+    # re-ask that finds nothing is a `rejected` outcome, and letting it land
+    # here demoted rows that already held an accepted description and keywords
+    # -- 1,479 of them on 2026-09-05, every one primed to publish nothing at its
+    # next rebuild, because `catalog_projection` reads inference rows only while
+    # they are `ready`. The payload is merged just above for exactly this
+    # reason; the status has to be read from the merged row for the same one.
+    #
+    # A row holding values whose re-ask errored is `ready` too, and so loses the
+    # six-hour error backoff. It is re-asked through the missing-field arm
+    # instead, which is the lowest tier in the window -- the cost of an outage
+    # is re-asking those rows sooner than necessary, against the cost of
+    # withdrawing what they already say.
+    row.status = STATUS_READY if row.payload else outcome.status
     row.detail = outcome.detail[:MAX_DETAIL_CHARS]
     # Always assigned, including the empty string. `reply` being NULL is what
     # marks a row this code has never written, and a re-ask that stores "" has

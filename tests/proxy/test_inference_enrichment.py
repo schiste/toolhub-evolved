@@ -1630,3 +1630,48 @@ def test_a_large_republish_is_handed_over_in_slices(monkeypatch):
 def test_republishing_nothing_does_not_reach_the_projection():
     """A sweep that filled no gap has nothing to rebuild, and says so without asking."""
     assert enrichment._republish([]) == {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}
+
+
+def test_a_partial_ask_that_finds_nothing_does_not_unpublish_what_a_row_holds():
+    """The bug this pairs with the payload merge: status has to describe the row.
+
+    An audiences-only re-ask that finds no publishable audience is a `rejected`
+    outcome, and taking the row's status from it demoted 1,479 rows that already
+    held an accepted description and keywords. `catalog_projection` reads an
+    inference row only while it is `ready`, so each was primed to publish
+    nothing at its next rebuild -- with the values still sitting in its payload.
+    """
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REPLY))
+    with db.session_scope() as session:
+        session.query(ToolInference).update({"asked_signature": "description,keywords"})
+
+    with db.session_scope() as session:
+        wave = enrichment.with_source(session, enrichment.pending(session, limit=5))
+    assert wave[0].fields == ("audiences",)
+    with db.session_scope() as session:
+        outcome = enrichment._ask(wave[0], lambda payload: reply('{"audiences": []}'), model="m")
+        assert outcome.status == enrichment.STATUS_REJECTED, "the ask itself did find nothing"
+        enrichment.record(session, wave[0], outcome, model="m")
+
+    with db.session_scope() as session:
+        row = session.get(ToolInference, TOOL)
+        assert row.status == enrichment.STATUS_READY, "an answered row was demoted by a later empty ask"
+        assert row.payload["description"], "the payload was kept, which is what makes the demotion wrong"
+    # ...and it still reaches the catalogue, which is the part a reader sees.
+    assert sources_for(TOOL)[TOOL][0]["source"] == catalog_projection.SOURCE_INFERENCE
+
+
+def test_a_row_that_holds_nothing_is_still_recorded_as_refused():
+    """`rejected` stays the truth for a row with nothing in it.
+
+    Without this the fix would mark every asked row ready, and the sweep would
+    lose the distinction between a page it could not describe and one it has
+    described -- which is what keeps unanswerable pages out of the window.
+    """
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REFUSAL))
+    with db.session_scope() as session:
+        row = session.get(ToolInference, TOOL)
+    assert row.payload == {}
+    assert row.status == enrichment.STATUS_REJECTED

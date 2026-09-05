@@ -45,6 +45,7 @@ from backend import (
     wiki_prefixes,
 )
 from backend.author_claims import claim_relationship_for_method
+from backend.inference_enrichment import STATUS_ERROR, STATUS_READY, STATUS_REJECTED
 from backend.models import (
     LANE_GADGET,
     LANE_USER_SCRIPT,
@@ -163,6 +164,36 @@ def migrations() -> Iterator[MigrationResult]:
     yield MigrationResult("user-script body sketches", _backfill_userscript_sketches())
     yield MigrationResult("user-script analyses restated", _restate_swallowed_userscript_analyses())
     yield MigrationResult("inference asked-signatures", _backfill_inference_asked_signatures())
+    yield MigrationResult("demoted inference rows restored", _restore_demoted_inference_rows())
+
+
+def _restore_demoted_inference_rows() -> int:
+    """Mark an inference row `ready` again when it still holds accepted values.
+
+    `record` used to take its status from the outcome of the last question put
+    to a row. Once a re-ask could cover a single field, an audiences-only ask
+    that found no publishable audience returned `rejected` and demoted rows
+    that already held a description and keywords -- 1,479 of them, each one
+    then publishing nothing at its next rebuild, because
+    `catalog_projection` reads an inference row only while it is `ready`.
+
+    The payload was always merged correctly, so nothing was lost from the row
+    itself and this restores rather than recomputes: a row with anything in its
+    payload is `ready` by definition, whatever the last ask returned.
+
+    Idempotent, and narrow on purpose -- a row with an empty payload is left
+    exactly as it is, because for that row `rejected` is the truth.
+    """
+    with db.session_scope() as session:
+        rows = session.execute(
+            select(ToolInference).where(ToolInference.status.in_((STATUS_REJECTED, STATUS_ERROR)))
+        ).scalars()
+        restored = 0
+        for row in rows:
+            if isinstance(row.payload, dict) and row.payload:
+                row.status = STATUS_READY
+                restored += 1
+    return restored
 
 
 def _backfill_inference_asked_signatures() -> int:
