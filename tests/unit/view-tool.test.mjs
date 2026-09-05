@@ -1902,3 +1902,87 @@ test("viewTool leaves an audience a maintainer set unmarked", async () => {
 	const row = r.html.slice(r.html.indexOf("Audiences"), r.html.indexOf("Audiences") + 300);
 	assert.doesNotMatch(row, /source-mark/);
 });
+
+/* ---- Every derived detail says it is derived ------------------------------
+   Four defects of one shape shipped before this test existed: keywords
+   rendering unmarked, the gadget tooltip naming source code that was never
+   read, the audiences row rendering unmarked, and the licence row still doing
+   so. The data was right every time; what was missing was the sentence beside
+   it, and each was found by opening the page rather than by a test.
+
+   So the check is on the page. Every row in the Details block is declared here
+   as either backed by a projection field -- in which case a derived value must
+   carry a mark -- or as not coming from the projection at all. A row that is
+   neither fails the last test in this block, which is what stops the next
+   field being added without anybody deciding which it is. */
+const DETAIL_ROW_FIELDS = {
+	Type: "tool_type",
+	License: "license",
+	"Works on": "for_wikis",
+	Technology: "technology_used",
+	Audiences: "audiences",
+	// Not in the projection's provenance at all: `ui_languages` is read straight
+	// off the Toolhub record, so there is no derived source to disclose.
+	"Interface languages": null
+};
+
+/** Render the tool page with every provenance-carrying field credited to one source. */
+async function renderWithDerivedProvenance(source = "wiki_gadget_definition") {
+	const fields = Object.values(DETAIL_ROW_FIELDS).filter(Boolean);
+	const provenance = Object.fromEntries(fields.map((field) => [field, [{ value: "x", source, effective: true }]]));
+	h.getTool.mockResolvedValue(
+		toolFixture("derived", {
+			title: "Derived",
+			toolType: "gadget",
+			license: "CC-BY-SA-3.0",
+			forWikis: ["fr.wikipedia.org"],
+			technologyUsed: ["JavaScript"],
+			audiences: ["editor"],
+			uiLanguages: ["en"],
+			catalogProjection: { provenance }
+		})
+	);
+	const rendered = await tool.viewTool("derived");
+	return rendered.html;
+}
+
+/** Return each Details row as `{ label, marked }`, in page order. */
+function detailRows(html) {
+	const rows = [];
+	const re = /<div class="meta__k">(.*?)<\/div><div class="meta__v"[^>]*>(.*?)<\/div>/gs;
+	for (const match of html.matchAll(re)) {
+		rows.push({ label: match[1].replaceAll(/<[^>]*>/g, "").trim(), marked: match[2].includes("source-mark") });
+	}
+	return rows;
+}
+
+test("every Details row backed by the projection says so when its value is derived", async () => {
+	const rows = detailRows(await renderWithDerivedProvenance());
+	const unmarked = rows.filter((row) => DETAIL_ROW_FIELDS[row.label] && !row.marked).map((row) => row.label);
+	assert.deepEqual(unmarked, [], `derived values rendered with nothing saying so: ${unmarked.join(", ")}`);
+});
+
+test("a Details row the projection knows nothing about carries no mark", async () => {
+	const rows = detailRows(await renderWithDerivedProvenance());
+	const wrong = rows
+		.filter((row) => row.label in DETAIL_ROW_FIELDS && DETAIL_ROW_FIELDS[row.label] === null && row.marked)
+		.map((row) => row.label);
+	// Marking everything is as misleading as marking nothing: the mark means
+	// "not from a toolinfo.json", and a value that came from one must stay plain.
+	assert.deepEqual(wrong, [], `marked without provenance to justify it: ${wrong.join(", ")}`);
+});
+
+test("a maintainer's own value is never marked, whatever the field", async () => {
+	const rows = detailRows(await renderWithDerivedProvenance("official_toolhub"));
+	const marked = rows.filter((row) => row.marked).map((row) => row.label);
+	assert.deepEqual(marked, [], `Toolhub's own record marked as derived: ${marked.join(", ")}`);
+});
+
+test("every Details row is declared as either derived-markable or not from the projection", async () => {
+	// The self-maintaining half. A row added to the block without an entry above
+	// fails here, so the choice has to be made rather than defaulted to silence.
+	const rows = detailRows(await renderWithDerivedProvenance());
+	const undeclared = rows.map((row) => row.label).filter((label) => !(label in DETAIL_ROW_FIELDS));
+	assert.deepEqual(undeclared, [], `Details rows nobody has classified: ${undeclared.join(", ")}`);
+	assert.ok(rows.length >= Object.keys(DETAIL_ROW_FIELDS).length - 1, `only ${rows.length} rows rendered`);
+});

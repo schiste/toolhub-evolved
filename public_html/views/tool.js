@@ -1066,7 +1066,7 @@ export async function viewTool(name) {
 				<h2 class="toolpage__h2">${t("tool.detailsTitle", "Details")}</h2>
 				<div class="detail__meta">
 					${metaItem(t("tool.metaType", "Type"), esc(tool.toolType) + mark("tool_type"))}
-					${metaItem(t("tool.metaLicense", "License"), esc(tool.license))}
+					${metaItem(t("tool.metaLicense", "License"), esc(tool.license) + mark("license"))}
 					${metaItem(t("tool.metaWorksOn", "Works on"), wikiLabel(tool.forWikis) + mark("for_wikis"))}
 					${metaItem(t("tool.metaInterfaceLanguages", "Interface languages"), langLabel(tool.uiLanguages))}
 					${metaItem(t("tool.metaTechnology", "Technology"), technologyLabels(tool.technologyUsed, evolvedSummary?.health?.sourceHealth?.technologies) + mark("technology_used"))}
