@@ -1600,3 +1600,33 @@ def test_a_prompt_that_would_ask_nothing_is_refused_rather_than_sent():
     """
     with pytest.raises(ValueError, match="asking nothing"):
         enrichment.build_prompt(enrichment.LANE_USER_SCRIPT, ENWIKI, "User:X/t.js", BODY, ())
+
+
+def test_a_large_republish_is_handed_over_in_slices(monkeypatch):
+    """Peak memory tracked the whole list, not one internal batch.
+
+    3,000 tools reached 281 MiB of a 512 MiB job and 9,500 was killed outright
+    with exit 137 -- which is what happened to the sweep of 2026-09-05 10:41
+    after it converted 9,338 records. Every answer it paid for was already
+    committed; what died was the republish and the summary saying so.
+    """
+    from backend import catalog_projection as projection
+
+    sizes: list[int] = []
+
+    def fake_refresh(names):
+        sizes.append(len(names))
+        return {"requested": len(names), "refreshed": len(names), "changed": 1, "errors": 0}
+
+    monkeypatch.setattr(projection, "refresh_tool_names", fake_refresh)
+    total = enrichment.REPUBLISH_SLICE * 2 + 37
+    result = enrichment._republish([f"tool-{n}" for n in range(total)])
+
+    assert max(sizes) <= enrichment.REPUBLISH_SLICE, f"handed over {max(sizes)} at once"
+    assert sum(sizes) == total, "a slice was dropped"
+    assert result == {"requested": total, "refreshed": total, "changed": 3, "errors": 0}
+
+
+def test_republishing_nothing_does_not_reach_the_projection():
+    """A sweep that filled no gap has nothing to rebuild, and says so without asking."""
+    assert enrichment._republish([]) == {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}

@@ -120,6 +120,18 @@ MAX_SOURCE_CHARS = 24_000
 # of the wave would return nothing the moment the lane caught up. Four is the
 # ratio at which one sweep still fills its wave when 3 in 4 gadgets are done.
 GADGET_WINDOW_SLACK = 4
+#: How many tools are handed to `refresh_tool_names` at once. It batches
+#: internally, but something it holds is not released between those batches, so
+#: peak memory tracks the whole list rather than one batch: 3,000 tools reached
+#: 281 MiB of a 512 MiB job and 9,500 was killed outright with exit 137. Sliced
+#: at 2,000 the same 9,500 plateau at 260 MiB and finish in 175s.
+#:
+#: This only became reachable when a sweep got productive enough to fill it. The
+#: run at 10:41 on 2026-09-05 converted 9,338 records -- 3.1x its predecessor,
+#: from composing prompts and widening the wave -- and died in the republish
+#: that followed, having committed every answer it paid for and lost only the
+#: summary saying so.
+REPUBLISH_SLICE = 2_000
 MIN_SOURCE_CHARS = 120
 # How many pages `infer` reads source for at once. `sweep` uses its wave width
 # instead, because a wave is already the unit it asks and commits in; this is
@@ -1131,12 +1143,21 @@ def _republish(tool_names: list[str]) -> dict[str, int]:
     changed; this is that call, made late because the import has to be, and
     kept out of the per-page loop so one rebuild failure cannot lose an answer
     the sweep already paid Lift Wing for.
+
+    Sliced rather than handed over whole: see `REPUBLISH_SLICE`. Nothing is lost
+    by a slice that fails -- the answers are already committed, and the next
+    scheduled projection pass is the backstop this call exists to front-run.
     """
     if not tool_names:
         return {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}
     from backend import catalog_projection  # noqa: PLC0415 - deferred; that module imports from this one
 
-    return catalog_projection.refresh_tool_names(tool_names)
+    totals = {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}
+    for start in range(0, len(tool_names), REPUBLISH_SLICE):
+        part = catalog_projection.refresh_tool_names(tool_names[start : start + REPUBLISH_SLICE])
+        for key in totals:
+            totals[key] += part.get(key, 0)
+    return totals
 
 
 def coverage() -> dict[str, int]:
