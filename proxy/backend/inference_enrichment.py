@@ -31,17 +31,23 @@ projection, and the design follows from that:
   that structural rather than a promise -- a human correction, the canonical
   Toolhub record and any toolinfo.json all beat this source, and for list
   fields this source cannot even extend what they said.
-* It asks for two fields, not twelve. `tool_type`, `technology_used` and
+* It asks for three fields, not twelve. `tool_type`, `technology_used` and
   `for_wikis` are already derived deterministically from the wiki and are
   already at 100%; asking a model to guess at them buys nothing and creates a
-  way for a guess to contradict a known-true value.
+  way for a guess to contradict a known-true value. `audiences` is the third
+  and the only one that is a choice from a closed list rather than free text,
+  which is what makes it countable -- see `PUBLISHABLE_AUDIENCES` for what was
+  counted and which part of the vocabulary survived it.
 * It ignores the model's own confidence. Measured on
   `User:Anomie/linkclassifier.js`, the model reported 0.9 for an `audience` it
   got wrong and 0.9 for a `for_wikis` it inferred from where the page was
   hosted rather than from the code. Self-reported confidence tracks fluency,
   not correctness, and feeding it into `SOURCE_CONFIDENCE` would launder a
   guess into a ranked fact. `accept()` applies shape rules instead, which are
-  checkable.
+  checkable. `audiences` is now asked for again despite that reading, on the
+  strength of counting it rather than trusting it: the vocabulary is closed, so
+  agreement with 210 human-labelled records could be measured per value, and
+  only the three values that survived are published.
 
 Re-inference is keyed on what the answer was read from: `UserScriptPage.fingerprint`
 in the user-script lane, `description_fingerprint` of the gadget's message in
@@ -127,6 +133,37 @@ MAX_KEYWORDS = 8
 MIN_KEYWORD_CHARS = 2
 MAX_KEYWORD_CHARS = 40
 
+# Toolhub's audience vocabulary, as `public_html/lib/core/routing.js` spells it
+# for the persona facets and as all 229 human-labelled records in the catalogue
+# use it. A closed list makes this a classification rather than a generation, so
+# a wrong answer is a wrong *choice* and can be counted.
+AUDIENCE_VOCABULARY = ("editor", "developer", "reader", "researcher", "admin", "organizer")
+
+# ...and the part of it worth publishing. Measured 2026-09-05 against the 210
+# human-labelled tools that carry a description and at most three audiences,
+# asking with the whole vocabulary above:
+#
+#     editor      p=0.91   72/79 published labels correct
+#     developer   p=0.86   49/57
+#     reader      p=0.80   28/35
+#     researcher  p=0.36   16/45      <- worse than a coin flip
+#     admin       p=0.38    9/24
+#     organizer   p=0.42    5/12
+#
+# The overall 0.73 hides that split entirely. Publishing only the first three
+# is 149/171 = 0.87, and it is the whole vocabulary that has to be *offered* to
+# get it: asked with only these three, the model pushes a research or moderation
+# tool onto the nearest survivor instead of declining, and developer falls to
+# 0.76 and reader to 0.74. So the model is given somewhere correct to put a tool
+# this catalogue will not publish an audience for, and that answer is dropped.
+#
+# This is also the field the module's own header records the model getting wrong
+# at a self-reported 0.9. It was: under a prompt that asked for twelve fields at
+# once and took the model's word for it. What changed is not the model but the
+# question -- six named choices, and only the three that survive being counted.
+PUBLISHABLE_AUDIENCES = frozenset({"editor", "developer", "reader"})
+MAX_AUDIENCES = 3
+
 
 class Candidate(NamedTuple):
     """One thing the sweep may ask about, with everything the request needs.
@@ -194,6 +231,24 @@ SYSTEM_PROMPT = (
 )
 
 
+def _audience_request() -> str:
+    """Return the audiences half of both prompts, so the two lanes cannot drift apart.
+
+    The whole vocabulary is offered even though only part of it is published:
+    a model given nowhere correct to put a moderation or research tool puts it
+    somewhere wrong instead, which cost developer and reader 10 and 6 points of
+    precision when it was measured with the short list. See
+    `PUBLISHABLE_AUDIENCES`.
+    """
+    return (
+        f'- "audiences": array of who this is for, each exactly one of {json.dumps(list(AUDIENCE_VOCABULARY))}. '
+        "[] if it is not clear.\n"
+        "  editor edits articles; developer writes software; reader browses Wikimedia content; "
+        "researcher analyses Wikimedia data; admin performs moderation or administrative actions; "
+        "organizer runs campaigns or events.\n"
+    )
+
+
 GADGET_SYSTEM_PROMPT = (
     "You tag Wikimedia gadgets with topical keywords, given the description their own wiki shows. "
     "You answer with a single JSON object and nothing else: no prose, no markdown fence. "
@@ -221,11 +276,13 @@ def build_gadget_prompt(wiki: str, name: str, description: str) -> str:
     return (
         "Below is the description a Wikimedia wiki shows for one of its gadgets.\n\n"
         f"Gadget: {name}\nWiki: {wiki}\n\n"
-        "Return a JSON object with exactly this one key:\n\n"
+        "Return a JSON object with exactly these keys:\n\n"
         f'- "keywords": array of up to {MAX_KEYWORDS} lowercase topical tags, in English. '
         "[] if the description does not say enough to tag. "
-        'Do not include "gadget", the wiki name, or the gadget\'s own name.\n\n'
-        "DESCRIPTION:\n" + description[:MAX_SOURCE_CHARS]
+        'Do not include "gadget", the wiki name, or the gadget\'s own name.\n'
+        + _audience_request()
+        + "\nDESCRIPTION:\n"
+        + description[:MAX_SOURCE_CHARS]
     )
 
 
@@ -234,13 +291,16 @@ def build_prompt(wiki: str, title: str, body: str) -> str:
     return (
         "Below is the complete source of a Wikimedia user script.\n\n"
         f"Page: {title}\nWiki: {wiki}\n\n"
-        "Return a JSON object with exactly these two keys:\n\n"
+        "Return a JSON object with exactly these keys:\n\n"
         '- "description": 1-3 sentences of plain text saying what the tool does for the '
         "person who runs it. Describe observable behaviour, not implementation. No marketing. "
         "null if the source does not make it clear.\n"
         f'- "keywords": array of up to {MAX_KEYWORDS} lowercase topical tags. [] if unclear. '
-        'Do not include "user script", the wiki name, or the author name.\n\n'
-        "SOURCE:\n```javascript\n" + body[:MAX_SOURCE_CHARS] + "\n```"
+        'Do not include "user script", the wiki name, or the author name.\n'
+        + _audience_request()
+        + "\nSOURCE:\n```javascript\n"
+        + body[:MAX_SOURCE_CHARS]
+        + "\n```"
     )
 
 
@@ -252,7 +312,7 @@ def payload_for(model: str, wiki: str, title: str, body: str, *, lane: str = LAN
     to hold three sentences as well.
     """
     if lane == LANE_GADGET:
-        system, user, ceiling = GADGET_SYSTEM_PROMPT, build_gadget_prompt(wiki, title, body), 200
+        system, user, ceiling = GADGET_SYSTEM_PROMPT, build_gadget_prompt(wiki, title, body), 300
     else:
         system, user, ceiling = SYSTEM_PROMPT, build_prompt(wiki, title, body), 700
     return {
@@ -354,13 +414,46 @@ def _keywords(value: object) -> Checked:
     return Checked(found)
 
 
+def _audiences(value: object) -> Checked:
+    """Keep the audiences that are both in the vocabulary and worth publishing.
+
+    Two filters rather than one, and the order matters. A value outside
+    `AUDIENCE_VOCABULARY` is the model ignoring the list it was given, which is
+    a malformed answer. A value inside it but outside `PUBLISHABLE_AUDIENCES` is
+    a well-formed answer this catalogue has measured and will not publish -- so
+    it is dropped silently rather than counted as the model failing, because
+    offering it is what keeps the other three honest.
+    """
+    if value is None:
+        return Checked([], "absent or null in the reply")
+    if not isinstance(value, list):
+        return Checked([], f"not a list ({type(value).__name__})")
+    named = [tag for item in value if isinstance(item, str) and (tag := item.strip().casefold()) in AUDIENCE_VOCABULARY]
+    if not named:
+        return Checked([], "empty list" if not value else f"none of {len(value)} are audiences")
+    kept: list[str] = []
+    for tag in named:
+        if tag in PUBLISHABLE_AUDIENCES and tag not in kept:
+            kept.append(tag)
+        if len(kept) == MAX_AUDIENCES:
+            break
+    # No reason recorded: the model answered inside the vocabulary and this
+    # catalogue simply does not publish that part of it. Calling that a refusal
+    # would file a correct answer as a fault.
+    return Checked(kept)
+
+
 # The only fields this source may ever produce, each with what it has to survive.
 # An allowlist rather than a denylist: a model that volunteers `license` or
 # `tool_type` is answering a prompt that drifted, and storing it would let a
 # later reader assume it was asked for. `tool_type`, `technology_used` and
 # `for_wikis` in particular are already derived deterministically and sit at
 # 100% on this lane -- a guess there could only contradict something known.
-FIELDS: dict[str, Callable[[object], Checked]] = {"description": _description, "keywords": _keywords}
+FIELDS: dict[str, Callable[[object], Checked]] = {
+    "description": _description,
+    "keywords": _keywords,
+    "audiences": _audiences,
+}
 
 # What each lane is allowed to come back with. The gadget lane is keywords only
 # because a gadget already has a maintainer's description; accepting one here
@@ -370,7 +463,7 @@ FIELDS: dict[str, Callable[[object], Checked]] = {"description": _description, "
 # simply not read, exactly as an unasked-for `license` is not.
 FIELDS_BY_LANE: dict[str, dict[str, Callable[[object], Checked]]] = {
     LANE_USER_SCRIPT: FIELDS,
-    LANE_GADGET: {"keywords": _keywords},
+    LANE_GADGET: {"keywords": _keywords, "audiences": _audiences},
 }
 
 
