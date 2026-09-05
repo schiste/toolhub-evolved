@@ -28,6 +28,7 @@
 {"module":"proxy.backend.catalog_projection","symbol":"PROJECTION_SOURCE_BY_ROW","kind":"global_variable","node_id":"global_variable:toolhub-evolved:rnqz53fqqe2cppnqtqwwae6bme","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"PROJECTION_SOURCE_BY_ROW.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:b2d2ht22p5z25argrvuw3vkhdy","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"PROJECTION_VERSION","kind":"global_variable","node_id":"global_variable:toolhub-evolved:k2n7qj5em6dtavxpsxmjcgbo5y","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"REFRESH_BATCH_TOOLS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:npg7tcm7sbsyig3kilksk63bdm","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"REVIEW_APPROVED","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nj5sqramdkjhom7nkau752v3h4","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"RepositoryAnalysisState","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:mtekaegdlprlw3trxijtkunjcq","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"RepositoryAnalysisState.tool_name.in_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:dq5cocop4xmue3jpd3hezcyahe","file":"proxy/backend/catalog_projection.py"}
