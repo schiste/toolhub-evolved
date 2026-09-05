@@ -1245,3 +1245,23 @@ def test_an_account_with_nothing_to_compare_against_is_linked_rather_than_skippe
             select(PersonIdentifier).where(PersonIdentifier.person_id == user.person_id)
         ).scalars()
         assert migrate.people_index.NS_TOOLHUB_USER_ID in {row.namespace for row in owners}
+
+
+def test_the_projection_step_asks_for_a_slice_not_the_whole_catalogue(monkeypatch):
+    """A deploy that re-projects everything is a deploy that gets OOM-killed.
+
+    Asserted against the limit actually passed, because the defect was a
+    constant swapped at one call site: migrate read `MAX_REFRESH_TOOLS`, which
+    is the hourly job's budget, and inherited a sweep it has no room for.
+    """
+    asked = []
+
+    def _record(limit):
+        asked.append(limit)
+        return {"refreshed": 0}
+
+    monkeypatch.setattr(migrate.catalog_projection, "refresh_candidates", _record)
+    list(migrate.migrations())
+
+    assert asked == [migrate.catalog_projection.MIGRATION_REFRESH_TOOLS]
+    assert asked[0] < migrate.catalog_projection.MAX_REFRESH_TOOLS

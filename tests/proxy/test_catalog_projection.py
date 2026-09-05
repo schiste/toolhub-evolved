@@ -1957,3 +1957,15 @@ def test_a_refresh_is_batched_no_matter_how_many_tools_it_is_handed(monkeypatch)
 def test_the_batch_size_is_smaller_than_the_number_a_run_may_take_on():
     """Otherwise the two are one number again and the bound does nothing."""
     assert catalog_projection.REFRESH_BATCH_TOOLS < catalog_projection.MAX_REFRESH_TOOLS
+
+
+def test_a_deploy_migration_takes_a_slice_rather_than_the_whole_sweep():
+    """The deploy's migrate job is the smallest of the three budgets.
+
+    Measured on Toolforge, the full 20,000-tool sweep peaks at 331 MiB in a
+    process doing nothing else. Migrate is not that process, and the same sweep
+    OOM-killed it at 512 MiB twice, so what it may take on is bounded
+    separately from what the hourly job may.
+    """
+    assert catalog_projection.MIGRATION_REFRESH_TOOLS <= catalog_projection.MAX_REFRESH_TOOLS
+    assert catalog_projection.MIGRATION_REFRESH_TOOLS <= catalog_projection.REFRESH_BATCH_TOOLS

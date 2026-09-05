@@ -77,6 +77,14 @@ MAX_REFRESH_TOOLS = 20_000
 # looked fine for five versions. Sized so a batch stays near 190 MiB, and the
 # cap above keeps deciding how much work a run takes on.
 REFRESH_BATCH_TOOLS = 2_000
+# What one deploy migration may take on, which is smaller again. Measured on
+# Toolforge: the full 20,000-tool sweep peaks at 331 MiB and runs for 9m45s in
+# a process that does nothing else, which is the hourly job and is fine. The
+# deploy's migrate job is not that process -- it has already run some thirty
+# other migrations by the time it gets here -- and the same sweep OOM-killed it
+# at 512 MiB twice. The sweep is a backstop, so the deploy takes a slice and
+# leaves the rest to the job built for it.
+MIGRATION_REFRESH_TOOLS = 2_000
 STATUS_READY = "ready"
 STATUS_ERROR = "error"
 
