@@ -147,7 +147,7 @@ def migrations() -> Iterator[MigrationResult]:
     yield MigrationResult("canonical status flags", canonical_tools.backfill_status_flags())
     yield MigrationResult(
         "catalog projections",
-        catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
+        catalog_projection.refresh_candidates(limit=catalog_projection.MIGRATION_REFRESH_TOOLS)["refreshed"],
     )
     yield MigrationResult("catalog facet aggregate", catalog_facets.rebuild_global_payload(force=True))
     yield MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims())
