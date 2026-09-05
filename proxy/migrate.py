@@ -36,6 +36,7 @@ from backend import (
     db,
     digests,
     identity_graph,
+    inference_enrichment,
     maintainer_index,
     people_index,
     source_attestations,
@@ -45,6 +46,8 @@ from backend import (
 )
 from backend.author_claims import claim_relationship_for_method
 from backend.models import (
+    LANE_GADGET,
+    LANE_USER_SCRIPT,
     ApiCacheMeta,
     CanonicalToolCache,
     CatalogFacetValue,
@@ -55,6 +58,7 @@ from backend.models import (
     PersonIdentifier,
     ToolAuthorClaim,
     ToolAuthorKey,
+    ToolInference,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
@@ -158,6 +162,48 @@ def migrations() -> Iterator[MigrationResult]:
     yield MigrationResult("user-script loads resolved to pages", _backfill_userscript_import_targets())
     yield MigrationResult("user-script body sketches", _backfill_userscript_sketches())
     yield MigrationResult("user-script analyses restated", _restate_swallowed_userscript_analyses())
+    yield MigrationResult("inference asked-signatures", _backfill_inference_asked_signatures())
+
+
+def _backfill_inference_asked_signatures() -> int:
+    """Say which questions each stored inference row has already been put.
+
+    `asked_signature` is empty on every row that predates it, and an empty
+    signature means "missing everything" -- so without this the first sweep
+    after the deploy would re-ask 50,000 rows for a description and keywords
+    they already hold, at seven hundred tokens of answer each, to collect the
+    one field they are actually short of.
+
+    `prompt_version` is what makes that recoverable: it was set to 1 by the
+    release that started asking for `audiences`, so a row carrying it was asked
+    the lane's whole current set, and a row at 0 was asked everything except
+    audiences. Both are stated here rather than derived from `payload`, because
+    a payload cannot distinguish a field the model declined from one nobody
+    asked about -- which is the confusion this column exists to end.
+
+    Idempotent: rows that already carry a signature are left alone, so a
+    re-run is a no-op and a partial run resumes.
+    """
+    updated = 0
+    lanes = (LANE_USER_SCRIPT, LANE_GADGET)
+    with db.session_scope() as session:
+        for lane in lanes:
+            current = inference_enrichment.lane_signature(lane)
+            earlier = inference_enrichment.signature(
+                name for name in inference_enrichment.lane_fields(lane) if name != "audiences"
+            )
+            for version, value in ((1, current), (0, earlier)):
+                predicate = ToolInference.prompt_version >= version if version else ToolInference.prompt_version < 1
+                updated += (
+                    session.query(ToolInference)
+                    .filter(
+                        ToolInference.lane == lane,
+                        ToolInference.asked_signature == "",
+                        predicate,
+                    )
+                    .update({"asked_signature": value}, synchronize_session=False)
+                )
+    return updated
 
 
 def _ensure_catalog_read_indexes() -> int:

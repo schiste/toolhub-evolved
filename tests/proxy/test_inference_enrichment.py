@@ -23,6 +23,7 @@ fixture written to match the current prompt.
 
 import sys
 import threading
+from unittest import mock
 from datetime import timedelta
 from pathlib import Path
 
@@ -101,6 +102,10 @@ def _database():
 # --- helpers ---------------------------------------------------------------
 
 BODY = "// a script long enough to be worth sending\n" + ("var x = 1;\n" * 20)
+
+SCRIPT_FIELDS = ("description", "keywords", "audiences")
+GADGET_FIELDS = ("keywords", "audiences")
+
 
 
 def store(title, *, owner="Anomie", basename="linkclassifier.js", body=BODY, fingerprint="f1", original=True, **kwargs):
@@ -181,27 +186,27 @@ def run(answer, *, limit=enrichment.BATCH):
 
 
 def test_a_real_reply_survives_intact():
-    accepted = enrichment.accept(enrichment.parse_json(enrichment.model_text(reply(REAL_REPLY))))
+    accepted = enrichment.accept(enrichment.parse_json(enrichment.model_text(reply(REAL_REPLY))), SCRIPT_FIELDS)
     assert set(accepted) == {"description", "keywords"}
     assert accepted["description"].startswith("This script analyzes links")
     assert accepted["keywords"][:2] == ["links", "classification"]
 
 
 def test_a_fenced_reply_is_read_and_stripped_of_what_was_not_asked():
-    accepted = enrichment.accept(enrichment.parse_json(enrichment.model_text(reply(REAL_FENCED_REPLY))))
+    accepted = enrichment.accept(enrichment.parse_json(enrichment.model_text(reply(REAL_FENCED_REPLY))), SCRIPT_FIELDS)
     assert set(accepted) == {"description", "keywords"}
     assert "confidence" not in accepted
     assert accepted["description"].startswith("Adds colour coding")
 
 
 def test_a_model_that_declines_contributes_nothing():
-    assert enrichment.accept(enrichment.parse_json(REAL_REFUSAL)) == {}
+    assert enrichment.accept(enrichment.parse_json(REAL_REFUSAL), SCRIPT_FIELDS) == {}
 
 
 def test_prose_saying_the_source_is_unclear_is_not_a_description():
     # Left unguarded this becomes the tool's description, and reads on the tool
     # page as though the tool were unclear rather than the reading of it.
-    assert enrichment.accept({"description": "The source does not make the purpose clear at all."}) == {}
+    assert enrichment.accept({"description": "The source does not make the purpose clear at all."}, SCRIPT_FIELDS) == {}
 
 
 @pytest.mark.parametrize(
@@ -214,12 +219,12 @@ def test_a_reply_that_cannot_be_read_is_rejected_rather_than_repaired(text):
 
 
 def test_a_description_outside_the_length_bounds_is_dropped():
-    assert enrichment.accept({"description": "Too short."}) == {}
-    assert enrichment.accept({"description": "x " * 500}) == {}
+    assert enrichment.accept({"description": "Too short."}, SCRIPT_FIELDS) == {}
+    assert enrichment.accept({"description": "x " * 500}, SCRIPT_FIELDS) == {}
 
 
 def test_keywords_are_casefolded_deduped_and_capped():
-    accepted = enrichment.accept({"keywords": ["Links", "links", *[f"tag{n}" for n in range(20)]]})
+    accepted = enrichment.accept({"keywords": ["Links", "links", *[f"tag{n}" for n in range(20)]]}, SCRIPT_FIELDS)
     assert accepted["keywords"][0] == "links"
     assert len(accepted["keywords"]) == enrichment.MAX_KEYWORDS
     assert len(set(accepted["keywords"])) == enrichment.MAX_KEYWORDS
@@ -233,7 +238,7 @@ def test_keywords_are_casefolded_deduped_and_capped():
 def test_a_keyword_that_would_pollute_the_facet_list_is_dropped(keyword):
     # A keyword becomes a facet value, and a facet value is permanent in a way a
     # description is not: it appears in the sidebar for everyone, forever.
-    assert enrichment.accept({"keywords": [keyword]}) == {}
+    assert enrichment.accept({"keywords": [keyword]}, SCRIPT_FIELDS) == {}
 
 
 def test_a_refusal_records_which_field_refused_and_why():
@@ -794,22 +799,22 @@ def test_an_unterminated_fence_leaves_nothing_to_parse():
     ids=["number", "object", "array"],
 )
 def test_a_description_that_is_not_prose_is_refused_by_type(value):
-    assert enrichment.check({"description": value}).get("description").reason.startswith("not a string")
+    assert enrichment.check({"description": value}, SCRIPT_FIELDS).get("description").reason.startswith("not a string")
 
 
 def test_a_description_carrying_a_link_is_refused():
     # A description is rendered on the tool page. A URL the model invented
     # there is a link this site would be publishing on somebody else's behalf.
-    verdict = enrichment.check({"description": "A gadget documented at https://example.invalid/docs page."})
+    verdict = enrichment.check({"description": "A gadget documented at https://example.invalid/docs page."}, SCRIPT_FIELDS)
     assert verdict["description"] == enrichment.Checked("", "contains a URL")
 
 
 def test_keywords_offered_as_anything_but_a_list_are_refused_by_type():
-    assert enrichment.check({"keywords": "links, css"})["keywords"].reason == "not a list (str)"
+    assert enrichment.check({"keywords": "links, css"}, SCRIPT_FIELDS)["keywords"].reason == "not a list (str)"
 
 
 def test_a_keyword_list_mixing_prose_and_junk_keeps_only_the_strings():
-    accepted = enrichment.accept({"keywords": ["links", 7, None, {"tag": "css"}, "css"]})
+    accepted = enrichment.accept({"keywords": ["links", 7, None, {"tag": "css"}, "css"]}, SCRIPT_FIELDS)
 
     assert accepted["keywords"] == ["links", "css"]
 
@@ -817,8 +822,8 @@ def test_a_keyword_list_mixing_prose_and_junk_keeps_only_the_strings():
 def test_a_reply_that_parsed_to_nothing_stores_nothing():
     # `accept` is the last gate before a value is written under a person's
     # name, so it has to hold for the empty reply as well as the bad one.
-    assert enrichment.accept(None) == {}
-    assert enrichment.accept({}) == {}
+    assert enrichment.accept(None, SCRIPT_FIELDS) == {}
+    assert enrichment.accept({}, SCRIPT_FIELDS) == {}
 
 
 def test_reading_source_for_an_empty_wave_asks_the_database_nothing():
@@ -1012,10 +1017,10 @@ def test_non_english_description_yields_english_keywords():
     shape validation and stored as a rejection, which would read as the model
     having failed when it had answered correctly.
     """
-    accepted = enrichment.accept(enrichment.parse_json(REAL_GADGET_REPLY_RU), lane=LANE_GADGET)
+    accepted = enrichment.accept(enrichment.parse_json(REAL_GADGET_REPLY_RU), GADGET_FIELDS)
     assert accepted == {"keywords": ["block", "user", "text", "formatting", "list"]}
     for reply_text in (REAL_GADGET_REPLY_ACE, REAL_GADGET_REPLY_FR):
-        tags = enrichment.accept(enrichment.parse_json(reply_text), lane=LANE_GADGET)["keywords"]
+        tags = enrichment.accept(enrichment.parse_json(reply_text), GADGET_FIELDS)["keywords"]
         assert tags, "a real reply produced no keyword that survived shape validation"
         assert all(tag.isascii() for tag in tags)
 
@@ -1027,10 +1032,10 @@ def test_gadget_lane_cannot_store_a_description():
     description anyway has it dropped, the same way an unasked-for `license` is.
     """
     reply_with_prose = '{"description": "%s", "keywords": ["categories"]}' % ("x" * 80)
-    assert enrichment.accept(enrichment.parse_json(reply_with_prose), lane=LANE_GADGET) == {
+    assert enrichment.accept(enrichment.parse_json(reply_with_prose), GADGET_FIELDS) == {
         "keywords": ["categories"]
     }
-    assert "description" in enrichment.accept(enrichment.parse_json(reply_with_prose))
+    assert "description" in enrichment.accept(enrichment.parse_json(reply_with_prose), SCRIPT_FIELDS)
 
 
 def test_description_fingerprint_ignores_reflowing():
@@ -1074,7 +1079,7 @@ def test_gadget_pending_skips_a_gadget_whose_answer_is_current():
                 page_id=gadget_id,
                 source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
                 status=enrichment.STATUS_READY,
-                prompt_version=enrichment.PROMPT_VERSION,
+                asked_signature=enrichment.lane_signature(LANE_GADGET),
             )
         )
     with db.session_scope() as session:
@@ -1239,9 +1244,14 @@ def test_the_gadget_request_asks_for_english_tags_and_nothing_else():
     instruction and the user turn carries the description, and a change that
     moved one without the other would still pass a test of either half.
     """
-    payload = enrichment.payload_for("m", "ab.wikipedia.org", "markblocked", RU_DESCRIPTION, lane=LANE_GADGET)
-    system, user = (message["content"] for message in payload["messages"])
-    assert "English" in system
+    payload = enrichment.payload_for(
+        "m",
+        Candidate("g", 1, "ab.wikipedia.org", "markblocked", RU_DESCRIPTION, "f", LANE_GADGET, GADGET_FIELDS),
+    )
+    _system, user = (message["content"] for message in payload["messages"])
+    # The instruction travels with the keywords fragment now rather than sitting
+    # in a lane's system prompt, so it reaches every lane that asks for the field.
+    assert "English" in user
     assert '"keywords"' in user
     # The requested key, not the word: the prompt says "the description a wiki
     # shows" because that is the input it is handing over.
@@ -1249,7 +1259,8 @@ def test_the_gadget_request_asks_for_english_tags_and_nothing_else():
     assert RU_DESCRIPTION in user
     # A gadget answer is eight short tags; the user-script ceiling has to hold
     # three sentences as well, and paying for that here would be waste.
-    assert payload["max_tokens"] < enrichment.payload_for("m", ENWIKI, "t", BODY)["max_tokens"]
+    full = enrichment.payload_for("m", Candidate("s", 1, ENWIKI, "t", BODY, "f", enrichment.LANE_USER_SCRIPT, SCRIPT_FIELDS))
+    assert payload["max_tokens"] < full["max_tokens"]
 
 
 def test_the_gadget_window_stops_at_the_limit():
@@ -1345,10 +1356,10 @@ REAL_COMBINED_REPLY_TWO = (
 
 def test_asking_for_an_audience_did_not_cost_the_keywords():
     """Both fields come back from one real reply, and both survive validation."""
-    accepted = enrichment.accept(enrichment.parse_json(REAL_COMBINED_REPLY), lane=LANE_GADGET)
+    accepted = enrichment.accept(enrichment.parse_json(REAL_COMBINED_REPLY), GADGET_FIELDS)
     assert accepted["audiences"] == ["editor"]
     assert len(accepted["keywords"]) == enrichment.MAX_KEYWORDS
-    second = enrichment.accept(enrichment.parse_json(REAL_COMBINED_REPLY_TWO), lane=LANE_GADGET)
+    second = enrichment.accept(enrichment.parse_json(REAL_COMBINED_REPLY_TWO), GADGET_FIELDS)
     assert second["audiences"] == ["reader", "editor"]
 
 
@@ -1389,7 +1400,10 @@ def test_both_prompts_offer_the_whole_vocabulary_not_just_what_is_published():
     prompt by giving those tools somewhere else to go.
     """
     for lane in (LANE_GADGET, enrichment.LANE_USER_SCRIPT):
-        prompt = enrichment.payload_for("m", ENWIKI, "t", BODY, lane=lane)["messages"][1]["content"]
+        fields = enrichment.lane_fields(lane)
+        prompt = enrichment.payload_for(
+            "m", Candidate("x", 1, ENWIKI, "t", BODY, "f", lane, fields)
+        )["messages"][1]["content"]
         for value in enrichment.AUDIENCE_VOCABULARY:
             assert f'"{value}"' in prompt, f"{lane} prompt does not offer {value}"
 
@@ -1450,7 +1464,7 @@ def test_a_gadget_answered_by_an_older_prompt_is_asked_again():
                 page_id=gadget_id,
                 source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
                 status=enrichment.STATUS_READY,
-                prompt_version=enrichment.PROMPT_VERSION - 1,
+                asked_signature="keywords",
             )
         )
     with db.session_scope() as session:
@@ -1463,7 +1477,7 @@ def test_a_user_script_answered_by_an_older_prompt_is_asked_again():
     run(lambda payload: reply(REAL_REPLY))
     with db.session_scope() as session:
         assert enrichment.pending(session, limit=10) == []
-        session.query(ToolInference).update({"prompt_version": enrichment.PROMPT_VERSION - 1})
+        session.query(ToolInference).update({"asked_signature": "description,keywords"})
     with db.session_scope() as session:
         assert [c.tool_name for c in enrichment.pending(session, limit=10)] == [TOOL]
 
@@ -1474,7 +1488,7 @@ def test_answering_again_records_the_prompt_that_answered():
     run(lambda payload: reply(REAL_WHOLE_REPLY))
     with db.session_scope() as session:
         row = session.get(ToolInference, TOOL)
-        assert row.prompt_version == enrichment.PROMPT_VERSION
+        assert row.asked_signature == enrichment.lane_signature(enrichment.LANE_USER_SCRIPT)
         assert enrichment.pending(session, limit=10) == []
 
 
@@ -1483,8 +1497,106 @@ def test_a_re_ask_waits_behind_pages_nobody_has_tried(monkeypatch):
     store("User:Anomie/linkclassifier.js")
     run(lambda payload: reply(REAL_REPLY))
     with db.session_scope() as session:
-        session.query(ToolInference).update({"prompt_version": enrichment.PROMPT_VERSION - 1})
+        session.query(ToolInference).update({"asked_signature": "description,keywords"})
     store("User:Someone/fresh.js", owner="Someone", basename="fresh.js", fingerprint="f2")
     with db.session_scope() as session:
         order = [c.tool_name for c in enrichment.pending(session, limit=10)]
     assert order[0] == "userscript-en.wikipedia.org-someone-fresh.js", order
+
+
+# --- composing a prompt from what a row is missing ---------------------------
+
+
+def test_a_backfill_asks_only_for_the_field_it_went_back_for():
+    """The point of composing: a re-ask is charged for one question, not three.
+
+    A row that already holds a description and keywords is missing only
+    `audiences`, and the source has not moved -- so regenerating three
+    sentences to collect one array is most of the cost of the call for none of
+    the value.
+    """
+    candidate = Candidate("t", 1, ENWIKI, "User:X/t.js", BODY, "f", enrichment.LANE_USER_SCRIPT, ("audiences",))
+    payload = enrichment.payload_for("m", candidate)
+    user = payload["messages"][1]["content"]
+    assert '"audiences"' in user
+    assert '"description"' not in user
+    assert '"keywords"' not in user
+    full = enrichment.payload_for("m", candidate._replace(fields=SCRIPT_FIELDS))
+    assert payload["max_tokens"] < full["max_tokens"]
+
+
+def test_a_new_field_is_missing_from_every_row_that_predates_it():
+    """The property the whole design exists for: adding a field is adding a field.
+
+    No version to bump and no migration to remember -- a row records which
+    questions it has been put, so one it has never been put is missing the
+    moment the field joins `FIELD_ORDER`.
+    """
+    lane = enrichment.LANE_USER_SCRIPT
+    complete = enrichment.lane_signature(lane)
+    assert enrichment.missing_fields(lane, complete) == ()
+    extra = enrichment.Field("license", enrichment._keywords, enrichment._keywords_request, 50, frozenset({lane}))
+    with mock.patch.object(enrichment, "FIELD_ORDER", (*enrichment.FIELD_ORDER, extra)), mock.patch.dict(
+        enrichment.FIELDS_BY_NAME, {"license": extra}
+    ):
+        assert enrichment.missing_fields(lane, complete) == ("license",)
+
+
+def test_a_field_a_lane_cannot_produce_is_never_missing_from_it():
+    """A gadget already has a maintainer's description, so it is never asked for one."""
+    assert "description" not in enrichment.lane_fields(LANE_GADGET)
+    assert "description" not in enrichment.missing_fields(LANE_GADGET, "")
+
+
+def test_answering_one_field_keeps_the_answers_already_stored():
+    """A merge, not a replacement -- or the backfill destroys what it went back to complete."""
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REPLY))
+    with db.session_scope() as session:
+        before = dict(session.get(ToolInference, TOOL).payload)
+        session.query(ToolInference).update({"asked_signature": "description,keywords"})
+    assert "description" in before and "keywords" in before
+
+    with db.session_scope() as session:
+        pending = enrichment.pending(session, limit=5)
+        assert [c.fields for c in pending] == [("audiences",)]
+        wave = enrichment.with_source(session, pending)
+    with db.session_scope() as session:
+        outcome = enrichment._ask(wave[0], lambda payload: reply('{"audiences": ["editor"]}'), model="m")
+        enrichment.record(session, wave[0], outcome, model="m")
+    with db.session_scope() as session:
+        row = session.get(ToolInference, TOOL)
+    assert row.payload["description"] == before["description"], "the re-ask dropped the description"
+    assert row.payload["keywords"] == before["keywords"]
+    assert row.payload["audiences"] == ["editor"]
+    assert row.asked_signature == enrichment.lane_signature(enrichment.LANE_USER_SCRIPT)
+
+
+def test_a_field_the_model_declined_is_not_asked_again_on_the_same_source():
+    """Declining is an answer. The signature records the question, not the result.
+
+    Keyed on what was asked rather than what came back, because `accept` stores
+    nothing for a field that produced nothing -- so a payload cannot tell a
+    declined field from an unasked one, and a window that read the payload would
+    re-ask the same unanswerable page every sweep for ever.
+    """
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply('{"description": null, "keywords": [], "audiences": []}'))
+    with db.session_scope() as session:
+        row = session.get(ToolInference, TOOL)
+        assert row.payload == {}
+        assert row.asked_signature == enrichment.lane_signature(enrichment.LANE_USER_SCRIPT)
+        assert enrichment.pending(session, limit=5) == []
+
+
+def test_a_prompt_that_would_ask_nothing_is_refused_rather_than_sent():
+    """A row with nothing missing must never reach the endpoint.
+
+    It would be a request with no question in it, and the model would answer
+    something -- billing a Lift Wing call to learn nothing. The windows already
+    fall back to the lane's whole set rather than an empty one, so reaching here
+    means a caller built a candidate by hand and got it wrong; saying so beats
+    sending it.
+    """
+    with pytest.raises(ValueError, match="asking nothing"):
+        enrichment.build_prompt(enrichment.LANE_USER_SCRIPT, ENWIKI, "User:X/t.js", BODY, ())

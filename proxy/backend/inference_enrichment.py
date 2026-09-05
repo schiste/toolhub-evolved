@@ -84,7 +84,7 @@ from backend.models import (
 from backend.userscript_toolinfo import STYLESHEET_MODELS, tool_name
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from sqlalchemy.orm import Session
 
@@ -194,6 +194,9 @@ class Candidate(NamedTuple):
     body: str
     fingerprint: str
     lane: str = LANE_USER_SCRIPT
+    #: The fields this row is missing, in prompt order. Defaults to everything
+    #: the lane can produce, which is what a page nobody has asked about needs.
+    fields: tuple[str, ...] = ()
 
 
 STATUS_READY = "ready"
@@ -244,11 +247,36 @@ SYSTEM_PROMPT = (
 )
 
 
-def _audience_request() -> str:
-    """Return the audiences half of both prompts, so the two lanes cannot drift apart.
+def _description_request() -> str:
+    """Return the description fragment: what one field asks for, and nothing else."""
+    return (
+        '- "description": 1-3 sentences of plain text saying what the tool does for the '
+        "person who runs it. Describe observable behaviour, not implementation. No marketing. "
+        "null if the source does not make it clear.\n"
+    )
 
-    The whole vocabulary is offered even though only part of it is published:
-    a model given nowhere correct to put a moderation or research tool puts it
+
+def _keywords_request() -> str:
+    """Return the keywords fragment.
+
+    English is demanded rather than hoped for. 71% of gadget descriptions are
+    written in the wiki's own language, and `_KEYWORD_RE` only admits ASCII, so
+    a faithful tag in Abkhaz would be dropped by shape validation and read as
+    the model having failed. Asking is what makes the shape rule and the
+    request agree, and it costs a user script nothing.
+    """
+    return (
+        f'- "keywords": array of up to {MAX_KEYWORDS} lowercase topical tags, in English. '
+        "[] if there is not enough to tag. "
+        "Do not include the wiki name or the author name.\n"
+    )
+
+
+def _audiences_request() -> str:
+    """Return the audiences fragment.
+
+    The whole vocabulary is offered even though only part of it is published: a
+    model given nowhere correct to put a moderation or research tool puts it
     somewhere wrong instead, which cost developer and reader 10 and 6 points of
     precision when it was measured with the short list. See
     `PUBLISHABLE_AUDIENCES`.
@@ -263,71 +291,66 @@ def _audience_request() -> str:
 
 
 GADGET_SYSTEM_PROMPT = (
-    "You tag Wikimedia gadgets with topical keywords, given the description their own wiki shows. "
+    "You read Wikimedia gadget metadata from the description their own wiki shows. "
     "You answer with a single JSON object and nothing else: no prose, no markdown fence. "
-    "You never invent facts. If the description does not support any keyword, return []. "
-    "Keywords are always in English, whatever language the description is written in."
+    "You never invent facts. If the description does not support a field, leave it empty."
 )
 
 
-def build_gadget_prompt(wiki: str, name: str, description: str) -> str:
-    """Return the user turn asking what one gadget's description is about.
+def _lane_preamble(lane: str, wiki: str, title: str) -> str:
+    """Return what a lane says before its questions: which text follows, and whose."""
+    if lane == LANE_GADGET:
+        return (
+            f"Below is the description a Wikimedia wiki shows for one of its gadgets.\n\nGadget: {title}\nWiki: {wiki}"
+        )
+    return f"Below is the complete source of a Wikimedia user script.\n\nPage: {title}\nWiki: {wiki}"
 
-    Keywords only, and the omission is the point. A gadget already has a
-    description -- `MediaWiki:Gadget-<name>`, which the inventory transcribes --
-    so asking for a second one would offer a guess where a maintainer's sentence
-    already exists, which is the one thing this whole module refuses to do. The
-    keywords are additive instead: no wiki states them, so there is nothing to
-    overwrite.
 
-    English is demanded rather than hoped for. 71% of these descriptions are
-    written in the wiki's own language, and `_KEYWORD_RE` only admits ASCII, so
-    a faithful tag in Abkhaz would be dropped by shape validation and read as
-    the model having failed. Asking in the prompt is what makes the shape rule
-    and the request agree.
+def _lane_body(lane: str, body: str) -> str:
+    """Return the text a lane hands over, fenced as that lane's text should be."""
+    if lane == LANE_GADGET:
+        return "DESCRIPTION:\n" + body[:MAX_SOURCE_CHARS]
+    return "SOURCE:\n```javascript\n" + body[:MAX_SOURCE_CHARS] + "\n```"
+
+
+def build_prompt(lane: str, wiki: str, title: str, body: str, fields: Sequence[str]) -> str:
+    """Compose the user turn from exactly the fields this row is missing.
+
+    Composed rather than written out per lane, because the alternative is a
+    prompt per (lane x field set) and those multiply: two lanes and three fields
+    is already fourteen non-empty combinations, and every one of them would have
+    to be kept in step by hand. Here a field contributes one fragment wherever
+    it is asked, and a row that needs one field is charged for one question.
+
+    `fields` is ordered by the caller so the same request is byte-identical run
+    to run -- a prompt that reshuffles itself would defeat any caching upstream
+    and make two runs impossible to compare.
     """
+    asked = [FIELDS_BY_NAME[name] for name in fields if name in FIELDS_BY_NAME]
+    if not asked:
+        message = f"cannot build a prompt for {lane} asking nothing"
+        raise ValueError(message)
+    keys = "key" if len(asked) == 1 else "keys"
     return (
-        "Below is the description a Wikimedia wiki shows for one of its gadgets.\n\n"
-        f"Gadget: {name}\nWiki: {wiki}\n\n"
-        "Return a JSON object with exactly these keys:\n\n"
-        f'- "keywords": array of up to {MAX_KEYWORDS} lowercase topical tags, in English. '
-        "[] if the description does not say enough to tag. "
-        'Do not include "gadget", the wiki name, or the gadget\'s own name.\n'
-        + _audience_request()
-        + "\nDESCRIPTION:\n"
-        + description[:MAX_SOURCE_CHARS]
+        f"{_lane_preamble(lane, wiki, title)}\n\n"
+        f"Return a JSON object with exactly {'this' if len(asked) == 1 else 'these'} {keys}:\n\n"
+        + "".join(field.request() for field in asked)
+        + "\n"
+        + _lane_body(lane, body)
     )
 
 
-def build_prompt(wiki: str, title: str, body: str) -> str:
-    """Return the user turn asking what one page's script is for."""
-    return (
-        "Below is the complete source of a Wikimedia user script.\n\n"
-        f"Page: {title}\nWiki: {wiki}\n\n"
-        "Return a JSON object with exactly these keys:\n\n"
-        '- "description": 1-3 sentences of plain text saying what the tool does for the '
-        "person who runs it. Describe observable behaviour, not implementation. No marketing. "
-        "null if the source does not make it clear.\n"
-        f'- "keywords": array of up to {MAX_KEYWORDS} lowercase topical tags. [] if unclear. '
-        'Do not include "user script", the wiki name, or the author name.\n'
-        + _audience_request()
-        + "\nSOURCE:\n```javascript\n"
-        + body[:MAX_SOURCE_CHARS]
-        + "\n```"
-    )
-
-
-def payload_for(model: str, wiki: str, title: str, body: str, *, lane: str = LANE_USER_SCRIPT) -> dict[str, Any]:
+def payload_for(model: str, candidate: Candidate) -> dict[str, Any]:
     """Return the OpenAI-compatible chat body for one candidate.
 
-    `max_tokens` is smaller on the gadget lane because the answer is smaller:
-    eight short tags, with no description to compose. The user-script figure has
-    to hold three sentences as well.
+    `max_tokens` is summed from the fields actually asked for rather than fixed
+    per lane. A backfill re-ask that wants only `audiences` is a hundred tokens
+    of answer, not the seven hundred a fresh user script needs for three
+    sentences and eight tags -- and generation is most of what a call costs.
     """
-    if lane == LANE_GADGET:
-        system, user, ceiling = GADGET_SYSTEM_PROMPT, build_gadget_prompt(wiki, title, body), 300
-    else:
-        system, user, ceiling = SYSTEM_PROMPT, build_prompt(wiki, title, body), 700
+    system = GADGET_SYSTEM_PROMPT if candidate.lane == LANE_GADGET else SYSTEM_PROMPT
+    user = build_prompt(candidate.lane, candidate.wiki, candidate.title, candidate.body, candidate.fields)
+    ceiling = TOKEN_OVERHEAD + sum(FIELDS_BY_NAME[name].tokens for name in candidate.fields if name in FIELDS_BY_NAME)
     return {
         "model": model,
         "messages": [
@@ -456,42 +479,101 @@ def _audiences(value: object) -> Checked:
     return Checked(kept)
 
 
-# The only fields this source may ever produce, each with what it has to survive.
-# An allowlist rather than a denylist: a model that volunteers `license` or
-# `tool_type` is answering a prompt that drifted, and storing it would let a
-# later reader assume it was asked for. `tool_type`, `technology_used` and
-# `for_wikis` in particular are already derived deterministically and sit at
-# 100% on this lane -- a guess there could only contradict something known.
-FIELDS: dict[str, Callable[[object], Checked]] = {
-    "description": _description,
-    "keywords": _keywords,
-    "audiences": _audiences,
-}
+class Field(NamedTuple):
+    """One thing the model may be asked for, and everything needed to ask it.
 
-# What each lane is allowed to come back with. The gadget lane is keywords only
-# because a gadget already has a maintainer's description; accepting one here
-# would let a guess stand beside a stated fact, and the allowlist is what makes
-# that structurally impossible rather than a property of the prompt. A model
-# that answers with a description anyway is not refused loudly -- the field is
-# simply not read, exactly as an unasked-for `license` is not.
-FIELDS_BY_LANE: dict[str, dict[str, Callable[[object], Checked]]] = {
-    LANE_USER_SCRIPT: FIELDS,
-    LANE_GADGET: {"keywords": _keywords, "audiences": _audiences},
-}
+    An allowlist rather than a denylist: a model that volunteers `license` or
+    `tool_type` is answering a prompt that drifted, and storing it would let a
+    later reader assume it was asked for. `tool_type`, `technology_used` and
+    `for_wikis` in particular are already derived deterministically from the
+    wiki and sit at 100% -- a guess there could only contradict something known.
+
+    Everything about a field lives on the field: the words that ask for it, the
+    rule its answer has to survive, the room that answer needs, and the lanes
+    that may produce it at all. Adding one is adding an entry here, and the
+    sweep, the prompts and the backfill follow without being told.
+    """
+
+    name: str
+    validate: Callable[[object], Checked]
+    request: Callable[[], str]
+    #: Room for this answer in `max_tokens`. Summed over what a prompt asks, so
+    #: a row that needs one field is not charged for three.
+    tokens: int
+    lanes: frozenset[str]
 
 
-def check(parsed: dict[str, Any] | None, *, lane: str = LANE_USER_SCRIPT) -> dict[str, Checked]:
-    """Run every field's shape rules, keeping both halves of each verdict.
+#: Every field, in the order a prompt lists them. Ordering is fixed rather than
+#: incidental: it decides the byte-for-byte prompt, and a request that
+#: reshuffles itself between runs cannot be compared with the one before it.
+FIELD_ORDER: tuple[Field, ...] = (
+    Field("description", _description, _description_request, 500, frozenset({LANE_USER_SCRIPT})),
+    Field("keywords", _keywords, _keywords_request, 200, frozenset({LANE_USER_SCRIPT, LANE_GADGET})),
+    Field("audiences", _audiences, _audiences_request, 100, frozenset({LANE_USER_SCRIPT, LANE_GADGET})),
+)
+FIELDS_BY_NAME: dict[str, Field] = {field.name: field for field in FIELD_ORDER}
+#: Room for the JSON scaffolding around the answers themselves.
+TOKEN_OVERHEAD = 100
+
+
+def lane_fields(lane: str) -> tuple[str, ...]:
+    """Return every field this lane may produce, in prompt order.
+
+    A gadget is not asked for a description: it already has one on the wiki --
+    `MediaWiki:Gadget-<name>`, which the inventory transcribes -- and offering a
+    guess where a maintainer's sentence exists is the one thing this module
+    refuses to do. That exclusion is a property of the field, not of a prompt
+    somebody has to remember to leave it out of.
+    """
+    return tuple(field.name for field in FIELD_ORDER if lane in field.lanes)
+
+
+def signature(names: Iterable[str]) -> str:
+    """Return the durable spelling of a set of field names.
+
+    Sorted and comma-joined so it can be compared in SQL as a scalar. This is
+    what a row records about itself, and what the window compares against: a
+    row whose signature is not the lane's current one is missing something,
+    which is exactly the question the window needs to ask and the one a
+    payload cannot answer -- `accept` stores nothing for a field the model
+    declined, so an absent value cannot be told from an unasked one.
+    """
+    return ",".join(sorted(set(names)))
+
+
+def lane_signature(lane: str) -> str:
+    """Return the signature a fully-asked row of this lane carries."""
+    return signature(lane_fields(lane))
+
+
+def missing_asked(asked: str | None) -> tuple[str, ...]:
+    """Return the field names a stored signature already records."""
+    return tuple(name for name in (asked or "").split(",") if name)
+
+
+def missing_fields(lane: str, asked: str | None) -> tuple[str, ...]:
+    """Return the fields this lane can produce that `asked` does not record.
+
+    A new field is missing from every row that predates it the moment it joins
+    `FIELD_ORDER`, with nothing to bump and no migration to remember -- which is
+    the whole point of recording what was asked rather than what came back.
+    """
+    already = {name for name in (asked or "").split(",") if name}
+    return tuple(name for name in lane_fields(lane) if name not in already)
+
+
+def check(parsed: dict[str, Any] | None, fields: Sequence[str]) -> dict[str, Checked]:
+    """Run the shape rules for exactly the fields that were asked for.
 
     Split from `accept` so a caller that needs to say why a reply produced
     nothing reads the same verdicts that decided it, rather than a second
-    implementation of the same rules written to explain the first.
+    implementation of the same rules written to explain the first. Grading a
+    field nobody asked about would report it absent, which is true and useless.
     """
-    fields = FIELDS_BY_LANE.get(lane, FIELDS)
-    return {field: validate((parsed or {}).get(field)) for field, validate in fields.items()}
+    return {name: FIELDS_BY_NAME[name].validate((parsed or {}).get(name)) for name in fields if name in FIELDS_BY_NAME}
 
 
-def accept(parsed: dict[str, Any] | None, *, lane: str = LANE_USER_SCRIPT) -> dict[str, Any]:
+def accept(parsed: dict[str, Any] | None, fields: Sequence[str]) -> dict[str, Any]:
     """Return only the fields that survive shape validation.
 
     A field that fails validation is simply absent, which the projection reads
@@ -501,7 +583,7 @@ def accept(parsed: dict[str, Any] | None, *, lane: str = LANE_USER_SCRIPT) -> di
     """
     if not parsed:
         return {}
-    return {field: verdict.value for field, verdict in check(parsed, lane=lane).items() if verdict.value}
+    return {name: verdict.value for name, verdict in check(parsed, fields).items() if verdict.value}
 
 
 def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
@@ -575,6 +657,7 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             UserScriptPage.owner,
             UserScriptPage.basename,
             UserScriptPage.fingerprint,
+            ToolInference.asked_signature,
         )
         .join(
             UserScriptDirectoryEntry,
@@ -594,7 +677,7 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
                 ToolInference.tool_name.is_(None),
                 (ToolInference.status == STATUS_ERROR) & (ToolInference.checked_at < retry_before),
                 (ToolInference.status == STATUS_REJECTED) & ToolInference.reply.is_(None),
-                ToolInference.prompt_version < PROMPT_VERSION,
+                ToolInference.asked_signature != lane_signature(LANE_USER_SCRIPT),
             ),
             # Was a Python skip over an already-loaded body. In SQL it also
             # keeps pages too short to describe out of the window, instead of
@@ -612,7 +695,7 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             case(
                 (ToolInference.tool_name.is_(None), 0),
                 (ToolInference.status == STATUS_ERROR, 1),
-                (ToolInference.prompt_version < PROMPT_VERSION, 2),
+                (ToolInference.asked_signature != lane_signature(LANE_USER_SCRIPT), 2),
                 else_=3,
             ),
             UserScriptPage.id,
@@ -620,14 +703,17 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
         .limit(limit)
     )
     found: list[Candidate] = []
-    for page_id, wiki, title, owner, basename, fingerprint in session.execute(stale):
+    for page_id, wiki, title, owner, basename, fingerprint, asked in session.execute(stale):
         # This skip is permanent for this page but leaves no row, so it is
         # re-evaluated every sweep. That is deliberate: it is cheap, it happens
         # before the model is involved, and a page that gains a name that slugs
         # to something should become eligible without a backfill.
         if not (name := tool_name(wiki, owner, basename)):
             continue
-        found.append(Candidate(name, int(page_id), wiki, title, "", fingerprint or ""))
+        # A row selected for an error retry has answered its questions already;
+        # it is here because the endpoint failed, so it is asked them all again.
+        wanted = missing_fields(LANE_USER_SCRIPT, asked) or lane_fields(LANE_USER_SCRIPT)
+        found.append(Candidate(name, int(page_id), wiki, title, "", fingerprint or "", LANE_USER_SCRIPT, wanted))
     return found
 
 
@@ -690,7 +776,7 @@ def gadget_pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             case(
                 (ToolInference.tool_name.is_(None), 0),
                 (ToolInference.status == STATUS_ERROR, 1),
-                (ToolInference.prompt_version < PROMPT_VERSION, 2),
+                (ToolInference.asked_signature != lane_signature(LANE_GADGET), 2),
                 else_=3,
             ),
             WikiGadget.id,
@@ -709,10 +795,11 @@ def gadget_pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             # ...and answered by the prompt now in use. The fingerprint says the
             # wiki has not rewritten the description; it cannot say the answer
             # covers every field currently asked for.
-            and row.prompt_version >= PROMPT_VERSION
+            and row.asked_signature == lane_signature(LANE_GADGET)
         ):
             continue
-        found.append(Candidate(catalog_name, int(gadget_id), wiki, name, description, fingerprint, LANE_GADGET))
+        wanted = missing_fields(LANE_GADGET, row.asked_signature if row is not None else "") or lane_fields(LANE_GADGET)
+        found.append(Candidate(catalog_name, int(gadget_id), wiki, name, description, fingerprint, LANE_GADGET, wanted))
         if len(found) == limit:
             break
     return found
@@ -785,9 +872,15 @@ def record(session: Session, candidate: Candidate, outcome: Outcome, *, model: s
     if row is None:
         row = ToolInference(tool_name=candidate.tool_name)
         session.add(row)
-    row.payload = outcome.accepted
+    # Merged, not replaced. A re-ask now covers only what was missing, so
+    # replacing would drop the description and keywords a previous run paid for
+    # in order to store the one field this run went back for.
+    kept = dict(row.payload) if isinstance(row.payload, dict) else {}
+    row.payload = {**kept, **outcome.accepted}
+    # The union, so a field asked once is never asked again on this source --
+    # including one the model declined, which is an answer and not a gap.
+    row.asked_signature = signature([*missing_asked(row.asked_signature), *candidate.fields])
     row.lane = candidate.lane
-    row.prompt_version = PROMPT_VERSION
     row.page_id = candidate.page_id
     row.source_fingerprint = candidate.fingerprint
     row.model = model[:64]
@@ -821,7 +914,7 @@ def _ask(
     than as an exception to handle.
     """
     try:
-        response = ask(payload_for(model, candidate.wiki, candidate.title, candidate.body, lane=candidate.lane))
+        response = ask(payload_for(model, candidate))
     except Exception as exc:  # noqa: BLE001 - one page's outage must not end the sweep
         return Outcome(STATUS_ERROR, {}, f"{type(exc).__name__}: {exc}")
     text = model_text(response)
@@ -834,8 +927,8 @@ def _ask(
         # reply at all.
         sample = " ".join(text.split())[:200]
         return Outcome(STATUS_REJECTED, {}, f"unparsed reply: {sample or '(empty)'}", collapsed)
-    verdicts = check(parsed, lane=candidate.lane)
-    accepted = {field: verdict.value for field, verdict in verdicts.items() if verdict.value}
+    verdicts = check(parsed, candidate.fields)
+    accepted = {name: verdict.value for name, verdict in verdicts.items() if verdict.value}
     # Written whatever the status, not only on rejection. A reply whose keywords
     # pass and whose description does not is stored `ready` carrying no
     # description -- exactly the gap this lane exists to close, and invisible in

@@ -413,6 +413,11 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # 0 for every row stored before the prompt was versioned, which is
             # what puts them back in the window once it asks for a new field.
             "prompt_version": "INTEGER NOT NULL DEFAULT 0",
+            # Empty means "no question recorded", which puts a row back in the
+            # window for every field its lane can produce. proxy/migrate.py
+            # fills it from prompt_version so the rows already answered are not
+            # asked the same questions twice.
+            "asked_signature": "VARCHAR(255) NOT NULL DEFAULT ''",
         },
         "catalog_tool_projection": {
             # Empty means "a standalone tool", which is what every row stored

@@ -2221,6 +2221,15 @@ class ToolInference(Base):
     # while nothing in the window ever offered them again. 0 is every row that
     # predates the column, which is exactly what it means.
     prompt_version: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    # Which questions this row has been put, sorted and comma-joined. The window
+    # compares it against the lane's current set as a scalar, which is the only
+    # form that comparison takes in SQL -- and it is what `payload` cannot
+    # answer, since `accept` stores nothing for a field the model declined and
+    # an absent value cannot be told from an unasked one. A field added to
+    # `FIELD_ORDER` is missing from every row that predates it the same instant,
+    # with nothing to bump: that is the property `prompt_version` bought once
+    # and this one keeps buying.
+    asked_signature: Mapped[str] = mapped_column(String(255), default="", index=True)
     status: Mapped[str] = mapped_column(String(16), default="")
     detail: Mapped[str] = mapped_column(Text, default="")
     # The model's own words, kept only where `detail` says something was
