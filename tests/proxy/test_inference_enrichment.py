@@ -21,6 +21,7 @@ was not asked for. Neither is hypothetical, and neither would be exercised by a
 fixture written to match the current prompt.
 """
 
+import string
 import sys
 import threading
 from unittest import mock
@@ -104,6 +105,13 @@ def _database():
 BODY = "// a script long enough to be worth sending\n" + ("var x = 1;\n" * 20)
 
 SCRIPT_FIELDS = ("description", "keywords", "audiences")
+# What a reply written before `available_ui_languages` and `translate_url` existed
+# is legitimately missing. The fixtures below are real Lift Wing replies kept
+# verbatim, so they answer the questions that were being asked when they were
+# captured and no others.
+MISSING_NEWER_FIELDS = (
+    "; available_ui_languages: absent or null in the reply; translate_url: absent or null in the reply"
+)
 GADGET_FIELDS = ("keywords", "audiences")
 
 
@@ -248,7 +256,7 @@ def test_a_refusal_records_which_field_refused_and_why():
     run(lambda payload: reply(REAL_REFUSAL))
     assert details()[TOOL] == (
         "description: absent or null in the reply; keywords: empty list; "
-        "audiences: absent or null in the reply"
+        "audiences: absent or null in the reply" + MISSING_NEWER_FIELDS
     )
 
 
@@ -262,6 +270,7 @@ def test_a_description_that_fails_while_keywords_pass_is_ready_and_still_says_wh
     assert "description" not in rows()[TOOL][1]
     assert details()[TOOL] == (
         "description: 10 chars, wanted 20-600; audiences: absent or null in the reply"
+        + MISSING_NEWER_FIELDS
     )
 
 
@@ -295,8 +304,16 @@ def test_an_answer_that_was_accepted_whole_is_not_stored_twice():
     # does not already hold -- and this table is 37,791 rows wide. Uses the one
     # fixture answering all three fields: a reply missing `audiences` is not
     # accepted whole, and storing its words is then the right thing to do.
+    # Asked only the questions this reply was captured answering: a fixture
+    # cannot answer fields that did not exist when it was recorded, and a reply
+    # missing one is not accepted whole -- storing its words is then correct.
     store("User:Anomie/linkclassifier.js")
-    run(lambda payload: reply(REAL_WHOLE_REPLY))
+    candidate = Candidate(
+        TOOL, 1, ENWIKI, "User:Anomie/linkclassifier.js", BODY, "f1", enrichment.LANE_USER_SCRIPT, SCRIPT_FIELDS
+    )
+    with db.session_scope() as session:
+        outcome = enrichment._ask(candidate, lambda payload: reply(REAL_WHOLE_REPLY), model="m")
+        enrichment.record(session, candidate, outcome, model="m")
     assert rows()[TOOL][0] == enrichment.STATUS_READY
     assert replies()[TOOL] == ""
 
@@ -452,7 +469,14 @@ def test_the_source_is_truncated_rather_than_the_page_skipped():
     sent = []
     run(lambda payload: sent.append(payload) or reply(REAL_REPLY))
     assert len(sent) == 1
-    assert len(sent[0]["messages"][1]["content"]) < enrichment.MAX_SOURCE_CHARS + 1_000
+    # The body is capped; the questions around it are not, and grow whenever a
+    # field joins FIELD_ORDER. Bounding the whole prompt by a fixed margin made
+    # this fail on the field after next, so the margin is measured instead.
+    prompt = sent[0]["messages"][1]["content"]
+    questions = enrichment.build_prompt(
+        enrichment.LANE_USER_SCRIPT, ENWIKI, "User:Big/huge.js", "", enrichment.lane_fields(enrichment.LANE_USER_SCRIPT)
+    )
+    assert len(prompt) <= enrichment.MAX_SOURCE_CHARS + len(questions)
 
 
 # --- what reaches the catalogue --------------------------------------------
@@ -1554,7 +1578,13 @@ def test_answering_one_field_keeps_the_answers_already_stored():
     run(lambda payload: reply(REAL_REPLY))
     with db.session_scope() as session:
         before = dict(session.get(ToolInference, TOOL).payload)
-        session.query(ToolInference).update({"asked_signature": "description,keywords"})
+        session.query(ToolInference).update(
+            {
+                "asked_signature": enrichment.signature(
+                    name for name in enrichment.lane_fields(enrichment.LANE_USER_SCRIPT) if name != "audiences"
+                )
+            }
+        )
     assert "description" in before and "keywords" in before
 
     with db.session_scope() as session:
@@ -1644,7 +1674,13 @@ def test_a_partial_ask_that_finds_nothing_does_not_unpublish_what_a_row_holds():
     store("User:Anomie/linkclassifier.js")
     run(lambda payload: reply(REAL_REPLY))
     with db.session_scope() as session:
-        session.query(ToolInference).update({"asked_signature": "description,keywords"})
+        session.query(ToolInference).update(
+            {
+                "asked_signature": enrichment.signature(
+                    name for name in enrichment.lane_fields(enrichment.LANE_USER_SCRIPT) if name != "audiences"
+                )
+            }
+        )
 
     with db.session_scope() as session:
         wave = enrichment.with_source(session, enrichment.pending(session, limit=5))
@@ -1675,3 +1711,113 @@ def test_a_row_that_holds_nothing_is_still_recorded_as_refused():
         row = session.get(ToolInference, TOOL)
     assert row.payload == {}
     assert row.status == enrichment.STATUS_REJECTED
+
+
+# --- what languages a tool speaks, and where it is translated ----------------
+
+
+def test_every_language_a_tool_carries_is_recorded_not_just_the_first():
+    """6.7% of answered user scripts hold their own table of strings per language.
+
+    Recording one of them would say something false about a tool that had done
+    the work of translating itself.
+    """
+    verdict = enrichment._available_ui_languages(["en", "pt-BR", "zh-hans"])
+    assert verdict.value == ["en", "pt-br", "zh-hans"]
+
+
+def test_a_language_code_is_judged_by_shape_rather_than_a_list():
+    """Wikimedia runs wikis in languages no list of ours would stay current with.
+
+    A code rejected here is one the facet never gets to show, so the rule admits
+    anything shaped like a subtag and refuses what plainly is not one.
+    """
+    assert enrichment._available_ui_languages(["ace", "zh-hant", "nb"]).value == ["ace", "zh-hant", "nb"]
+    refused = enrichment._available_ui_languages(["English", "!!", "http://x"])
+    assert refused.value == []
+    assert refused.reason
+
+
+def test_a_translation_url_is_kept_only_when_the_source_actually_names_it():
+    """This field is checked for provenance, not shape, and the reason is the failure.
+
+    An invented keyword is a bad tag. An invented `translate_url` is a link the
+    catalogue publishes to a page that may not exist, attributed to a tool that
+    never claimed it -- and a plausible-looking translatewiki URL is exactly
+    what a model produces when asked for one it cannot find.
+    """
+    source = "var x = 1; // strings live at https://translatewiki.net/wiki/Special:Translate?group=hotcat"
+    real = "https://translatewiki.net/wiki/Special:Translate?group=hotcat"
+    assert enrichment._translate_url(real, source).value == real
+
+    invented = enrichment._translate_url("https://translatewiki.net/wiki/Special:Translate?group=nope", source)
+    assert invented.value == ""
+    assert "not present in the source" in invented.reason
+
+
+def test_a_translation_url_that_is_not_a_url_is_refused_before_the_source_is_searched():
+    """A bare project name would match a substring of almost any source."""
+    assert enrichment._translate_url("hotcat", "a source mentioning hotcat").value == ""
+
+
+def test_only_the_field_that_needs_the_source_is_given_it():
+    """`needs_source` is the whole reason `check` carries the body around.
+
+    Passing it to every rule would let a later field quietly start depending on
+    it, and the guarantee that only one does is what keeps the others testable
+    from their answer alone.
+    """
+    needing = [field.name for field in enrichment.FIELD_ORDER if field.needs_source]
+    assert needing == ["translate_url"]
+
+
+def test_a_reply_nobody_could_read_leaves_the_question_still_to_ask():
+    """A declined field is an answer; a reply that never parsed is not.
+
+    Recorded as asked, it retires the question on that row for good -- 118 rows
+    had been retired that way, and a field whose replies misformat more often
+    would retire thousands.
+    """
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply("<html><body>502 Bad Gateway</body></html>"))
+    with db.session_scope() as session:
+        row = session.get(ToolInference, TOOL)
+        assert row.asked_signature == "", "an unreadable reply was recorded as having answered"
+        assert [c.tool_name for c in enrichment.pending(session, limit=5)] == [TOOL]
+
+
+def test_a_field_the_model_declined_still_counts_as_asked():
+    """The other side of it: refusing is an answer, and must not be asked forever."""
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REFUSAL))
+    with db.session_scope() as session:
+        row = session.get(ToolInference, TOOL)
+        assert "description" in row.asked_signature
+
+
+def test_ui_languages_offered_as_anything_but_a_list_are_refused():
+    assert enrichment._available_ui_languages(None).reason == "absent or null in the reply"
+    assert "not a list" in enrichment._available_ui_languages("en, fr").reason
+
+
+def test_a_language_list_mixing_codes_and_junk_keeps_only_the_codes():
+    """Same rule keywords get: read what is usable, refuse what is not."""
+    assert enrichment._available_ui_languages(["en", 7, None, {"x": 1}, "fr"]).value == ["en", "fr"]
+
+
+def test_no_more_languages_are_kept_than_a_tool_plausibly_carries():
+    """Past about ten it is a list of languages the model can think of, not read."""
+    # Real two-letter subtags, or the shape rule refuses them before the cap.
+    many = [f"a{letter}" for letter in string.ascii_lowercase[:20]]
+    assert len(enrichment._available_ui_languages(many).value) == enrichment.MAX_UI_LANGUAGES
+
+
+def test_a_translation_url_that_is_missing_or_the_wrong_type_is_refused():
+    assert enrichment._translate_url(None, "src").reason == "absent or null in the reply"
+    assert "not a string" in enrichment._translate_url(["http://x"], "src").reason
+    assert enrichment._translate_url("   ", "src").reason == "empty"
+
+
+def test_a_field_the_prompt_never_asked_for_is_not_graded():
+    """`check` grades what was asked. A name outside the registry is not a field."""
+    assert enrichment.check({"license": "MIT"}, ("license",)) == {}
