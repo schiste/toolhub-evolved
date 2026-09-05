@@ -1058,7 +1058,12 @@ def test_gadget_pending_skips_gadgets_with_no_description():
 
 
 def test_gadget_pending_skips_a_gadget_whose_answer_is_current():
-    """The fingerprint is what stops the lane paying for the same answer twice."""
+    """Current means both halves: the source has not moved and the prompt has not grown.
+
+    The fingerprint is what stops the lane paying for the same answer twice, and
+    `prompt_version` is what stops it calling an answer complete when a field
+    has since been added to the question.
+    """
     gadget_id = gadget()
     with db.session_scope() as session:
         session.add(
@@ -1069,6 +1074,7 @@ def test_gadget_pending_skips_a_gadget_whose_answer_is_current():
                 page_id=gadget_id,
                 source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
                 status=enrichment.STATUS_READY,
+                prompt_version=enrichment.PROMPT_VERSION,
             )
         )
     with db.session_scope() as session:
@@ -1425,3 +1431,60 @@ def test_no_more_audiences_are_published_than_a_record_can_usefully_carry():
     verdict = enrichment._audiences(["editor", "developer", "reader", "editor", "developer"])
     assert verdict.value == ["editor", "developer", "reader"]
     assert len(verdict.value) == enrichment.MAX_AUDIENCES
+
+
+def test_a_gadget_answered_by_an_older_prompt_is_asked_again():
+    """A fingerprint says the source has not moved, not that the answer is complete.
+
+    `audiences` shipped to 9,946 gadget rows that sat `ready` and audience-less,
+    every one current on its fingerprint, and no window would have offered them
+    again. This is the arm that reaches them.
+    """
+    gadget_id = gadget()
+    with db.session_scope() as session:
+        session.add(
+            ToolInference(
+                tool_name=GADGET_TOOL,
+                payload={"keywords": ["block"]},
+                lane=LANE_GADGET,
+                page_id=gadget_id,
+                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                status=enrichment.STATUS_READY,
+                prompt_version=enrichment.PROMPT_VERSION - 1,
+            )
+        )
+    with db.session_scope() as session:
+        assert [c.title for c in enrichment.gadget_pending(session, limit=10)] == ["markblocked"]
+
+
+def test_a_user_script_answered_by_an_older_prompt_is_asked_again():
+    """The same arm on the lane that holds 36,545 of those rows."""
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REPLY))
+    with db.session_scope() as session:
+        assert enrichment.pending(session, limit=10) == []
+        session.query(ToolInference).update({"prompt_version": enrichment.PROMPT_VERSION - 1})
+    with db.session_scope() as session:
+        assert [c.tool_name for c in enrichment.pending(session, limit=10)] == [TOOL]
+
+
+def test_answering_again_records_the_prompt_that_answered():
+    """Or the row is offered every sweep for ever, and the backfill never drains."""
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_WHOLE_REPLY))
+    with db.session_scope() as session:
+        row = session.get(ToolInference, TOOL)
+        assert row.prompt_version == enrichment.PROMPT_VERSION
+        assert enrichment.pending(session, limit=10) == []
+
+
+def test_a_re_ask_waits_behind_pages_nobody_has_tried(monkeypatch):
+    """46,491 rows to re-ask must not displace a page that has never been asked at all."""
+    store("User:Anomie/linkclassifier.js")
+    run(lambda payload: reply(REAL_REPLY))
+    with db.session_scope() as session:
+        session.query(ToolInference).update({"prompt_version": enrichment.PROMPT_VERSION - 1})
+    store("User:Someone/fresh.js", owner="Someone", basename="fresh.js", fingerprint="f2")
+    with db.session_scope() as session:
+        order = [c.tool_name for c in enrichment.pending(session, limit=10)]
+    assert order[0] == "userscript-en.wikipedia.org-someone-fresh.js", order
