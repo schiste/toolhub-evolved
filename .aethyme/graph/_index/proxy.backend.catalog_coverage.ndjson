@@ -7,6 +7,7 @@
 {"module":"proxy.backend.catalog_coverage","symbol":"BUCKET_BY_SOURCE.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5tfjw7psjnniszao26tti5a2km","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"BUCKET_BY_SOURCE.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:oaxutu6mrhczo2sbxskagpvr5e","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"BUCKET_CODE","kind":"global_variable","node_id":"global_variable:toolhub-evolved:fo7rwxjpmcwloaeqr2qtftrubi","file":"proxy/backend/catalog_coverage.py"}
+{"module":"proxy.backend.catalog_coverage","symbol":"BUCKET_CONVENTION","kind":"global_variable","node_id":"global_variable:toolhub-evolved:r6iifcbj3qe3nmkpvd3vnaro5u","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"BUCKET_HUMAN","kind":"global_variable","node_id":"global_variable:toolhub-evolved:ujw455b4r5bu7mcgnv3pz3x3yu","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"BUCKET_TOOLINFO","kind":"global_variable","node_id":"global_variable:toolhub-evolved:ixsgydbhs7d6fuu37celpwsxle","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"CatalogToolProjection","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:d6i7cvsxyiep25k2njbvyjn4wq","file":"proxy/backend/catalog_coverage.py"}
@@ -28,6 +29,7 @@
 {"module":"proxy.backend.catalog_coverage","symbol":"SOURCE_INFERENCE","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kxckbs3cx4tttqgtsdw5c2pgre","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"SOURCE_REPOSITORY","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bvk2nrbxa2u374xdrikdogbaou","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"SOURCE_WIKIMEDIA_USER_SCRIPT","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:idbgmp5cbfd3d2kfnytu4w2uha","file":"proxy/backend/catalog_coverage.py"}
+{"module":"proxy.backend.catalog_coverage","symbol":"SOURCE_WIKI_TALK","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:dglclgkzksrd7vyd7rzheowogi","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"STATUS_READY","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pem3v2xg6af7jq2cq3tof4uimi","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"TYPE_CHECKING","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:gcjryrwhzbhyjxuov362kkerkm","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"UTC","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vanvywjmdvlqyt5hdk5zjqbzv4","file":"proxy/backend/catalog_coverage.py"}
