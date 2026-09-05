@@ -1926,3 +1926,34 @@ def test_a_gadget_missing_its_wiki_or_its_name_gets_no_venue(title, for_wikis):
 
     payload = catalog_projection.projection_payload("gadget-fr.wikipedia.org-broken")
     assert "bugtracker_url" not in payload["record"]
+
+
+def test_a_refresh_is_batched_no_matter_how_many_tools_it_is_handed(monkeypatch):
+    """The deploy's migrate job is 512 MiB, and one batch has to fit in it.
+
+    A `PROJECTION_VERSION` bump makes every row a candidate at once, which is
+    the one time this path is asked for the whole catalogue. It was handing all
+    of them to a single `_refresh_batch`, and the job was OOM-killed before it
+    logged a line -- twice the same shape of defect, because `_republish` did
+    it too. What is asserted is the property rather than the constant: no batch
+    is larger than the batch size, however long the list.
+    """
+    seen = []
+
+    def _record(names):
+        seen.append(len(names))
+        return {"requested": len(names), "refreshed": len(names), "changed": 0, "errors": 0}
+
+    monkeypatch.setattr(catalog_projection, "_refresh_batch", _record)
+    handed = [f"tool-{index}" for index in range(catalog_projection.REFRESH_BATCH_TOOLS * 2 + 7)]
+
+    summary = catalog_projection.refresh_tool_names(handed)
+
+    assert summary["refreshed"] == len(handed)
+    assert sum(seen) == len(handed), "every tool has to be refreshed exactly once"
+    assert max(seen) <= catalog_projection.REFRESH_BATCH_TOOLS, f"a batch of {max(seen)} defeats the bound"
+
+
+def test_the_batch_size_is_smaller_than_the_number_a_run_may_take_on():
+    """Otherwise the two are one number again and the bound does nothing."""
+    assert catalog_projection.REFRESH_BATCH_TOOLS < catalog_projection.MAX_REFRESH_TOOLS

@@ -67,6 +67,16 @@ PROJECTION_VERSION = 6
 # a safety rail against a runaway loop, not a throughput setting; sized here so
 # the whole catalogue is reachable within one run's share of the interval.
 MAX_REFRESH_TOOLS = 20_000
+# How many tools one refresh transaction holds at once, which is a different
+# question from how many are worth considering in a run. They were the same
+# number until a `PROJECTION_VERSION` bump made every row a candidate and the
+# deploy's migrate job was OOM-killed before it printed a line: a full sweep
+# handed `_refresh_batch` all 20,000 at once. Measured on the same code path,
+# 3,000 tools cost 281 MiB against a 512 MiB container, so 20,000 was never
+# survivable -- it only ever ran with a handful of candidates, which is why it
+# looked fine for five versions. Sized so a batch stays near 190 MiB, and the
+# cap above keeps deciding how much work a run takes on.
+REFRESH_BATCH_TOOLS = 2_000
 STATUS_READY = "ready"
 STATUS_ERROR = "error"
 
@@ -961,8 +971,8 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
 def refresh_tool_names(tool_names: list[str]) -> dict[str, int]:
     names = list(dict.fromkeys(name for value in tool_names if (name := _clean_name(value))))
     summary = {"requested": len(names), "refreshed": 0, "changed": 0, "errors": 0}
-    for offset in range(0, len(names), MAX_REFRESH_TOOLS):
-        batch = _refresh_batch(names[offset : offset + MAX_REFRESH_TOOLS])
+    for offset in range(0, len(names), REFRESH_BATCH_TOOLS):
+        batch = _refresh_batch(names[offset : offset + REFRESH_BATCH_TOOLS])
         for key in ("refreshed", "changed", "errors"):
             summary[key] += batch[key]
     return summary
