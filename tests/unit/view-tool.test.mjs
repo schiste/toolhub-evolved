@@ -1859,3 +1859,46 @@ test("viewTool keeps the checklist for a real tool and for an unclassified one",
 		assert.ok(!r.html.includes("About this page"));
 	}
 });
+
+/* Audiences are inferred for the 51,266 gadgets and user scripts that carry
+   none of their own, at a measured 0.87 precision -- so roughly one published
+   value in eight is wrong. Every other derived row in this block says where it
+   came from; this one shipped saying nothing, which is the one thing the mark
+   exists to prevent. A per-field mark is right here where keywords need a
+   per-value one: `_assemble` only lets inference extend a non-empty list for
+   `keywords`, so an inferred audience is always the whole field. */
+test("viewTool says where an inferred audience came from", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("gad", {
+			title: "AncreTitres",
+			audiences: ["reader", "editor"],
+			catalogProjection: {
+				provenance: {
+					audiences: [
+						{ value: "reader", source: "llm_inference", lane: "gadget", effective: true },
+						{ value: "editor", source: "llm_inference", lane: "gadget", effective: true }
+					]
+				}
+			}
+		})
+	);
+	const r = await tool.viewTool("gad");
+	const row = r.html.slice(r.html.indexOf("Audiences"));
+	assert.match(row.slice(0, 400), /source-mark/);
+	assert.match(row.slice(0, 400), /gadget&#39;s own description/);
+});
+
+test("viewTool leaves an audience a maintainer set unmarked", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("real", {
+			title: "Real",
+			audiences: ["editor"],
+			catalogProjection: {
+				provenance: { audiences: [{ value: "editor", source: "official_toolhub", effective: true }] }
+			}
+		})
+	);
+	const r = await tool.viewTool("real");
+	const row = r.html.slice(r.html.indexOf("Audiences"), r.html.indexOf("Audiences") + 300);
+	assert.doesNotMatch(row, /source-mark/);
+});

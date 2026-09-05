@@ -1070,7 +1070,11 @@ export async function viewTool(name) {
 					${metaItem(t("tool.metaWorksOn", "Works on"), wikiLabel(tool.forWikis) + mark("for_wikis"))}
 					${metaItem(t("tool.metaInterfaceLanguages", "Interface languages"), langLabel(tool.uiLanguages))}
 					${metaItem(t("tool.metaTechnology", "Technology"), technologyLabels(tool.technologyUsed, evolvedSummary?.health?.sourceHealth?.technologies) + mark("technology_used"))}
-					${metaItem(t("tool.metaAudiences", "Audiences"), (tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
+					${metaItem(
+						t("tool.metaAudiences", "Audiences"),
+						(tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", ") +
+							mark("audiences")
+					)}
 				</div>
 				${catalogProvenancePanel(tool.catalogProjection, evolvedSummary?.health?.sourceHealth?.repository)}
 
