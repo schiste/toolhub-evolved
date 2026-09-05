@@ -85,13 +85,16 @@
 	--color-warning-subtle: var(--wmf-orange-light);
 	--color-warning-text: #8a4b08; /* derived: dark orange, AA on warning-subtle */
 
-	/* Source attribution — the four buckets the data-layer report splits every
-	   catalog value into. Four separate hues rather than a status ramp: these
+	/* Source attribution — the five buckets the data-layer report splits every
+	   catalog value into. Five separate hues rather than a status ramp: these
 	   are categories, not severities, and they are read side by side in one
-	   stacked bar, so they have to stay distinguishable rather than ordered. */
+	   stacked bar, so they have to stay distinguishable rather than ordered.
+	   Convention is teal because the brand palette leaves no second green,
+	   blue, purple, or orange that stays separable in a thin bar segment. */
 	--color-source-human: var(--wmf-green-aaa);
 	--color-source-toolinfo: var(--color-progressive);
 	--color-source-code: var(--wmf-purple);
+	--color-source-convention: #0f7c78; /* derived: teal, AA on white */
 	--color-source-ai: var(--wmf-orange);
 	--color-source-missing: var(--color-border);
 
@@ -252,6 +255,7 @@
 	--color-source-human: #83d6a5;
 	--color-source-toolinfo: #7ab7f2;
 	--color-source-code: #b0a4f0;
+	--color-source-convention: #6fc2bb;
 	--color-source-ai: #f0a24a;
 	--color-source-missing: #3b443f;
 

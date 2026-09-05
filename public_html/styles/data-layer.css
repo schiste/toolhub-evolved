@@ -139,6 +139,10 @@
 	background: var(--color-source-code);
 }
 
+.data-layer-bar__seg--convention {
+	background: var(--color-source-convention);
+}
+
 .data-layer-bar__seg--ai {
 	background: var(--color-source-ai);
 }
@@ -165,6 +169,10 @@
 
 .data-layer-swatch--code {
 	background: var(--color-source-code);
+}
+
+.data-layer-swatch--convention {
+	background: var(--color-source-convention);
 }
 
 .data-layer-swatch--ai {

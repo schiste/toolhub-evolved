@@ -28,7 +28,7 @@ from backend.models import (  # noqa: E402
     User,
     utcnow,
 )
-from backend.sync import REVIEW_APPROVED  # noqa: E402
+from backend.sync import REVIEW_APPROVED, SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -1812,3 +1812,117 @@ def test_inference_is_gap_only_regardless_of_append_order():
         effective, _evidence, _validation, _stamps = catalog_projection._assemble("tool-g", rows)
         assert effective["description"] == "Canonical text."
         assert effective["keywords"] == ["b", "a"]
+
+
+def _wiki_canonical(name, source, **fields):
+    """A canonical row the wiki lanes wrote, rather than one synced from Toolhub."""
+    row = _canonical(name, **fields)
+    row.source = source
+    return row
+
+
+def test_a_user_script_reports_bugs_on_the_talk_page_beside_it():
+    with db.session_scope() as s:
+        s.add(
+            _wiki_canonical(
+                "userscript-en.wikipedia.org-alice-foo.js",
+                SOURCE_WIKI_USERSCRIPT,
+                url="https://en.wikipedia.org/wiki/User:Alice/foo.js",
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["userscript-en.wikipedia.org-alice-foo.js"])
+
+    payload = catalog_projection.projection_payload("userscript-en.wikipedia.org-alice-foo.js")
+    assert payload["record"]["bugtracker_url"] == "https://en.wikipedia.org/wiki/User_talk:Alice/foo.js"
+    entry = next(item for item in payload["provenance"]["bugtracker_url"] if item["effective"])
+    assert entry["source"] == catalog_projection.SOURCE_WIKI_TALK
+
+
+def test_a_gadget_reports_bugs_on_the_talk_page_of_its_description_message():
+    with db.session_scope() as s:
+        s.add(
+            _wiki_canonical(
+                "gadget-fr.wikipedia.org-hotcat",
+                SOURCE_WIKI_GADGET,
+                title="HotCat",
+                url="https://fr.wikipedia.org/wiki/Special:Gadgets#gadget-HotCat",
+                for_wikis=["fr.wikipedia.org"],
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["gadget-fr.wikipedia.org-hotcat"])
+
+    payload = catalog_projection.projection_payload("gadget-fr.wikipedia.org-hotcat")
+    # Not Special:Gadgets, which is generated and has no talk page to post on.
+    assert payload["record"]["bugtracker_url"] == "https://fr.wikipedia.org/wiki/MediaWiki_talk:Gadget-HotCat"
+
+
+def test_a_stated_bug_tracker_keeps_the_field_against_the_derived_venue():
+    """The venue is fill-only: it answers where nobody has, and never argues."""
+    now = utcnow()
+    name = "userscript-en.wikipedia.org-alice-foo.js"
+    with db.session_scope() as s:
+        s.add(_wiki_canonical(name, SOURCE_WIKI_USERSCRIPT, url="https://en.wikipedia.org/wiki/User:Alice/foo.js"))
+        source = ToolinfoSource(url="https://alice.example/toolinfo.json", valid=True, last_fetched_at=now)
+        s.add(source)
+        s.flush()
+        s.add(
+            ToolinfoSourceItem(
+                tool_name=name,
+                source_id=source.id,
+                source_url=source.url,
+                payload={"bugtracker_url": "https://github.com/alice/foo/issues"},
+                last_seen_at=now,
+            )
+        )
+
+    catalog_projection.refresh_tool_names([name])
+
+    payload = catalog_projection.projection_payload(name)
+    assert payload["record"]["bugtracker_url"] == "https://github.com/alice/foo/issues"
+    # The venue stays visible as evidence, so the tool page can still offer it.
+    assert any(
+        item["source"] == catalog_projection.SOURCE_WIKI_TALK and not item["effective"]
+        for item in payload["provenance"]["bugtracker_url"]
+    )
+
+
+def test_a_toolhub_tool_gets_no_wiki_venue_invented_for_it():
+    """It is not hosted on a wiki, so no wiki page is where its bugs go."""
+    with db.session_scope() as s:
+        s.add(_canonical("hay-directory", url="https://hay.toolforge.org/directory"))
+
+    catalog_projection.refresh_tool_names(["hay-directory"])
+
+    payload = catalog_projection.projection_payload("hay-directory")
+    assert "bugtracker_url" not in payload["record"]
+
+
+@pytest.mark.parametrize(
+    ("title", "for_wikis"),
+    [("", ["fr.wikipedia.org"]), ("HotCat", []), ("", [])],
+)
+def test_a_gadget_missing_its_wiki_or_its_name_gets_no_venue(title, for_wikis):
+    """Half a title names half a page, and there is no half of a talk page.
+
+    The user-script lane has the same shape and reaches it through the wiki
+    source rule, which rejects a title carrying no source suffix -- 73 real
+    pages, spelled like `User:X/common.js (1)`. This lane has no such rule to
+    lean on, so the two fields it builds the title from are checked here.
+    """
+    with db.session_scope() as s:
+        s.add(
+            _wiki_canonical(
+                "gadget-fr.wikipedia.org-broken",
+                SOURCE_WIKI_GADGET,
+                title=title,
+                url="https://fr.wikipedia.org/wiki/Special:Gadgets#gadget-HotCat",
+                for_wikis=for_wikis,
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["gadget-fr.wikipedia.org-broken"])
+
+    payload = catalog_projection.projection_payload("gadget-fr.wikipedia.org-broken")
+    assert "bugtracker_url" not in payload["record"]

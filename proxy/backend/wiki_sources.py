@@ -257,6 +257,41 @@ def page_url(domain: str, title: str) -> str:
     return f"https://{domain}/wiki/{title.replace(' ', '_')}"
 
 
+#: MediaWiki pairs every content namespace with a discussion namespace named by
+#: appending this to it. The pairing is part of the software rather than a
+#: convention a wiki opts into, which is what makes a talk page derivable from
+#: a title instead of something to go and look up.
+TALK_SUFFIX = " talk"
+
+
+def talk_title(title: str) -> str:
+    """Return where this page is discussed, or "" if that is not derivable.
+
+    Restricted to the two namespaces this module reads. A title in neither is
+    left alone rather than rewritten, because appending the suffix to an
+    unrecognized prefix would name a page in a namespace the wiki may not have
+    -- and a link to a namespace that does not exist is worse than no link,
+    since it looks like a venue and cannot be posted to.
+
+    The page itself need not exist. A talk page is where a discussion goes
+    whether or not one has happened yet, and MediaWiki creates it on the first
+    post; this differs from `user_docs_url`, which is only published once a
+    wiki has confirmed the documentation is actually there, because empty
+    documentation answers nothing while an empty venue is still the venue.
+    """
+    namespace, separator, page = str(title or "").partition(":")
+    canonical = NAMESPACES.get(namespace.casefold()) if separator else None
+    if canonical is None or not page.strip():
+        return ""
+    return f"{canonical}{TALK_SUFFIX}:{page}"[:MAX_TITLE_CHARS]
+
+
+def talk_url(domain: str, title: str) -> str:
+    """Return the URL of one page's discussion venue, or "" if it has none."""
+    venue = talk_title(title)
+    return page_url(domain, venue) if venue else ""
+
+
 #: The Terms of Use every Wikimedia wiki publishes under, and the one document
 #: that says anything at all about the licence of a script or gadget page.
 TERMS_OF_USE_URL = "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use"

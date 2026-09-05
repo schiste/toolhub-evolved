@@ -404,7 +404,8 @@ const CATALOG_SOURCE_LABELS = {
 	wikimedia_user_script: "Wikimedia user script page",
 	evolved_curation: "Reviewed Evolved correction",
 	wiki_gadget_definition: "Wiki gadget definition",
-	llm_inference: "Inferred from source code"
+	llm_inference: "Inferred from source code",
+	wiki_talk_page: "Wiki talk page"
 };
 
 /** @param {unknown} value */
@@ -1003,10 +1004,12 @@ export async function viewTool(name) {
 		linkOut(t("tool.sourceCode", "Source code"), tool.repository) + (tool.repository ? mark("repository") : ""),
 		linkOut(t("tool.apiLabel", "API"), tool.apiUrl),
 		linkOut(t("tool.userDocs", "User docs"), tool.userDocs) + (tool.userDocs ? mark("user_docs_url") : ""),
-		linkOut(t("tool.developerDocs", "Developer docs"), tool.devDocs),
-		linkOut(t("tool.reportABug", "Report a bug"), tool.bugtracker),
-		linkOut(t("tool.giveFeedback", "Give feedback"), tool.feedback),
-		linkOut(t("tool.translate", "Translate"), tool.translate)
+		linkOut(t("tool.developerDocs", "Developer docs"), tool.devDocs) +
+			(tool.devDocs ? mark("developer_docs_url") : ""),
+		linkOut(t("tool.reportABug", "Report a bug"), tool.bugtracker) +
+			(tool.bugtracker ? mark("bugtracker_url") : ""),
+		linkOut(t("tool.giveFeedback", "Give feedback"), tool.feedback) + (tool.feedback ? mark("feedback_url") : ""),
+		linkOut(t("tool.translate", "Translate"), tool.translate) + (tool.translate ? mark("translate_url") : "")
 	].join("");
 
 	// Official Toolhub status flags stay visible alongside Evolved-local panels.

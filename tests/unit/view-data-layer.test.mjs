@@ -17,7 +17,7 @@ vi.mock("../../public_html/lib/core/api.js", async (importOriginal) => ({
 
 import { dataLayerHTML, viewDataLayer } from "../../public_html/views/data-layer.js";
 
-const buckets = ["human", "toolinfo", "code", "ai"];
+const buckets = ["human", "toolinfo", "code", "convention", "ai"];
 /** @param {Partial<Record<string, number>>} counts */
 const byBucket = (counts) => Object.fromEntries(buckets.map((b) => [b, counts[b] ?? 0]));
 
@@ -46,6 +46,7 @@ const payload = {
 		human: ["curation", "gadget"],
 		toolinfo: ["canonical", "crawler"],
 		code: ["repository_analysis"],
+		convention: ["wiki_talk_page"],
 		ai: ["llm_inference"]
 	},
 	sourceConfidence: { canonical: 95, curation: 100, llm_inference: 60, repository_analysis: 75 },

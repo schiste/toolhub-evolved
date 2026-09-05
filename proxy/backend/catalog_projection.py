@@ -49,6 +49,10 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+# 6: wiki-hosted records carry the talk page beside them as `bugtracker_url`.
+# The field is new to every one of them, and a stored row looks current to the
+# sweep until the version says otherwise, so without this bump the change would
+# have been correct and reached nothing.
 # 5: user-script rows are attributed to the wiki that hosts them rather than
 # to Toolhub. Every version-4 row synthesized from a wiki names the wrong
 # source, so they must all re-project; and because the projection had no way to
@@ -57,7 +61,7 @@ _log = logging.getLogger(__name__)
 # 4: purpose annotations (tasks, audiences) are lifted out of `annotations`.
 # Version 3 was already used for Wikimedia user-script maintainership, so
 # existing version-3 rows must all re-project.
-PROJECTION_VERSION = 5
+PROJECTION_VERSION = 6
 # Measured 2026-08-27: this sweep costs 0.046s a tool and was capped at 500,
 # so it finished in 23 seconds of its hour against a catalogue of 53,178. The cap is
 # a safety rail against a runaway loop, not a throughput setting; sized here so
@@ -74,6 +78,7 @@ SOURCE_WIKIMEDIA_USER_SCRIPT = "wikimedia_user_script"
 SOURCE_CURATION = "evolved_curation"
 SOURCE_GADGET = "wiki_gadget_definition"
 SOURCE_INFERENCE = "llm_inference"
+SOURCE_WIKI_TALK = "wiki_talk_page"
 
 # Sources that may only fill a gap. A fill-only source contributes a field
 # when no other source established one, and is otherwise evidence and nothing
@@ -84,7 +89,7 @@ SOURCE_INFERENCE = "llm_inference"
 # first writer. Lists are not: they union, so an inferred keyword would land in
 # a list a human curated. Naming the constraint here rather than relying on
 # where the source happens to be appended keeps it true if that order changes.
-FILL_ONLY_SOURCES = frozenset({SOURCE_INFERENCE})
+FILL_ONLY_SOURCES = frozenset({SOURCE_INFERENCE, SOURCE_WIKI_TALK})
 
 # The one exception, and it is deliberately narrow. `keywords` is the field
 # where "somebody already said something" is least likely to mean the list is
@@ -176,6 +181,12 @@ SOURCE_CONFIDENCE = {
     # purpose: it is the only one that produces a value nobody ever asserted,
     # and `FILL_ONLY_SOURCES` already stops it reaching a field that has one.
     SOURCE_INFERENCE: 40,
+    # A venue derived from a page title, not a tracker anybody nominated. The
+    # derivation itself is exact -- MediaWiki pairs the namespaces, so the talk
+    # page genuinely is where that page is discussed -- but it ranks below
+    # repository analysis because that reads something the maintainer wrote,
+    # and above inference because it guesses at nothing.
+    SOURCE_WIKI_TALK: 60,
 }
 
 # Report section -> CatalogFacetValue.field for signals detected in source.
@@ -426,6 +437,67 @@ def _add_gadget_inference_sources(s: Session, names: list[str], sources: dict[st
         )
 
 
+def _talk_venue(record: dict[str, Any], row_source: str) -> str:
+    """Return where a wiki-hosted tool's problems get reported, or "".
+
+    Only the two wiki lanes have one. A Toolhub tool either names its own bug
+    tracker or has none, and giving it a wiki page would point reports at a
+    wiki that does not host it.
+
+    The two lanes reach the venue by different titles. A user script is a page,
+    so the page beside it is the venue. A gadget is not: its catalogue URL is
+    an anchor into the generated `Special:Gadgets` listing, which has no talk
+    page of its own, so the venue is the talk page of the gadget's description
+    message -- the one per-gadget page every wiki has without anybody creating
+    it.
+    """
+    if row_source == SOURCE_WIKI_USERSCRIPT:
+        page = wiki_sources.wiki_source(_clean_text(record.get("url")))
+        return wiki_sources.talk_url(page.domain, page.title) if page is not None else ""
+    if row_source == SOURCE_WIKI_GADGET:
+        wikis = _values(record.get("for_wikis"))
+        name = _clean_text(record.get("title"))
+        if not wikis or not name:
+            return ""
+        return wiki_sources.talk_url(_clean_text(wikis[0]), f"{wiki_sources.GADGET_PREFIX}{name}")
+    return ""
+
+
+def _derived_wiki_sources(record: dict[str, Any], row_source: str, observed: datetime | None) -> list[dict[str, Any]]:
+    """Return what hosting on a wiki already implies, as sources.
+
+    Neither is a claim the record makes; both are the page itself. A user
+    script's own page is the repository, because there is nowhere else its code
+    lives. The talk page beside a script -- or beside a gadget's description
+    message -- is where its problems get reported, because that is what a talk
+    page is for.
+
+    Grouped in one helper rather than inline because they answer the same
+    question, and because the loop that held them is the projection's single
+    ordered pass over every source and stays readable only while it reads as a
+    list of sources rather than of derivations.
+    """
+    derived: list[dict[str, Any]] = []
+    tool_url = _clean_text(record.get("url"))
+    if wikimedia_urls.user_space_javascript_page(tool_url) is not None:
+        derived.append(
+            {
+                "payload": {"repository": tool_url},
+                "source": SOURCE_WIKIMEDIA_USER_SCRIPT,
+                "url": tool_url,
+                "observed": observed,
+            }
+        )
+    # Fill-only, so this reaches `bugtracker_url` only where nothing else
+    # claimed it: a maintainer who named a tracker keeps it, and `_assemble`
+    # orders every asserting source ahead of this one.
+    if venue := _talk_venue(record, row_source):
+        derived.append(
+            {"payload": {"bugtracker_url": venue}, "source": SOURCE_WIKI_TALK, "url": venue, "observed": observed}
+        )
+    return derived
+
+
 def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
     s: Session, names: list[str], reports: dict[str, SourceAnalysisReport] | None = None
 ) -> dict[str, list[dict[str, Any]]]:
@@ -437,16 +509,7 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
             sources[row.tool_name].append(
                 {"payload": row.record, "source": source, "url": row.source_url, "observed": row.fetched_at}
             )
-            tool_url = _clean_text(row.record.get("url"))
-            if wikimedia_urls.user_space_javascript_page(tool_url) is not None:
-                sources[row.tool_name].append(
-                    {
-                        "payload": {"repository": tool_url},
-                        "source": SOURCE_WIKIMEDIA_USER_SCRIPT,
-                        "url": tool_url,
-                        "observed": row.fetched_at,
-                    }
-                )
+            sources[row.tool_name].extend(_derived_wiki_sources(row.record, row.source, row.fetched_at))
 
     crawler_rows = s.execute(
         select(ToolinfoSourceItem, ToolinfoSource)
