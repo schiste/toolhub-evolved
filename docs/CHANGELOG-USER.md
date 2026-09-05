@@ -1,11 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: audiences-say-where-they-came-from -->
-<!-- Release title: Audiences Say Where They Came From -->
-<!-- Source range: 06066c16..HEAD -->
+<!-- Release id: reading-the-catalogue-faster -->
+<!-- Release title: Reading The Catalogue Faster -->
+<!-- Source range: 43d97a28..HEAD -->
 
 # What's New for Users
 
-- An audience the catalogue worked out for itself now says so. The audiences added over the last two releases were being shown with no mark at all, exactly as though a maintainer had chosen them — while the Type and Technology lines directly beside them both said where they came from.
-- It matters more here than almost anywhere else. These are read by a language model and were right about seven times in eight when they were checked, so a reader deciding whether to trust one needs to know which kind of value it is.
-- An audience a person set is still shown plainly, with no mark, as before. Only the ones the catalogue read for itself carry the small dagger, and hovering it says what was read.
+- The catalogue reads new metadata about half again as fast. It works through tools a wave at a time, and the wave was six at once; it is now twelve, which was measured to be about 51% quicker.
+- That matters right now because of a backlog. Every gadget and user script is being read again to work out who it is for, which is about 45,000 records — roughly twenty hours of reading at the old pace, and around thirteen at the new one.
+- Twelve rather than more, on purpose. Eighteen at a time was measured too and was only 9% quicker again, because the service being asked starts queueing rather than going faster. It is a service shared with the rest of Wikimedia, so the extra load was not worth 9%.
