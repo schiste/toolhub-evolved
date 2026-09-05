@@ -1,15 +1,14 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: asking-only-what-is-missing -->
-<!-- Release title: Asking Only What Is Missing -->
-<!-- Source range: 70b04c35..HEAD -->
+<!-- Release id: finishing-what-a-fast-run-starts -->
+<!-- Release title: Finishing What A Fast Run Starts -->
+<!-- Source range: fec0785d..HEAD -->
 
 # Technical and Marketing Notes
 
-- Each field is now a `Field` carrying everything needed to ask it: the words that request it, the rule its answer must survive, the room that answer needs in `max_tokens`, and the lanes that may produce it. A prompt is composed from the fields a row is missing rather than written out per lane — the alternative multiplies, since two lanes and three fields is already fourteen non-empty combinations to keep in step by hand.
-- `asked_signature` records which questions a row has been put, sorted and comma-joined so the window can compare it as a scalar. It replaces `prompt_version`, which bought the same property once: a field added to `FIELD_ORDER` is missing from every row that predates it the same instant, with nothing to bump and no migration to remember.
-- Keyed on what was asked, never on what came back. `accept` stores nothing for a field that produced nothing, so a payload cannot distinguish a field the model declined from one nobody asked about — a window reading the payload would re-ask the same unanswerable page every sweep for ever. A test asserts a fully-declined row leaves the window.
-- `record` merges rather than replaces. A re-ask now covers only what was missing, so replacing the payload would drop the description and keywords a previous run paid for in order to store the one field this run went back for. A test asserts exactly that, because the failure would be silent and expensive.
-- `max_tokens` is summed from the fields asked rather than fixed per lane. An audiences-only re-ask is 200 against 900 for a fresh user script, and generation is most of what a call costs — so the 45,047-row backfill gets materially cheaper on top of the concurrency change, rather than paying to regenerate three sentences it already has.
-- `proxy/migrate.py` fills the new column from `prompt_version`, which is what keeps that saving. Left empty, every row would read as missing everything and the first sweep would re-ask 50,000 rows for a description and keywords they already hold. Verified against production-shaped rows: v1 rows come out complete, v0 rows come out missing only `audiences`, and a re-run updates nothing.
-- Validation: 3,670 proxy tests with `inference_enrichment`, `models` and `db` all at 100% statement and branch coverage. Twenty-six existing tests moved to the new signatures rather than being loosened, and the English-keywords instruction moved from a lane's system prompt into the keywords fragment, so it now reaches every lane that asks for the field instead of the one that happened to mention it.
+- `_republish` handed its whole list to `refresh_tool_names` at once. That batches internally, but something it holds is not released between batches, so peak memory tracks the list rather than a batch: measured at 281 MiB for 3,000 tools against a 512 MiB job, and killed outright with exit 137 at 9,500. Sliced at 2,000 the same 9,500 plateau at 260 MiB and finish in 175s.
+- Only reachable once a sweep got productive enough to fill it. The 10:41 run on 2026-09-05 converted 9,338 records — 3.1x its predecessor, from composing prompts and widening the wave — and died in the republish that followed. The two changes that made the lane fast are what made this reachable, which is why it appeared the same hour they did.
+- Diagnosed rather than guessed, and two hypotheses were wrong first. The pod lived about 2,460s against a 2,700s timeout, so it was not killed at the deadline; and republish is cheap in time, 17 ms/tool, so the tail was not overrunning. Reproducing it took republishing 9,500 tools in a 512 MiB job and reading the exit code.
+- Nothing was lost. Answers commit per wave, so every Lift Wing call the run paid for was already stored; what died was the republish and the summary. `catalog-projection` is the standing backstop and had already caught the projections up by the time this was diagnosed.
+- The guard's heartbeat contained the damage to one run. The lock outlived its owner, went stale 330s later, and the next hour's run reclaimed it -- which under the old rule, twice each job's timeout, would have cost a second run as well.
+- Validation: proxy tests with `inference_enrichment` at 100% statement and branch coverage, including that no slice exceeds `REPUBLISH_SLICE` and that none is dropped. The slicing is verified against production: 9,500 real tools, 260 MiB peak, exit 0.
