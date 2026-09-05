@@ -295,9 +295,10 @@
   # than a slow one: the platform SIGKILLs the pod, so the guard's EXIT trap
   # never releases the lock and its failure counter never records anything, and
   # the run is lost after doing most of the work. An hour of headroom costs
-  # nothing on a weekly schedule. --stale-after stays at twice the timeout so a
-  # lock abandoned by a kill is still reclaimed, and never one held by a run
-  # that is merely slow.
+  # nothing on a weekly schedule. A lock abandoned by such a kill is reclaimed
+  # by the guard's heartbeat window rather than by anything derived from this
+  # timeout: the run stops touching its lock the moment it dies, and a run that
+  # is merely slow keeps touching it however long it takes.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile -- /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
   image: python3.13
   schedule: "13 5 * * 0"
@@ -328,11 +329,14 @@
   # `phaseSeconds` in the job's own output before spending this headroom again:
   # if the local half is what grew, more time is the wrong answer twice running.
   #
-  # 1500 rather than 1800 because --stale-after is derived from it and would
-  # otherwise land on the schedule. A leaked lock is only ever inspected by a
-  # run, so its age is a multiple of the hour; at the first
-  # inspection and the threshold coincide and jitter decides the outcome. The
-  # 24 reclaims recorded in people-identity-reconcile.err range 3588-3613s, so
+  # 1500 rather than 1800 is now only headroom: it was chosen when the reclaim
+  # window was derived from this timeout and 1800 would have put that window on
+  # the schedule it was measured against. Nothing is derived from it any more --
+  # the guard heartbeats its lock and grades one window for every job -- but the
+  # hazard it was avoiding is real and still worth recording. A leaked lock is
+  # only ever inspected by a run, so its age is a multiple of the hour, and a
+  # threshold that lands there is decided by jitter rather than by the clock:
+  # the 24 reclaims recorded in people-identity-reconcile.err range 3588-3613s, so
   # 10 of them would have skipped and waited another silent hour. 3000 is
   # inspected at 3600 with 600s to spare, and 1500 is still nearly twice the
   # 803s worst completed run.
@@ -376,10 +380,12 @@
 - name: people-reconcile-incremental
   # Process canonical and newly ingested tool changes shortly after their
   # write transaction. The weekly full pass remains the global backstop.
-  # A run stopped at its timeout releases its own guard lock, and every
-  # guarded job sets --stale-after to twice its own timeout as the backstop
-  # for a run that is killed outright. This drain died on 2026-08-03 holding a
-  # lock nobody released and no run happened for the next ten days.
+  # A run stopped at its timeout releases its own guard lock, and a run killed
+  # outright stops touching it, which is what the guard's heartbeat notices.
+  # That backstop used to be twice each job's own timeout, which on a schedule
+  # this tight cost ten consecutive runs per abandoned lock. This drain died on
+  # 2026-08-03 holding a lock nobody released and no run happened for the next
+  # ten days.
   # The batch is sized to finish inside the timeout even from a cold backlog,
   # and small enough that its row locks do not sit across other identity
   # jobs: at 50 it held them for ~212s per run and deadlocked the source
