@@ -36,6 +36,7 @@
 {"module":"proxy.backend.inference_enrichment","symbol":"PROMPT_VERSION","kind":"global_variable","node_id":"global_variable:toolhub-evolved:hct47pu2g7dylrzymd5572ybvm","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"PUBLISHABLE_AUDIENCES","kind":"global_variable","node_id":"global_variable:toolhub-evolved:7t6rkauw3neuarljhqf3opdfi4","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"REFUSAL_OPENERS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:6ytslgfemn25dswdctuk5j2phu","file":"proxy/backend/inference_enrichment.py"}
+{"module":"proxy.backend.inference_enrichment","symbol":"REPUBLISH_SLICE","kind":"global_variable","node_id":"global_variable:toolhub-evolved:u6heiyexcrwxbykeuyy26z3doe","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"RETRY_ERROR_AFTER","kind":"global_variable","node_id":"global_variable:toolhub-evolved:rx74jju5zpthvyngjidwvqub34","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"RuntimeError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7atkaumj2trpujzbij3ze7fjui","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"SOURCE_CHUNK","kind":"global_variable","node_id":"global_variable:toolhub-evolved:f2rzbxtq6ynsir4yv6kyymwfbe","file":"proxy/backend/inference_enrichment.py"}
@@ -174,6 +175,7 @@
 {"module":"proxy.backend.inference_enrichment","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:b3tuhydhtidaxumhpo7jtzx5t4","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:eu2nyvc3mvgjsxnyie6qn76l6q","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vbz2hsrfqzia6chgp6a5zcld74","file":"proxy/backend/inference_enrichment.py"}
+{"module":"proxy.backend.inference_enrichment","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xgzvhffcflwrj4znykev4scdau","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yhc7gu6thdlk5nhnb5a7pfufum","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yscdt5bluqlyhgqlltxe4lnd3m","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"liftwing_caller","kind":"function","node_id":"function:toolhub-evolved:3pqlvdxwidxyoguba2xgfbyggi","file":"proxy/backend/inference_enrichment.py"}
@@ -202,6 +204,7 @@
 {"module":"proxy.backend.inference_enrichment","symbol":"os.environ.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nfoyuuyynz2r23r3w6sgjkygpm","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"parse_json","kind":"function","node_id":"function:toolhub-evolved:3arm4eabtkexqbfgk3t7dcsevi","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"parse_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6ftjilgbuwxj4pedwtwdimampe","file":"proxy/backend/inference_enrichment.py"}
+{"module":"proxy.backend.inference_enrichment","symbol":"part.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tc3ui6lc5ty6lau727mtbjabqq","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"payload_for","kind":"function","node_id":"function:toolhub-evolved:ab4hmv3kffe53hsxkemfm2fxhy","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"payload_for","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7ng2na5il57byacwaznkyiw2ri","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"pending","kind":"function","node_id":"function:toolhub-evolved:jvw3o2fskftucxvvja2gsikmei","file":"proxy/backend/inference_enrichment.py"}
@@ -209,6 +212,7 @@
 {"module":"proxy.backend.inference_enrichment","symbol":"pending","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nyfa43suquirdn4g6da7ibpfs4","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"pool.map","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xtwktzvoagu5gehe2zha7v62cu","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"range","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cnsu3ocik7vy6r7utt6i4hs67a","file":"proxy/backend/inference_enrichment.py"}
+{"module":"proxy.backend.inference_enrichment","symbol":"range","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:r7zqgwb46t747jtb7nqxycmxpa","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"range","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wfe74upbaq27snl46hkbqhib2a","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"re","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7m2vivpnjn5pyu7mknowhcbvc4","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"ready.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:j2r4biejxcnwxj2hcwke3bnmda","file":"proxy/backend/inference_enrichment.py"}
