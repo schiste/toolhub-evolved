@@ -145,6 +145,17 @@ MAX_KEYWORDS = 8
 MIN_KEYWORD_CHARS = 2
 MAX_KEYWORD_CHARS = 40
 
+# A language subtag as BCP-47 spells one: `en`, `pt-br`, `zh-hans`. Deliberately
+# a shape rule and not a list of codes -- Wikimedia runs wikis in languages no
+# fixed list of ours would stay current with, and a code this rejects is a code
+# the facet would have shown as a permanent oddity.
+_LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(-[a-z0-9]{2,8})*$")
+# Enough for a script carrying its own per-language table. 6.7% of user scripts
+# branch on `wgUserLanguage` and hold strings for several languages at once,
+# which is the case this field exists to record; past about ten the answer is a
+# list of every language the model can think of rather than one it read.
+MAX_UI_LANGUAGES = 10
+
 # Toolhub's audience vocabulary, as `public_html/lib/core/routing.js` spells it
 # for the persona facets and as all 229 human-labelled records in the catalogue
 # use it. A closed list makes this a classification rather than a generation, so
@@ -491,6 +502,88 @@ def _audiences(value: object) -> Checked:
     return Checked(kept)
 
 
+def _available_ui_languages(value: object) -> Checked:
+    """Keep the language codes a tool's own interface is written in.
+
+    Every language, not one: a script with a table keyed on `wgUserLanguage`
+    genuinely has several, and recording only the first would say something
+    false about a tool that had done the work. 6.7% of answered user scripts
+    carry such a table.
+
+    The shape rule is the whole validation. There is no list of acceptable
+    codes because Wikimedia runs wikis in languages any list of ours would fall
+    behind, and a code rejected here is one the facet never gets to show.
+    """
+    if value is None:
+        return Checked([], "absent or null in the reply")
+    if not isinstance(value, list):
+        return Checked([], f"not a list ({type(value).__name__})")
+    kept: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        code = item.strip().casefold().replace("_", "-")
+        if _LANGUAGE_RE.match(code) and code not in kept:
+            kept.append(code)
+        if len(kept) == MAX_UI_LANGUAGES:
+            break
+    if not kept:
+        return Checked([], "empty list" if not value else f"none of {len(value)} are language codes")
+    return Checked(kept)
+
+
+def _translate_url(value: object, source: str = "") -> Checked:
+    """Keep a translation URL only when the source it was read from contains it.
+
+    Every other field here is checked for shape; this one is checked for
+    provenance, because it is a URL and the failure mode is different in kind. A
+    keyword the model invents is a bad tag. A `translate_url` the model invents
+    is a link this catalogue publishes to a page that may not exist, attributed
+    to a tool that never claimed it -- and `translatewiki.net/wiki/Special:...`
+    is exactly the shape a model produces when asked for a plausible one.
+
+    Requiring the value to appear verbatim in what was read makes inventing one
+    structurally impossible rather than unlikely. Only 0.1% of user scripts name
+    a translation service at all, so nearly every answer here should be nothing,
+    and a run that starts producing them is worth looking at.
+    """
+    if value is None:
+        return Checked("", "absent or null in the reply")
+    if not isinstance(value, str):
+        return Checked("", f"not a string ({type(value).__name__})")
+    text = value.strip()
+    if not text:
+        return Checked("", "empty")
+    if not text.lower().startswith(("http://", "https://")):
+        return Checked("", "not an absolute URL")
+    if text not in source:
+        return Checked("", "not present in the source it was read from")
+    return Checked(text)
+
+
+def _available_ui_languages_request() -> str:
+    """Return the UI-languages fragment."""
+    return (
+        '- "available_ui_languages": array of BCP-47 codes for every language this tool\'s own\n'
+        "  interface appears in -- the text it shows the person using it, such as button labels,\n"
+        "  menu entries, alerts and summaries. [] if it shows no text of its own.\n"
+        "  List every one it carries, not just the first: a tool holding its own table of strings\n"
+        "  per language has several. Judge only text it displays -- ignore regular expressions and\n"
+        "  character classes, wiki namespace and page names, URLs, identifiers, comments, and any\n"
+        "  text it merely reads or rewrites rather than shows.\n"
+    )
+
+
+def _translate_url_request() -> str:
+    """Return the translation-URL fragment."""
+    return (
+        '- "translate_url": the address where this tool\'s interface is translated, if the text\n'
+        "  above names one -- a translatewiki.net page, a Weblate project, an on-wiki message\n"
+        "  page. Copy it exactly as it appears. null if the text names none, which is the usual\n"
+        "  answer. Never construct one that is not written there.\n"
+    )
+
+
 class Field(NamedTuple):
     """One thing the model may be asked for, and everything needed to ask it.
 
@@ -513,6 +606,10 @@ class Field(NamedTuple):
     #: a row that needs one field is not charged for three.
     tokens: int
     lanes: frozenset[str]
+    #: Whether this field's rule needs the text the answer was read from, not
+    #: just the answer. Only `translate_url` does, and only because checking a
+    #: URL against its source is what makes an invented one impossible.
+    needs_source: bool = False
 
 
 #: Every field, in the order a prompt lists them. Ordering is fixed rather than
@@ -522,6 +619,21 @@ FIELD_ORDER: tuple[Field, ...] = (
     Field("description", _description, _description_request, 500, frozenset({LANE_USER_SCRIPT})),
     Field("keywords", _keywords, _keywords_request, 200, frozenset({LANE_USER_SCRIPT, LANE_GADGET})),
     Field("audiences", _audiences, _audiences_request, 100, frozenset({LANE_USER_SCRIPT, LANE_GADGET})),
+    Field(
+        "available_ui_languages",
+        _available_ui_languages,
+        _available_ui_languages_request,
+        120,
+        frozenset({LANE_USER_SCRIPT}),
+    ),
+    Field(
+        "translate_url",
+        _translate_url,
+        _translate_url_request,
+        80,
+        frozenset({LANE_USER_SCRIPT}),
+        needs_source=True,
+    ),
 )
 FIELDS_BY_NAME: dict[str, Field] = {field.name: field for field in FIELD_ORDER}
 #: Room for the JSON scaffolding around the answers themselves.
@@ -574,7 +686,7 @@ def missing_fields(lane: str, asked: str | None) -> tuple[str, ...]:
     return tuple(name for name in lane_fields(lane) if name not in already)
 
 
-def check(parsed: dict[str, Any] | None, fields: Sequence[str]) -> dict[str, Checked]:
+def check(parsed: dict[str, Any] | None, fields: Sequence[str], source: str = "") -> dict[str, Checked]:
     """Run the shape rules for exactly the fields that were asked for.
 
     Split from `accept` so a caller that needs to say why a reply produced
@@ -582,10 +694,17 @@ def check(parsed: dict[str, Any] | None, fields: Sequence[str]) -> dict[str, Che
     implementation of the same rules written to explain the first. Grading a
     field nobody asked about would report it absent, which is true and useless.
     """
-    return {name: FIELDS_BY_NAME[name].validate((parsed or {}).get(name)) for name in fields if name in FIELDS_BY_NAME}
+    verdicts: dict[str, Checked] = {}
+    for name in fields:
+        field = FIELDS_BY_NAME.get(name)
+        if field is None:
+            continue
+        value = (parsed or {}).get(name)
+        verdicts[name] = field.validate(value, source) if field.needs_source else field.validate(value)
+    return verdicts
 
 
-def accept(parsed: dict[str, Any] | None, fields: Sequence[str]) -> dict[str, Any]:
+def accept(parsed: dict[str, Any] | None, fields: Sequence[str], source: str = "") -> dict[str, Any]:
     """Return only the fields that survive shape validation.
 
     A field that fails validation is simply absent, which the projection reads
@@ -595,7 +714,7 @@ def accept(parsed: dict[str, Any] | None, fields: Sequence[str]) -> dict[str, An
     """
     if not parsed:
         return {}
-    return {name: verdict.value for name, verdict in check(parsed, fields).items() if verdict.value}
+    return {name: verdict.value for name, verdict in check(parsed, fields, source).items() if verdict.value}
 
 
 def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
@@ -871,6 +990,14 @@ class Outcome(NamedTuple):
     # nothing was: a fully accepted answer is already stored, as `accepted`, and
     # keeping the prose it arrived in beside it stores the same thing twice.
     reply: str = ""
+    #: Whether the reply answered the question at all. False only when nothing
+    #: parsed: a field the model considered and declined is an answer, and a
+    #: reply that was never JSON is not. `record` keeps the second out of
+    #: `asked_signature`, so the question is put again rather than being
+    #: recorded as settled by a reply nobody could read -- 118 rows had been
+    #: retired that way by 2026-09-05, and a field whose replies are malformed more
+    #: often would retire thousands.
+    answered: bool = True
 
 
 def record(session: Session, candidate: Candidate, outcome: Outcome, *, model: str) -> None:
@@ -891,7 +1018,8 @@ def record(session: Session, candidate: Candidate, outcome: Outcome, *, model: s
     row.payload = {**kept, **outcome.accepted}
     # The union, so a field asked once is never asked again on this source --
     # including one the model declined, which is an answer and not a gap.
-    row.asked_signature = signature([*missing_asked(row.asked_signature), *candidate.fields])
+    if outcome.answered:
+        row.asked_signature = signature([*missing_asked(row.asked_signature), *candidate.fields])
     row.lane = candidate.lane
     row.page_id = candidate.page_id
     row.source_fingerprint = candidate.fingerprint
@@ -951,8 +1079,8 @@ def _ask(
         # off-format or the endpoint returned something that was never a model
         # reply at all.
         sample = " ".join(text.split())[:200]
-        return Outcome(STATUS_REJECTED, {}, f"unparsed reply: {sample or '(empty)'}", collapsed)
-    verdicts = check(parsed, candidate.fields)
+        return Outcome(STATUS_REJECTED, {}, f"unparsed reply: {sample or '(empty)'}", collapsed, answered=False)
+    verdicts = check(parsed, candidate.fields, candidate.body)
     accepted = {name: verdict.value for name, verdict in verdicts.items() if verdict.value}
     # Written whatever the status, not only on rejection. A reply whose keywords
     # pass and whose description does not is stored `ready` carrying no
