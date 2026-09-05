@@ -37,11 +37,15 @@
 {"module":"proxy.migrate","symbol":"PersonIdentifier.is_current.is_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:u4wbnpsv2z7pfs3xn3m6njcj34","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"RESTATE_CHUNK","kind":"global_variable","node_id":"global_variable:toolhub-evolved:47smqnfk5v2b5uvwpmzlh4uuxq","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"RuntimeError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:jdrv2rz3fe2c2h4zxzhh2q6yc4","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"STATUS_ERROR","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:amyn7jhopzlhecaqyw3so527ea","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"STATUS_READY","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2m2a2t7if4vgdr2nyiuoa6dqoq","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"STATUS_REJECTED","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:aceo47q3zvd3sziqergb7u3paq","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"ToolAuthorClaim","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ypyscubrlxrn533cjdj7e4v5kq","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"ToolAuthorClaim.revoked_at.is_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:74cbkwtg6dfool74xuqgrrce6a","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"ToolAuthorClaim.verification_status.in_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:r23ffhabg6iuvz2ehmmptyrpde","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"ToolAuthorKey","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ctxb4bjvqrdyofghgy2iv2lbxe","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"ToolInference","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:y2r4fje3n44v7w3mhgdnbetqj4","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"ToolInference.status.in_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:jlvocqh7z5r4uict4bikzhjvze","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"ToolPersonRelationship","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:l6pmcptm254llipnobatvy2bte","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"ToolPersonRelationship.person_id.in_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lk4pxoc22vrzyolbvbtnhynd2i","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"ToolPersonRelationship.verified_at.is_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4x4d5ozerppehyrb4a6kuirxde","file":"proxy/migrate.py"}
@@ -105,6 +109,8 @@
 {"module":"proxy.migrate","symbol":"_restate_identifiers","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hffhas2uekfl6k2z4xbeamoo3u","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"_restate_swallowed_userscript_analyses","kind":"function","node_id":"function:toolhub-evolved:737kggt6rux6nff25fgmgsrudm","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"_restate_swallowed_userscript_analyses","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:opsunmullv63ee4flh2exlimqm","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"_restore_demoted_inference_rows","kind":"function","node_id":"function:toolhub-evolved:dzfsyyj7jg3aok5ztyipa7ejte","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"_restore_demoted_inference_rows","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zjtrdylubpzvcw4yydswtf4ele","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"_retire_legacy_people_tables","kind":"function","node_id":"function:toolhub-evolved:mgtexpdpccntsqcxmwsbdqzhji","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"_retire_legacy_people_tables","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:a5wzeo7vuw6iwjdveudkmztw4e","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"_retire_legacy_toolforge_proofs","kind":"function","node_id":"function:toolhub-evolved:yaodh3q73vm7knzxsdkkiaekqu","file":"proxy/migrate.py"}
@@ -160,6 +166,7 @@
 {"module":"proxy.migrate","symbol":"db.init_schema","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:eahkfn4nixzugsi4gpzztnfd4u","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6abq5wqdf7a326kkff7oda4sfq","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6uxbx5sj2vsqhv5xqf7yq2sozm","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ax3grhjkhfo6ra55xotyeqld7m","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:b47ixk3g4nthc2e4nmtgrtawiu","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:e77nrzibmiwvxrtumbpl5ub4da","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:j6v5niuxj7zrsq3bytkrl7eamq","file":"proxy/migrate.py"}
@@ -218,6 +225,7 @@
 {"module":"proxy.migrate","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3piaeuqols5phct4j7s6pa63ia","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5ybx354m7aujd3scgqq3b6uezm","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4mahvhqoekbarj3bx7yvofy5ny","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bdet7gbjeecboh24mfjjkm42bm","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:exgjy2ai6bnmy3k5ja7rju2j7i","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:g6uddtyxy2nwyb2uocg2zvyo4a","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:iaydzyfdmze5f46tdtriny3mli","file":"proxy/migrate.py"}
@@ -304,6 +312,8 @@
 {"module":"proxy.migrate","symbol":"select","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qbrqj642ntjiv6bab3gjhi6qw4","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"select","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rvhhsoj7vq727qhj4dhos5u2tq","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"select","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:t4t62ruraxz6i4x5jpfemmzwam","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"select","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wk33ddcgeowzcx3cjomrgjwntm","file":"proxy/migrate.py"}
+{"module":"proxy.migrate","symbol":"session.execute","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:76izaym2qo3enp33chmr5l4t2y","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"session.query","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:apsx5otxjki3fiybuc6helcdyq","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"session.query","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:gt2xis3zpamt6hacjmk2kwapoi","file":"proxy/migrate.py"}
 {"module":"proxy.migrate","symbol":"session.query","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rwvvjhbjyklojmac25ttteejje","file":"proxy/migrate.py"}
