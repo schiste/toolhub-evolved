@@ -1949,9 +1949,14 @@ async function renderWithDerivedProvenance(source = "wiki_gadget_definition") {
 /** Return each Details row as `{ label, marked }`, in page order. */
 function detailRows(html) {
 	const rows = [];
-	const re = /<div class="meta__k">(.*?)<\/div><div class="meta__v"[^>]*>(.*?)<\/div>/gs;
+	// The label is captured as text rather than stripped of markup afterwards.
+	// Removing tags with a regex is incomplete sanitisation -- `<scr<script>ipt>`
+	// survives it -- and CodeQL is right to flag the pattern even in a test.
+	// These labels are plain `t()` strings, so a label that ever contained
+	// markup should fail this match and be looked at, not quietly cleaned up.
+	const re = /<div class="meta__k">([^<]*)<\/div><div class="meta__v"[^>]*>(.*?)<\/div>/gs;
 	for (const match of html.matchAll(re)) {
-		rows.push({ label: match[1].replaceAll(/<[^>]*>/g, "").trim(), marked: match[2].includes("source-mark") });
+		rows.push({ label: match[1].trim(), marked: match[2].includes("source-mark") });
 	}
 	return rows;
 }
