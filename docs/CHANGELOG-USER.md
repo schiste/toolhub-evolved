@@ -1,11 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: finishing-what-a-fast-run-starts -->
-<!-- Release title: Finishing What A Fast Run Starts -->
-<!-- Source range: fec0785d..HEAD -->
+<!-- Release id: the-licence-line-says-so-too -->
+<!-- Release title: The Licence Line Says So Too -->
+<!-- Source range: 4f9c0f0c..HEAD -->
 
 # What's New for Users
 
-- A reading pass that gets through a lot of tools now finishes tidily. The last one read 9,338 records — more than three times its predecessor — and then ran out of memory while publishing the results, so it stopped without reporting what it had done.
-- Nothing was lost when that happened. Every answer it had paid for was already saved; what died was the step that pushes them onto the site, and the hourly rebuild picks those up anyway. The pages caught up on their own.
-- The publishing step now works in slices instead of all at once, so it costs the same memory whether a pass read a hundred tools or ten thousand. That was the only thing standing between the faster reading and a pass that completes.
+- A gadget's licence now says where it came from. It is read off the wiki's own gadget definition rather than written by a maintainer, and it was the last line in the details block still shown without the small dagger that says so — the type, the wikis and the technologies beside it all carried one.
+- The same slip had happened three times before this, always the same way. The keywords, then the wording on a gadget's keywords, then the audiences row: correct information, shown with nothing next to it saying it had been worked out rather than published. Each was noticed by somebody opening the page.
+- It is now checked automatically instead. Every line in that block is declared as either something the catalogue worked out — which must carry the mark — or something a maintainer published, which must not. A new line added without that decision being made stops the build.
