@@ -600,7 +600,22 @@
   # The 2700s timeout is the 2400s deadline plus the last wave and the
   # projection republish that follows it. A timeout at the deadline would
   # discard whichever wave was in flight when the two raced.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name inference-enrichment -- /usr/bin/env INFERENCE_ENRICHMENT_LIMIT=20000 INFERENCE_ENRICHMENT_BUDGET_SECONDS=2400 LIFTWING_CONCURRENCY=6 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/inference_enrichment.py
+  # Concurrency 12, not 6, and not 18. Measured 2026-09-05 by replaying one
+  # identical 24-call wave at each width against Lift Wing:
+  #
+  #     6   4.64 calls/s   1.19s each
+  #     12  7.00 calls/s   1.53s each
+  #     18  7.63 calls/s   1.75s each
+  #
+  # It queues rather than scaling: per-call latency climbs with width, so 6->12
+  # buys 51% and 12->18 buys 9% more for another six sockets against a shared
+  # Wikimedia service. 12 is where that curve turns.
+  #
+  # The budget is deliberately left at 2400. The run that spent it whole took
+  # 2522s of wall against the 2700s timeout -- 178s of headroom -- so the
+  # ceiling here is the timeout, not the deadline, and raising the deadline
+  # without raising the timeout would just get runs killed.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name inference-enrichment -- /usr/bin/env INFERENCE_ENRICHMENT_LIMIT=20000 INFERENCE_ENRICHMENT_BUDGET_SECONDS=2400 LIFTWING_CONCURRENCY=12 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/inference_enrichment.py
   image: python3.13
   schedule: "41 * * * *"
   timeout: 2700
