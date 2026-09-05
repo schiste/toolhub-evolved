@@ -19,7 +19,16 @@ function fieldLabel(value) {
 }
 
 /**
- * The four buckets, in reading order, with the label and the one-line claim
+ * The buckets in reading order, strongest assertion first. Named once because
+ * the order was spelled out at four call sites, and a bucket added to the
+ * report but missed at one of them vanishes from that view while still
+ * counting towards the total it is drawn against.
+ * @type {readonly string[]}
+ */
+const BUCKETS = ["human", "toolinfo", "code", "convention", "ai"];
+
+/**
+ * The five buckets, in reading order, with the label and the one-line claim
  * each makes about who supplied a value.
  * @param {string} bucket
  */
@@ -31,6 +40,8 @@ function bucketLabel(bucket) {
 			return t("dataLayer.bucketToolinfo", "Toolinfo");
 		case "code":
 			return t("dataLayer.bucketCode", "Code analysis");
+		case "convention":
+			return t("dataLayer.bucketConvention", "Convention");
 		case "ai":
 			return t("dataLayer.bucketAi", "AI generated");
 		default:
@@ -56,6 +67,11 @@ function bucketBlurb(bucket) {
 				"dataLayer.bucketCodeBlurb",
 				"Read off the source code by static analysis. Nobody asserted it, but it can fill an empty field."
 			);
+		case "convention":
+			return t(
+				"dataLayer.bucketConventionBlurb",
+				"Follows from a naming rule rather than from anything anybody wrote — a wiki page's talk page is where that page is discussed. Fill-only."
+			);
 		case "ai":
 			return t(
 				"dataLayer.bucketAiBlurb",
@@ -72,8 +88,7 @@ function bucketBlurb(bucket) {
  */
 function stackedBar(primary, total, filled) {
 	if (!total) return "";
-	const segments = ["human", "toolinfo", "code", "ai"]
-		.map((bucket) => ({ bucket, value: Number(primary?.[bucket]) || 0 }))
+	const segments = BUCKETS.map((bucket) => ({ bucket, value: Number(primary?.[bucket]) || 0 }))
 		.filter((segment) => segment.value > 0)
 		.map(
 			(segment) =>
@@ -90,9 +105,9 @@ function stackedBar(primary, total, filled) {
 
 /** @param {Record<string, number>} primary @param {number} missing */
 function barLabel(primary, missing) {
-	const parts = ["human", "toolinfo", "code", "ai"]
-		.filter((bucket) => (Number(primary?.[bucket]) || 0) > 0)
-		.map((bucket) => `${bucketLabel(bucket)} ${count(primary[bucket])}`);
+	const parts = BUCKETS.filter((bucket) => (Number(primary?.[bucket]) || 0) > 0).map(
+		(bucket) => `${bucketLabel(bucket)} ${count(primary[bucket])}`
+	);
 	if (missing > 0) parts.push(`${t("dataLayer.missing", "Not filled")} ${count(missing)}`);
 	return parts.join(", ");
 }
@@ -105,21 +120,19 @@ function legendHTML(payload) {
 		<h2 id="data-layer-legend-title">${esc(t("dataLayer.legendTitle", "Where a value can come from"))}</h2>
 		<p class="data-layer-legend__intro">${esc(t("dataLayer.legendIntro", "Each field is attributed to the single highest-confidence source that supplied its effective value."))}</p>
 		<dl class="data-layer-legend__list">
-			${["human", "toolinfo", "code", "ai"]
-				.map((bucket) => {
-					const names = Array.isArray(sources[bucket]) ? sources[bucket] : [];
-					const chips = names
-						.map(
-							(name) =>
-								`<li><code>${esc(name)}</code><span>${esc(String(confidence[name] ?? "—"))}</span></li>`
-						)
-						.join("");
-					return `<div class="data-layer-legend__item">
+			${BUCKETS.map((bucket) => {
+				const names = Array.isArray(sources[bucket]) ? sources[bucket] : [];
+				const chips = names
+					.map(
+						(name) =>
+							`<li><code>${esc(name)}</code><span>${esc(String(confidence[name] ?? "—"))}</span></li>`
+					)
+					.join("");
+				return `<div class="data-layer-legend__item">
 						<dt><span class="data-layer-swatch data-layer-swatch--${esc(bucket)}" aria-hidden="true"></span>${esc(bucketLabel(bucket))}</dt>
 						<dd><p>${esc(bucketBlurb(bucket))}</p><ul class="data-layer-sources">${chips}</ul></dd>
 					</div>`;
-				})
-				.join("")}
+			}).join("")}
 		</dl>
 	</section>`;
 }
@@ -139,12 +152,10 @@ function summaryHTML(payload) {
 		<p class="data-layer-summary__figure"><strong>${esc(`${count(filled)} / ${count(slots)}`)}</strong><span>${esc(`${Number(overall?.percent) || 0}%`)}</span></p>
 		${stackedBar(primary, slots, filled)}
 		<dl class="data-layer-ledger">
-			${["human", "toolinfo", "code", "ai"]
-				.map(
-					(bucket) =>
-						`<div class="data-layer-ledger__cell"><dt><span class="data-layer-swatch data-layer-swatch--${esc(bucket)}" aria-hidden="true"></span>${esc(bucketLabel(bucket))}</dt><dd>${esc(count(primary?.[bucket]))}</dd></div>`
-				)
-				.join("")}
+			${BUCKETS.map(
+				(bucket) =>
+					`<div class="data-layer-ledger__cell"><dt><span class="data-layer-swatch data-layer-swatch--${esc(bucket)}" aria-hidden="true"></span>${esc(bucketLabel(bucket))}</dt><dd>${esc(count(primary?.[bucket]))}</dd></div>`
+			).join("")}
 			<div class="data-layer-ledger__cell"><dt>${esc(t("dataLayer.toolsCounted", "Tools counted"))}</dt><dd>${esc(count(tools))}</dd></div>
 			<div class="data-layer-ledger__cell"><dt>${esc(t("dataLayer.toolsPending", "Not yet projected"))}</dt><dd>${esc(count(payload?.pendingTools))}</dd></div>
 		</dl>

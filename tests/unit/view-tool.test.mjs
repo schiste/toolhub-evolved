@@ -1991,3 +1991,88 @@ test("every Details row is declared as either derived-markable or not from the p
 	assert.deepEqual(undeclared, [], `Details rows nobody has classified: ${undeclared.join(", ")}`);
 	assert.ok(rows.length >= Object.keys(DETAIL_ROW_FIELDS).length - 1, `only ${rows.length} rows rendered`);
 });
+
+/* ---- Every derived action link says it is derived -------------------------
+   The Details gate above covers the `meta__k`/`meta__v` rows and nothing else,
+   which is how `bugtracker_url` and `translate_url` came to render as bare
+   buttons: they live in the Actions panel, a different shape of markup the
+   check never looked at. `bugtracker_url` made that matter -- the talk-page
+   venue derives one for every wiki-hosted tool, so the unmarked case went from
+   rare to the common one.
+
+   Same contract as the Details block: every link is declared here as backed by
+   a projection field, in which case a derived value must carry a mark, or as
+   not from the projection at all. */
+const ACTION_LINK_FIELDS = {
+	"Source code": "repository",
+	"User docs": "user_docs_url",
+	"Developer docs": "developer_docs_url",
+	"Report a bug": "bugtracker_url",
+	"Give feedback": "feedback_url",
+	Translate: "translate_url",
+	// Not a projected field: the API endpoint is read straight off the Toolhub
+	// record, so there is no derived source to disclose.
+	API: null
+};
+
+/** Render the Actions panel with every link present and one declared source. */
+async function renderActionsWithProvenance(source = "wiki_talk_page") {
+	const fields = Object.values(ACTION_LINK_FIELDS).filter(Boolean);
+	const provenance = Object.fromEntries(fields.map((field) => [field, [{ value: "x", source, effective: true }]]));
+	h.getTool.mockResolvedValue(
+		toolFixture("acted", {
+			title: "Acted",
+			repository: "https://github.com/example/acted",
+			apiUrl: "https://example.org/acted/api",
+			userDocs: "https://example.org/acted/docs",
+			devDocs: "https://example.org/acted/dev",
+			bugtracker: "https://en.wikipedia.org/wiki/User_talk:Alice/foo.js",
+			feedback: "https://example.org/acted/feedback",
+			translate: "https://translatewiki.net/acted",
+			catalogProjection: { provenance }
+		})
+	);
+	const rendered = await tool.viewTool("acted");
+	return rendered.html;
+}
+
+/** Return each Actions-panel link as `{ label, marked }`, in page order. */
+function actionLinks(html) {
+	const open = html.indexOf('<div class="toolpage__actions">');
+	assert.notEqual(open, -1, "the Actions panel did not render");
+	const block = html.slice(open, html.indexOf("</div>", open));
+	// Label text is captured rather than stripped, for the reason given above
+	// `detailRows`: removing tags with a regex is incomplete sanitisation.
+	// Each anchor's trailing siblings up to the next one carry its mark.
+	return [...block.matchAll(/<\/svg>\s*([^<]*)<\/a>([\s\S]*?)(?=<a\b|$)/g)].map((match) => ({
+		label: match[1].trim(),
+		marked: match[2].includes("source-mark")
+	}));
+}
+
+test("every Actions link backed by the projection says so when its value is derived", async () => {
+	const links = actionLinks(await renderActionsWithProvenance());
+	const unmarked = links.filter((link) => ACTION_LINK_FIELDS[link.label] && !link.marked).map((link) => link.label);
+	assert.deepEqual(unmarked, [], `derived links rendered with nothing saying so: ${unmarked.join(", ")}`);
+});
+
+test("an Actions link the projection knows nothing about carries no mark", async () => {
+	const links = actionLinks(await renderActionsWithProvenance());
+	const wrong = links
+		.filter((link) => link.label in ACTION_LINK_FIELDS && ACTION_LINK_FIELDS[link.label] === null && link.marked)
+		.map((link) => link.label);
+	assert.deepEqual(wrong, [], `marked without provenance to justify it: ${wrong.join(", ")}`);
+});
+
+test("a maintainer's own link is never marked, whatever the field", async () => {
+	const links = actionLinks(await renderActionsWithProvenance("official_toolhub"));
+	const marked = links.filter((link) => link.marked).map((link) => link.label);
+	assert.deepEqual(marked, [], `Toolhub's own record marked as derived: ${marked.join(", ")}`);
+});
+
+test("every Actions link is declared as either derived-markable or not from the projection", async () => {
+	const links = actionLinks(await renderActionsWithProvenance());
+	const undeclared = links.map((link) => link.label).filter((label) => !(label in ACTION_LINK_FIELDS));
+	assert.deepEqual(undeclared, [], `Actions links nobody has classified: ${undeclared.join(", ")}`);
+	assert.equal(links.length, Object.keys(ACTION_LINK_FIELDS).length);
+});

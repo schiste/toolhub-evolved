@@ -548,3 +548,37 @@ def test_an_undated_page_carries_no_licence_rather_than_the_likelier_guess(stamp
     # Which version applies is a question about when. With no date there is no
     # answer, and 3.0 -- right about six pages in seven -- is still a guess.
     assert wiki_sources.content_license(stamp) == ""
+
+
+def test_a_script_page_is_discussed_on_the_talk_page_beside_it():
+    assert wiki_sources.talk_title("User:Alice/foo.js") == "User talk:Alice/foo.js"
+    assert (
+        wiki_sources.talk_url("en.wikipedia.org", "User:Alice/foo.js")
+        == "https://en.wikipedia.org/wiki/User_talk:Alice/foo.js"
+    )
+
+
+def test_a_gadget_is_discussed_on_the_talk_page_of_its_description_message():
+    # The one per-gadget page a wiki has without anybody creating it. A gadget's
+    # catalogue URL points into Special:Gadgets, which is generated and has no
+    # talk page of its own, so the venue has to be reached by this title.
+    assert wiki_sources.talk_title("MediaWiki:Gadget-HotCat") == "MediaWiki talk:Gadget-HotCat"
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "",
+        "   ",
+        "Alice/foo.js",  # no namespace at all
+        "User:",  # a namespace and nothing under it
+        "Help:Contents",  # a namespace this module does not read
+        "Special:Gadgets",  # generated, and there is nothing to discuss on it
+    ],
+)
+def test_a_title_with_no_derivable_venue_gets_none_rather_than_a_guess(title):
+    # Appending the suffix to an unrecognised prefix would name a page in a
+    # namespace the wiki may not have. A link that looks like a venue and
+    # cannot be posted to is worse than no link.
+    assert wiki_sources.talk_title(title) == ""
+    assert wiki_sources.talk_url("en.wikipedia.org", title) == ""

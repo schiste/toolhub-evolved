@@ -40,7 +40,8 @@ const DERIVED_LABELS = {
 	wiki_gadget_definition: () => t("sourceMark.gadget", "read from the wiki's gadget definition"),
 	repository_analysis: () => t("sourceMark.repository", "read from the tool's repository"),
 	evolved_curation: () => t("sourceMark.curation", "a reviewed Toolhub Evolved correction"),
-	llm_inference: () => t("sourceMark.inference", "read off the source code by a language model")
+	llm_inference: () => t("sourceMark.inference", "read off the source code by a language model"),
+	wiki_talk_page: () => t("sourceMark.wikiTalk", "the talk page beside it, which is where a wiki discusses a page")
 };
 
 /**

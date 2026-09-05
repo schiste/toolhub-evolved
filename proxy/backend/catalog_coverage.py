@@ -38,6 +38,7 @@ from backend.catalog_projection import (
     SOURCE_GADGET,
     SOURCE_INFERENCE,
     SOURCE_REPOSITORY,
+    SOURCE_WIKI_TALK,
     SOURCE_WIKIMEDIA_USER_SCRIPT,
     STATUS_READY,
 )
@@ -54,9 +55,10 @@ SNAPSHOT_STALE_LIMIT = timedelta(hours=6)
 BUCKET_HUMAN = "human"
 BUCKET_TOOLINFO = "toolinfo"
 BUCKET_CODE = "code"
+BUCKET_CONVENTION = "convention"
 BUCKET_AI = "ai"
 #: Order is the reading order of the page, strongest assertion first.
-BUCKETS = (BUCKET_HUMAN, BUCKET_TOOLINFO, BUCKET_CODE, BUCKET_AI)
+BUCKETS = (BUCKET_HUMAN, BUCKET_TOOLINFO, BUCKET_CODE, BUCKET_CONVENTION, BUCKET_AI)
 
 #: Which bucket each projection source is reported under. Exhaustive over the
 #: projection vocabulary on purpose -- an unmapped source must fail loudly in
@@ -69,6 +71,12 @@ BUCKET_BY_SOURCE = {
     SOURCE_CRAWLER: BUCKET_TOOLINFO,
     SOURCE_DISCOVERY: BUCKET_TOOLINFO,
     SOURCE_REPOSITORY: BUCKET_CODE,
+    # Its own bucket rather than folded into one of the others, because it is
+    # its own kind of claim: nobody asserted it and no model guessed it, it
+    # follows from a MediaWiki naming rule. Counting the talk-page venue as
+    # human would move tens of thousands of values into the bucket this page
+    # exists to keep honest.
+    SOURCE_WIKI_TALK: BUCKET_CONVENTION,
     SOURCE_INFERENCE: BUCKET_AI,
 }
 

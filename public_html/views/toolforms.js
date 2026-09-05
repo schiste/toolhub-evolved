@@ -359,7 +359,8 @@ function withCatalogFieldProvenance(html, label, writeMeta, projection, field) {
 		wikimedia_user_script: t("toolforms.sourceWikimediaUserScript", "wikimedia user script page"),
 		evolved_curation: t("toolforms.sourceEvolvedCuration", "reviewed Evolved correction"),
 		wiki_gadget_definition: t("toolforms.sourceGadgetDefinition", "wiki gadget definition"),
-		llm_inference: t("toolforms.sourceInference", "inferred from source code")
+		llm_inference: t("toolforms.sourceInference", "inferred from source code"),
+		wiki_talk_page: t("toolforms.sourceWikiTalk", "the talk page beside the wiki page")
 	};
 	const source =
 		/** @type {Record<string, string>} */ (sourceLabels)[effective.source] ||
