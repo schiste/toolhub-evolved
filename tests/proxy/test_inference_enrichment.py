@@ -70,6 +70,21 @@ link points to a disambiguation page, a redirect, or a page that does not exist 
 
 REAL_REFUSAL = '{"description": null, "keywords": []}'
 
+# Lift Wing, llm-qwen36-27b, 2026-09-05, for `User:D2F0F5/linkclassifier.css` on
+# meta, through this module's prompt once `audiences` was part of it. The one
+# fixture here that a current prompt would produce whole, which is what
+# `test_an_answer_that_was_accepted_whole_is_not_stored_twice` needs: every
+# other real reply predates the third field and is legitimately missing it.
+REAL_WHOLE_REPLY = """{
+"description": "This stylesheet visually distinguishes different types of links on wiki pages by \
+applying specific colors and outlines. It highlights stubs, new pages, redirects, disambiguation \
+pages, and pages nominated for deletion to help users quickly identify link status.",
+"keywords": ["css", "styling", "links", "redirects", "stubs", "deletion", "disambiguation", "visual"],
+"audiences": ["editor", "reader"]
+}"""
+
+
+
 
 def reply(text):
     return {"choices": [{"message": {"role": "assistant", "content": text}}]}
@@ -226,7 +241,10 @@ def test_a_refusal_records_which_field_refused_and_why():
     # learn why the lane produced nothing was to re-ask the model.
     store("User:Anomie/linkclassifier.js")
     run(lambda payload: reply(REAL_REFUSAL))
-    assert details()[TOOL] == "description: absent or null in the reply; keywords: empty list"
+    assert details()[TOOL] == (
+        "description: absent or null in the reply; keywords: empty list; "
+        "audiences: absent or null in the reply"
+    )
 
 
 def test_a_description_that_fails_while_keywords_pass_is_ready_and_still_says_what_is_missing():
@@ -237,7 +255,9 @@ def test_a_description_that_fails_while_keywords_pass_is_ready_and_still_says_wh
     run(lambda payload: reply('{"description": "Too short.", "keywords": ["links"]}'))
     assert rows()[TOOL][0] == enrichment.STATUS_READY
     assert "description" not in rows()[TOOL][1]
-    assert details()[TOOL] == "description: 10 chars, wanted 20-600"
+    assert details()[TOOL] == (
+        "description: 10 chars, wanted 20-600; audiences: absent or null in the reply"
+    )
 
 
 def test_a_reply_that_never_parsed_keeps_a_sample_of_what_came_back():
@@ -267,9 +287,11 @@ def test_a_refusal_keeps_the_words_that_were_refused():
 
 def test_an_answer_that_was_accepted_whole_is_not_stored_twice():
     # Nothing was refused, so there is nothing the reply explains that `payload`
-    # does not already hold -- and this table is 37,791 rows wide.
+    # does not already hold -- and this table is 37,791 rows wide. Uses the one
+    # fixture answering all three fields: a reply missing `audiences` is not
+    # accepted whole, and storing its words is then the right thing to do.
     store("User:Anomie/linkclassifier.js")
-    run(lambda payload: reply(REAL_REPLY))
+    run(lambda payload: reply(REAL_WHOLE_REPLY))
     assert rows()[TOOL][0] == enrichment.STATUS_READY
     assert replies()[TOOL] == ""
 
@@ -1296,3 +1318,110 @@ def test_a_user_script_keyword_records_no_lane():
     sources = sources_for(TOOL)[TOOL]
     _record, evidence, _validation, _times = catalog_projection._assemble(TOOL, sources)
     assert all("lane" not in entry for entry in evidence["keywords"])
+
+
+# --- audiences -------------------------------------------------------------
+#
+# Lift Wing, llm-qwen36-27b, 2026-09-05, through this module's own gadget prompt
+# once `audiences` was added to it. Kept verbatim for the reason the other
+# fixtures are: what is being tested is that asking for a second field did not
+# cost the first, and a reply composed here could not show that.
+REAL_COMBINED_REPLY = (
+    '{"keywords": ["categories", "editing", "categorization", "wiki", "maintenance", '
+    '"speed", "management", "tags"], "audiences": ["editor"]}'
+)
+# The same prompt for a gadget that adds an [archive] link beside external links.
+REAL_COMBINED_REPLY_TWO = (
+    '{"keywords": ["archives", "external links", "web archive", "citation", "references", '
+    '"link rot", "internet archive", "preservation"], "audiences": ["reader", "editor"]}'
+)
+
+
+def test_asking_for_an_audience_did_not_cost_the_keywords():
+    """Both fields come back from one real reply, and both survive validation."""
+    accepted = enrichment.accept(enrichment.parse_json(REAL_COMBINED_REPLY), lane=LANE_GADGET)
+    assert accepted["audiences"] == ["editor"]
+    assert len(accepted["keywords"]) == enrichment.MAX_KEYWORDS
+    second = enrichment.accept(enrichment.parse_json(REAL_COMBINED_REPLY_TWO), lane=LANE_GADGET)
+    assert second["audiences"] == ["reader", "editor"]
+
+
+def test_only_the_audiences_that_survived_being_counted_are_published():
+    """Measured against 210 human-labelled tools: researcher 0.36, admin 0.38, organizer 0.42.
+
+    Publishing those would put a wrong audience on roughly three records in five
+    that carry one. The three that stay are 149/171 correct together.
+    """
+    verdict = enrichment._audiences(["editor", "researcher", "admin", "organizer", "reader"])
+    assert verdict.value == ["editor", "reader"]
+
+
+def test_an_answer_this_catalogue_does_not_publish_is_not_recorded_as_a_failure():
+    """`researcher` is a correct reading of some tools and simply is not published.
+
+    Recording a reason would file it as the model having broken a rule, and the
+    rejection backfill would then re-ask a question that was answered properly.
+    """
+    verdict = enrichment._audiences(["researcher"])
+    assert verdict.value == []
+    assert verdict.reason == ""
+
+
+def test_an_audience_outside_the_vocabulary_is_a_malformed_answer():
+    """Ignoring the list it was handed is a different fault, and is reported."""
+    verdict = enrichment._audiences(["wizard", "editor"])
+    assert verdict.value == ["editor"]
+    assert enrichment._audiences(["wizard"]).reason
+
+
+def test_both_prompts_offer_the_whole_vocabulary_not_just_what_is_published():
+    """Offering only the publishable three is what made them worse.
+
+    Asked with the short list, the model puts a research or moderation tool on
+    the nearest survivor rather than declining: developer fell from 0.86 to 0.76
+    and reader from 0.80 to 0.74. The unpublished values earn their place in the
+    prompt by giving those tools somewhere else to go.
+    """
+    for lane in (LANE_GADGET, enrichment.LANE_USER_SCRIPT):
+        prompt = enrichment.payload_for("m", ENWIKI, "t", BODY, lane=lane)["messages"][1]["content"]
+        for value in enrichment.AUDIENCE_VOCABULARY:
+            assert f'"{value}"' in prompt, f"{lane} prompt does not offer {value}"
+
+
+def test_a_gadget_audience_reaches_the_projection_and_fills_a_gap():
+    """All 11,012 gadget records and all 40,254 user scripts have no audience at all.
+
+    `audiences` is a list field, so `FILL_ONLY_SOURCES` already stops this from
+    extending one somebody else wrote -- the gap is the whole population.
+    """
+    gadget_id = gadget()
+    with db.session_scope() as session:
+        session.add(
+            ToolInference(
+                tool_name=GADGET_TOOL,
+                payload={"audiences": ["editor"]},
+                lane=LANE_GADGET,
+                page_id=gadget_id,
+                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                status=enrichment.STATUS_READY,
+            )
+        )
+    sources = sources_for(GADGET_TOOL)[GADGET_TOOL]
+    record, evidence, _validation, _times = catalog_projection._assemble(GADGET_TOOL, sources)
+    assert record["audiences"] == ["editor"]
+    assert evidence["audiences"][0]["source"] == catalog_projection.SOURCE_INFERENCE
+    assert evidence["audiences"][0]["lane"] == LANE_GADGET
+
+
+def test_an_audiences_value_that_is_not_a_list_is_refused_by_shape():
+    """The same rule keywords get: a model answering with prose is malformed."""
+    verdict = enrichment._audiences("editor")
+    assert verdict.value == []
+    assert "not a list" in verdict.reason
+
+
+def test_no_more_audiences_are_published_than_a_record_can_usefully_carry():
+    """Three is the whole publishable vocabulary, so a fourth could only repeat one."""
+    verdict = enrichment._audiences(["editor", "developer", "reader", "editor", "developer"])
+    assert verdict.value == ["editor", "developer", "reader"]
+    assert len(verdict.value) == enrichment.MAX_AUDIENCES
