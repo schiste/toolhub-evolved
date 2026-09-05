@@ -164,6 +164,19 @@ AUDIENCE_VOCABULARY = ("editor", "developer", "reader", "researcher", "admin", "
 PUBLISHABLE_AUDIENCES = frozenset({"editor", "developer", "reader"})
 MAX_AUDIENCES = 3
 
+# Which set of questions the prompts currently ask. Bumped whenever a field is
+# added to `FIELDS_BY_LANE`, and never for a wording change: it decides whether
+# a stored answer is missing something, not whether it could be phrased better.
+#
+# `source_fingerprint` says the source has not moved. That is not the same as
+# the answer being complete, and conflating them is how `audiences` shipped to a
+# corpus it could not reach: 36,545 user-script rows and 9,946 gadget rows sat
+# `ready` with no audience, current on their fingerprints, and no window would
+# ever have offered them again. A row answered by an older prompt is re-asked
+# once, in the tier below untried pages so it can only use slots nothing newer
+# wanted.
+PROMPT_VERSION = 1
+
 
 class Candidate(NamedTuple):
     """One thing the sweep may ask about, with everything the request needs.
@@ -581,6 +594,7 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
                 ToolInference.tool_name.is_(None),
                 (ToolInference.status == STATUS_ERROR) & (ToolInference.checked_at < retry_before),
                 (ToolInference.status == STATUS_REJECTED) & ToolInference.reply.is_(None),
+                ToolInference.prompt_version < PROMPT_VERSION,
             ),
             # Was a Python skip over an already-loaded body. In SQL it also
             # keeps pages too short to describe out of the window, instead of
@@ -598,7 +612,8 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             case(
                 (ToolInference.tool_name.is_(None), 0),
                 (ToolInference.status == STATUS_ERROR, 1),
-                else_=2,
+                (ToolInference.prompt_version < PROMPT_VERSION, 2),
+                else_=3,
             ),
             UserScriptPage.id,
         )
@@ -672,7 +687,12 @@ def gadget_pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
             WikiGadget.description != "",
         )
         .order_by(
-            case((ToolInference.tool_name.is_(None), 0), (ToolInference.status == STATUS_ERROR, 1), else_=2),
+            case(
+                (ToolInference.tool_name.is_(None), 0),
+                (ToolInference.status == STATUS_ERROR, 1),
+                (ToolInference.prompt_version < PROMPT_VERSION, 2),
+                else_=3,
+            ),
             WikiGadget.id,
         )
         .limit(limit * GADGET_WINDOW_SLACK)
@@ -682,7 +702,15 @@ def gadget_pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
         if not (catalog_name := gadget_toolinfo.tool_name(wiki, name)):
             continue
         fingerprint = description_fingerprint(description)
-        if row is not None and row.source_fingerprint == fingerprint and row.status != STATUS_ERROR:
+        if (
+            row is not None
+            and row.source_fingerprint == fingerprint
+            and row.status != STATUS_ERROR
+            # ...and answered by the prompt now in use. The fingerprint says the
+            # wiki has not rewritten the description; it cannot say the answer
+            # covers every field currently asked for.
+            and row.prompt_version >= PROMPT_VERSION
+        ):
             continue
         found.append(Candidate(catalog_name, int(gadget_id), wiki, name, description, fingerprint, LANE_GADGET))
         if len(found) == limit:
@@ -759,6 +787,7 @@ def record(session: Session, candidate: Candidate, outcome: Outcome, *, model: s
         session.add(row)
     row.payload = outcome.accepted
     row.lane = candidate.lane
+    row.prompt_version = PROMPT_VERSION
     row.page_id = candidate.page_id
     row.source_fingerprint = candidate.fingerprint
     row.model = model[:64]

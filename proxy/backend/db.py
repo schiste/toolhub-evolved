@@ -410,6 +410,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # nullable -- every row stored before this column came from the
             # user-script lane, which is what the default already says.
             "lane": "VARCHAR(16) NOT NULL DEFAULT 'user_script'",
+            # 0 for every row stored before the prompt was versioned, which is
+            # what puts them back in the window once it asks for a new field.
+            "prompt_version": "INTEGER NOT NULL DEFAULT 0",
         },
         "catalog_tool_projection": {
             # Empty means "a standalone tool", which is what every row stored

@@ -2214,6 +2214,13 @@ class ToolInference(Base):
     # cost.
     source_fingerprint: Mapped[str] = mapped_column(String(64), default="")
     model: Mapped[str] = mapped_column(String(64), default="")
+    # Which set of questions produced this row. A stored answer is current while
+    # the source it was read from has not changed *and* the prompt has not grown
+    # a field it was never asked for: the fingerprint alone cannot tell those
+    # apart, so 46,491 rows would have sat `ready` and audience-less forever
+    # while nothing in the window ever offered them again. 0 is every row that
+    # predates the column, which is exactly what it means.
+    prompt_version: Mapped[int] = mapped_column(Integer, default=0, index=True)
     status: Mapped[str] = mapped_column(String(16), default="")
     detail: Mapped[str] = mapped_column(Text, default="")
     # The model's own words, kept only where `detail` says something was
