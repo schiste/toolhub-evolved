@@ -216,3 +216,30 @@ def test_closed_wikis_are_offered_by_default_because_their_scripts_are_real():
     )
     assert len(wiki_registry.projects()) == 2
     assert [project.wiki for project in wiki_registry.projects(include_closed=False)] == ["fr.wikipedia.org"]
+
+
+def test_every_spelling_of_a_wiki_maps_to_its_dbname():
+    """What makes `enwiki` and `en.wikipedia.org` merge instead of counting twice."""
+    with db.session_scope() as session:
+        session.add(WikiProject(wiki="en.wikipedia.org", dbname="enwiki"))
+        session.flush()
+        mapping = wiki_registry.dbnames_by_spelling(session)
+
+    # The dbname maps to itself so an already-canonical value takes the same
+    # lookup as one that is not, rather than needing a second code path.
+    assert mapping["en.wikipedia.org"] == "enwiki"
+    assert mapping["enwiki"] == "enwiki"
+
+
+def test_a_registry_row_with_no_dbname_contributes_nothing():
+    """The replicas are the source, and a row they have not answered for yet
+    has no canonical spelling to offer -- mapping a domain to "" would erase
+    the wiki rather than normalize it."""
+    with db.session_scope() as session:
+        session.add(WikiProject(wiki="unnamed.example.org", dbname=""))
+        session.add(WikiProject(wiki="en.wikipedia.org", dbname="enwiki"))
+        session.flush()
+        mapping = wiki_registry.dbnames_by_spelling(session)
+
+    assert "unnamed.example.org" not in mapping
+    assert mapping == {"en.wikipedia.org": "enwiki", "enwiki": "enwiki"}

@@ -26,6 +26,7 @@ from backend.models import (  # noqa: E402
     ToolinfoSource,
     ToolinfoSourceItem,
     User,
+    WikiProject,
     utcnow,
 )
 from backend.sync import REVIEW_APPROVED, SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT  # noqa: E402
@@ -1969,3 +1970,60 @@ def test_a_deploy_migration_takes_a_slice_rather_than_the_whole_sweep():
     """
     assert catalog_projection.MIGRATION_REFRESH_TOOLS <= catalog_projection.MAX_REFRESH_TOOLS
     assert catalog_projection.MIGRATION_REFRESH_TOOLS <= catalog_projection.REFRESH_BATCH_TOOLS
+
+
+def _registry(session, pairs=(("en.wikipedia.org", "enwiki"), ("commons.wikimedia.org", "commonswiki"))):
+    for wiki, dbname in pairs:
+        session.add(WikiProject(wiki=wiki, dbname=dbname))
+
+
+def test_one_wiki_spelled_two_ways_becomes_one_entry():
+    """The defect: 1,888 distinct `for_wikis` values in two formats.
+
+    Toolhub's own records carry dbnames and both wiki transcription lanes carry
+    domains, so `enwiki` and `en.wikipedia.org` were two entries in every facet
+    and two options in every filter, describing one place. The list merge is
+    case-insensitive but not spelling-aware, so nothing collapsed them.
+    """
+    now = utcnow()
+    with db.session_scope() as s:
+        _registry(s)
+        s.add(_canonical("alpha", for_wikis=["enwiki"]))
+        source = ToolinfoSource(url="https://alpha.example/toolinfo.json", valid=True, last_fetched_at=now)
+        s.add(source)
+        s.flush()
+        s.add(
+            ToolinfoSourceItem(
+                tool_name="alpha",
+                source_id=source.id,
+                source_url=source.url,
+                payload={"for_wikis": ["en.wikipedia.org", "commons.wikimedia.org"]},
+                last_seen_at=now,
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["alpha"])
+
+    assert catalog_projection.projection_payload("alpha")["record"]["for_wikis"] == ["enwiki", "commonswiki"]
+
+
+def test_a_wiki_the_registry_cannot_place_is_kept_as_it_stands():
+    """Still what somebody said; dropping it loses a wiki we merely cannot reach."""
+    with db.session_scope() as s:
+        _registry(s)
+        s.add(_canonical("beta", for_wikis=["en.wikipedia.org", "some-private.example"]))
+
+    catalog_projection.refresh_tool_names(["beta"])
+
+    assert catalog_projection.projection_payload("beta")["record"]["for_wikis"] == [
+        "enwiki",
+        "some-private.example",
+    ]
+
+
+def test_normalising_wikis_needs_no_registry_to_be_safe():
+    """An empty registry must leave every value alone rather than blank them."""
+    assert catalog_projection._canonical_wikis(["enwiki", "en.wikipedia.org"], {}) == [
+        "enwiki",
+        "en.wikipedia.org",
+    ]
