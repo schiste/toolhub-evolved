@@ -106,6 +106,50 @@ def _field(line: str, block: _Block) -> None:
         block.continuous = _unquote(line.removeprefix("continuous:")).lower() == "true"
 
 
+def _fires_at(schedule: str, minute: int) -> bool:
+    """Whether a cron minute field can fire in the given minute of an hour.
+
+    Only the minute field, because that is what decides coincidence: two jobs
+    an hour apart never overlap unless they share a minute, and one that runs
+    every minute shares every minute with everybody.
+    """
+    fields = schedule.split()
+    if len(fields) != CRON_FIELDS:
+        return False
+    field = fields[0]
+    if field == "*":
+        return True
+    if field.startswith("*/"):
+        step = field.removeprefix("*/")
+        return step.isdigit() and int(step) > 0 and minute % int(step) == 0
+    return any(part.isdigit() and int(part) == minute for part in field.split(","))
+
+
+def concurrent_process_ceiling(path: Path | None = None) -> int:
+    """Return the most job processes jobs.yaml can start in one minute.
+
+    Derived rather than declared, because the declared number was wrong the
+    moment a job was added beside it. `db.CONCURRENT_JOB_PROCESSES` was a hand
+    written 4 whose own comment said a sixth process was outside what it
+    planned for; two jobs were added on 2026-09-06 without touching it, the
+    budget test kept passing against a number that no longer described
+    anything, and production returned `max_user_connections` on the job that
+    carries every projection change.
+
+    Continuous jobs are counted always, because they are always alive. The rest
+    are counted at the busiest minute of the hour: a job that fires at :47 and
+    one that fires every fifteen minutes only contend when both do, and the
+    account has to survive that minute rather than the average one.
+    """
+    jobs = load(path)
+    continuous = sum(1 for job in jobs if job.continuous)
+    scheduled = max(
+        (sum(1 for job in jobs if not job.continuous and _fires_at(job.schedule, minute)) for minute in range(60)),
+        default=0,
+    )
+    return continuous + scheduled
+
+
 def load(path: Path | None = None) -> list[ScheduledJob]:
     """Return every declared job in file order, with its leading comment."""
     source = path or JOBS_FILE

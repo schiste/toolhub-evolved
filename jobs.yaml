@@ -111,9 +111,14 @@
   # a visitor on the hook for a whole-catalogue pass measured at 11.5s median
   # and 14.9s worst. Every fifteen minutes gives the same kind of margin
   # statistics-refresh has had since the identical defect was fixed there.
+  #
+  # Hourly, not every fifteen minutes: */15 was generous against a six-hour
+  # staleness limit, and on 2026-09-06 the account ran out of connections with
+  # this job among the newest additions. Once an hour still leaves six times
+  # the margin the limit asks for, and costs the busiest minute nothing.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name coverage-refresh -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/coverage_refresh.py
   image: python3.13
-  schedule: "*/15 * * * *"
+  schedule: "38 * * * *"
   timeout: 240
   emails: onfailure
 
