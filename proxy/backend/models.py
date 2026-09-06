@@ -1971,6 +1971,20 @@ class WikiGadget(Base):
     # Empty where no replica has answered for this wiki, where the code lives on
     # another wiki, or where MediaWiki has suppressed that revision's author.
     first_author_wiki: Mapped[str] = mapped_column(String(255), default="")
+    #: The gadget's own code, concatenated across the pages its definition
+    #: lists. Kept for the reason `UserScriptPage.body` is: the only other text
+    #: a gadget has is its description message, and that is 83 characters at
+    #: the median against a script's 3,785 -- one sentence, which is why the
+    #: lane reading it can answer `keywords` and `audiences` and nothing else.
+    #: A gadget always has code (median one page, never zero), so this is
+    #: evidence that was there all along and unread.
+    body: Mapped[str] = mapped_column(LARGE_TEXT, default="")
+    #: Hash of `body`, so a re-read that changed nothing costs no downstream
+    #: work and changed code invalidates what was inferred from the old code.
+    body_fingerprint: Mapped[str] = mapped_column(String(64), default="", index=True)
+    #: When the code was last read, so the fetcher walks oldest-first rather
+    #: than re-reading the same gadgets every run.
+    body_fetched_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     # What the wiki itself says this gadget does, from the interface message
     # `MediaWiki:Gadget-<name>` that MediaWiki renders on Special:Gadgets. It is
     # the only description a gadget has and it is a transcription like every

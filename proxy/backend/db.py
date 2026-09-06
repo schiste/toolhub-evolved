@@ -375,6 +375,13 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "first_author_wiki": "VARCHAR(255) NOT NULL DEFAULT ''",
         },
         "wiki_gadgets": {
+            # A gadget's own code, and the two columns that keep re-reading it
+            # cheap. Empty until the gadget-source job has walked the wiki: a
+            # deployment that never fetches simply infers from the description
+            # message as it did before, which is what every existing row has.
+            "body": "MEDIUMTEXT NULL",
+            "body_fingerprint": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "body_fetched_at": "DATETIME NULL",
             # Empty until a census reaches the Wiki Replicas, exactly as for
             # `user_script_pages` above: a deployment that never gets a replica
             # connection publishes no gadget creation dates and nothing else

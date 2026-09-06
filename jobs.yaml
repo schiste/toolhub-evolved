@@ -505,6 +505,19 @@
   schedule: "17 2 * * 1"
   emails: onfailure
 
+- name: gadget-source
+  # Read each gadget's own code so the inference lane has evidence to read.
+  # Its other text is the description message: 83 characters at the median,
+  # absent for 2,726 of 12,777 gadgets, and enough only for keywords and
+  # audiences. Every gadget has code -- a median of one page, never zero.
+  # 400 a run against ~12,800 gadgets walks the whole set in about 32 runs,
+  # and re-reads cost nothing downstream when the fingerprint has not moved.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-source -- /usr/bin/env GADGET_SOURCE_LIMIT=400 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/gadget_source.py
+  image: python3.13
+  schedule: "47 * * * *"
+  timeout: 900
+  emails: onfailure
+
 - name: gadget-census
   # Gadget directory: read each wiki's MediaWiki:Gadgets-definition and turn
   # every gadget it declares into a catalogue record. The definition page is
