@@ -81,12 +81,15 @@
 {"module":"proxy.backend.catalog_projection","symbol":"_analyzer_facets","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:o5a6nx5yox3bogxiw7o5ox5u6y","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_assemble","kind":"function","node_id":"function:toolhub-evolved:2z65dvbxc7jc3pc2avquw3mwse","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_assemble","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:sursr3xaja6drnpfd2cg55cnjq","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"_canonical_wikis","kind":"function","node_id":"function:toolhub-evolved:imphyxu4igjgqoxjibdrouzjmu","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"_canonical_wikis","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zqkltfulk6q45npsorfh2op2xe","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_casefold_deduped_list","kind":"function","node_id":"function:toolhub-evolved:vyqlmrgk5eqeentbjlnvg25z2i","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_casefold_deduped_list","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3rogqm5vtk23zk3fmpgxpdvi74","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_clean_name","kind":"function","node_id":"function:toolhub-evolved:qtpdoc4b4mkp6rxugk4hhjp6aa","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_clean_name","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bpcljltmkadxioyvpza7ulaat4","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_clean_name","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:igeorpyvla4j6qvxtoscpqofsi","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_clean_text","kind":"function","node_id":"function:toolhub-evolved:sesj2vr55bqyhusv3wrvv243ey","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"_clean_text","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4upiphdr7mubnadgv25ols52ui","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_clean_text","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7lklxi3sqpdphwilryhsuhordq","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_clean_text","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7otqxy7svz64md6uqoj7q4alcu","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"_clean_text","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:a5kdbrl7h6ayhvywtlmcy4a5vi","file":"proxy/backend/catalog_projection.py"}
@@ -163,6 +166,7 @@
 {"module":"proxy.backend.catalog_projection","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5p2ka727kzzygsml47p6c6yydi","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7vzs6ufvnzybf2bblp7t6codoa","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:goxiu2hfhz3u3vggyo3wrmuauu","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"dbnames.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:e5jup67zo42xawzsd7ofx5eklu","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"defaultdict","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3kl7nrhae4v7mu35y574frfeci","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"defaultdict","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:45rw7fcpi7fbn6dpehmj2ic3vm","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"defaultdict","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:sfytnvjtp75kxvxyie4egkcv5i","file":"proxy/backend/catalog_projection.py"}
@@ -305,6 +309,8 @@
 {"module":"proxy.backend.catalog_projection","symbol":"value.isoformat","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:dovebhpgnnylljv2xbcehfi6ae","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"value.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hbtfq2nrd6kw7aoao6kbtaemey","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"value.values","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:upcuytknxftg7mzb2ssslhktku","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"wiki_registry","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:34ssjj5nbn637lrvkfbhqnokcm","file":"proxy/backend/catalog_projection.py"}
+{"module":"proxy.backend.catalog_projection","symbol":"wiki_registry.dbnames_by_spelling","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lzw72pqyxl3qxsgttorrqlor5u","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"wiki_sources","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qeidqc4t6nhfzj2rrn4jymzaxm","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"wiki_sources.page_url","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:i5ve45g7yc6jllhxnia2voy4pe","file":"proxy/backend/catalog_projection.py"}
 {"module":"proxy.backend.catalog_projection","symbol":"wiki_sources.talk_url","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:k5zxtaa7d5p22jsewddzulziju","file":"proxy/backend/catalog_projection.py"}
