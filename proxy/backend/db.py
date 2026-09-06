@@ -36,6 +36,22 @@ WEBSERVICE_WORKERS = 4
 #: is counted honestly, and this is the assumption that gives way rather than
 #: the arithmetic. It is the weakest number here and it is load-bearing -- a
 #: sixth process, or a second locking one, is outside what this plans for.
+#:
+#: Measured against jobs.yaml on 2026-09-06 by
+#: `job_catalog.concurrent_process_ceiling()`, which counts continuous jobs
+#: always and scheduled jobs at the busiest minute: the true worst case is
+#: SEVEN, not four. The peak is :17, where `crawler` and `job-watchdog` meet
+#: the four every-minute jobs, the continuous one, and -- on the first of the
+#: month at 03:17 -- `catalog-integrity` as well.
+#:
+#: Seven needs about 24 connections against a grant of 20, which is what
+#: `catalog-projection` has been returning `max_user_connections` for. This
+#: constant is deliberately NOT raised to 7: raising it would make
+#: `account_demand` report a number the grant cannot supply and turn the budget
+#: test red without changing anything in production. It stays at the planned
+#: figure, and the derivation stands beside it as the measurement, until the
+#: grant is raised -- which the note on CONNECTIONS_PER_LOCKING_UNIT already
+#: said would be the next conversation rather than another constant.
 CONCURRENT_JOB_PROCESSES = 4
 #: Connections deliberately left unspent. A pool recycling a connection can hold
 #: the old and the new for an instant, and retry_on_disconnect disposes a pool
