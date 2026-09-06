@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sqlalchemy import select
+
 from backend import db, wiki_replica
 from backend.models import WikiProject, utcnow
 
@@ -132,6 +134,30 @@ def refresh(*, connect: wiki_replica.Connect = wiki_replica.open_connection) -> 
     with db.session_scope() as session:
         summary["retired"] = _retire(session, {entry.wiki for entry in entries}, seen_at)
     return summary
+
+
+def dbnames_by_spelling(session: Session) -> dict[str, str]:
+    """Map every spelling of a wiki to its dbname, for normalizing `for_wikis`.
+
+    The catalogue carried 1,888 distinct `for_wikis` values in two formats:
+    dbnames from Toolhub's own records (`enwiki`, `commonswiki`) and domains
+    from both wiki transcription lanes (`en.wikipedia.org`). The same wiki
+    under two spellings is two entries in every facet and two options in every
+    filter, and no reader can tell they are one place.
+
+    Keyed on the case-folded spelling, and dbnames map to themselves so a value
+    that is already canonical passes through the same lookup as one that is
+    not. The registry is the authority for the pairing -- it is read from the
+    replicas, so a wiki it does not list is one this deployment cannot reach.
+    """
+    rows = session.execute(select(WikiProject.wiki, WikiProject.dbname)).all()
+    mapping: dict[str, str] = {}
+    for wiki, dbname in rows:
+        if not dbname:
+            continue
+        mapping[str(wiki).casefold()] = dbname
+        mapping[str(dbname).casefold()] = dbname
+    return mapping
 
 
 def projects(*, include_closed: bool = True, include_retired: bool = False) -> tuple[WikiProject, ...]:

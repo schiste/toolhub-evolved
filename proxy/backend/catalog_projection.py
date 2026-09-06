@@ -19,6 +19,7 @@ from backend import (
     facet_names,
     gadget_toolinfo,
     tool_shape,
+    wiki_registry,
     wiki_sources,
     wikimedia_urls,
 )
@@ -49,6 +50,10 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+# 7: `for_wikis` is normalized to dbnames. The catalogue carried 1,888 distinct
+# values in two formats -- Toolhub's dbnames and both wiki lanes' domains -- so
+# the same wiki was two entries in every facet and two options in every filter.
+# Every stored row has to re-project for the merge to actually collapse them.
 # 6: wiki-hosted records carry the talk page beside them as `bugtracker_url`.
 # The field is new to every one of them, and a stored row looks current to the
 # sweep until the version says otherwise, so without this bump the change would
@@ -61,7 +66,7 @@ _log = logging.getLogger(__name__)
 # 4: purpose annotations (tasks, audiences) are lifted out of `annotations`.
 # Version 3 was already used for Wikimedia user-script maintainership, so
 # existing version-3 rows must all re-project.
-PROJECTION_VERSION = 6
+PROJECTION_VERSION = 7
 # Measured 2026-08-27: this sweep costs 0.046s a tool and was capped at 500,
 # so it finished in 23 seconds of its hour against a catalogue of 53,178. The cap is
 # a safety rail against a runaway loop, not a throughput setting; sized here so
@@ -617,8 +622,26 @@ def _lift_purpose_annotations(payload: dict[str, Any]) -> dict[str, Any]:
     return {**payload, **lifted} if lifted else payload
 
 
+def _canonical_wikis(values: list[Any], dbnames: dict[str, str]) -> list[Any]:
+    """Rewrite every spelling of a wiki to its dbname.
+
+    Applied to the values rather than to one source, because every source
+    spells this differently: Toolhub's own records carry dbnames, both wiki
+    transcription lanes carry domains, and repository analysis carries whatever
+    the repository said. Normalizing here is what makes `enwiki` and
+    `en.wikipedia.org` merge in `effective` instead of surviving as two
+    entries -- the list merge below is case-insensitive but not spelling-aware,
+    so without this the same wiki is counted twice in every facet.
+
+    A value the registry cannot place is kept as it stands. It is still what
+    somebody said, and dropping it would lose a wiki this deployment merely
+    cannot reach.
+    """
+    return [dbnames.get(_clean_text(value).casefold(), value) for value in values]
+
+
 def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in one ordered pass.
-    name: str, sources: list[dict[str, Any]]
+    name: str, sources: list[dict[str, Any]], dbnames: dict[str, str] | None = None
 ) -> tuple[dict, dict, dict, dict]:
     effective: dict[str, Any] = {"name": name}
     evidence: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -640,6 +663,8 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
             source_timestamps[source] = max(observed, source_timestamps.get(source, ""))
         for field in PROJECTED_FIELDS:
             field_values = _values(payload.get(field))
+            if field == "for_wikis" and dbnames:
+                field_values = _canonical_wikis(field_values, dbnames)
             if not field_values:
                 continue
             for value in field_values:
@@ -936,8 +961,9 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
             reports = _latest_reports(s, names)
             source_map = _sources_by_tool(s, names, reports)
             shapes = _shapes_by_tool(s, names)
+            dbnames = wiki_registry.dbnames_by_spelling(s)
             for name in names:
-                effective, provenance, validation, timestamps = _assemble(name, source_map.get(name, []))
+                effective, provenance, validation, timestamps = _assemble(name, source_map.get(name, []), dbnames)
                 row = s.get(CatalogToolProjection, name)
                 if row is None:
                     row = CatalogToolProjection(tool_name=name)
