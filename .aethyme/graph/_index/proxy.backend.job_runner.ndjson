@@ -30,6 +30,7 @@
 {"module":"proxy.backend.job_runner","symbol":"db.engine","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5uwt5cjdjwkso5hon2i65y743u","file":"proxy/backend/job_runner.py"}
 {"module":"proxy.backend.job_runner","symbol":"db.init_schema","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ayidyzy5ucl4fk3egf2kuy7qqu","file":"proxy/backend/job_runner.py"}
 {"module":"proxy.backend.job_runner","symbol":"db.is_transient_lock_error","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:narlfszofrdfglq4fc53cpqa4u","file":"proxy/backend/job_runner.py"}
+{"module":"proxy.backend.job_runner","symbol":"db.lock_contention_report","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:iixe7ibzbjbxy5zrge6ul7l4gi","file":"proxy/backend/job_runner.py"}
 {"module":"proxy.backend.job_runner","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:aih3v7xqxzbrhyflgqa3jbcp6a","file":"proxy/backend/job_runner.py"}
 {"module":"proxy.backend.job_runner","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lzwn5elt6sfiukk5gfpj73a3pi","file":"proxy/backend/job_runner.py"}
 {"module":"proxy.backend.job_runner","symbol":"job_catalog","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4eiag6qdiptk5jsp6pmpun4z5a","file":"proxy/backend/job_runner.py"}
