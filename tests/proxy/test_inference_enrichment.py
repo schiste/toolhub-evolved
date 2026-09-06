@@ -36,6 +36,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 from backend import catalog_projection, db, run_budget, tool_shape, userscripts  # noqa: E402
+from backend import gadget_source  # noqa: E402
 from backend import inference_enrichment as enrichment  # noqa: E402
 from backend.models import (  # noqa: E402
     LANE_GADGET,
@@ -1022,9 +1023,23 @@ REAL_GADGET_REPLY_FR = """{
 RU_DESCRIPTION = "Markblocked: зачёркивать имена пользователей, которые заблокированы."
 
 
-def gadget(name="markblocked", *, wiki="ab.wikipedia.org", description=RU_DESCRIPTION, **kwargs):
-    """Seed one live declared gadget carrying a description."""
-    fields = {"wiki": wiki, "name": name, "name_key": name.casefold(), "description": description}
+GADGET_BODY = "/* MediaWiki:Gadget-markblocked.js */\nmw.loader.using('mediawiki.util', function () {});\n"
+
+
+def gadget(name="markblocked", *, wiki="ab.wikipedia.org", description=RU_DESCRIPTION, body=GADGET_BODY, **kwargs):
+    """Seed one live declared gadget carrying code, and its description.
+
+    Code by default because the lane's eligibility is the code: a gadget whose
+    source `gadget-source` has not read yet has nothing for this lane to send.
+    """
+    fields = {
+        "wiki": wiki,
+        "name": name,
+        "name_key": name.casefold(),
+        "description": description,
+        "body": body,
+        "body_fingerprint": gadget_source.fingerprint(body) if body else "",
+    }
     fields.update(kwargs)
     with db.session_scope() as session:
         row = WikiGadget(**fields)
@@ -1062,28 +1077,48 @@ def test_gadget_lane_cannot_store_a_description():
     assert "description" in enrichment.accept(enrichment.parse_json(reply_with_prose), SCRIPT_FIELDS)
 
 
-def test_description_fingerprint_ignores_reflowing():
+def test_gadget_fingerprint_ignores_reflowing():
     """A rewrapped message is not a rewritten one.
 
     10,049 gadgets re-asked over a stray newline would spend the lane's whole
     budget returning the answers it already had.
     """
-    assert enrichment.description_fingerprint("a  b\n c") == enrichment.description_fingerprint("a b c")
-    assert enrichment.description_fingerprint("a b") != enrichment.description_fingerprint("a c")
+    assert enrichment.gadget_fingerprint("a  b\n c", "d") == enrichment.gadget_fingerprint("a b c", "d")
+    assert enrichment.gadget_fingerprint("a b", "d") != enrichment.gadget_fingerprint("a c", "d")
+    # Code moving has to invalidate the answer too, or an inference read
+    # from source nobody can see any more would stand.
+    assert enrichment.gadget_fingerprint("a b", "d") != enrichment.gadget_fingerprint("a b", "e")
 
 
-def test_gadget_pending_skips_gadgets_with_no_description():
-    """21% of live gadgets have no description, so there is nothing to tag.
+def test_gadget_pending_skips_gadgets_whose_code_has_not_been_read():
+    """Eligibility is the code now, not the description.
 
-    Excluded from the window rather than sent and rejected, so that `rejected`
-    keeps meaning "asked, and the answer was no good" in both lanes.
+    A gadget `gadget-source` has not reached yet has nothing for this lane to
+    send, so it is excluded from the window rather than asked about on no
+    evidence -- which keeps `rejected` meaning "asked, and the answer was no
+    good" in both lanes.
     """
-    gadget("described")
+    gadget("fetched")
+    gadget("unfetched", body="")
+    with db.session_scope() as session:
+        found = enrichment.gadget_pending(session, limit=10)
+    assert [candidate.title for candidate in found] == ["fetched"]
+    assert found[0].lane == LANE_GADGET
+
+
+def test_a_gadget_with_no_description_is_still_asked_about():
+    """2,726 of 12,777 gadgets have none, and their code reads the same.
+
+    The description used to decide eligibility, so those gadgets were never
+    asked about at all. It still travels as the one human-written sentence
+    about a gadget, but it no longer gates the window.
+    """
     gadget("undescribed", description="")
     with db.session_scope() as session:
         found = enrichment.gadget_pending(session, limit=10)
-    assert [candidate.title for candidate in found] == ["described"]
-    assert found[0].lane == LANE_GADGET
+    assert [candidate.title for candidate in found] == ["undescribed"]
+    assert found[0].summary == ""
+    assert found[0].body, "the code is what the lane sends"
 
 
 def test_gadget_pending_skips_a_gadget_whose_answer_is_current():
@@ -1101,7 +1136,7 @@ def test_gadget_pending_skips_a_gadget_whose_answer_is_current():
                 payload={"keywords": ["block"]},
                 lane=LANE_GADGET,
                 page_id=gadget_id,
-                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                source_fingerprint=enrichment.gadget_fingerprint(RU_DESCRIPTION, gadget_source.fingerprint(GADGET_BODY)),
                 status=enrichment.STATUS_READY,
                 asked_signature=enrichment.lane_signature(LANE_GADGET),
             )
@@ -1120,7 +1155,7 @@ def test_gadget_pending_returns_a_gadget_whose_description_changed():
                 payload={"keywords": ["block"]},
                 lane=LANE_GADGET,
                 page_id=gadget_id,
-                source_fingerprint=enrichment.description_fingerprint("something the wiki used to say"),
+                source_fingerprint=enrichment.gadget_fingerprint("something the wiki used to say", gadget_source.fingerprint(GADGET_BODY)),
                 status=enrichment.STATUS_READY,
             )
         )
@@ -1167,7 +1202,7 @@ def store_gadget_inference(fingerprint_source=RU_DESCRIPTION, *, keywords=("bloc
                 payload={"keywords": list(keywords)},
                 lane=LANE_GADGET,
                 page_id=gadget_id,
-                source_fingerprint=enrichment.description_fingerprint(fingerprint_source),
+                source_fingerprint=enrichment.gadget_fingerprint(fingerprint_source, gadget_source.fingerprint(GADGET_BODY)),
                 status=enrichment.STATUS_READY,
             )
         )
@@ -1216,7 +1251,7 @@ def test_the_two_lanes_do_not_read_each_others_rows():
                 payload={"keywords": ["from-the-wrong-lane"]},
                 lane=enrichment.LANE_USER_SCRIPT,
                 page_id=gadget_id,
-                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                source_fingerprint=enrichment.gadget_fingerprint(RU_DESCRIPTION, gadget_source.fingerprint(GADGET_BODY)),
                 status=enrichment.STATUS_READY,
             )
         )
@@ -1331,7 +1366,7 @@ def test_a_ready_gadget_row_carrying_no_payload_publishes_nothing():
                 payload={},
                 lane=LANE_GADGET,
                 page_id=gadget_id,
-                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                source_fingerprint=enrichment.gadget_fingerprint(RU_DESCRIPTION, gadget_source.fingerprint(GADGET_BODY)),
                 status=enrichment.STATUS_READY,
             )
         )
@@ -1446,7 +1481,7 @@ def test_a_gadget_audience_reaches_the_projection_and_fills_a_gap():
                 payload={"audiences": ["editor"]},
                 lane=LANE_GADGET,
                 page_id=gadget_id,
-                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                source_fingerprint=enrichment.gadget_fingerprint(RU_DESCRIPTION, gadget_source.fingerprint(GADGET_BODY)),
                 status=enrichment.STATUS_READY,
             )
         )
@@ -1486,7 +1521,7 @@ def test_a_gadget_answered_by_an_older_prompt_is_asked_again():
                 payload={"keywords": ["block"]},
                 lane=LANE_GADGET,
                 page_id=gadget_id,
-                source_fingerprint=enrichment.description_fingerprint(RU_DESCRIPTION),
+                source_fingerprint=enrichment.gadget_fingerprint(RU_DESCRIPTION, gadget_source.fingerprint(GADGET_BODY)),
                 status=enrichment.STATUS_READY,
                 asked_signature="keywords",
             )
@@ -1566,10 +1601,20 @@ def test_a_new_field_is_missing_from_every_row_that_predates_it():
         assert enrichment.missing_fields(lane, complete) == ("license",)
 
 
-def test_a_field_a_lane_cannot_produce_is_never_missing_from_it():
-    """A gadget already has a maintainer's description, so it is never asked for one."""
-    assert "description" not in enrichment.lane_fields(LANE_GADGET)
-    assert "description" not in enrichment.missing_fields(LANE_GADGET, "")
+def test_a_field_is_only_offered_to_the_lanes_it_declares():
+    """The gate is the frozenset on the field, checked against every field.
+
+    Written as a property rather than against one excluded field because there
+    is no longer a field either lane cannot produce: the gadget lane sent an
+    83-character description until it began sending code, and `description`
+    was excluded from it on the reasoning that a gadget already had one --
+    which was never true of the 2,726 that have none.
+    """
+    for field in enrichment.FIELD_ORDER:
+        for lane in (enrichment.LANE_USER_SCRIPT, LANE_GADGET):
+            offered = field.name in enrichment.lane_fields(lane)
+            assert offered == (lane in field.lanes), (field.name, lane)
+            assert offered == (field.name in enrichment.missing_fields(lane, "")), (field.name, lane)
 
 
 def test_answering_one_field_keeps_the_answers_already_stored():

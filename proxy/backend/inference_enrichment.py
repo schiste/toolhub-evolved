@@ -50,7 +50,7 @@ projection, and the design follows from that:
   only the three values that survived are published.
 
 Re-inference is keyed on what the answer was read from: `UserScriptPage.fingerprint`
-in the user-script lane, `description_fingerprint` of the gadget's message in
+in the user-script lane, `gadget_fingerprint` of the code and message in
 the gadget lane. A source that has not changed is never sent twice, because the
 answer would not change either and the corpus is large enough that resending it
 is the whole cost.
@@ -220,6 +220,13 @@ class Candidate(NamedTuple):
     #: The fields this row is missing, in prompt order. Defaults to everything
     #: the lane can produce, which is what a page nobody has asked about needs.
     fields: tuple[str, ...] = ()
+    #: The gadget's own one-line summary, sent alongside its code rather than
+    #: instead of it. It is 83 characters at the median and absent for 2,726
+    #: gadgets, so it cannot carry a prompt on its own -- but it is the only
+    #: human-written sentence about the gadget that exists, and dropping it
+    #: would trade away the signal `keywords` and `audiences` are read from
+    #: today. Empty for user scripts, which have no equivalent.
+    summary: str = ""
 
 
 STATUS_READY = "ready"
@@ -314,29 +321,42 @@ def _audiences_request() -> str:
 
 
 GADGET_SYSTEM_PROMPT = (
-    "You read Wikimedia gadget metadata from the description their own wiki shows. "
+    "You read Wikimedia gadget metadata from the gadget's own code, and from the one-line "
+    "description its wiki shows where there is one. "
     "You answer with a single JSON object and nothing else: no prose, no markdown fence. "
-    "You never invent facts. If the description does not support a field, leave it empty."
+    "You never invent facts. If the code and description do not support a field, leave it empty."
 )
 
 
-def _lane_preamble(lane: str, wiki: str, title: str) -> str:
-    """Return what a lane says before its questions: which text follows, and whose."""
+def _lane_preamble(lane: str, wiki: str, title: str, summary: str = "") -> str:
+    """Return what a lane says before its questions: which text follows, and whose.
+
+    The gadget's summary is stated here rather than fenced with the code, so a
+    model reading the source cannot mistake one wiki's sentence about the
+    gadget for a comment inside it.
+    """
     if lane == LANE_GADGET:
+        described = f"\nDescription: {summary}" if summary.strip() else ""
         return (
-            f"Below is the description a Wikimedia wiki shows for one of its gadgets.\n\nGadget: {title}\nWiki: {wiki}"
+            "Below is the code of a Wikimedia gadget, as its own wiki deploys it."
+            f"\n\nGadget: {title}\nWiki: {wiki}{described}"
         )
     return f"Below is the complete source of a Wikimedia user script.\n\nPage: {title}\nWiki: {wiki}"
 
 
-def _lane_body(lane: str, body: str) -> str:
-    """Return the text a lane hands over, fenced as that lane's text should be."""
-    if lane == LANE_GADGET:
-        return "DESCRIPTION:\n" + body[:MAX_SOURCE_CHARS]
+def _lane_body(lane: str, body: str) -> str:  # noqa: ARG001 - lane kept for callers and symmetry
+    """Return the text a lane hands over, fenced as that lane's text should be.
+
+    Both lanes send code now. The gadget lane used to send an 83-character
+    description, which is why it could only ask for `keywords` and `audiences`:
+    a tech stack or a set of interface languages is not in one sentence.
+    """
     return "SOURCE:\n```javascript\n" + body[:MAX_SOURCE_CHARS] + "\n```"
 
 
-def build_prompt(lane: str, wiki: str, title: str, body: str, fields: Sequence[str]) -> str:
+def build_prompt(  # noqa: PLR0913 - one parameter per thing a prompt is made of, which is the point
+    lane: str, wiki: str, title: str, body: str, fields: Sequence[str], *, summary: str = ""
+) -> str:
     """Compose the user turn from exactly the fields this row is missing.
 
     Composed rather than written out per lane, because the alternative is a
@@ -355,7 +375,7 @@ def build_prompt(lane: str, wiki: str, title: str, body: str, fields: Sequence[s
         raise ValueError(message)
     keys = "key" if len(asked) == 1 else "keys"
     return (
-        f"{_lane_preamble(lane, wiki, title)}\n\n"
+        f"{_lane_preamble(lane, wiki, title, summary)}\n\n"
         f"Return a JSON object with exactly {'this' if len(asked) == 1 else 'these'} {keys}:\n\n"
         + "".join(field.request() for field in asked)
         + "\n"
@@ -372,7 +392,9 @@ def payload_for(model: str, candidate: Candidate) -> dict[str, Any]:
     sentences and eight tags -- and generation is most of what a call costs.
     """
     system = GADGET_SYSTEM_PROMPT if candidate.lane == LANE_GADGET else SYSTEM_PROMPT
-    user = build_prompt(candidate.lane, candidate.wiki, candidate.title, candidate.body, candidate.fields)
+    user = build_prompt(
+        candidate.lane, candidate.wiki, candidate.title, candidate.body, candidate.fields, summary=candidate.summary
+    )
     ceiling = TOKEN_OVERHEAD + sum(FIELDS_BY_NAME[name].tokens for name in candidate.fields if name in FIELDS_BY_NAME)
     return {
         "model": model,
@@ -589,9 +611,15 @@ class Field(NamedTuple):
 
     An allowlist rather than a denylist: a model that volunteers `license` or
     `tool_type` is answering a prompt that drifted, and storing it would let a
-    later reader assume it was asked for. `tool_type`, `technology_used` and
-    `for_wikis` in particular are already derived deterministically from the
-    wiki and sit at 100% -- a guess there could only contradict something known.
+    later reader assume it was asked for. `tool_type` in particular is derived
+    deterministically from the wiki and sits at 100%, so a guess there could
+    only contradict something known -- and inference being fill-only is what
+    makes that a statement about wasted budget rather than about correctness.
+
+    Every field here reaches both lanes now that the gadget lane sends code.
+    It sent an 83-character description until 2026-09-06, which is why
+    `keywords` and `audiences` were the only two it could carry: a set of
+    interface languages or a translation URL is not in one sentence.
 
     Everything about a field lives on the field: the words that ask for it, the
     rule its answer has to survive, the room that answer needs, and the lanes
@@ -616,7 +644,7 @@ class Field(NamedTuple):
 #: incidental: it decides the byte-for-byte prompt, and a request that
 #: reshuffles itself between runs cannot be compared with the one before it.
 FIELD_ORDER: tuple[Field, ...] = (
-    Field("description", _description, _description_request, 500, frozenset({LANE_USER_SCRIPT})),
+    Field("description", _description, _description_request, 500, frozenset({LANE_USER_SCRIPT, LANE_GADGET})),
     Field("keywords", _keywords, _keywords_request, 200, frozenset({LANE_USER_SCRIPT, LANE_GADGET})),
     Field("audiences", _audiences, _audiences_request, 100, frozenset({LANE_USER_SCRIPT, LANE_GADGET})),
     Field(
@@ -624,14 +652,14 @@ FIELD_ORDER: tuple[Field, ...] = (
         _available_ui_languages,
         _available_ui_languages_request,
         120,
-        frozenset({LANE_USER_SCRIPT}),
+        frozenset({LANE_USER_SCRIPT, LANE_GADGET}),
     ),
     Field(
         "translate_url",
         _translate_url,
         _translate_url_request,
         80,
-        frozenset({LANE_USER_SCRIPT}),
+        frozenset({LANE_USER_SCRIPT, LANE_GADGET}),
         needs_source=True,
     ),
 )
@@ -848,28 +876,40 @@ def pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
     return found
 
 
-def description_fingerprint(description: str) -> str:
+def gadget_fingerprint(description: str, body: str) -> str:
     """Return the key a gadget answer is tied to: a hash of the text it read.
 
-    The gadget lane has no `fingerprint` column of its own to borrow -- the
-    inventory stores the description and not a digest of it -- so this computes
-    the same guarantee the user-script lane gets for free: an answer stays
-    current exactly while the words it was read from are unchanged, and a wiki
-    that rewrites its description puts that gadget back in the window.
+    Both inputs, because the lane now sends both: the code, which is the
+    evidence, and the wiki's one-line description, which is the only
+    human-written sentence about the gadget. An answer has to go stale when
+    either moves, so hashing only one would leave an inference standing that
+    was read from text nobody can see any more.
 
-    Whitespace is collapsed first so a reflowed message is not mistaken for a
-    rewritten one; 10,049 descriptions re-asked over a stray newline would cost
-    the entire lane's budget for no new answer.
+    `body` arrives already hashed, as `wiki_gadgets.body_fingerprint`, because
+    the fetcher computed it when it read the code and re-hashing tens of
+    thousands of characters here would buy nothing.
+
+    Whitespace in the description is collapsed first so a reflowed message is
+    not mistaken for a rewritten one; 10,049 descriptions re-asked over a stray
+    newline would cost the entire lane's budget for no new answer.
     """
-    return sha256(" ".join((description or "").split()).encode("utf-8")).hexdigest()
+    collapsed = " ".join((description or "").split())
+    return sha256(f"{body or ''}\n{collapsed}".encode()).hexdigest()
 
 
 def gadget_pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
-    """Return the gadgets whose current description the model has not tagged.
+    """Return the gadgets whose current code the model has not read.
 
     A gadget is eligible on exactly one condition the user-script lane does not
-    share: it has a description. 21% do not -- the wiki declares the gadget and
-    never wrote `MediaWiki:Gadget-<name>` -- and for those there is no text to
+    share: `gadget-source` has read its code. Until that job has walked the
+    inventory this window is empty, which is correct -- the lane used to ask
+    about an 83-character description and could answer nothing but `keywords`
+    and `audiences` from it. The description still travels, as the one
+    human-written sentence about the gadget, but it no longer decides
+    eligibility: 2,726 gadgets have none and their code is just as readable.
+
+    Formerly: a gadget was eligible when it had a description, and for those
+    without one there was no text to
     tag and nothing this lane can do, so they are excluded here rather than sent
     and rejected. That keeps `rejected` meaning "asked, and the answer was no
     good" in both lanes.
@@ -894,14 +934,26 @@ def gadget_pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
     starts re-reading answered rows to find the ones whose description moved.
     """
     rows = session.execute(
-        select(WikiGadget.id, WikiGadget.wiki, WikiGadget.name, WikiGadget.description, ToolInference)
+        select(
+            WikiGadget.id,
+            WikiGadget.wiki,
+            WikiGadget.name,
+            WikiGadget.description,
+            WikiGadget.body,
+            WikiGadget.body_fingerprint,
+            ToolInference,
+        )
         .outerjoin(
             ToolInference,
             (ToolInference.page_id == WikiGadget.id) & (ToolInference.lane == LANE_GADGET),
         )
         .where(
             WikiGadget.deleted_at.is_(None),
-            WikiGadget.description != "",
+            # Code, not a description: a gadget whose source has not been read
+            # yet has nothing for this lane to send. `gadget-source` walks the
+            # inventory oldest-first, so this window grows as it does rather
+            # than asking about gadgets on no evidence.
+            WikiGadget.body != "",
         )
         .order_by(
             case(
@@ -915,10 +967,10 @@ def gadget_pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
         .limit(limit * GADGET_WINDOW_SLACK)
     )
     found: list[Candidate] = []
-    for gadget_id, wiki, name, description, row in rows:
+    for gadget_id, wiki, name, description, body, body_digest, row in rows:
         if not (catalog_name := gadget_toolinfo.tool_name(wiki, name)):
             continue
-        fingerprint = description_fingerprint(description)
+        fingerprint = gadget_fingerprint(description, body_digest)
         if (
             row is not None
             and row.source_fingerprint == fingerprint
@@ -930,7 +982,11 @@ def gadget_pending(session: Session, *, limit: int = BATCH) -> list[Candidate]:
         ):
             continue
         wanted = missing_fields(LANE_GADGET, row.asked_signature if row is not None else "") or lane_fields(LANE_GADGET)
-        found.append(Candidate(catalog_name, int(gadget_id), wiki, name, description, fingerprint, LANE_GADGET, wanted))
+        found.append(
+            Candidate(
+                catalog_name, int(gadget_id), wiki, name, body, fingerprint, LANE_GADGET, wanted, description or ""
+            )
+        )
         if len(found) == limit:
             break
     return found
