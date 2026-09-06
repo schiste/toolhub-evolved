@@ -94,7 +94,27 @@
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name projection-refresh -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/projection_refresh.py
   image: python3.13
   schedule: "41 */6 * * *"
-  timeout: 1800
+  # 2700, not 1800: one run's identity pass took 28.8 minutes, which is 96% of
+  # a 30-minute budget, and a kill there wastes the whole pass. Deliberately
+  # not larger -- the timeout is also how long this job may hold person-table
+  # locks, and `people-identity-reconcile` is placed against this number.
+  # Timeouts are only about three of the dozen recorded failures here; the
+  # rest are upstream sync and consistency errors this does not address.
+  timeout: 2700
+  emails: onfailure
+
+- name: coverage-refresh
+  # The data-layer page serves one precomputed document and rebuilds it inside
+  # a request once it is six hours stale. Its only refresh used to be a stage
+  # inside projection-refresh, which runs every six hours -- interval equal to
+  # the staleness limit, so no margin at all, and any late or deferred run put
+  # a visitor on the hook for a whole-catalogue pass measured at 11.5s median
+  # and 14.9s worst. Every fifteen minutes gives the same kind of margin
+  # statistics-refresh has had since the identical defect was fixed there.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name coverage-refresh -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/coverage_refresh.py
+  image: python3.13
+  schedule: "*/15 * * * *"
+  timeout: 240
   emails: onfailure
 
 - name: statistics-refresh
@@ -306,6 +326,15 @@
   emails: onfailure
 
 - name: people-identity-reconcile
+  # Runs at :33, not :43. `projection-refresh` starts at :41 and its identity
+  # pass has been measured at 28.8 minutes, during which it writes the whole
+  # person_identifiers burst -- 3,379 rows, 23% of the table, in one window.
+  # Starting two minutes into that burst is how this job collected 32
+  # `Lock wait timeout exceeded` aborts on `UPDATE person_identifiers`, each
+  # one an email. It already retries lock aborts, but the budget is half its
+  # own timeout and cannot outlast a 29-minute hold. :33 clears the worst-case
+  # finish (:41 + 45m = :26) and still leaves eight minutes before the next
+  # start, which is the widest gap the hourly slot allows.
   # Resolve a bounded batch through Toolhub stable ids, CentralAuth, and
   # Toolforge SUL membership without repeating the full relationship rebuild.
   # Fresh unresolved candidates cool down for a day, so each run advances
@@ -350,7 +379,7 @@
   # last line that ran.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
   image: python3.13
-  schedule: "43 * * * *"
+  schedule: "33 * * * *"
   timeout: 1500
   emails: onfailure
 
