@@ -53,7 +53,11 @@ def test_the_declared_plan_is_measured_against_what_jobs_yaml_actually_starts():
     fails when either number moves, which is what makes the gap visible.
     """
     assert db.CONCURRENT_JOB_PROCESSES == 4
-    assert job_catalog.concurrent_process_ceiling() == 7
+    # 7 on 2026-09-06, then 6 once wiki-registry and catalog-integrity moved
+    # off :17. The remaining gap is the every-minute pair meeting */5 and */15
+    # at the top of the hour, which is a freshness decision rather than a
+    # scheduling one -- the repair sweeps were the part that could just loosen.
+    assert job_catalog.concurrent_process_ceiling() == 6
 
 
 def test_a_schedule_that_is_not_a_cron_line_fires_in_no_minute():

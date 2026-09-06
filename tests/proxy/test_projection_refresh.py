@@ -202,7 +202,10 @@ def test_job_contract_has_bounded_full_audit_and_retires_old_schedules():
 
     assert "name: projection-refresh" in jobs
     assert "name: catalog-integrity" in jobs
-    assert 'schedule: "17 3 1,15 * *"' in jobs
+    # Twice monthly, on whatever minute keeps it clear of the hourly jobs:
+    # it shared :17 with crawler and job-watchdog, and the connection grant is
+    # measured at the busiest minute rather than the typical one.
+    assert 'schedule: "44 3 1,15 * *"' in jobs
     assert "catalog_sync.py --complete" in jobs
     assert "name: source-attestations-full" in jobs
     assert "timeout: 900" in jobs
