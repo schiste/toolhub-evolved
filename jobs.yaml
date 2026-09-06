@@ -83,7 +83,7 @@
   # keeping the schedule deterministic across month boundaries.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-integrity -- /usr/bin/env CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py --complete
   image: python3.13
-  schedule: "17 3 1,15 * *"
+  schedule: "44 3 1,15 * *"
   timeout: 1800
   emails: onfailure
 
@@ -148,7 +148,7 @@
   # the cursor advances after every tool and retries failures next cycle.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name maintainer-backfill -- /usr/bin/env MAINTAINER_BACKFILL_LIMIT=60 MAINTAINER_BACKFILL_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/maintainer_backfill.py
   image: python3.13
-  schedule: "13 * * * *"
+  schedule: "53 */6 * * *"
   timeout: 300
   emails: onfailure
 
@@ -230,7 +230,7 @@
   # actually bound. The 1200s timeout is what those 20,000 have to fit inside.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name graph-enrichment -- /usr/bin/env GRAPH_ENRICHMENT_LIMIT=20000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/graph_enrichment.py
   image: python3.13
-  schedule: "55 * * * *"
+  schedule: "25 */6 * * *"
   timeout: 1200
   # 2Gi, up from the 512Mi default. `graph_enrichment` loads the whole
   # canonical-tool and enrichment tables as entities before it bounds anything,
@@ -254,7 +254,7 @@
   # cost -- and the 1200s timeout is the bound those 20,000 sit inside.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-projection -- /usr/bin/env CATALOG_PROJECTION_LIMIT=20000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_projection.py
   image: python3.13
-  schedule: "58 * * * *"
+  schedule: "1 */6 * * *"
   timeout: 1200
   emails: onfailure
 
@@ -296,7 +296,7 @@
   # it mid-probe, and only one of those writes the verdict it just paid for.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-validation -- /usr/bin/env CATALOG_VALIDATION_LIMIT=20000 CATALOG_VALIDATION_BUDGET_SECONDS=600 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_validation.py
   image: python3.13
-  schedule: "3 * * * *"
+  schedule: "35 */6 * * *"
   timeout: 900
   # 2Gi, up from the 512Mi default. `catalog_validation` loads the whole
   # projection table as entities just to count candidates and slice the first
@@ -409,7 +409,7 @@
   # well inside the 600s timeout below.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-attribution-reconverge -- /usr/bin/env PEOPLE_RECONVERGE_LIMIT=5000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --reconverge
   image: python3.13
-  schedule: "21 * * * *"
+  schedule: "49 */6 * * *"
   timeout: 600
   emails: onfailure
 
@@ -507,7 +507,7 @@
   # would only add a red job to a week in which nothing was wrong.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name wiki-registry -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/wiki_registry_refresh.py
   image: python3.13
-  schedule: "17 2 * * 1"
+  schedule: "6 2 * * 1"
   emails: onfailure
 
 - name: gadget-source
