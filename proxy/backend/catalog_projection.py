@@ -418,7 +418,8 @@ def _add_gadget_inference_sources(s: Session, names: list[str], sources: dict[st
     validate against different things: a script's answer is checked against the
     bytes it was read from, a gadget's against a hash of the description its
     wiki shows now. One query cannot express both, since the gadget side has no
-    stored digest to join on -- `description_fingerprint` computes it per row.
+    stored digest to join on -- `gadget_fingerprint` composes it per row from
+    the code digest the fetcher stored and the description beside it.
 
     The link is `page_id`, which in this lane holds `wiki_gadgets.id`; see
     `ToolInference.page_id` for why the two lanes may share that column only
@@ -442,7 +443,8 @@ def _add_gadget_inference_sources(s: Session, names: list[str], sources: dict[st
         # from the old one, and the gadget returns to the sweep's window.
         if not (isinstance(row.payload, dict) and row.payload):
             continue
-        if row.source_fingerprint != inference_enrichment.description_fingerprint(gadget.description):
+        current = inference_enrichment.gadget_fingerprint(gadget.description, gadget.body_fingerprint)
+        if row.source_fingerprint != current:
             continue
         sources[row.tool_name].append(
             {
