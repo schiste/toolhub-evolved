@@ -186,7 +186,13 @@ def _lock_retry_due(name: str, error: DBAPIError, budget_seconds: int, elapsed: 
     that runs past the timeout is a SIGKILL, and a kill is one of the three
     ways a job dies without saying anything at all.
     """
-    if budget_seconds <= 0 or not db.is_transient_lock_error(error):
+    if not db.is_transient_lock_error(error):
+        return False
+    # Written before the retry decision, and for an exhausted budget too: the
+    # run that mails is exactly the one whose blocker nobody can name later.
+    if report := db.lock_contention_report():
+        sys.stderr.write(f"{name}: lock held by -- {report}\n")
+    if budget_seconds <= 0:
         return False
     if elapsed > budget_seconds:
         sys.stderr.write(f"{name}: lost a row lock {int(elapsed)}s in; too late in the run to retry\n")
