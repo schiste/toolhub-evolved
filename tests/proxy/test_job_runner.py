@@ -557,8 +557,13 @@ def test_each_scheduled_mode_budgets_its_retry_out_of_the_timeout_jobs_yaml_decl
         # The four timeouts differ, so a mode that resolved the wrong job here
         # cannot land on the right number by accident.
         budget = _retry_budget_for([mode], monkeypatch)
-        assert budget == declared // entrypoint.LOCK_RETRY_BUDGET_FRACTION, mode
+        assert budget == (declared - job_runner.LOCK_RETRY_MARGIN_SECONDS) // entrypoint.LOCK_RETRY_BUDGET_FRACTION, mode
         assert 0 < budget < declared
+        # The property the formula exists for: a first attempt that spends the
+        # whole budget, plus a retry costing the same again, still lands inside
+        # the deadline. Half the timeout satisfied the old assertion and killed
+        # people-identity-reconcile at 1500s with both logs empty.
+        assert budget * 2 + job_runner.LOCK_RETRY_MARGIN_SECONDS <= declared, mode
 
 
 def test_a_mode_nothing_schedules_gets_no_budget_rather_than_a_borrowed_one(monkeypatch):
@@ -931,7 +936,7 @@ def test_a_job_without_a_declared_timeout_gets_no_retry_budget():
     assert job_runner.lock_retry_deadline_seconds(None) == 0
 
 
-def test_the_source_index_declares_the_timeout_its_retry_spends_half_of():
+def test_the_source_index_declares_the_timeout_its_retry_is_budgeted_against():
     """toolinfo-source-index opted into the lock retry, so it needs a bound.
 
     900s against a measured max of 392s over twelve runs. If the timeout is
@@ -941,7 +946,8 @@ def test_the_source_index_declares_the_timeout_its_retry_spends_half_of():
     budget = job_runner.lock_retry_deadline_seconds("toolinfo-source-index")
 
     assert budget > 0, "the source index lost its declared timeout, so its lock retry does nothing"
-    assert budget == 900 // job_runner.LOCK_RETRY_BUDGET_FRACTION
+    assert budget == (900 - job_runner.LOCK_RETRY_MARGIN_SECONDS) // job_runner.LOCK_RETRY_BUDGET_FRACTION
+    assert budget * 2 + job_runner.LOCK_RETRY_MARGIN_SECONDS <= 900
 
 
 # ---- Naming the transaction that held a row lock ---------------------------
@@ -1015,3 +1021,39 @@ def test_a_lock_abort_reports_its_blocker_even_with_no_retry_budget(monkeypatch,
     assert job_runner._lock_retry_due("people-identity-reconcile", error, 0, 0.0) is False
 
     assert "lock held by -- thread=4711" in capsys.readouterr().err
+
+
+# ---- A retry has to fit, not merely start early ----------------------------
+
+
+def test_the_retry_budget_leaves_room_for_the_retry_itself():
+    """Half a timeout is the break-even point, not a budget.
+
+    `people-identity-reconcile` lost a row lock, was granted a retry because
+    the first attempt had used less than half its 1500s, ran the pair to
+    1500s, and was killed by `activeDeadlineSeconds`. A SIGKILL discards the
+    buffered output, so the run reported nothing at all -- which read as a job
+    that had stopped being scheduled, and is strictly worse than the exit 1 the
+    retry was meant to avoid.
+    """
+    timeout = 1500
+    budget = (timeout - job_runner.LOCK_RETRY_MARGIN_SECONDS) // job_runner.LOCK_RETRY_BUDGET_FRACTION
+
+    # The worst case the budget still permits: a first attempt that used every
+    # second of it, and a retry that costs the same again.
+    assert budget * 2 < timeout, "a granted retry must finish inside the deadline"
+    assert timeout - budget * 2 >= job_runner.LOCK_RETRY_MARGIN_SECONDS
+
+
+def test_a_job_with_no_declared_timeout_is_offered_no_retry_budget():
+    """Unchanged by the margin: a budget invented here is how a retry ends up
+    running past a timeout it never knew about."""
+    assert job_runner.lock_retry_deadline_seconds(None) == 0
+    assert job_runner.lock_retry_deadline_seconds("no-such-job") == 0
+
+
+def test_the_margin_never_makes_a_short_timeout_negative():
+    """A job whose timeout is under the margin gets no retry, not a nonsense one."""
+    assert job_runner.LOCK_RETRY_MARGIN_SECONDS > 0
+    # max(0, ...) is the guard; assert the arithmetic it protects against.
+    assert (60 - job_runner.LOCK_RETRY_MARGIN_SECONDS) // job_runner.LOCK_RETRY_BUDGET_FRACTION < 0

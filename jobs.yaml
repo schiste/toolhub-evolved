@@ -344,8 +344,10 @@
   # cursor so every label gets a turn and unknown ones are retried once per
   # sweep. The fetcher sends maxlag and obeys Retry-After, so the service sets
   # the ceiling rather than a guessed delay. 1000 swept the 904-label backlog in
-  # one 851s run, which left only 49s of the timeout; 500 is the steady-state
-  # size now that only new labels arrive. It records identity only;
+  # one 851s run, which left only 49s of the timeout; 250, halved from 500 on
+  # 2026-09-06 because a pass that lost a row lock was granted a retry and the
+  # pair ran past `activeDeadlineSeconds` -- a SIGKILL, which reports nothing.
+  # At the measured 0.85s a label a full pass is ~210s, so two of them fit. It records identity only;
   # corroboration on a shared tool is what publishes anything.
   #
   # The timeout is twice what the sweep costs today, not a little above it. At
@@ -377,7 +379,7 @@
   # job that never started and was a job whose whole account of itself died in
   # an 8KB buffer when it was killed. Unbuffered, the last line printed is the
   # last line that ran.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=250 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
   image: python3.13
   schedule: "33 * * * *"
   timeout: 1500

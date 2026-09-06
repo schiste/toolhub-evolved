@@ -61,6 +61,16 @@ def database_url() -> str:
 #: How much of a job's timeout a lock retry may spend. Half leaves the first
 #: attempt's own budget intact for the second.
 LOCK_RETRY_BUDGET_FRACTION = 2
+#: Taken off the timeout before halving it, because half of the whole is the
+#: break-even point and not a budget. A retry costs about what the aborted
+#: attempt cost, so offering one to a first attempt that used exactly half
+#: leaves it finishing at the deadline -- and `activeDeadlineSeconds` is a
+#: SIGKILL, which discards the buffered output and reports nothing at all.
+#: `people-identity-reconcile` died that way on 2026-09-06: it lost a row
+#: lock, was granted a retry, ran the full 1500s and was killed with both logs
+#: empty, which read as a job that had stopped being scheduled. The margin
+#: covers pod startup and a retry that runs slower than the attempt it repeats.
+LOCK_RETRY_MARGIN_SECONDS = 120
 
 
 def lock_retry_deadline_seconds(job_name: str | None) -> int:
@@ -77,7 +87,7 @@ def lock_retry_deadline_seconds(job_name: str | None) -> int:
     declared = next((job for job in job_catalog.load() if job.name == job_name), None)
     if declared is None or declared.timeout_seconds <= 0:
         return 0
-    return declared.timeout_seconds // LOCK_RETRY_BUDGET_FRACTION
+    return max(0, (declared.timeout_seconds - LOCK_RETRY_MARGIN_SECONDS) // LOCK_RETRY_BUDGET_FRACTION)
 
 
 def configure(*, concurrency: int = 1, takes_lock: bool = False) -> None:
