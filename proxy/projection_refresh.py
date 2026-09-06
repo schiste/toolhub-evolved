@@ -154,6 +154,26 @@ def _identity_is_current(fingerprint: str, *, force: bool) -> bool:
         return row is not None and row.value == fingerprint
 
 
+def _drain_canonical_retirements() -> dict[str, Any]:
+    """Retire queued people under the lock every other person writer respects.
+
+    `drain_queue` writes the same tables `_publish_identity_projection` does,
+    and was the one person-writing stage in this file that took no lock -- so
+    for its duration `people-identity-reconcile` saw the lock free, started its
+    own pass, and the two met on InnoDB row locks instead. Short (measured at
+    3-5ms) is not the same as safe: the window is small, and this job is
+    started by every deploy as well as by cron, so it lands at arbitrary
+    minutes and no schedule can be placed around it.
+
+    Skips rather than waits, because the queue is a backlog: whatever this pass
+    would have retired is still queued for the holder, or for the next run.
+    """
+    with db.advisory_lock("toolhub-evolved:people-reconcile") as acquired:
+        if not acquired:
+            return {"status": "locked", "processed": 0}
+        return people_reconcile.drain_queue(reason="canonical_retired")
+
+
 def _publish_identity_projection(fingerprint: str, *, changed_since: datetime) -> dict[str, Any]:
     with db.advisory_lock("toolhub-evolved:people-reconcile") as acquired:
         if not acquired:
@@ -207,7 +227,7 @@ def run(
         _persist(report)
 
         report["failurePhase"] = "canonical-retirements"
-        retirements, duration = _timed(lambda: people_reconcile.drain_queue(reason="canonical_retired"))
+        retirements, duration = _timed(_drain_canonical_retirements)
         report["stages"]["retirements"] = {"durationMs": duration, "metrics": retirements}
 
         report["failurePhase"] = "identity-publication"

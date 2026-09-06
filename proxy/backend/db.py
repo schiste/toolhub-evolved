@@ -695,6 +695,39 @@ DEFAULT_LOCK_RETRIES = 3
 LOCK_RETRY_BACKOFF_SECONDS = 0.2
 
 
+def lock_contention_report(limit: int = 4) -> str:
+    """Describe the transactions open right now, for a job that just lost a row lock.
+
+    A 1205 says only that something else held the row longer than the waiter
+    would wait; it never says what. That left the person-table aborts
+    undiagnosable from the logs -- three writers take three different advisory
+    locks, so the blocker could have been any of them, and a fix chosen without
+    knowing which is a guess. This names them.
+
+    Best effort in every direction, like `advisory_lock_holder`: it runs only
+    on a path that has already failed, `innodb_trx` needs the PROCESS privilege
+    that a Toolforge tool account may not hold, and a report missing a field is
+    worth more than an exception raised while reporting a failure.
+    """
+    if engine().dialect.name not in {"mysql", "mariadb"}:
+        return ""
+    try:
+        with engine().connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT trx_mysql_thread_id, trx_state, trx_started, trx_rows_locked, "
+                    "LEFT(COALESCE(trx_query, ''), 120) AS q "
+                    "FROM information_schema.innodb_trx ORDER BY trx_started LIMIT :limit"
+                ),
+                {"limit": int(limit)},
+            ).all()
+    except SQLAlchemyError as error:  # pragma: no cover - privilege-dependent
+        return f"(innodb_trx unreadable: {type(error).__name__})"
+    if not rows:
+        return "(no open transactions by the time this was read)"
+    return " | ".join(f"thread={row[0]} {row[1]} since {row[2]} rows_locked={row[3]} q={row[4]!r}" for row in rows)
+
+
 def is_transient_lock_error(error: BaseException) -> bool:
     """Return True when the database undid the work and inviting a retry."""
     original = getattr(error, "orig", None)

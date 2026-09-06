@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Regression coverage for the last-good projection orchestration."""
 
+import contextlib
 import sys
 from pathlib import Path
 
@@ -44,8 +45,9 @@ def test_refresh_reuses_fresh_inputs_then_publishes_and_precomputes(monkeypatch)
     monkeypatch.setattr(
         projection_refresh.catalog_statistics,
         "snapshot",
-        lambda **_kwargs: order.append("statistics")
-        or {"generatedAt": "2026-08-13T00:00:00Z", "catalog": {"totalTools": 4473}},
+        lambda **_kwargs: (
+            order.append("statistics") or {"generatedAt": "2026-08-13T00:00:00Z", "catalog": {"totalTools": 4473}}
+        ),
     )
     monkeypatch.setattr(
         projection_refresh.catalog_coverage,
@@ -203,13 +205,13 @@ def test_job_contract_has_bounded_full_audit_and_retires_old_schedules():
     assert 'schedule: "17 3 1,15 * *"' in jobs
     assert "catalog_sync.py --complete" in jobs
     assert "name: source-attestations-full" in jobs
-    assert 'timeout: 900' in jobs
+    assert "timeout: 900" in jobs
     assert "retired_job in account-sync toolforge-account-sync catalog-snapshot" in deploy
     assert "webservice restart" in deploy
     assert "Restart command returned" in deploy
     assert "deployment-diagnostics.jsonl" in deploy
     assert 'deployment_log_dir="$HOME/deployment-logs"' in deploy
-    assert 'projection-refresh-$deploy_run_id.out' in deploy
+    assert "projection-refresh-$deploy_run_id.out" in deploy
     assert 'ln -sfn "$projection_out" "$HOME/projection-refresh-deploy.out"' in deploy
 
 
@@ -256,8 +258,9 @@ def test_full_source_audit_uses_concurrency_safe_batched_runner(monkeypatch):
     monkeypatch.setattr(
         projection_refresh.catalog_statistics,
         "snapshot",
-        lambda **_kwargs: order.append("statistics")
-        or {"generatedAt": "2026-08-14T00:00:00Z", "catalog": {"totalTools": 2}},
+        lambda **_kwargs: (
+            order.append("statistics") or {"generatedAt": "2026-08-14T00:00:00Z", "catalog": {"totalTools": 2}}
+        ),
     )
     monkeypatch.setattr(
         projection_refresh.catalog_coverage,
@@ -277,3 +280,41 @@ class AcquiredLock:
 
     def __exit__(self, *_args):
         return False
+
+
+def test_retiring_people_takes_the_lock_every_other_person_writer_respects(monkeypatch):
+    """The gap that made the reconcile job fail on a schedule move.
+
+    `drain_queue` writes the same tables the identity projection does, and was
+    the one person-writing stage here that took no lock. For its duration
+    `people-identity-reconcile` saw the lock free, began its own pass, and the
+    two met on InnoDB row locks -- which no cron placement could fix, because
+    every deploy queues this job at an arbitrary minute.
+    """
+    held = []
+
+    @contextlib.contextmanager
+    def _record(name, **kwargs):
+        held.append(name)
+        yield True
+
+    monkeypatch.setattr(projection_refresh.db, "advisory_lock", _record)
+    monkeypatch.setattr(projection_refresh.people_reconcile, "drain_queue", lambda **_: {"processed": 0, "claimed": 0})
+
+    assert projection_refresh._drain_canonical_retirements() == {"processed": 0, "claimed": 0}
+    assert held == ["toolhub-evolved:people-reconcile"]
+
+
+def test_retiring_people_skips_rather_than_racing_when_the_lock_is_held(monkeypatch):
+    """The queue is a backlog: what this pass skips is still queued."""
+    drained = []
+
+    @contextlib.contextmanager
+    def _denied(name, **kwargs):
+        yield False
+
+    monkeypatch.setattr(projection_refresh.db, "advisory_lock", _denied)
+    monkeypatch.setattr(projection_refresh.people_reconcile, "drain_queue", lambda **_: drained.append(1) or {})
+
+    assert projection_refresh._drain_canonical_retirements()["status"] == "locked"
+    assert drained == [], "a denied lock must not fall through to the write"
