@@ -6,13 +6,14 @@ import json
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from sqlalchemy.exc import DBAPIError  # noqa: E402
+from sqlalchemy.exc import DBAPIError, OperationalError, SQLAlchemyError  # noqa: E402
 
 from backend import (  # noqa: E402
     DEFAULT_DB_URL,
@@ -941,3 +942,76 @@ def test_the_source_index_declares_the_timeout_its_retry_spends_half_of():
 
     assert budget > 0, "the source index lost its declared timeout, so its lock retry does nothing"
     assert budget == 900 // job_runner.LOCK_RETRY_BUDGET_FRACTION
+
+
+# ---- Naming the transaction that held a row lock ---------------------------
+# A 1205 says only that something else held the row longer than the waiter
+# would wait, never what. Three writers of `person_identifiers` take three
+# different advisory locks, so the blocker could be any of them, and the
+# aborts were undiagnosable from the logs.
+
+
+class _FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class _FakeConnection:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def execute(self, _statement, _params=None):
+        return _FakeResult(self._rows)
+
+
+def _mysql_engine(monkeypatch, rows=(), error=None):
+    def connect():
+        if error is not None:
+            raise error
+        return _FakeConnection(list(rows))
+
+    monkeypatch.setattr(db, "engine", lambda: SimpleNamespace(dialect=SimpleNamespace(name="mysql"), connect=connect))
+
+
+def test_the_contention_report_names_the_open_transactions(monkeypatch):
+    _mysql_engine(monkeypatch, rows=[(4711, "LOCK WAIT", "2026-09-06 07:33:00", 812, "UPDATE person_identifiers")])
+
+    report = db.lock_contention_report()
+
+    assert "thread=4711" in report
+    assert "rows_locked=812" in report
+    assert "person_identifiers" in report
+
+
+def test_the_contention_report_says_so_when_the_transactions_have_gone(monkeypatch):
+    """Empty is an answer -- it means the blocker committed while this read."""
+    _mysql_engine(monkeypatch, rows=[])
+    assert "no open transactions" in db.lock_contention_report()
+
+
+def test_the_contention_report_never_raises_from_the_failure_path(monkeypatch):
+    """`innodb_trx` needs a privilege a tool account may not hold, and this
+    only ever runs while reporting a failure."""
+    _mysql_engine(monkeypatch, error=SQLAlchemyError("no PROCESS privilege"))
+    assert "innodb_trx unreadable" in db.lock_contention_report()
+
+
+def test_a_lock_abort_reports_its_blocker_even_with_no_retry_budget(monkeypatch, capsys):
+    """The run that mails is the one whose blocker nobody can name afterwards,
+    so the report is written before the retry decision, not after it."""
+    monkeypatch.setattr(db, "lock_contention_report", lambda: "thread=4711 LOCK WAIT rows_locked=812")
+    error = OperationalError("UPDATE person_identifiers", {}, Exception("(1205, 'Lock wait timeout exceeded')"))
+    monkeypatch.setattr(db, "is_transient_lock_error", lambda _error: True)
+
+    assert job_runner._lock_retry_due("people-identity-reconcile", error, 0, 0.0) is False
+
+    assert "lock held by -- thread=4711" in capsys.readouterr().err
