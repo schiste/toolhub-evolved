@@ -129,8 +129,6 @@
 {"module":"proxy.backend.inference_enrichment","symbol":"db","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ymwxjjcb2qmpz6ljdhazeosck4","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tl4jcgryl3mjxkpaw7o2fofpkq","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vx72qnohzuqowk4nkbddcqu6tm","file":"proxy/backend/inference_enrichment.py"}
-{"module":"proxy.backend.inference_enrichment","symbol":"description_fingerprint","kind":"function","node_id":"function:toolhub-evolved:lcjojxnadis4mfqgdnst2hw25i","file":"proxy/backend/inference_enrichment.py"}
-{"module":"proxy.backend.inference_enrichment","symbol":"description_fingerprint","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:daux3nwvsiq4cuc73vmvliigaq","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"dict","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cceyvi3svqwhgqrgi4ioqq3ppe","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"dict","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pnqbesktp24wu6xesbflk4do6q","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"digests","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xgwaljytyfrpmdwbfcy3xkjrqa","file":"proxy/backend/inference_enrichment.py"}
@@ -148,6 +146,8 @@
 {"module":"proxy.backend.inference_enrichment","symbol":"func.length","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5mvmdotiw2i3japroh5nyksfsm","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"func.length","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:atzw6c5ziyhlbhf324tjduk55e","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"gadget_by_status.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:idf6a3jrys4ilfar4hqvfjohca","file":"proxy/backend/inference_enrichment.py"}
+{"module":"proxy.backend.inference_enrichment","symbol":"gadget_fingerprint","kind":"function","node_id":"function:toolhub-evolved:74plvgc4y462v5ih43v7bgw4ea","file":"proxy/backend/inference_enrichment.py"}
+{"module":"proxy.backend.inference_enrichment","symbol":"gadget_fingerprint","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:p35ar3ljjvfdclfo5mpyam4wva","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"gadget_pending","kind":"function","node_id":"function:toolhub-evolved:uztxspxjhv4j2s45akwjq5dfva","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"gadget_pending","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ffteygd3cixidoqzscl2opmuaa","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"gadget_toolinfo","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2r5v3w3gaxsmda43olkynj5ztm","file":"proxy/backend/inference_enrichment.py"}
@@ -252,8 +252,8 @@
 {"module":"proxy.backend.inference_enrichment","symbol":"session.execute","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rjxgwr5jhuhy2qqsgq2v2eor7e","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"session.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wl6wu5np6ny563bsw5qpazrdci","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"set","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hdhfidm7m54t5tlap3pkumak2i","file":"proxy/backend/inference_enrichment.py"}
-{"module":"proxy.backend.inference_enrichment","symbol":"sha256","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:de42dqe4nunxgplveuaimpquhq","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"sha256","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:su5pcfdy2orya2ybqrcmdvtesa","file":"proxy/backend/inference_enrichment.py"}
+{"module":"proxy.backend.inference_enrichment","symbol":"sha256","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:y4gwe7r6eyvvt3odjkubboikzy","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"signature","kind":"function","node_id":"function:toolhub-evolved:guofcj3gxixeohf5t7gnxfxcqu","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"signature","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:oeg56gva4ixgglmtw3ezjnzpzu","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"signature","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pn4mfb37cro65yvym374xcw7ry","file":"proxy/backend/inference_enrichment.py"}
@@ -265,6 +265,7 @@
 {"module":"proxy.backend.inference_enrichment","symbol":"stripped.startswith","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:e2incn6ieev5k2svx4b4qhpb7q","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"stripped.strip","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:avbdrxl7d7oc3cbrq6jt6at7q4","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"sum","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:owmnygqyjwyoezsgb7cuqnnjiu","file":"proxy/backend/inference_enrichment.py"}
+{"module":"proxy.backend.inference_enrichment","symbol":"summary.strip","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7antqmnxucznnggmxzxrmuqoyy","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"sweep","kind":"function","node_id":"function:toolhub-evolved:gs47ysekauvdoanacvw754ud4e","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"text.casefold","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rlnehrwrnhhk2tno2l4zgf7sma","file":"proxy/backend/inference_enrichment.py"}
 {"module":"proxy.backend.inference_enrichment","symbol":"text.lower","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:56rbyxshzvhsmpc45vn5q5rvn4","file":"proxy/backend/inference_enrichment.py"}
