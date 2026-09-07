@@ -82,6 +82,24 @@ def _query(session: requests.Session, url: str) -> Any:  # noqa: ANN401 - one de
     return payload
 
 
+def _page_key(title: str) -> str:
+    """Return the part of a title after its namespace, which is language-neutral.
+
+    A wiki answers with its own name for the namespace: ask bg.wikipedia.org
+    for `MediaWiki:Gadget-popups.js` and the same page comes back under the
+    Bulgarian label for that namespace. The page is there and its content
+    arrives; only the label differs. Matching a reply to its request by full
+    title therefore missed on every wiki whose MediaWiki namespace is
+    translated -- most of them outside English and French -- so the code was
+    downloaded and then dropped. That was half of all gadgets reading as empty.
+
+    The part after the colon is the page name, and it is the same in every
+    language because it comes from the gadget definition rather than from the
+    wiki's own configuration.
+    """
+    return title.partition(":")[2] or title
+
+
 def _body_for(http: requests.Session, gadget: WikiGadget) -> str:
     """Return one gadget's pages concatenated, in the order its definition lists them.
 
@@ -93,8 +111,8 @@ def _body_for(http: requests.Session, gadget: WikiGadget) -> str:
     if not titles:
         return ""
     found = wiki_api.revisions(_query(http, wiki_api.pages_url(gadget.wiki, titles)))
-    by_title = {revision.title: revision.content for revision in found}
-    parts = [f"/* {title} */\n{by_title[title]}" for title in titles if by_title.get(title)]
+    by_page = {_page_key(revision.title): revision.content for revision in found}
+    parts = [f"/* {title} */\n{by_page[key]}" for title in titles if (key := _page_key(title)) and by_page.get(key)]
     return "\n\n".join(parts)[:MAX_BODY_CHARS]
 
 
