@@ -198,3 +198,33 @@ def test_a_gadget_naming_no_pages_is_not_asked_about(monkeypatch):
 
 def test_a_run_with_nothing_to_read_reports_so():
     assert gadget_source.refresh(limit=10)["examined"] == 0
+
+
+# ---- The seam this module shares with outbound -----------------------------
+# Every test above mocks either `_body_for` or `fetch_bounded`, so none of them
+# touched the call into outbound itself. `WIKI_CALLER` was a bare string, which
+# type-checks nowhere and raised `'str' object has no attribute 'scheme_error'`
+# on the first real request -- fourteen consecutive failures before job-guard
+# disabled the job, with the module at 100% line coverage throughout.
+
+
+def test_the_caller_is_what_outbound_actually_requires():
+    """A name is not a Caller, and only outbound knows the difference."""
+    from backend import outbound
+
+    assert isinstance(gadget_source.WIKI_CALLER, outbound.Caller)
+    # The attribute the failure named, reached the way outbound reaches it.
+    assert gadget_source.WIKI_CALLER.scheme_error
+    assert gadget_source.WIKI_CALLER.user_agent.startswith("toolhub-evolved")
+
+
+def test_a_query_reaches_outbounds_url_guard_rather_than_dying_before_it(monkeypatch):
+    """Drives `_query` through the real `require_allowed` path.
+
+    A caller of the wrong type fails inside outbound before any policy is
+    applied, so this asserts the request gets far enough to be *refused for the
+    right reason* -- which is the difference between a bug in this module and a
+    URL outbound declines to fetch.
+    """
+    with pytest.raises(ValueError, match="only public Wikimedia wiki APIs are read"):
+        gadget_source._query(None, "http://not-https.example/w/api.php")

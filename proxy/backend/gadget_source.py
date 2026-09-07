@@ -29,7 +29,17 @@ from backend.models import WikiGadget, utcnow
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.orm import Session
 
-WIKI_CALLER = "gadget-source"
+#: `fetch_bounded` takes a Caller, not a name. This was a bare string until
+#: 2026-09-07, which type-checks nowhere and raised
+#: `'str' object has no attribute 'scheme_error'` on the first real request --
+#: every run of the job, fourteen of them, until job-guard disabled it. The
+#: tests all mocked either `_body_for` or `fetch_bounded`, so the seam between
+#: this module and outbound was the one thing never exercised.
+WIKI_CALLER = outbound.Caller(
+    user_agent="toolhub-evolved-gadget-source (https://toolhub-evolved.toolforge.org)",
+    accept="application/json",
+    scheme_error="only public Wikimedia wiki APIs are read",
+)
 #: How many gadgets one run reads. Bounded like every other census pass: the
 #: work is one API round trip per gadget and the wikis set the pace, not this.
 DEFAULT_LIMIT = 400
