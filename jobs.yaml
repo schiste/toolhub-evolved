@@ -515,9 +515,12 @@
   # Its other text is the description message: 83 characters at the median,
   # absent for 2,726 of 12,777 gadgets, and enough only for keywords and
   # audiences. Every gadget has code -- a median of one page, never zero.
-  # 400 a run against ~12,800 gadgets walks the whole set in about 32 runs,
-  # and re-reads cost nothing downstream when the fingerprint has not moved.
-  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-source -- /usr/bin/env GADGET_SOURCE_LIMIT=400 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/gadget_source.py
+  # 4000 a run, measured rather than guessed: 400 gadgets took 32.3s, so 0.081s
+  # each, and 400 was leaving almost all of a 900s timeout unspent. 4000 is
+  # ~324s, which keeps three times the headroom the measurement asks for and
+  # walks ~12,800 gadgets in three runs instead of thirty-two. Re-reads cost
+  # nothing downstream when the fingerprint has not moved.
+  command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-source -- /usr/bin/env GADGET_SOURCE_LIMIT=4000 /data/project/toolhub-evolved/www/python/venv/bin/python -u /data/project/toolhub-evolved/repo/proxy/gadget_source.py
   image: python3.13
   schedule: "47 * * * *"
   timeout: 900
