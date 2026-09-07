@@ -228,3 +228,35 @@ def test_a_query_reaches_outbounds_url_guard_rather_than_dying_before_it(monkeyp
     """
     with pytest.raises(ValueError, match="only public Wikimedia wiki APIs are read"):
         gadget_source._query(None, "http://not-https.example/w/api.php")
+
+
+def test_a_wiki_answering_in_its_own_namespace_language_is_still_read(monkeypatch):
+    """The defect the other tests could not see.
+
+    `_bodies` builds its reply by calling `_titles` and echoing those exact
+    strings back, so it asserts the assumption under test rather than checking
+    it. bg.wikipedia.org answers a request for `MediaWiki:Gadget-popups.js`
+    with the same page under the Bulgarian name for that namespace: the
+    content arrives and only the label differs. Keying the reply by full title
+    missed every such wiki, and half of all gadgets read as empty while their
+    code was being downloaded and dropped.
+    """
+    import json as _json
+
+    localised = "МедияУики:Gadget-popups.js"
+    monkeypatch.setattr(
+        gadget_source.outbound,
+        "fetch_bounded",
+        lambda *a, **k: _json.dumps(_payload({localised: "var popups = 1;"})).encode(),
+    )
+
+    body = gadget_source._body_for(None, _gadget(pages=("popups.js",)))
+
+    assert "var popups = 1;" in body, "a translated namespace must not lose the page"
+
+
+def test_the_page_key_is_what_survives_translation():
+    assert gadget_source._page_key("MediaWiki:Gadget-popups.js") == "Gadget-popups.js"
+    assert gadget_source._page_key("МедияУики:Gadget-popups.js") == "Gadget-popups.js"
+    # A title with no namespace is its own key rather than empty.
+    assert gadget_source._page_key("Gadget-popups.js") == "Gadget-popups.js"
