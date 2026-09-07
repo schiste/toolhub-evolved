@@ -60,7 +60,7 @@
   # reconcile one page every 12 hours, with three seconds between requests.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-sync -- /usr/bin/env CATALOG_SYNC_PAGES=5 CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py
   image: python3.13
-  schedule: "*/15 * * * *"
+  schedule: "1,16,31,46 * * * *"
   timeout: 300
   emails: onfailure
 
@@ -129,7 +129,7 @@
   # own request -- which is what OOM-killed the web service.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name statistics-refresh -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/statistics_refresh.py
   image: python3.13
-  schedule: "*/10 * * * *"
+  schedule: "2,12,22,32,42,52 * * * *"
   timeout: 240
   emails: onfailure
 
@@ -429,7 +429,7 @@
   # halving the batch halves the lock window at the same drain rate.
   command: exec /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile-incremental -- /usr/bin/env PEOPLE_RECONCILE_QUEUE_LIMIT=25 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --queue
   image: python3.13
-  schedule: "* * * * *"
+  schedule: "4,14,24,34,44,54 * * * *"
   timeout: 300
   emails: onfailure
 
