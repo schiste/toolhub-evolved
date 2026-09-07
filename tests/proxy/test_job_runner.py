@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 from sqlalchemy.exc import DBAPIError, OperationalError, SQLAlchemyError  # noqa: E402
 
+from backend.job_catalog import MINUTES_PER_HOUR  # noqa: E402
 from backend import (  # noqa: E402
     DEFAULT_DB_URL,
     db,
@@ -356,7 +357,16 @@ def test_only_the_weekly_pass_outlasts_the_whole_drain_it_races(monkeypatch):
     jobs = {job.name: job for job in job_catalog.load(ROOT / "jobs.yaml")}
     modes = _scheduled_modes()
     drain = jobs[modes["--queue"]]
-    assert drain.expected_interval_minutes == 1, "the drain is the mode that runs every minute"
+    # Ten minutes, not one: the drain ran every minute until 2026-09-07 and
+    # updated 0 of 14,551 person_identifiers rows in a measured hour, so it was
+    # spending a connection sixty times an hour to find nothing between
+    # projection bursts. What this test is about is unchanged -- it is still
+    # much the most frequent of the modes, and still the one the others race.
+    assert drain.expected_interval_minutes <= MINUTES_PER_HOUR // 4, "the drain is the frequent mode"
+    assert all(
+        drain.expected_interval_minutes < jobs[modes[mode]].expected_interval_minutes
+        for mode in ("--apply", "--reconverge", "--identities-only")
+    )
 
     assert _wait_for("--apply", monkeypatch) > drain.timeout_seconds
     for mode in ("--reconverge", "--identities-only"):

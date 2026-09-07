@@ -37,21 +37,25 @@ WEBSERVICE_WORKERS = 4
 #: the arithmetic. It is the weakest number here and it is load-bearing -- a
 #: sixth process, or a second locking one, is outside what this plans for.
 #:
-#: Measured against jobs.yaml on 2026-09-06 by
-#: `job_catalog.concurrent_process_ceiling()`, which counts continuous jobs
-#: always and scheduled jobs at the busiest minute: the true worst case is
-#: SEVEN, not four. The peak is :17, where `crawler` and `job-watchdog` meet
-#: the four every-minute jobs, the continuous one, and -- on the first of the
-#: month at 03:17 -- `catalog-integrity` as well.
+#: Checked against jobs.yaml by `job_catalog.concurrent_process_ceiling()`,
+#: which counts continuous jobs always and scheduled jobs at the busiest
+#: minute. The two agree, and a test asserts they still do -- so a job added
+#: without room for it fails there rather than in production.
 #:
-#: Seven needs about 24 connections against a grant of 20, which is what
-#: `catalog-projection` has been returning `max_user_connections` for. This
-#: constant is deliberately NOT raised to 7: raising it would make
-#: `account_demand` report a number the grant cannot supply and turn the budget
-#: test red without changing anything in production. It stays at the planned
-#: figure, and the derivation stands beside it as the measurement, until the
-#: grant is raised -- which the note on CONNECTIONS_PER_LOCKING_UNIT already
-#: said would be the next conversation rather than another constant.
+#: They did not always agree. Two jobs were added on 2026-09-06 without this
+#: number moving, and the measurement said SEVEN: about 24 connections against
+#: a grant of 20, which is what `catalog-projection` returned
+#: `max_user_connections` for. Getting back to four took three things, and only
+#: the last of them was the one that mattered most:
+#:
+#:   - wiki-registry and catalog-integrity moved off :17, where they met
+#:     crawler and job-watchdog. Rare jobs, but a grant is sized against the
+#:     worst minute rather than the typical one.  (7 -> 6)
+#:   - people-reconcile-incremental, which ran every minute and updated 0 of
+#:     14,551 person_identifiers rows in a measured hour, went to every ten.
+#:   - the harmonics were broken. */5, */10 and */15 all fire together on the
+#:     hour, so statistics-refresh and catalog-sync were given offsets. This is
+#:     what took it to four, and it cost no cadence at all.  (5 -> 4)
 CONCURRENT_JOB_PROCESSES = 4
 #: Connections deliberately left unspent. A pool recycling a connection can hold
 #: the old and the new for an instant, and retry_on_disconnect disposes a pool

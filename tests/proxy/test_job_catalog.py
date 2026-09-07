@@ -52,12 +52,14 @@ def test_the_declared_plan_is_measured_against_what_jobs_yaml_actually_starts():
     ceiling, so raising the constant would only turn the budget test red. This
     fails when either number moves, which is what makes the gap visible.
     """
-    assert db.CONCURRENT_JOB_PROCESSES == 4
-    # 7 on 2026-09-06, then 6 once wiki-registry and catalog-integrity moved
-    # off :17. The remaining gap is the every-minute pair meeting */5 and */15
-    # at the top of the hour, which is a freshness decision rather than a
-    # scheduling one -- the repair sweeps were the part that could just loosen.
-    assert job_catalog.concurrent_process_ceiling() == 6
+    # Equal, at last. 7 on 2026-09-06, 6 once wiki-registry and
+    # catalog-integrity moved off :17, and 4 once the harmonics were broken:
+    # */5, */10 and */15 all fired on the top of the hour together, and
+    # people-reconcile-incremental ran every minute to do nothing between
+    # projection bursts. Asserted equal rather than pinned separately, because
+    # the plan and the measurement agreeing is the whole point -- a job added
+    # without room for it now fails here instead of in production.
+    assert job_catalog.concurrent_process_ceiling() == db.CONCURRENT_JOB_PROCESSES
 
 
 def test_a_schedule_that_is_not_a_cron_line_fires_in_no_minute():

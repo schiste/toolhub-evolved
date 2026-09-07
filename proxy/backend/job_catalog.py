@@ -62,6 +62,14 @@ def _interval_minutes(schedule: str) -> int:  # noqa: PLR0911 - one return per c
     if minute.startswith("*/") and hour == "*":
         step = minute.removeprefix("*/")
         return int(step) if step.isdigit() else 0
+    if "," in minute and hour == "*":
+        # A phase-shifted step, written as the minutes it fires on because cron
+        # has no offset syntax: `2,12,22,32,42,52` is every ten minutes starting
+        # at :02. Read as hourly before this, which understated
+        # list-revision-sync by four and would have made every job moved off a
+        # harmonic look six times staler than it is.
+        stops = [part for part in minute.split(",") if part.isdigit()]
+        return MINUTES_PER_HOUR // len(stops) if stops else 0
     if hour == "*":
         return MINUTES_PER_HOUR
     if hour.startswith("*/"):
