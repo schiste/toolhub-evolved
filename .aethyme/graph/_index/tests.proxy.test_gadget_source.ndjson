@@ -9,6 +9,7 @@
 {"module":"tests.proxy.test_gadget_source","symbol":"_bodies","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yclnanci4tiy4xppuvh22h4ezu","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_gadget","kind":"function","node_id":"function:toolhub-evolved:wm6zewydwqwyox32p25hzijqse","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_gadget","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:25tl2zquoools6thcv3bpi7jha","file":"tests/proxy/test_gadget_source.py"}
+{"module":"tests.proxy.test_gadget_source","symbol":"_gadget","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:a6dyzp4djqwtfd5qjll4c2vkgy","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_gadget","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:b2phk4eaiqndwpjk6f54mf63my","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_gadget","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cezzmvz42yktdwgqw2pnyjkz7y","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_gadget","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:gdvzpvtm4bfbnvvc2rrwmnepoa","file":"tests/proxy/test_gadget_source.py"}
@@ -20,7 +21,9 @@
 {"module":"tests.proxy.test_gadget_source","symbol":"_gadget","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yakiab252fryu6vafzqdlmr734","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_json.dumps","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ldjixetyaohjrv6ika4k7oqkie","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_json.dumps","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:q7vtvhn4ydxk7n3jsot77mih7y","file":"tests/proxy/test_gadget_source.py"}
+{"module":"tests.proxy.test_gadget_source","symbol":"_json.dumps","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tey3eue4r35oqu4mqkomcz6zey","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_payload","kind":"function","node_id":"function:toolhub-evolved:5te4bropknnbgtcaa4rqccqfym","file":"tests/proxy/test_gadget_source.py"}
+{"module":"tests.proxy.test_gadget_source","symbol":"_payload","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:i7bmkx7ectlybj7yvzocejdlyu","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_payload","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pdleg3pn5azyg2o5fz5kjtzr7a","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"_payload","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qo5s3yemr6vx7fopjfget4ktsm","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"body.index","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hjzbtcg2xtlc3gqk4bfbene3py","file":"tests/proxy/test_gadget_source.py"}
@@ -39,6 +42,8 @@
 {"module":"tests.proxy.test_gadget_source","symbol":"gadget_source._body_for","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5zxsxdg2ke26jm4m4gz5ksc5zi","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"gadget_source._body_for","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cflnfwlkmjj5sqpqvdkp546v2i","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"gadget_source._body_for","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:df4lwuxlnd5pf6amxisnyqbiba","file":"tests/proxy/test_gadget_source.py"}
+{"module":"tests.proxy.test_gadget_source","symbol":"gadget_source._body_for","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tb3ipdrwwyusasn3cshnrviqim","file":"tests/proxy/test_gadget_source.py"}
+{"module":"tests.proxy.test_gadget_source","symbol":"gadget_source._page_key","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:aprle6wqrc4ft7tb4ah6ox6r2a","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"gadget_source._query","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:icoee5o452pxsl2tnn24fzxf54","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"gadget_source._query","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:osqflm7bcczdp33oaqlslw4g6e","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"gadget_source._titles","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:julnzuqyw5hpxs67eqtkkruskq","file":"tests/proxy/test_gadget_source.py"}
@@ -60,6 +65,7 @@
 {"module":"tests.proxy.test_gadget_source","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:fiat7cc4gmktmjf573kwsksmlq","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hywbxtb6mtk6vgdzwb3436mxxq","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:s6j4saz7r6cemtvc74bmo4hi7e","file":"tests/proxy/test_gadget_source.py"}
+{"module":"tests.proxy.test_gadget_source","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xxfpm33hd6hmclgkgladac7gea","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:y7rkduamr5x34fnsbncbfifyf4","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"name.casefold","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2adootctostcudontamrwuhmm4","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"pages.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:fbaeu4sc5rpredroujdtdbmvsm","file":"tests/proxy/test_gadget_source.py"}
@@ -86,10 +92,12 @@
 {"module":"tests.proxy.test_gadget_source","symbol":"test_a_page_the_wiki_does_not_have_is_left_out_rather_than_blank","kind":"function","node_id":"function:toolhub-evolved:phbufn3xtcjpq52xhrwlmexw7y","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"test_a_query_reaches_outbounds_url_guard_rather_than_dying_before_it","kind":"function","node_id":"function:toolhub-evolved:juzh45qcx22lm6ezyyodmnwjl4","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"test_a_run_with_nothing_to_read_reports_so","kind":"function","node_id":"function:toolhub-evolved:a4a2paje6xmed7usmi5fipq43u","file":"tests/proxy/test_gadget_source.py"}
+{"module":"tests.proxy.test_gadget_source","symbol":"test_a_wiki_answering_in_its_own_namespace_language_is_still_read","kind":"function","node_id":"function:toolhub-evolved:d7az6gw4kiik52cdjj3oppehgi","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"test_a_wiki_refusing_the_query_is_a_failure_not_an_empty_gadget","kind":"function","node_id":"function:toolhub-evolved:eadd42ewxuqbv5nd7ulsk7hbwy","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"test_an_unchanged_gadget_costs_nothing_downstream","kind":"function","node_id":"function:toolhub-evolved:t3gb4hejltfeslaxvkwcpl3yse","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"test_one_unreadable_wiki_does_not_end_the_pass","kind":"function","node_id":"function:toolhub-evolved:2grtu7wvaabw4k3vft6iekttua","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"test_pages_are_concatenated_in_the_order_the_definition_lists_them","kind":"function","node_id":"function:toolhub-evolved:5rnrryk2od6mvkfbar7oovtxyu","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"test_the_caller_is_what_outbound_actually_requires","kind":"function","node_id":"function:toolhub-evolved:2o4hdapc43fkyookt3uv46ewpm","file":"tests/proxy/test_gadget_source.py"}
+{"module":"tests.proxy.test_gadget_source","symbol":"test_the_page_key_is_what_survives_translation","kind":"function","node_id":"function:toolhub-evolved:gv3l55yhtmu2xjb2xhq3xr7olu","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"test_the_reading_concatenates_the_pages_the_definition_names","kind":"function","node_id":"function:toolhub-evolved:rk7sp2emtruai62nbza5w365ku","file":"tests/proxy/test_gadget_source.py"}
 {"module":"tests.proxy.test_gadget_source","symbol":"test_titles_carry_the_gadget_namespace","kind":"function","node_id":"function:toolhub-evolved:3uaufydojh5ulmxhlg6cbu2wwu","file":"tests/proxy/test_gadget_source.py"}
