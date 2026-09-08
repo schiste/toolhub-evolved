@@ -3,6 +3,75 @@
 All notable Toolhub Evolved changes, grouped from the repository's Git history.
 This file is generated with `npm run changelog:generate`; do not edit it by hand.
 
+## 2026-09-08
+
+### Fixes
+
+- commit gadget source in chunks ([ecbf34ae](https://github.com/schiste/toolhub-evolved/commit/ecbf34ae24d94a7a244dd8bc81cec4de196338a2))
+
+### Maintenance
+
+- refresh the generated graph index ([c9576a7e](https://github.com/schiste/toolhub-evolved/commit/c9576a7ec7b32782c9978323937e603e2745e9e4))
+
+### Other
+
+- promote session 248 (Search relevance: index keywords, tokenized whole-word matching, relevance ranking, partial term matches) ([e5cebbe4](https://github.com/schiste/toolhub-evolved/commit/e5cebbe4f9528919ae5527428be7044ddd0b97c6))
+
+## 2026-09-07
+
+### Fixes
+
+- match wiki pages by name, not by namespace label ([8733c9d5](https://github.com/schiste/toolhub-evolved/commit/8733c9d5c903aad7e070223119dce5affe3a5fda))
+- give gadget-source the caller outbound requires ([63408ab2](https://github.com/schiste/toolhub-evolved/commit/63408ab298f4687eeb78e6479fe315abded7c188))
+- break the schedule harmonics so the account fits its grant ([afb7606d](https://github.com/schiste/toolhub-evolved/commit/afb7606d227210ab13f82b2b86d80b6d93fdde2b))
+
+### Performance
+
+- raise the gadget source batch to the measured rate ([6f3532fc](https://github.com/schiste/toolhub-evolved/commit/6f3532fc2e4f6cc36ae9f517ba50b844339ac18f))
+
+### Maintenance
+
+- refresh the generated graph index ([8afc00a9](https://github.com/schiste/toolhub-evolved/commit/8afc00a969a846212af86b148c344a67bd65ce87))
+- refresh the generated graph index ([21134393](https://github.com/schiste/toolhub-evolved/commit/211343931ed286c7917db05d8eee1d56bc27afc7))
+- refresh the generated graph index ([0d94f4d4](https://github.com/schiste/toolhub-evolved/commit/0d94f4d44e87d4af7087069d3391b6484c5fa3dd))
+- refresh the generated graph index ([618bc2c1](https://github.com/schiste/toolhub-evolved/commit/618bc2c1eaed375e9ab2d15008dddb34d8edbff3))
+
+## 2026-09-06
+
+### Features
+
+- read gadgets from their code, not one sentence ([f904b823](https://github.com/schiste/toolhub-evolved/commit/f904b8233cfb6f6d819540dbefcabbfbca1dc2b3))
+- read and keep each gadget's own code ([664035ce](https://github.com/schiste/toolhub-evolved/commit/664035ceb1307524f8a1dd988c3d2d4c7b19e241))
+
+### Fixes
+
+- measure the job process count instead of declaring it ([1f67b8b4](https://github.com/schiste/toolhub-evolved/commit/1f67b8b4adda8d5da249ccdc38d536c0f17ff0d4))
+- leave room for the lock retry inside the deadline ([d7372651](https://github.com/schiste/toolhub-evolved/commit/d737265181af13d7c31b38118e6814097855c388))
+- normalize for_wikis to dbnames ([3e47aa65](https://github.com/schiste/toolhub-evolved/commit/3e47aa65ea95bc50279eedb21c82521f182bd1cc))
+- lock the retirements stage against the reconcile job ([515e7fb2](https://github.com/schiste/toolhub-evolved/commit/515e7fb2d7c817de447c5b39e93dfdc786938a0b))
+- give coverage its own refresh and unblock the person jobs ([2a1c9d12](https://github.com/schiste/toolhub-evolved/commit/2a1c9d126f33ab378a79268608504070ea92881e))
+
+### Performance
+
+- run the repair sweeps six hourly, not hourly ([3046eef9](https://github.com/schiste/toolhub-evolved/commit/3046eef938d811fa3b8b6a6c97b5322bbc2fea5d))
+
+### Tests
+
+- cover the lock contention report ([704e303e](https://github.com/schiste/toolhub-evolved/commit/704e303e5ba39c36592f7ce3c24e019d2b84c28c))
+
+### Maintenance
+
+- refresh the generated graph index ([12186d1f](https://github.com/schiste/toolhub-evolved/commit/12186d1ff34ac6fc58cfdaae8a017c2a3de223dd))
+- refresh the generated graph index ([f6b6e936](https://github.com/schiste/toolhub-evolved/commit/f6b6e936f90a4bedbd928ecbb7b07ed523babe06))
+- refresh the generated graph index ([f78624cf](https://github.com/schiste/toolhub-evolved/commit/f78624cf3e111dda09c5e97094db17d3a042b5f9))
+- refresh the generated graph index ([4cd8502e](https://github.com/schiste/toolhub-evolved/commit/4cd8502ec054d9803f5f11ac88fa7e8c88edd196))
+- refresh the generated graph index ([52c7e955](https://github.com/schiste/toolhub-evolved/commit/52c7e955143a5747f87d56c23ea2f729adfd9e5b))
+- refresh the generated graph index ([0fea6350](https://github.com/schiste/toolhub-evolved/commit/0fea63505d998dc6104dca39638bb55536e0d1c3))
+- refresh the generated graph index ([f37b190e](https://github.com/schiste/toolhub-evolved/commit/f37b190e349fc6ce07f02afc4dc499893e77b711))
+- refresh the generated graph index ([66cc22c3](https://github.com/schiste/toolhub-evolved/commit/66cc22c3e13fcf14675d7e12996ebce2b8d88e00))
+- refresh the generated graph index ([091e2ff1](https://github.com/schiste/toolhub-evolved/commit/091e2ff1eb7acdc17ba09763de4e8c37d5978d44))
+- refresh the generated graph index ([924ec053](https://github.com/schiste/toolhub-evolved/commit/924ec0535808af791eb67de0eedd419d36a53bd7))
+
 ## 2026-09-05
 
 ### Features
@@ -27,6 +96,7 @@ This file is generated with `npm run changelog:generate`; do not edit it by hand
 
 ### Documentation
 
+- regenerate from the current history ([d036beea](https://github.com/schiste/toolhub-evolved/commit/d036beeaa0ab4ee78e1f58511547a12dd27c1d9e))
 - correct comments describing a derived reclaim window ([47c77535](https://github.com/schiste/toolhub-evolved/commit/47c77535cffe3394b0377d82fd07805e91892c15))
 
 ### Refactoring
@@ -39,6 +109,7 @@ This file is generated with `npm run changelog:generate`; do not edit it by hand
 
 ### Maintenance
 
+- admit the spellings the changelog history carries ([135d9870](https://github.com/schiste/toolhub-evolved/commit/135d9870d1d041b44fcdb8e1a8cc2aa83c3fd4de))
 - refresh the generated graph index ([c106b6dc](https://github.com/schiste/toolhub-evolved/commit/c106b6dc973a0555639e9a85a343b14841a6a40e))
 - refresh the generated graph index ([7bc69adc](https://github.com/schiste/toolhub-evolved/commit/7bc69adcbedc4929f0b2a3688e96141f99981243))
 - refresh the generated graph index ([17c3cef7](https://github.com/schiste/toolhub-evolved/commit/17c3cef7df653dac413387476d1ecff516bc5c51))

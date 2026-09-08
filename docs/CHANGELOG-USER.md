@@ -1,13 +1,13 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: what-language-a-tool-speaks -->
-<!-- Release title: What Language A Tool Speaks -->
-<!-- Source range: be26eb07..HEAD -->
+<!-- Release id: search-that-finds-the-obvious -->
+<!-- Release title: Search That Finds The Obvious -->
+<!-- Source range: c9576a7e..15357184 (4 commits) -->
 
 # What's New for Users
 
-- The catalogue now records what language a user script speaks. Almost nothing did: 58 records of 57,811 said which languages their interface was available in, and not one gadget or user script among them. It is read from the words a script actually shows the person running it.
-- Every language it carries, not just one. A script that keeps its own table of wording per language genuinely offers several, and about one in fifteen does; recording only the first would understate the work its author did.
-- It is read carefully rather than guessed from where the script lives. A script on the Acehnese Wikipedia usually shows English text, so the wiki it sits on is a poor guide — only a third of answers matched the script's own wiki. Text a script merely rewrites, such as the alphabet tables in a transliteration tool, is ignored rather than counted as its interface.
-- Where a script says it is translated, that link is recorded too — and only ever copied from the script itself, never composed. A link to a translation page that does not exist would be worse than no link at all, so one that is not written in the source is discarded.
-- A reply the catalogue cannot read no longer counts as an answer. A question that came back as nonsense is asked again next time, instead of being quietly filed as settled.
+- Search now puts the best match first. The catalog is mostly gadgets and user scripts, and their names sort ahead of everything else, so a search listed them first whatever you typed: XTools itself sat at position 81 of 97 for "xtools", and ORES Inspect at 89 of 120 for "ores". A tool whose title is exactly what you typed now comes first, then tools with the word in their title, then in their keywords, then in their description.
+- The keywords an author wrote are finally searched. One tool describes itself as making "a CSV with pageview data" and lists "pageviews" as a keyword; a search for "pageviews" could not find it, because keywords were never indexed and the plural does not occur in the prose. Keywords now count, and rank above a passing mention in a description.
+- Whole words beat fragments of longer ones. "ores" used to be led by every tool that stores, scores or restores something; those still appear, but after the tools that are actually about ORES. A plural finds its singular and the other way round, so "citations" and "citation" reach the same tools.
+- A half-remembered query gets an answer instead of nothing. "copyright violation" returned three tools and left out every copyright checker that never says "violation". Tools containing all your words still come first, and the ones containing some of them follow, so the result count grows: read the first page rather than the number.
+- Choosing to sort by name or by date still does exactly that. Relevance is the order when you have typed a query and picked no other, which is also what the official Toolhub does.

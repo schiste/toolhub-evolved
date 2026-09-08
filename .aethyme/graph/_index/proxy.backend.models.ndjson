@@ -111,6 +111,8 @@
 {"module":"proxy.backend.models","symbol":"WikiLaneState","kind":"class","node_id":"class:toolhub-evolved:h3ek3qy73fscwq3ehht3vpmg2i","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"WikiProject","kind":"class","node_id":"class:toolhub-evolved:pxrpxkg2h5fkg754u4gye2v23q","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"WikiTitlePrefixes","kind":"class","node_id":"class:toolhub-evolved:igojjmelfn4lythem3xvavxrhi","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"_SEARCH_TOKEN_BREAK","kind":"global_variable","node_id":"global_variable:toolhub-evolved:2ohnwvjqwy2iegb44l4cepwvla","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"_SEARCH_TOKEN_BREAK.split","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vxvjxsgxqdhq5oxnygl2lazw7m","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"_derive_search_text","kind":"method","node_id":"method:toolhub-evolved:5ultrftiixv72zk3x2h7afflte","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"bool","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:namm7jf5tuwn6t3ubncv7hymvq","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"catalog_card_record","kind":"function","node_id":"function:toolhub-evolved:xocbzyemgy7fcfbjgnnpbhshhe","file":"proxy/backend/models.py"}
@@ -121,18 +123,25 @@
 {"module":"proxy.backend.models","symbol":"datetime.fromisoformat","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:f6uemxzvokud7ypxcy5fykz2xm","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"datetime.now","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:f5xiy733n5uswl3awyx2qnr7hq","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qjm432l76po6ckagk7ianwlf4e","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:slqihsvty2pawu2diwdfryxqtq","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"isinstance","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ugyki6xasb3izokejaspf6kf7m","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"issue:# Bumped on sign-out to invalidate every session cookie already issued to","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:qpoaepzmyf6pjjgboxbgscyelu","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"issue:# this user. Flask sessions are signed client-side cookies, so without a","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:zoa4vwyz4yrakfokn4vcwlcxku","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"mapped_column","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:odfw4huu5qhj76q6gu4qgqbnwu","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"parsed.astimezone","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3zj7bqz2cxkmg3sqe6yqltfwdm","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"raw.strip","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:c64dwb7lutgryaycp7umqzfpom","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"re","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zfvcf6atgxrtc2f6yq7cewryou","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"search_field","kind":"function","node_id":"function:toolhub-evolved:iitbvtxxckdief6cgzlyup7ose","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"search_field","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:oo7jpoc67e737n77kdrj75i2te","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"search_tokens","kind":"function","node_id":"function:toolhub-evolved:q3op36ulgied3vp6jv6i2ikplq","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"search_tokens","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:dhvaescsevvvejss2pcqdfehza","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"source.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bbr3q76baazqsmvu6jsjgbbqda","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"source.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:htlcpdsdm7bicmhswcgvrmtzhm","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"store:# Store capability, not credentials. Verification re-reads the current","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:d66dvx6vyjkoteiee2vfzr5wcq","file":"proxy/backend/models.py"}
-{"module":"proxy.backend.models","symbol":"str","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rnwrzpfrnnnl5vvnfmwigrjtza","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"str","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xckqqa2zefx257rje4wu2q7see","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"utcnow","kind":"function","node_id":"function:toolhub-evolved:rrz5n7bzp65quxnx63mcwiemmq","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"uuid4","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kwu3soqr2havagcvinz3nracsa","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"validate:","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:xq7kt7otlxpk3lcuw5t5wxtjsm","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"validate:# Bumped on sign-out to invalidate every session cookie already issued to","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:6cvgork77hxmip2rybqkdz7pme","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"validates","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qprjcso7rwdkg4uvmddvdojtr4","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"value.values","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:iygey42ivaz2mzs243otkou47u","file":"proxy/backend/models.py"}
