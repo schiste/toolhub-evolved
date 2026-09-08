@@ -43,6 +43,12 @@ WIKI_CALLER = outbound.Caller(
 #: How many gadgets one run reads. Bounded like every other census pass: the
 #: work is one API round trip per gadget and the wikis set the pace, not this.
 DEFAULT_LIMIT = 400
+#: How many gadgets share one transaction. Separate from the run's size on
+#: purpose: a body runs to 200,000 characters, so 4,000 of them in a single
+#: commit was more than ToolsDB would take and it closed the connection
+#: mid-write. 200 is well inside what 400 already proved, and a run larger than
+#: this now commits more than once instead of growing one write without bound.
+COMMIT_CHUNK = 200
 #: Room for a gadget's concatenated pages. Above what the lane will send
 #: anyway, so truncation here never decides what the model sees.
 MAX_BODY_CHARS = 200_000
@@ -129,34 +135,57 @@ def _stale(session: Session, limit: int) -> list[WikiGadget]:
 
 
 def refresh(*, limit: int = DEFAULT_LIMIT) -> dict[str, int]:
-    """Read and store the code of the gadgets least recently read."""
+    """Read and store the code of the gadgets least recently read.
+
+    Written in chunks, each its own transaction. One transaction for the whole
+    run held every body until the commit at the end, and a body runs to
+    200,000 characters: at 400 gadgets that landed, at 4,000 ToolsDB closed the
+    connection mid-write -- `MySQL server has gone away` -- and seven runs in a
+    row failed until the guard disabled the job. How much work a run takes on
+    and how much it holds in one transaction are separate questions, and only
+    the first belongs to the caller.
+
+    Chunking also means a run that dies half way keeps what it had already
+    stored, rather than rolling the lot back and re-reading those wikis next
+    time for nothing.
+    """
     summary = {"examined": 0, "stored": 0, "unchanged": 0, "empty": 0, "failed": 0}
     with db.session_scope() as session:
-        gadgets = _stale(session, limit)
-        summary["examined"] = len(gadgets)
-        if not gadgets:
-            return summary
-        now = utcnow()
-        with requests.Session() as http:
-            for gadget in gadgets:
-                try:
-                    body = _body_for(http, gadget)
-                except (GadgetSourceError, OSError, ValueError, requests.RequestException):
-                    # One unreadable wiki must not end the pass: the rest of
-                    # this run's gadgets are on other wikis and still readable.
-                    summary["failed"] += 1
-                    continue
-                # Stamped even when empty, so a gadget whose pages are all
-                # missing is not re-read every run forever.
-                gadget.body_fetched_at = now
-                if not body:
-                    summary["empty"] += 1
-                    continue
-                digest = fingerprint(body)
-                if digest == gadget.body_fingerprint:
-                    summary["unchanged"] += 1
-                    continue
-                gadget.body = body
-                gadget.body_fingerprint = digest
-                summary["stored"] += 1
+        # Ids only: the rows are re-read per chunk, so holding the objects here
+        # would keep every body of the run alive for the sake of a primary key.
+        ids = [gadget.id for gadget in _stale(session, limit)]
+    summary["examined"] = len(ids)
+    if not ids:
+        return summary
+    with requests.Session() as http:
+        for offset in range(0, len(ids), COMMIT_CHUNK):
+            _read_chunk(http, ids[offset : offset + COMMIT_CHUNK], summary)
     return summary
+
+
+def _read_chunk(http: requests.Session, ids: list[int], summary: dict[str, int]) -> None:
+    """Read one chunk of gadgets and commit them together."""
+    now = utcnow()
+    with db.session_scope() as session:
+        gadgets = session.execute(select(WikiGadget).where(WikiGadget.id.in_(ids))).scalars()
+        for gadget in gadgets:
+            try:
+                body = _body_for(http, gadget)
+            except (GadgetSourceError, OSError, ValueError, requests.RequestException):
+                # One unreadable wiki must not end the pass: the rest of this
+                # run's gadgets are on other wikis and still readable.
+                summary["failed"] += 1
+                continue
+            # Stamped even when empty, so a gadget whose pages are all missing
+            # is not re-read every run forever.
+            gadget.body_fetched_at = now
+            if not body:
+                summary["empty"] += 1
+                continue
+            digest = fingerprint(body)
+            if digest == gadget.body_fingerprint:
+                summary["unchanged"] += 1
+                continue
+            gadget.body = body
+            gadget.body_fingerprint = digest
+            summary["stored"] += 1

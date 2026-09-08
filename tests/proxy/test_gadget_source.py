@@ -10,7 +10,9 @@ import sys
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+import contextlib
+
+from sqlalchemy import func, select
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
@@ -260,3 +262,64 @@ def test_the_page_key_is_what_survives_translation():
     assert gadget_source._page_key("МедияУики:Gadget-popups.js") == "Gadget-popups.js"
     # A title with no namespace is its own key rather than empty.
     assert gadget_source._page_key("Gadget-popups.js") == "Gadget-popups.js"
+
+
+def test_a_run_larger_than_a_chunk_commits_more_than_once(monkeypatch):
+    """The defect: one transaction for the whole run.
+
+    Every body was held until the commit at the end, and a body runs to 200,000
+    characters. At 400 gadgets that landed; at 4,000 ToolsDB closed the
+    connection mid-write -- `MySQL server has gone away` -- and seven runs in a
+    row failed until the guard disabled the job. Batch size and transaction
+    size were the same number, and only one of them is the caller's business.
+    """
+    wanted = gadget_source.COMMIT_CHUNK + 5
+    with db.session_scope() as session:
+        for index in range(wanted):
+            session.add(_gadget(name=f"g{index}", pages=(f"g{index}.js",)))
+
+    real_scope = gadget_source.db.session_scope
+    scopes = []
+
+    def _counted(*args, **kwargs):
+        scopes.append(1)
+        return real_scope(*args, **kwargs)
+
+    monkeypatch.setattr(gadget_source.db, "session_scope", _counted)
+    monkeypatch.setattr(gadget_source, "_body_for", lambda _h, g: f"/* {g.name} */\nvar x = 1;")
+
+    summary = gadget_source.refresh(limit=wanted)
+
+    assert summary["stored"] == wanted
+    # One to choose the ids, then one per chunk -- three for a run five past it.
+    assert len(scopes) == 1 + 2, f"expected a transaction per chunk, saw {len(scopes)}"
+
+
+def test_what_an_earlier_chunk_stored_survives_a_later_one_failing(monkeypatch):
+    """A run that dies half way keeps what it had, rather than re-reading those
+    wikis next time for nothing."""
+    wanted = gadget_source.COMMIT_CHUNK + 3
+    with db.session_scope() as session:
+        for index in range(wanted):
+            session.add(_gadget(name=f"h{index}", pages=(f"h{index}.js",)))
+
+    # By index, not by name prefix: "h20" starts with "h2" and sits in the
+    # first chunk, which would kill the run before anything had committed and
+    # make this pass for the wrong reason.
+    doomed = {f"h{index}" for index in range(gadget_source.COMMIT_CHUNK, wanted)}
+
+    def _dies_in_the_second_chunk(_http, gadget):
+        if gadget.name in doomed:
+            raise RuntimeError("connection reset")
+        return f"/* {gadget.name} */\nvar x = 1;"
+
+    monkeypatch.setattr(gadget_source, "_body_for", _dies_in_the_second_chunk)
+
+    with contextlib.suppress(RuntimeError):
+        gadget_source.refresh(limit=wanted)
+
+    with db.session_scope() as session:
+        stored = session.execute(
+            select(func.count()).select_from(WikiGadget).where(WikiGadget.body != "")
+        ).scalar()
+    assert stored >= gadget_source.COMMIT_CHUNK, "the first chunk's work was rolled back"
