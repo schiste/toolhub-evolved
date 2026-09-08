@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: the-registered-tool-wins-the-tie -->
 <!-- Release title: The Registered Tool Wins The Tie -->
-<!-- Source range: 086e2977..b2c0ae29 (3 commits) -->
+<!-- Source range: 086e2977..13092651 (3 commits, promoted as two) -->
 
 # What's New for Users
 
