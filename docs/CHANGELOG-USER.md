@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: search-that-finds-the-obvious -->
 <!-- Release title: Search That Finds The Obvious -->
-<!-- Source range: c9576a7e..15357184 (4 commits) -->
+<!-- Source range: c9576a7e..37d76887 (4 commits, promoted as two) -->
 
 # What's New for Users
 
