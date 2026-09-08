@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 from sqlalchemy import func, select
 
 from backend import activity_privacy, api_cache, catalog_facets, db, list_revisions, paging
-from backend.canonical_tools import search_predicate
+from backend.canonical_tools import search_order, search_predicate
 from backend.catalog_facets import STATUS_VALUES, selected_statuses, status_predicate
 from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
 
@@ -159,7 +159,10 @@ def search_payload(params: Any) -> dict[str, Any]:  # noqa: ANN401 - Flask Multi
     elif ordering == "modified_date":
         ordered = filtered.order_by(CanonicalToolCache.modified_at_sort.asc(), CanonicalToolCache.tool_name.asc())
     else:
-        ordered = filtered.order_by(CanonicalToolCache.tool_name.asc())
+        # Toolhub's own default and its `-score` spelling: best match first
+        # when there is a query, and by name -- the only order that means
+        # anything -- when there is not.
+        ordered = filtered.order_by(*search_order(str(params.get("q") or "")))
     compact = str(params.get("view") or "").strip().casefold() == "card"
     with db.session_scope() as session:
         total_statement = filtered.with_only_columns(func.count(CanonicalToolCache.tool_name)).order_by(None)

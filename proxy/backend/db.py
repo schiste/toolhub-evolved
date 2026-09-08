@@ -280,6 +280,10 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         },
         "canonical_tool_cache": {
             "search_text": f"{text_col} NULL",
+            # NULL until `backfill_search_text` reaches the row; relevance
+            # reads NULL as "no title match", never as an error.
+            "search_title": f"{text_col} NULL",
+            "search_keywords": f"{text_col} NULL",
             "card_record": f"{json_col} NULL",
             "modified_at_sort": "DATETIME NULL",
             "generation": "INTEGER NOT NULL DEFAULT 0",

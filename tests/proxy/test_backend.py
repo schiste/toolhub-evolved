@@ -2383,10 +2383,13 @@ def test_canonical_search_filters_in_sql_and_escapes_like_wildcards(app):
         source_url="https://toolhub.wikimedia.org/api/search/tools/",
     )
 
-    # "%" is a literal here, not the LIKE wildcard that would match everything.
+    # "%" is never a LIKE wildcard: tokenizing drops it, and the surviving
+    # "100" is a whole word of one title only. A query that is nothing but
+    # punctuation has no terms and browses, the way an empty query does.
     matched = canonical_tools.search("100%")
     assert [row["toolName"] for row in matched] == ["percent-tool"]
-    assert [row["toolName"] for row in canonical_tools.search("_lain")] == []
+    assert canonical_tools.search_terms("_%") == []
+    assert {row["toolName"] for row in canonical_tools.search("_%")} == {"percent-tool", "plain-tool"}
     assert {row["toolName"] for row in canonical_tools.search("tool")} == {"percent-tool", "plain-tool"}
     # The limit is applied by the database, not after loading the table.
     assert len(canonical_tools.search("", limit=1)) == 1

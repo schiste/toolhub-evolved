@@ -16,12 +16,19 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlparse
 
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import catalog_facets, db
 from backend.api_cache import DETAIL_FRESH_SECONDS, SEARCH_FRESH_SECONDS, STALE_IF_ERROR_SECONDS
-from backend.models import ApiCacheMeta, CanonicalToolCache, CatalogSnapshotStage, catalog_card_record, utcnow
+from backend.models import (
+    ApiCacheMeta,
+    CanonicalToolCache,
+    CatalogSnapshotStage,
+    catalog_card_record,
+    search_tokens,
+    utcnow,
+)
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL
 
 if TYPE_CHECKING:
@@ -33,10 +40,12 @@ MAX_QUERY_NAMES = 50
 MAX_SEARCH_RESULTS = 50
 # Terms honored from one free-text query. A longer query is truncated rather
 # than refused: an LLM caller that pastes a whole sentence should get the best
-# match for its leading content words, not an error. Truncation drops
-# conjuncts, so it can only widen the result set -- it can never hide a tool a
-# shorter query would have found.
+# match for its leading content words, not an error. Any term can match, so
+# a dropped trailing term costs at most the rows only it would have reached,
+# and the leading words keep their say in the ranking.
 MAX_SEARCH_TERMS = 8
+# Sorts an un-backfilled row after any measured title in a relevance tie.
+SEARCH_TITLE_UNMEASURED = 1_000_000
 MAX_SOURCE_URL = 2000
 TOOL_DETAIL_PARTS = 3
 MAX_RECORD_RESULTS = 5000
@@ -272,33 +281,139 @@ def escape_like(term: str) -> str:
 
 
 def search_terms(query: str) -> list[str]:
-    """Split a free-text query into the terms a row has to contain, all of them.
+    """Split a free-text query into the word tokens a row is scored against.
 
     One shared reading of a query, because there were two before and both were
     the same mistake: the entire string went into a single `LIKE %...%`, so a
     match had to contain the words *contiguously*. `lupin popups` found nothing
-    while `lupin` and `popups` each found plenty, and since `_search_text` joins
-    name, title and description with newlines, no query spanning two of those
-    fields could ever match at all. Two-word queries are the ordinary case here
-    -- the MCP tool description asks callers for exactly that shape.
+    while `lupin` and `popups` each found plenty. The query is tokenized the
+    same way `search_text` is (see `models.search_tokens`), so "x-tools" and
+    "x tools" are the same two words on both sides of the comparison.
     """
-    return list(dict.fromkeys(part for part in str(query or "").casefold().split() if part))[:MAX_SEARCH_TERMS]
+    return list(dict.fromkeys(search_tokens(query).split()))[:MAX_SEARCH_TERMS]
+
+
+def search_stem(term: str) -> str:
+    """Return the shortest prefix a word and its plain plural share.
+
+    Not a stemmer -- just enough that "pageviews" finds a tool whose text says
+    "pageview data", and "citations" finds "citation". Matched as a word prefix,
+    so the stem of "ores" ("ore") still cannot reach "stores".
+    """
+    if len(term) > 4 and term.endswith("ies"):  # noqa: PLR2004 - "ies" plus a two-letter root
+        return term[:-3] + "y"
+    if len(term) > 3 and term.endswith("s") and not term.endswith("ss"):  # noqa: PLR2004 - "s" plus a three-letter root
+        return term[:-1]
+    return term
+
+
+# Score of a term's best match in one row, before coverage. A term is worth
+# most as a whole word of the title, then of the keywords, then anywhere;
+# a word-prefix match ("citation" in "citations") is worth less than the
+# whole word, and a bare substring ("ores" in "stores") least of all.
+SCORE_TITLE_WORD = 60
+SCORE_TITLE_PREFIX = 40
+SCORE_KEYWORD_WORD = 35
+SCORE_KEYWORD_PREFIX = 25
+SCORE_TEXT_WORD = 20
+SCORE_TEXT_PREFIX = 12
+SCORE_TEXT_SUBSTRING = 5
+# Every matched term is worth more than the best possible match of any
+# single one, so a row containing all the words always outranks a row
+# containing fewer, however well the fewer are placed.
+SCORE_TERM_MATCHED = 1000
+# A title or name that is the query, whole, beats every other arrangement of
+# the same words: "XTools" above "XTools ArticleInfo". Larger than the sum of
+# the per-term ceilings for MAX_SEARCH_TERMS terms.
+SCORE_EXACT = 500
+
+
+def _term_patterns(term: str) -> dict[str, str]:
+    literal = escape_like(term)
+    stem = escape_like(search_stem(term))
+    return {"word": f"% {literal} %", "prefix": f"% {stem}%", "substring": f"%{literal}%"}
+
+
+def _term_predicate(term: str) -> ColumnElement[bool]:
+    """Whether a row contains `term` at all: as a substring, or as its stem."""
+    patterns = _term_patterns(term)
+    return or_(
+        CanonicalToolCache.search_text.like(patterns["substring"], escape="\\"),
+        CanonicalToolCache.search_text.like(patterns["prefix"], escape="\\"),
+    )
+
+
+def _term_score(term: str) -> ColumnElement[int]:
+    patterns = _term_patterns(term)
+    like = lambda column, pattern: column.like(pattern, escape="\\")  # noqa: E731 - local shorthand
+    return case(
+        (like(CanonicalToolCache.search_title, patterns["word"]), SCORE_TITLE_WORD),
+        (like(CanonicalToolCache.search_title, patterns["prefix"]), SCORE_TITLE_PREFIX),
+        (like(CanonicalToolCache.search_keywords, patterns["word"]), SCORE_KEYWORD_WORD),
+        (like(CanonicalToolCache.search_keywords, patterns["prefix"]), SCORE_KEYWORD_PREFIX),
+        (like(CanonicalToolCache.search_text, patterns["word"]), SCORE_TEXT_WORD),
+        (like(CanonicalToolCache.search_text, patterns["prefix"]), SCORE_TEXT_PREFIX),
+        (like(CanonicalToolCache.search_text, patterns["substring"]), SCORE_TEXT_SUBSTRING),
+        else_=0,
+    )
 
 
 def search_predicate(query: str) -> ColumnElement[bool] | None:
-    """AND one `search_text` substring test per term; None when there is no query.
+    """Rows containing at least one query term; None when there is no query.
 
-    AND rather than the scored OR the MCP tool advertises, because ranking does
-    not exist yet: `search_payload` falls through to ordering by tool name. An
-    OR with no scorer behind it would answer "wikipedia bot" with a thousand
-    alphabetical tools over 53,000 rows, most of them matching only
-    "wikipedia", which is a worse answer than the empty one this replaces. Narrowing is the honest behaviour to ship
-    without a scorer, and the tool descriptions now say so.
+    OR, now that `search_score` exists to put the rows containing every term
+    first. The AND this replaces was the honest behaviour while nothing ranked:
+    an OR ordered by name would have answered "wikipedia bot" with a thousand
+    alphabetical tools, most of them matching only "wikipedia". Scored, the
+    same population reads the other way round -- "copyright violation" still
+    surfaces the copyright checkers below the rows that say both words,
+    instead of answering with three tools and nothing.
     """
     terms = search_terms(query)
     if not terms:
         return None
-    return and_(*(CanonicalToolCache.search_text.like(f"%{escape_like(term)}%", escape="\\") for term in terms))
+    return or_(*(_term_predicate(term) for term in terms))
+
+
+def search_score(query: str) -> ColumnElement[int] | None:
+    """Return a relevance score for `query`, computable in SQL; None without a query.
+
+    Coverage first (how many of the terms the row contains at all), then the
+    sum of each term's best placement, then a bonus when the title or the name
+    is the whole query. Exact arithmetic on LIKE tests rather than a full-text
+    index because the catalog is a few tens of thousands of rows that every
+    search already scans, and the score has to read the same on the SQLite
+    the tests run against and the MariaDB production runs on.
+    """
+    terms = search_terms(query)
+    if not terms:
+        return None
+    coverage = sum((case((_term_predicate(term), SCORE_TERM_MATCHED), else_=0) for term in terms), start=0)
+    placement = sum((_term_score(term) for term in terms), start=0)
+    phrase = " ".join(terms)
+    exact = case(
+        (
+            or_(CanonicalToolCache.search_title == f" {phrase} ", CanonicalToolCache.tool_name == phrase),
+            SCORE_EXACT,
+        ),
+        else_=0,
+    )
+    return coverage + placement + exact
+
+
+def search_order(query: str) -> list[ColumnElement[Any]]:
+    """ORDER BY clauses for a relevance-ranked result page.
+
+    Ties break on title length -- the query is a larger share of a shorter
+    title, which is the length norm a search engine would apply -- and then on
+    name so a page is stable between requests. A row not yet backfilled has no
+    title to measure and sorts after the ones that have.
+    """
+    score = search_score(query)
+    if score is None:
+        return [CanonicalToolCache.tool_name.asc()]
+    title_length = func.coalesce(func.length(CanonicalToolCache.search_title), SEARCH_TITLE_UNMEASURED)
+    return [score.desc(), title_length.asc(), CanonicalToolCache.tool_name.asc()]
 
 
 def _merge_listing_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
@@ -503,10 +618,13 @@ def publish_snapshot_stage(s: Session, generation: int, expected_count: int) -> 
 
 
 def backfill_search_text(*, batch_size: int = 500) -> int:
-    """Populate search_text for rows cached before the column existed.
+    """Populate the search columns for rows cached before they existed.
 
     Without it every pre-existing row is invisible to search() until some later
     sync happens to rewrite it, which for the canonical catalog could be hours.
+    A NULL `search_title` is the same cursor: it marks a row written before the
+    title and keyword columns existed, whose `search_text` is still in the
+    older newline-joined form that whole-word matching cannot read.
 
     Run from proxy/migrate.py, not from schema setup: this reads and rewrites
     every row, and the catalog is thousands of rows with a full JSON record
@@ -520,7 +638,11 @@ def backfill_search_text(*, batch_size: int = 500) -> int:
                 rows = list(
                     s.execute(
                         select(CanonicalToolCache)
-                        .where((CanonicalToolCache.search_text == "") | CanonicalToolCache.search_text.is_(None))
+                        .where(
+                            (CanonicalToolCache.search_text == "")
+                            | CanonicalToolCache.search_text.is_(None)
+                            | CanonicalToolCache.search_title.is_(None)
+                        )
                         .limit(batch_size)
                     ).scalars()
                 )
@@ -644,7 +766,7 @@ def search(
     include_archived: bool = False,
     statuses: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Search cached canonical records locally with simple deterministic matching.
+    """Search cached canonical records locally, best match first.
 
     Filtering and limiting happen in SQL. Reading the whole table to keep at
     most `limit` rows meant transferring every cached record's JSON — the full
@@ -662,7 +784,14 @@ def search(
     predicate = search_predicate(query)
     capped = max(1, min(MAX_SEARCH_RESULTS, int(limit or MAX_SEARCH_RESULTS)))
     population = select(CanonicalToolCache) if include_archived else catalog_facets.default_population()
-    statement = population.order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
+    # Relevance when there is something to be relevant to; the newest rows
+    # first when there is not, which is what a browse without a query wants.
+    ordering = (
+        search_order(query)
+        if predicate is not None
+        else [CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name]
+    )
+    statement = population.order_by(*ordering)
     status = catalog_facets.status_predicate(catalog_facets.STATUS_VALUES if statuses is None else statuses)
     if status is not None:
         statement = statement.where(status)

@@ -191,11 +191,11 @@ def test_collection_merge_rejects_malformed_rows_deduplicates_and_paginates(monk
                         {"id": 2, "featured": True},
                     ]
                 }
-                ).encode(),
-                False,
-                None,
-                None,
-            ),
+            ).encode(),
+            False,
+            None,
+            None,
+        ),
     ]
     monkeypatch.setattr(api_cache, "responses_for_path", lambda _path: responses)
 
@@ -355,9 +355,7 @@ def test_asking_for_archived_serves_a_published_aggregate_instead_of_recounting(
     assert catalog_facets.rebuild_global_payload(force=True) > 0
     seen: list[bool] = []
     original = catalog_read._facet_payload
-    monkeypatch.setattr(
-        catalog_read, "_facet_payload", lambda *args: (seen.append(True), original(*args))[1]
-    )
+    monkeypatch.setattr(catalog_read, "_facet_payload", lambda *args: (seen.append(True), original(*args))[1])
 
     payload = catalog_read.search_payload({"page_size": "50", "include_archived": "1"})
 
@@ -378,9 +376,7 @@ def test_a_narrowing_filter_still_recounts(monkeypatch):
     assert catalog_facets.rebuild_global_payload(force=True) > 0
     seen: list[bool] = []
     original = catalog_read._facet_payload
-    monkeypatch.setattr(
-        catalog_read, "_facet_payload", lambda *args: (seen.append(True), original(*args))[1]
-    )
+    monkeypatch.setattr(catalog_read, "_facet_payload", lambda *args: (seen.append(True), original(*args))[1])
 
     catalog_read.search_payload({"page_size": "50", "include_archived": "1", "tool_type__term": "bot"})
 
@@ -573,10 +569,17 @@ def test_a_query_can_span_two_fields_of_one_record():
     assert _names(q="beta wikipedia") == ["beta"]
 
 
-def test_extra_words_narrow_rather_than_widen():
-    """Terms are AND-ed, which is what the tool description now promises."""
+def test_extra_words_widen_the_tail_and_the_complete_match_stays_first():
+    """Any word can match, and the row containing every word ranks first.
+
+    The AND this replaces answered "editor wikipedia" with nothing. Scored, the
+    same query lists alpha (the editor) first, then beta (the Wikipedia bot),
+    which is what a reader who half-remembers a tool needs from the page.
+    """
     assert _names(q="editor") == ["alpha"]
-    assert _names(q="editor wikipedia") == []
+    assert _names(q="editor wikipedia") == ["alpha", "beta"]
+    assert _names(q="wikipedia editor") == ["alpha", "beta"]
+    assert catalog_read.search_payload({"q": "editor wikipedia"})["count"] == 2
 
 
 def test_matching_is_case_and_whitespace_insensitive():
@@ -587,10 +590,18 @@ def test_a_query_of_only_whitespace_filters_nothing():
     assert sorted(_names(q="   ")) == ["alpha", "beta"]
 
 
-def test_wildcards_in_a_term_stay_literal():
-    """Per-term escaping, so one `%` cannot turn a narrow query into a scan."""
-    assert _names(q="alpha %") == []
-    assert _names(q="%") == []
+def test_punctuation_is_not_a_term_and_never_a_wildcard():
+    """Tokenizing drops `%` and `_` before they can reach a LIKE pattern.
+
+    A query that is only punctuation has no terms and reads as no query, the
+    way the search box treats an empty one; it must not become a scan pattern
+    that matches everything for a different reason.
+    """
+    assert canonical_tools.search_terms("%") == []
+    assert canonical_tools.search_terms("_") == []
+    assert _names(q="alpha %") == ["alpha"]
+    assert sorted(_names(q="%")) == ["alpha", "beta"]
+    assert catalog_read._has_catalog_filters({"q": "%"}) is True
 
 
 def test_a_pasted_sentence_is_truncated_rather_than_refused():
@@ -600,8 +611,8 @@ def test_a_pasted_sentence_is_truncated_rather_than_refused():
 
     assert terms[0] == "alpha"
     assert len(terms) == canonical_tools.MAX_SEARCH_TERMS
-    # A working query either way -- the surviving terms still have to match.
-    assert _names(q=f"alpha {padding}") == []
+    # A working query either way -- the surviving terms still match.
+    assert _names(q=f"alpha {padding}") == ["alpha"]
 
 
 def test_repeated_words_do_not_multiply_the_query():
@@ -616,7 +627,112 @@ def test_the_offline_fallback_reads_a_query_the_same_way():
     """
     assert [row["toolName"] for row in canonical_tools.search("editor alpha")] == ["alpha"]
     assert [row["toolName"] for row in canonical_tools.search("alpha wikidata")] == ["alpha"]
-    assert canonical_tools.search("editor wikipedia") == []
+    assert [row["toolName"] for row in canonical_tools.search("editor wikipedia")] == ["alpha", "beta"]
+
+
+def _seed(*records: dict) -> None:
+    canonical_tools.upsert_records(list(records), source_url="https://toolhub.wikimedia.org/api/tools/?page=1")
+
+
+def test_a_title_that_is_the_query_outranks_the_gadgets_named_after_it():
+    """The defect this replaces: results came back by name, and the catalog is
+    mostly census rows whose names sort before everything else.
+
+    XTools itself sat at position 81 of 97 for "xtools", behind seventy gadgets
+    that embed it. An exact title beats a longer title holding the same word,
+    and that beats a description mention, whatever the names sort like.
+    """
+    _seed(
+        {"name": "gadget-ar.wikipedia.org-xtools-articleinfo", "title": "XTools ArticleInfo", "description": "Gadget"},
+        {"name": "enwiki-someone-pageinfo", "title": "Page info", "description": "Links to xtools for a page"},
+        {"name": "x-tools-xtools", "title": "XTools", "description": "A suite of tools to analyze pages"},
+    )
+
+    assert _names(q="xtools") == [
+        "x-tools-xtools",
+        "gadget-ar.wikipedia.org-xtools-articleinfo",
+        "enwiki-someone-pageinfo",
+    ]
+
+
+def test_a_whole_word_outranks_a_substring_of_a_longer_word():
+    """ "ores" used to return 120 rows led by anything that stored, scored or
+    restored something, with ORES Inspect at position 89."""
+    _seed(
+        {"name": "aardvark-stores", "title": "Aardvark", "description": "Stores drafts for later"},
+        {"name": "toolforge-ores-inspect", "title": "ORES Inspect", "description": "Inspect ORES scores"},
+    )
+
+    assert _names(q="ores") == ["toolforge-ores-inspect", "aardvark-stores"]
+
+
+def test_keywords_are_searched_and_a_plural_finds_its_singular():
+    """Pileviews carries the keyword "pageviews"; its prose says "pageview data".
+
+    Neither was reachable: keywords were never indexed, and a substring of the
+    plural does not occur in the singular. The keyword ranks above the prose.
+    """
+    _seed(
+        {"name": "pileviews", "title": "Pileviews", "description": "CSV of pageview data", "keywords": ["pageviews"]},
+        {"name": "toolforge-viewer", "title": "Viewer", "description": "Shows pageview totals"},
+    )
+
+    assert _names(q="pageviews") == ["pileviews", "toolforge-viewer"]
+    assert _names(q="pageview") == ["pileviews", "toolforge-viewer"]
+    assert canonical_tools.search_stem("citations") == "citation"
+    assert canonical_tools.search_stem("queries") == "query"
+    assert canonical_tools.search_stem("ores") == "ore"
+    assert canonical_tools.search_stem("class") == "class"
+
+
+def test_a_partial_match_ranks_below_every_complete_one():
+    """ "copyright violation" answered with three tools and nothing else.
+
+    The copyright checkers that never say "violation" now follow the rows
+    that say both words, instead of being absent.
+    """
+    _seed(
+        {"name": "zz-infringement", "title": "Infringement assistant", "description": "Flags a copyright violation"},
+        {"name": "aa-copyclear", "title": "Copyrights in Wikidata", "description": "Add copyright statements"},
+        {"name": "mm-checker", "title": "Copyright status checker", "description": "Check copyright of authors"},
+    )
+
+    assert _names(q="copyright violation") == ["zz-infringement", "mm-checker", "aa-copyclear"]
+
+
+def test_the_hyphenated_name_is_the_same_words_as_the_query():
+    """ "x-tools" and "x tools" tokenize alike on both sides of the comparison."""
+    _seed({"name": "x-tools-xtools", "title": "XTools", "description": "Suite"})
+
+    assert _names(q="x-tools") == ["x-tools-xtools"]
+    assert _names(q="x tools") == ["x-tools-xtools"]
+    assert _names(q="X_TOOLS") == ["x-tools-xtools"]
+
+
+def test_an_explicit_ordering_still_wins_over_relevance():
+    """Asking for names by name is a choice the reader made; keep it."""
+    _seed({"name": "zed", "title": "Editor", "description": "Another editor"})
+
+    assert _names(q="editor")[0] == "zed"
+    assert _names(q="editor", ordering="name") == ["alpha", "zed"]
+    assert _names(q="editor", ordering="-score")[0] == "zed"
+
+
+def test_a_row_not_yet_backfilled_still_matches_and_sorts_after_measured_titles():
+    """Between the schema upgrade and the backfill a row has the old text and no title.
+
+    It still has to be found -- the substring test reads the old form -- but a
+    tie against a measured row goes to the measured one.
+    """
+    _seed({"name": "zed", "title": "Editor", "description": "Another editor"})
+    with db.session_scope() as session:
+        row = session.get(CanonicalToolCache, "zed")
+        row.search_text = "zed\neditor\nanother editor"
+        row.search_title = None
+        row.search_keywords = None
+
+    assert _names(q="editor") == ["alpha", "zed"]
+    assert _names(q="another") == ["zed"]
 
 
 def test_the_scheduled_jobs_read_every_stored_row_without_paging_or_enrichment():

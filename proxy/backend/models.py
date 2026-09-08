@@ -7,6 +7,7 @@ structured public cache of official Toolhub tool records, used for fast fallback
 reads while live Toolhub data is stale or unavailable.
 """
 
+import re
 from datetime import UTC, datetime
 from typing import Any, ClassVar
 from uuid import uuid4
@@ -43,6 +44,41 @@ from backend.sync import (
 
 # Bound on the denormalized canonical search haystack (see CanonicalToolCache).
 SEARCH_TEXT_MAX_CHARS = 4000
+# Anything that is not a letter or digit ends a search token. Underscore is
+# included on purpose: `\w` keeps it, and `citation_hunter` has to become the
+# two words a reader types.
+_SEARCH_TOKEN_BREAK = re.compile(r"[\W_]+")
+
+
+def search_tokens(value: Any) -> str:  # noqa: ANN401 - raw toolinfo JSON
+    """Casefold `value` into single-space-separated word tokens.
+
+    The tokens are what search matches against: `x-tools-xtools` becomes
+    `x tools xtools`, so a query for "xtools" finds it as a whole word rather
+    than as a substring of something longer. Localized dicts and lists are
+    flattened to their text so a field never matches on its JSON punctuation.
+    """
+    if isinstance(value, dict):
+        value = " ".join(str(part) for part in value.values() if part)
+    elif isinstance(value, list | tuple):
+        value = " ".join(str(part) for part in value if part)
+    elif value is None:
+        value = ""
+    return " ".join(part for part in _SEARCH_TOKEN_BREAK.split(str(value).casefold()) if part)
+
+
+def search_field(*values: Any) -> str:  # noqa: ANN401 - raw toolinfo JSON
+    """Tokenize `values` and pad the result with one space on each side.
+
+    The padding is what makes a whole-word test expressible as
+    `LIKE '% term %'` and a word-prefix test as `LIKE '% term%'` on every
+    dialect, without a regular expression or a full-text index. A field with
+    nothing in it is a single space, so the tests stay well-formed on it.
+    """
+    joined = " ".join(token for token in (search_tokens(value) for value in values) if token)
+    return f" {joined} " if joined else " "
+
+
 # Anything that can exceed TEXT's 65,535-*byte* ceiling on MariaDB. SQLite has
 # no such ceiling and ignores the declared width, so an oversized value is not
 # something any test against the test database can fail on -- it surfaces only
@@ -359,10 +395,17 @@ class CanonicalToolCache(Base):
     # Nullable only for the deploy window in which an existing table has gained
     # the column but migrate.py has not completed its bounded backfill yet.
     card_record: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
-    # Lowercased name/title/description, denormalized out of `record` so a search
-    # can filter and limit in SQL. Matching inside the JSON column would mean
-    # shipping every record to Python to test a substring.
+    # Tokenized name/title/subtitle/keywords/description (see `search_field`),
+    # denormalized out of `record` so a search can filter, score and limit in
+    # SQL. Matching inside the JSON column would mean shipping every record to
+    # Python to test a substring.
     search_text: Mapped[str] = mapped_column(Text, default="")
+    # The title and keywords again, on their own, so relevance can weigh a
+    # word that is the tool's name above one buried in its description.
+    # Nullable for the same deploy window as `card_record`; NULL is the cursor
+    # `backfill_search_text` walks.
+    search_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    search_keywords: Mapped[str | None] = mapped_column(Text, nullable=True)
     modified_at_sort: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     source_url: Mapped[str] = mapped_column(String(2000), default="")
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
@@ -408,8 +451,19 @@ class CanonicalToolCache(Base):
         row that simply never matches, with nothing to indicate why.
         """
         source = record or {}
-        parts = (source.get("name"), source.get("title"), source.get("description"))
-        self.search_text = "\n".join(str(part or "") for part in parts).casefold()[:SEARCH_TEXT_MAX_CHARS]
+        # Keywords come before the description so a long description cannot
+        # push them past the cap: they are the field an author wrote so that
+        # the tool is found, and the plural a reader types most often lives
+        # there ("pageviews") when the prose only says "pageview data".
+        self.search_title = search_field(source.get("title"))
+        self.search_keywords = search_field(source.get("keywords"))
+        self.search_text = search_field(
+            source.get("name"),
+            source.get("title"),
+            source.get("subtitle"),
+            source.get("keywords"),
+            source.get("description"),
+        )[:SEARCH_TEXT_MAX_CHARS]
         self.card_record = catalog_card_record(source)
         self.modified_at_sort = catalog_modified_at(source)
         lifecycle = source.get("_lifecycle")
