@@ -7,6 +7,7 @@ This file is generated with `npm run changelog:generate`; do not edit it by hand
 
 ### Fixes
 
+- let a registered tool win a tie against census rows ([d0cb58a2](https://github.com/schiste/toolhub-evolved/commit/d0cb58a264e59ea1c8c957ea965787bb47513e68))
 - commit gadget source in chunks ([ecbf34ae](https://github.com/schiste/toolhub-evolved/commit/ecbf34ae24d94a7a244dd8bc81cec4de196338a2))
 
 ### Maintenance
@@ -15,6 +16,8 @@ This file is generated with `npm run changelog:generate`; do not edit it by hand
 
 ### Other
 
+- promote session 249 (Release search-that-finds-the-obvious: release notes, changelog and graph refresh for the search relevance ranking) ([086e2977](https://github.com/schiste/toolhub-evolved/commit/086e29771cdadc5ced2951f8109d740e71b575ce))
+- promote session 249 (Release search-that-finds-the-obvious: release notes, changelog and graph refresh for the search relevance ranking) ([37d76887](https://github.com/schiste/toolhub-evolved/commit/37d768875ca6401632d7e1e064291832e826edd8))
 - promote session 248 (Search relevance: index keywords, tokenized whole-word matching, relevance ranking, partial term matches) ([e5cebbe4](https://github.com/schiste/toolhub-evolved/commit/e5cebbe4f9528919ae5527428be7044ddd0b97c6))
 
 ## 2026-09-07

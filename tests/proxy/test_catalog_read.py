@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import api_cache, canonical_tools, catalog_facets, catalog_read, db  # noqa: E402
+from backend.sync import SOURCE_WIKI_GADGET  # noqa: E402
 from backend.models import (  # noqa: E402
     ApiCacheMeta,
     CanonicalToolCache,
@@ -653,6 +654,34 @@ def test_a_title_that_is_the_query_outranks_the_gadgets_named_after_it():
         "gadget-ar.wikipedia.org-xtools-articleinfo",
         "enwiki-someone-pageinfo",
     ]
+
+
+def test_a_registered_tool_outranks_the_census_rows_titled_after_it():
+    """Production after the first ranking release: XTools at 8 of 98.
+
+    Seven gadgets carry the exact title "XTools", tie with the tool on every
+    signal, and sort first by name. The row somebody registered wins the tie;
+    a census row wins nothing it did not earn on the signals themselves.
+    """
+    _seed(
+        {"name": "gadget-ast.wikipedia.org-xtools", "title": "XTools", "description": "Link to XTools"},
+        {"name": "gadget-es.wikipedia.org-xtools", "title": "XTools", "description": "Link to XTools"},
+        {"name": "x-tools-xtools", "title": "XTools", "description": "A suite of tools to analyze pages"},
+        {"name": "aaa-ores-gadget", "title": "ORES", "description": "Shows ORES scores inline"},
+        {"name": "toolforge-ores-inspect", "title": "ORES Inspect", "description": "Inspect ORES scores"},
+    )
+    with db.session_scope() as session:
+        for name in ("gadget-ast.wikipedia.org-xtools", "gadget-es.wikipedia.org-xtools", "aaa-ores-gadget"):
+            session.get(CanonicalToolCache, name).source = SOURCE_WIKI_GADGET
+
+    assert _names(q="xtools")[:3] == [
+        "x-tools-xtools",
+        "gadget-ast.wikipedia.org-xtools",
+        "gadget-es.wikipedia.org-xtools",
+    ]
+    # The exact-title gadget still outscores the longer registered title; the
+    # tie-break only decides ties, it never overrides a better match.
+    assert _names(q="ores") == ["aaa-ores-gadget", "toolforge-ores-inspect"]
 
 
 def test_a_whole_word_outranks_a_substring_of_a_longer_word():

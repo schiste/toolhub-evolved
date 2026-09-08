@@ -29,7 +29,7 @@ from backend.models import (
     search_tokens,
     utcnow,
 )
-from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL
+from backend.sync import SOURCE_OFFICIAL, SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT, SYNC_OFFICIAL
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -401,19 +401,28 @@ def search_score(query: str) -> ColumnElement[int] | None:
     return coverage + placement + exact
 
 
+# Rows the census synthesized from what a wiki publishes, as opposed to a
+# record somebody registered. They yield ties to registered tools.
+CENSUS_SOURCES = (SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT)
+
+
 def search_order(query: str) -> list[ColumnElement[Any]]:
     """ORDER BY clauses for a relevance-ranked result page.
 
-    Ties break on title length -- the query is a larger share of a shorter
-    title, which is the length norm a search engine would apply -- and then on
+    Ties go first to the registered tool over a census row: seven gadgets on
+    seven wikis are titled "XTools" and each is a link to the tool, so on every
+    signal they tied with XTools itself and alphabetical order put the tool
+    eighth. Then title length -- the query is a larger share of a shorter
+    title, which is the length norm a search engine would apply -- and then
     name so a page is stable between requests. A row not yet backfilled has no
     title to measure and sorts after the ones that have.
     """
     score = search_score(query)
     if score is None:
         return [CanonicalToolCache.tool_name.asc()]
+    census = case((CanonicalToolCache.source.in_(CENSUS_SOURCES), 1), else_=0)
     title_length = func.coalesce(func.length(CanonicalToolCache.search_title), SEARCH_TITLE_UNMEASURED)
-    return [score.desc(), title_length.asc(), CanonicalToolCache.tool_name.asc()]
+    return [score.desc(), census.asc(), title_length.asc(), CanonicalToolCache.tool_name.asc()]
 
 
 def _merge_listing_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
