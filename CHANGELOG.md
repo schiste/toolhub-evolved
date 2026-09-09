@@ -11,12 +11,15 @@ This file is generated with `npm run changelog:generate`; do not edit it by hand
 
 ### Documentation
 
+- extend the source range to the cspell directive ([2da5d58d](https://github.com/schiste/toolhub-evolved/commit/2da5d58d6c4c077313bb3500cdf11da2bf4db63c))
+- cover the cspell directive ([0858cc5d](https://github.com/schiste/toolhub-evolved/commit/0858cc5d48f3a92d70278d547512dbc48a9cf1ec))
 - notes for a-comment-is-not-a-declaration ([71cbcee9](https://github.com/schiste/toolhub-evolved/commit/71cbcee9d747c92895907fdbaf579d55332fa938))
 - cover the analyzer prose fixes ([72340222](https://github.com/schiste/toolhub-evolved/commit/723402226826daf656e752cadccefe9409511055))
 
 ### Maintenance
 
-- let cspell past the wiki compounds the ignore list names ([ff3c27f6](https://github.com/schiste/toolhub-evolved/commit/ff3c27f62d9f731ef455df6b8413f9e68d649253))
+- refresh the generated graph index ([d15a8862](https://github.com/schiste/toolhub-evolved/commit/d15a8862a45292c5f4c6c0a49ea39a012ab324a1))
+- let cspell past the wiki compounds ([807f1865](https://github.com/schiste/toolhub-evolved/commit/807f1865296a127747479ebc9265e8610759e571))
 - refresh the generated graph index ([a905a4c7](https://github.com/schiste/toolhub-evolved/commit/a905a4c7041d3d0ab9eec7a866879e12b2806989))
 
 ### Other
