@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# cspell:ignore onwiki
 """Static source-code signals for Toolhub metadata suggestions.
 
 The analyzer is intentionally deterministic: every suggestion is backed by

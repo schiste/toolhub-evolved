@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# cspell:ignore onwiki offwiki crosswiki multiwiki perwiki localwiki remotewiki sourcewiki
+# cspell:ignore targetwiki homewiki otherwiki nonwiki anywiki eachwiki everywiki wholewiki
+# cspell:ignore mywiki itwiki orwiki
 """Constants and shared primitives for static source analysis.
 
 The reading caps, provenance weights, confidence thresholds, health dimensions
@@ -450,7 +453,7 @@ LIBRARY_USAGE_REASON = "Framework or library usage detected."
 NODE_MANIFEST_REASON = "npm scripts manifest detected."
 
 #: (technology, pattern, confidence, where it may fire, reason). The fourth
-#: field is a set of file suffixes or basenames; a rule fires only in a file
+#: field is a set of file suffixes or file names; a rule fires only in a file
 #: that matches one of them, because every technology here can only be used
 #: from a particular kind of file, and a mention anywhere else is prose.
 #:
