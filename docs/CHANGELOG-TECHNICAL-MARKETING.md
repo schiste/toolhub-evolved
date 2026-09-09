@@ -1,11 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: the-registered-tool-wins-the-tie -->
-<!-- Release title: The Registered Tool Wins The Tie -->
-<!-- Source range: 086e2977..13092651 (3 commits, promoted as two) -->
+<!-- Release id: no-more-monday-bumps -->
+<!-- Release title: No More Monday Bumps -->
+<!-- Source range: 4205eec8..32ef0245 (4 commits) -->
 
 # Technical and Marketing Notes
 
-- The tie-break is one more ORDER BY term between the relevance score and the title-length norm: rows whose `source` is `wiki_gadget` or `wiki_userscript` sort after registered rows (`official`, `local`) when their scores are equal. It is a CASE expression on an existing column, costs nothing measurable, and cannot reorder rows whose scores differ.
-- Measured on production before the change, with the first ranking release live: "xtools" returned 98 rows with XTools at position 8 behind seven gadgets titled "XTools", each carrying the same exact-title bonus. The gadget rows are the census's record of a wiki linking to the tool, which is why they tie: they are the same tool seen from a second place, and the registered record is the one a reader means.
-- The test seeds the XTools case and an ORES case side by side, so the assertion covers both halves of the contract: the registered tool wins the tie, and a census row that scores higher on the signals themselves keeps its place. Search-related suites: 112 passed; ruff clean; broker gates at promotion.
+- `.github/dependabot.yml` now sets `open-pull-requests-limit: 0` on all four update entries (npm development, GitHub Actions, and the two pip directories). That is GitHub's documented way to stop version updates for an ecosystem while leaving Dependabot security updates on; deleting the file would have dropped both.
+- The trigger was operational: the four grouped PRs (155 to 158) were closed during a branch cleanup, and Dependabot's notice on each closed group PR states that closing ignores nothing and that only configuration does. An `@dependabot ignore this dependency` command was posted on each as well and drew no response, consistent with that notice.
+- The graph index carries the config file, so the refresh is committed alongside, and the regenerated `CHANGELOG.md` covers the commits. No deploy is required for this release; the next Toolforge deploy records it in the manifest.
