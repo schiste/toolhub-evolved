@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: no-more-monday-bumps -->
 <!-- Release title: No More Monday Bumps -->
-<!-- Source range: 4205eec8..948a0dcb (7 commits) -->
+<!-- Source range: 4205eec8..4392f5e7 (7 commits, promoted as four) -->
 
 # Technical and Marketing Notes
 
