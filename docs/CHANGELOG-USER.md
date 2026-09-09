@@ -1,12 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: no-more-monday-bumps -->
-<!-- Release title: No More Monday Bumps -->
-<!-- Source range: 4205eec8..4392f5e7 (7 commits, promoted as four) -->
+<!-- Release id: a-comment-is-not-a-declaration -->
+<!-- Release title: A Comment Is Not A Declaration -->
+<!-- Source range: 4fe0de81..a905a4c7 (3 commits) -->
 
 # What's New for Users
 
-- Nothing changes on the site with this release. It records a maintenance decision about how the project's own dependencies are updated, so that the published history stays complete.
-- Scheduled dependency-update pull requests are switched off. Four of them were open at once, each bundling many version bumps that nobody had asked for, and closing them by hand would only have brought the same bundles back the following Monday.
-- Security updates are not affected. A fix for a known vulnerability in a dependency still arrives as a pull request and still has to pass the full test suite before it can be merged.
-- Two security advisories published today against the project's own test tooling are fixed in the same release: the test runner moves to its first patched version, and a colour-parsing helper to its patched version. Neither touches anything the site serves; both had to be fixed for any change to pass the automated checks again.
+- A tool is no longer described by words that merely appear near its code. A Go bot for the English Wikipedia had been listed as a Node.js web app that uses a Python library and runs on the Norwegian Wikipedia, all from text the code analyzer had read too literally: a Go module that happens to contain the letters "mwclient", the word "express" in the GPL license, a wikitext tag, and a code comment.
+- A library counts only where it can actually be used. A Python library is recognised in Python files, a JavaScript web framework in JavaScript files, and a package manifest in the manifest itself. A name that shows up anywhere else is treated as a mention, not as evidence.
+- Running on Node is not the same as being a website. A tool is called a web app when the analyzer sees a web framework in use, not because it runs on a JavaScript runtime that scheduled bots use too.
+- Comments and links are read as what they are. A wiki named in a code comment, or linked to as a documentation page, is recorded but only published when a second file agrees, the same bar a README mention already had to clear. License files, and identical copies of a file already read, no longer count as extra opinions.
