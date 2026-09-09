@@ -16,6 +16,7 @@ This file is generated with `npm run changelog:generate`; do not edit it by hand
 
 ### Maintenance
 
+- let cspell past the wiki compounds the ignore list names ([ff3c27f6](https://github.com/schiste/toolhub-evolved/commit/ff3c27f62d9f731ef455df6b8413f9e68d649253))
 - refresh the generated graph index ([a905a4c7](https://github.com/schiste/toolhub-evolved/commit/a905a4c7041d3d0ab9eec7a866879e12b2806989))
 
 ### Other
