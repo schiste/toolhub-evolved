@@ -2341,3 +2341,221 @@ def test_a_caller_cannot_assert_authorship_through_the_supplied_context():
     assert authorship["llmAssisted"] is None
     assert authorship["provider"] == ""
     assert authorship["signals"] == []
+
+
+# ---------------------------------------------------------------------------
+# The Go bot that was catalogued as a Node.js web app using mwclient on the
+# Norwegian Wikipedia. Each test below is one of the six wrong values it got.
+
+
+def _patch(files):
+    return analyze_source_files(files, source_label="https://github.com/example/bot")["suggestions"]["toolinfoPatch"]
+
+
+def test_a_go_module_named_after_a_python_library_is_not_that_library():
+    """`cgt.name/pkg/go-mwclient` is Go; the hyphen made `\\bmwclient\\b` match it."""
+    report = analyze_source_files(
+        [
+            {"path": "go.mod", "content": "module example.org/bot\n\nrequire cgt.name/pkg/go-mwclient v1.3.0\n"},
+            {
+                "path": "main.go",
+                "content": 'import "cgt.name/pkg/go-mwclient"\n\nfunc main() { w := mwclient.New() }\n',
+            },
+        ]
+    )
+
+    assert "mwclient" not in values(report, "technology")
+    assert "Go" in values(report, "technology")
+
+
+def test_a_python_library_imported_in_python_is_still_that_library():
+    report = analyze_source_files(
+        [{"path": "bot.py", "content": "import mwclient\nsite = mwclient.Site('en.wikipedia.org')\n"}]
+    )
+
+    assert {"Python", "mwclient"} <= values(report, "technology")
+
+
+def test_the_english_word_express_in_a_license_is_not_a_web_framework():
+    """The GPL text says "any express patent license", in every copy of it."""
+    gpl = 'In the following three paragraphs, a "patent license" is any express\npermission, however denominated.\n'
+    report = analyze_source_files(
+        [
+            {"path": "LICENSE", "content": gpl},
+            {"path": "frs/LICENSE", "content": gpl},
+            {"path": "pruner/LICENSE", "content": gpl},
+            {"path": "notes.md", "content": "We express no opinion. Express, fastify and koa are frameworks.\n"},
+        ]
+    )
+
+    assert values(report, "technology") == set()
+    assert report["suggestions"]["toolinfoPatch"] == {}
+
+
+def test_a_web_framework_required_in_a_script_names_node_and_makes_a_web_app():
+    report = analyze_source_files([{"path": "server.js", "content": "const app = require('express')();\n"}])
+
+    assert "Node.js" in values(report, "technology")
+    assert report["suggestions"]["toolinfoPatch"]["tool_type"] == "web app"
+
+
+def test_a_framework_imported_with_es_syntax_counts_the_same_way():
+    report = analyze_source_files([{"path": "server.mjs", "content": 'import fastify from "fastify";\n'}])
+
+    assert "Node.js" in values(report, "technology")
+
+
+def test_a_scripts_manifest_names_node_but_does_not_make_a_web_app():
+    """Running on Node is not serving pages: a scheduled job runs on it too."""
+    report = analyze_source_files(
+        [
+            {"path": "package.json", "content": '{"scripts": {"start": "node bot.js"}}'},
+            {"path": "README.md", "content": '"scripts": is also written in prose, which is not a manifest.'},
+        ]
+    )
+
+    node = next(item for item in report["technology"] if item["value"] == "Node.js")
+    assert node["fileCount"] == 1
+    assert "tool_type" not in report["suggestions"]["toolinfoPatch"]
+
+
+def test_a_declared_node_engine_alone_does_not_make_a_web_app():
+    report = analyze_source_files([{"path": "package.json", "content": '{"engines": {"node": ">=18"}}'}])
+
+    assert "Node.js" in values(report, "technology")
+    assert "tool_type" not in report["suggestions"]["toolinfoPatch"]
+
+
+def test_tool_type_reads_the_reason_rather_than_the_runtime():
+    web = [{"value": "Node.js", "reasons": ["Web framework usage detected."]}]
+    runtime = [{"value": "Node.js", "reasons": ["Declared Node.js engine requirement."]}]
+
+    assert source_analyzer._tool_type_suggestion(web, [], "", "") == "web app"
+    assert source_analyzer._tool_type_suggestion(runtime, [], "", "") is None
+    assert source_analyzer._tool_type_suggestion([{"value": "Vue"}], [], "", "") == "web app"
+
+
+def test_the_nowiki_tag_is_not_the_norwegian_wikipedia():
+    report = analyze_source_files(
+        [{"path": "table.go", "content": 'b.WriteString(fmt.Sprintf("| <code><nowiki>%s</nowiki></code>\\n", err))\n'}]
+    )
+
+    assert values(report, "projects") == set()
+
+
+def test_the_bare_database_name_in_a_string_is_still_that_wiki():
+    report = analyze_source_files([{"path": "config.go", "content": 'var target = "nowiki"\n'}])
+
+    assert values(report, "projects") == {"nowiki"}
+    assert report["suggestions"]["toolinfoPatch"]["for_wikis"] == ["nowiki"]
+
+
+@pytest.mark.parametrize("word", ["onwiki", "offwiki", "crosswiki", "targetwiki", "homewiki"])
+def test_english_compounds_ending_in_wiki_are_not_wikis(word):
+    report = analyze_source_files([{"path": "main.go", "content": f'log.Println("recorded {word}")\n'}])
+
+    assert values(report, "projects") == set()
+
+
+def test_a_wiki_named_in_a_code_comment_is_prose_until_a_second_file_agrees():
+    """A comment is the author writing about the code, at README weight."""
+    alone = analyze_source_files([{"path": "main.go", "content": "// Log all recoverable errors to frwiki\n"}])
+    agreed = analyze_source_files(
+        [
+            {"path": "main.go", "content": "// Log all recoverable errors to frwiki\n"},
+            {"path": "config.yml", "content": "wiki: frwiki\n"},
+        ]
+    )
+
+    assert alone["projects"][0]["value"] == "frwiki"
+    assert alone["projects"][0]["evidence"][0]["prose"] is True
+    assert alone["projects"][0]["maxSourceWeight"] == 0.75
+    assert "for_wikis" not in alone["suggestions"]["toolinfoPatch"]
+    assert agreed["suggestions"]["toolinfoPatch"]["for_wikis"] == ["frwiki"]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "# targets dewiki",
+        "/* targets dewiki */",
+        " * targets dewiki",
+        "-- targets dewiki",
+        "<!-- targets dewiki -->",
+        "; targets dewiki",
+    ],
+)
+def test_every_comment_shape_the_analyzer_reads_is_prose(line):
+    report = analyze_source_files([{"path": "main.go", "content": line + "\n"}])
+
+    assert report["projects"][0]["evidence"][0]["prose"] is True
+
+
+def test_a_shebang_is_not_a_comment_and_a_closing_comment_is_not_an_opening_one():
+    report = analyze_source_files(
+        [{"path": "run.sh", "content": "#!/bin/sh\nWIKI=dewiki\n"}, {"path": "note.go", "content": "*/ x := dewiki\n"}]
+    )
+
+    assert all("prose" not in evidence for evidence in report["projects"][0]["evidence"])
+
+
+def test_a_link_to_a_wiki_page_is_a_footnote_and_an_api_call_is_a_target():
+    """`mediawiki.org/wiki/Manual:Timestamp` in a comment published mediawikiwiki."""
+    footnote = analyze_source_files(
+        [{"path": "prune.go", "content": "// format in line with https://www.mediawiki.org/wiki/Manual:Timestamp\n"}]
+    )
+    link_in_code = analyze_source_files(
+        [{"path": "prune.go", "content": 'doc := "https://www.mediawiki.org/wiki/Manual:Timestamp"\n'}]
+    )
+    call = analyze_source_files(
+        [{"path": "config.yml", "content": "apiendpoint: https://en.wikipedia.org/w/api.php\n"}]
+    )
+
+    assert footnote["projects"][0]["value"] == "mediawikiwiki"
+    assert "for_wikis" not in footnote["suggestions"]["toolinfoPatch"]
+    assert link_in_code["projects"][0]["reasons"] == ["Wikimedia project page linked."]
+    assert link_in_code["projects"][0]["evidence"][0]["prose"] is True
+    assert "for_wikis" not in link_in_code["suggestions"]["toolinfoPatch"]
+    assert call["suggestions"]["toolinfoPatch"]["for_wikis"] == ["enwiki"]
+
+
+def test_identical_files_are_read_once():
+    """Three copies of one document are one opinion, not three."""
+    report = analyze_source_files(
+        [
+            {"path": "README.md", "content": "Targets enwiki."},
+            {"path": "frs/README.md", "content": "Targets enwiki."},
+            {"path": "pruner/README.md", "content": "Targets enwiki."},
+        ]
+    )
+
+    assert report["projects"][0]["fileCount"] == 1
+    assert report["suggestions"]["toolinfoPatch"] == {}
+
+
+def test_a_license_file_is_not_read_for_findings():
+    report = analyze_source_files(
+        [{"path": "LICENSE.txt", "content": "Targets enwiki and requires https://en.wikipedia.org/w/api.php\n"}]
+    )
+
+    assert values(report, "projects") == set()
+    assert values(report, "endpoints") == set()
+
+
+def test_the_go_bot_that_started_this_is_read_as_a_go_bot_on_enwiki():
+    """The shape of sohomdatta1/yapperbot-services, reduced to the lines that fired."""
+    gpl = 'a "patent license" is any express\n'
+    report = analyze_source_files(
+        [
+            {"path": "LICENSE", "content": gpl},
+            {"path": "frs/LICENSE", "content": gpl},
+            {"path": "go.mod", "content": "module example.org/bot\nrequire cgt.name/pkg/go-mwclient v1.3.0\n"},
+            {"path": "frs/main.go", "content": "// Log all recoverable errors onwiki on a page\npackage main\n"},
+            {"path": "frs/table.go", "content": 'fmt.Sprintf("<nowiki>%s</nowiki>", err)\n'},
+            {"path": "pruner/prune.go", "content": "// see https://www.mediawiki.org/wiki/Manual:Timestamp\n"},
+            {"path": "config.yml", "content": "apiendpoint: https://en.wikipedia.org/w/api.php\n"},
+            {"path": "upload.sh", "content": "#!/bin/bash\n"},
+        ]
+    )
+
+    assert report["suggestions"]["toolinfoPatch"] == {"for_wikis": ["enwiki"], "technology_used": ["Go", "Shell"]}

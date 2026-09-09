@@ -432,13 +432,68 @@ TECH_BY_EXTENSION = {
     ".vue": "Vue",
 }
 
+#: Python is the only place a Python library can be imported, so a rule that
+#: names one may only fire in a Python file. Everywhere else the name is a
+#: quotation or a coincidence: `cgt.name/pkg/go-mwclient` is a Go module, and
+#: the analyzer catalogued the Go bot that imports it as a PyPI `mwclient` user
+#: -- in fourteen files, at 0.99. The package a manifest declares still names
+#: the technology, through TECHNOLOGY_PACKAGES, which is how `requirements.txt`
+#: keeps its say without the regex reading it.
+PYTHON_SOURCE_SUFFIXES = frozenset({".py"})
+NODE_MANIFEST_NAMES = frozenset({"package.json"})
+
+#: The reason a rule records when what it matched is a web framework in use,
+#: as opposed to a runtime or a library. `_tool_type_suggestion` reads it: a
+#: tool is a web app because it serves pages, not because it runs on Node.
+WEB_FRAMEWORK_REASON = "Web framework usage detected."
+LIBRARY_USAGE_REASON = "Framework or library usage detected."
+NODE_MANIFEST_REASON = "npm scripts manifest detected."
+
+#: (technology, pattern, confidence, where it may fire, reason). The fourth
+#: field is a set of file suffixes or basenames; a rule fires only in a file
+#: that matches one of them, because every technology here can only be used
+#: from a particular kind of file, and a mention anywhere else is prose.
+#:
+#: Node.js is deliberately two rules with two reasons. `require("express")` in
+#: a script is a web framework in use; `"scripts":` in package.json says the
+#: tool runs on Node and nothing about serving pages. The old single rule was
+#: `\b(express|fastify|koa)\b` under IGNORECASE over every file, and it read
+#: the English word in "any express patent license" -- the GPL text, copied
+#: into three directories -- as Express, which then made a Go bot a web app.
 TECH_RULES = (
-    ("Python", re.compile(r"\b(import|from)\s+(flask|django|pywikibot|mwclient|requests)\b", re.IGNORECASE), 0.78),
-    ("Flask", re.compile(r"\bfrom\s+flask\s+import\b|\bFlask\s*\(", re.IGNORECASE), 0.9),
-    ("Django", re.compile(r"\bDJANGO_SETTINGS_MODULE\b|\bfrom\s+django\b", re.IGNORECASE), 0.9),
-    ("Pywikibot", re.compile(r"\bpywikibot\b", re.IGNORECASE), 0.96),
-    ("mwclient", re.compile(r"\bmwclient\b", re.IGNORECASE), 0.95),
-    ("Node.js", re.compile(r"\b(express|fastify|koa)\b|\"scripts\"\s*:", re.IGNORECASE), 0.72),
+    (
+        "Python",
+        re.compile(r"\b(import|from)\s+(flask|django|pywikibot|mwclient|requests)\b", re.IGNORECASE),
+        0.78,
+        PYTHON_SOURCE_SUFFIXES,
+        LIBRARY_USAGE_REASON,
+    ),
+    (
+        "Flask",
+        re.compile(r"\bfrom\s+flask\s+import\b|\bFlask\s*\(", re.IGNORECASE),
+        0.9,
+        PYTHON_SOURCE_SUFFIXES,
+        WEB_FRAMEWORK_REASON,
+    ),
+    (
+        "Django",
+        re.compile(r"\bDJANGO_SETTINGS_MODULE\b|\bfrom\s+django\b", re.IGNORECASE),
+        0.9,
+        PYTHON_SOURCE_SUFFIXES,
+        WEB_FRAMEWORK_REASON,
+    ),
+    ("Pywikibot", re.compile(r"\bpywikibot\b", re.IGNORECASE), 0.96, PYTHON_SOURCE_SUFFIXES, LIBRARY_USAGE_REASON),
+    ("mwclient", re.compile(r"\bmwclient\b", re.IGNORECASE), 0.95, PYTHON_SOURCE_SUFFIXES, LIBRARY_USAGE_REASON),
+    # Not IGNORECASE, and a usage rather than a mention: the package name is
+    # an English word, so only the import or require of it counts.
+    (
+        "Node.js",
+        re.compile(r"\brequire\s*\(\s*[\"'](express|fastify|koa)[\"']\s*\)|\bfrom\s+[\"'](express|fastify|koa)[\"']"),
+        0.72,
+        JS_SOURCE_SUFFIXES,
+        WEB_FRAMEWORK_REASON,
+    ),
+    ("Node.js", re.compile(r"\"scripts\"\s*:"), 0.72, NODE_MANIFEST_NAMES, NODE_MANIFEST_REASON),
     # Deliberately not IGNORECASE, and deliberately requiring a usage rather
     # than a mention, for the same reason as `mw.Api` below. `\bReact\b` under
     # IGNORECASE matched the English word in a comment, and -- because the rules
@@ -450,6 +505,8 @@ TECH_RULES = (
         "React",
         re.compile(r"\bReact\.[A-Za-z_]|\bfrom\s+[\"']react[\"']|\brequire\s*\(\s*[\"']react[\"']"),
         0.82,
+        JS_SOURCE_SUFFIXES,
+        WEB_FRAMEWORK_REASON,
     ),
     # Deliberately not IGNORECASE, and deliberately requiring the call: `mw.Api`
     # and `mw.loader.using` are JavaScript identifiers, so `MW.API` is not one
@@ -457,16 +514,19 @@ TECH_RULES = (
     # than calling it. The old spelling matched a prose mention anywhere in a
     # checkout, which is how this project's own analyzer -- whose rules, tests
     # and UI all quote `mw.Api` -- came to be catalogued as a gadget.
-    ("MediaWiki JavaScript", re.compile(r"\bmw\.loader\.using\s*\(|\bmw\.Api\s*\("), 0.9),
+    (
+        "MediaWiki JavaScript",
+        re.compile(r"\bmw\.loader\.using\s*\(|\bmw\.Api\s*\("),
+        0.9,
+        JS_SOURCE_SUFFIXES,
+        LIBRARY_USAGE_REASON,
+    ),
 )
 
-# JavaScript is the only place the MediaWiki JS API can be called or a React
-# component written, so evidence of either found anywhere else is a quotation.
-# A Python docstring naming `mw.Api` is the case that prompted this.
-TECH_RULE_SUFFIXES = {
-    "MediaWiki JavaScript": JS_SOURCE_SUFFIXES,
-    "React": JS_SOURCE_SUFFIXES,
-}
+#: Technologies whose presence means the tool serves pages. Vue has no usage
+#: rule -- it arrives from the `.vue` extension or the manifest -- so it is
+#: named here rather than by reason.
+WEB_FRAMEWORK_TECHNOLOGIES = frozenset({"Flask", "Django", "React", "Vue"})
 
 # A file the wiki would serve as a user script. Read off the name rather than
 # the contents: the suffix is what makes a wiki page a script, and it says so
@@ -542,12 +602,17 @@ PROJECT_DOMAIN_RE = re.compile(
 # `clean_wiki`, `whole_wiki`, `created_at_wiki` and `enumerate_wiki` are Python
 # identifiers from this repository that were published as wikis a tool works on.
 #
+# `<` and `/` are boundaries too, so that the wikitext tag `<nowiki>` and its
+# closing `</nowiki>` are not read as the Norwegian Wikipedia. A Go bot that
+# wraps error text in that tag was catalogued as running on nowiki; the bare
+# word in a string or a config still is that wiki, because it is one.
+#
 # The boundary assertions are case-insensitive even though the body is not.
 # They were `[a-z0-9_.-]`, which does not block a capital, so the `M` in a
 # `MediaWiki:Gadget-*` page title failed to stop a match starting one character
 # in and the scanner emitted `ediawiki`.
 PROJECT_DB_RE = re.compile(
-    r"(?<![A-Za-z0-9_.-])(?:commonswiki|wikidatawiki|metawiki|mediawikiwiki|[a-z][a-z0-9_]{0,13}[a-z0-9]wiki)(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])"
+    r"(?<![A-Za-z0-9_.<>/-])(?:commonswiki|wikidatawiki|metawiki|mediawikiwiki|[a-z][a-z0-9_]{0,13}[a-z0-9]wiki)(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])"
 )
 # Words that end in "wiki" without naming a wiki: MediaWiki vocabulary, and the
 # names of competing wiki engines a tool might merely mention. `interwiki` is
@@ -565,7 +630,39 @@ IGNORED_PROJECT_DB_NAMES = {
     "pmwiki",
     "twiki",
     "xwiki",
+    # English compounds a programmer writes about wikis in general. None is a
+    # language code plus the suffix: `onwiki` came from the comment "Log all
+    # recoverable errors onwiki" and was published as a wiki the tool works
+    # on. Words that *are* language codes -- `mywiki`, `itwiki`, `orwiki` --
+    # cannot be listed here, which is why a comment is read as prose instead.
+    "onwiki",
+    "offwiki",
+    "crosswiki",
+    "multiwiki",
+    "perwiki",
+    "localwiki",
+    "remotewiki",
+    "sourcewiki",
+    "targetwiki",
+    "homewiki",
+    "otherwiki",
+    "nonwiki",
+    "anywiki",
+    "eachwiki",
+    "everywiki",
+    "wholewiki",
 }
+
+#: A line that is a comment in any of the languages the analyzer reads. Not a
+#: parser -- a line-shaped guess -- and used only to decide how much a sighting
+#: on that line is worth, never whether it is recorded. A comment is prose the
+#: author wrote next to the code, so a wiki named in one is read the way a
+#: README mention is: reported, and published only when something else agrees.
+COMMENT_LINE_RE = re.compile(r"^\s*(?://|#(?!!)|/\*|\*(?!/)|--|<!--|;|<!-)")
+#: The path prefix that makes a Wikimedia URL a link to a page rather than a
+#: call to the site. `en.wikipedia.org/w/api.php` is an endpoint the tool
+#: talks to; `mediawiki.org/wiki/Manual:Timestamp` is a footnote.
+WIKI_PAGE_PATH_PREFIX = "/wiki/"
 
 # for_wikis is a closed vocabulary, not "whatever hostname we saw". Content
 # families map a language subdomain onto the database name that MediaWiki

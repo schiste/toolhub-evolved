@@ -8,6 +8,7 @@ tool code, clone repositories, or store raw source.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -34,6 +35,7 @@ from backend.source_analysis_common import (
     AUTH_RULES,
     BROWSER_PERMISSION_RULES,
     CI_FILE_KINDS,
+    COMMENT_LINE_RE,
     CONFIDENCE_CAP,
     CONFIDENCE_MAX_CORROBORATING_FILES,
     CONFIDENCE_REPEAT_BOOST,
@@ -131,7 +133,6 @@ from backend.source_analysis_common import (
     SOURCE_EXTENSIONS,
     STALE_REPOSITORY_DAYS,
     TECH_BY_EXTENSION,
-    TECH_RULE_SUFFIXES,
     TECH_RULES,
     TECHNOLOGY_PACKAGES,
     TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE,
@@ -141,7 +142,10 @@ from backend.source_analysis_common import (
     USER_SCRIPT_SUFFIX,
     WEB_EXTENSION_PERMISSION_RE,
     WEB_EXTENSION_PERMISSIONS,
+    WEB_FRAMEWORK_REASON,
+    WEB_FRAMEWORK_TECHNOLOGIES,
     WIKI_KIND_TOOL_TYPE,
+    WIKI_PAGE_PATH_PREFIX,
     WIKIMEDIA_ORG_WIKIS,
     YARN_LOCK_RE,
     YARN_VERSION_RE,
@@ -1518,13 +1522,35 @@ def _scan_endpoints(
         )
 
 
+def _prose_evidence(path: str, line_number: int, line: str, matched: str) -> dict[str, Any]:
+    """Evidence for a sighting in prose, whatever file the prose is in.
+
+    A comment in a `.go` file is written by the author, but it is writing
+    *about* the code, and the runtime weight of 1.0 was making a single such
+    line a declaration nobody had to second: "Log all recoverable errors
+    onwiki" published `onwiki`, and a footnote link to a MediaWiki manual page
+    published `mediawikiwiki`. The sighting is still recorded, with the file's
+    class, but at the weight a README carries, so it publishes only when a
+    second file agrees -- the same bar a README mention has to clear.
+    """
+    evidence = _evidence(path, line_number, line, matched)
+    evidence["prose"] = True
+    evidence["sourceWeight"] = min(float(evidence["sourceWeight"]), SOURCE_CLASS_WEIGHTS["docs"])
+    return evidence
+
+
 def _scan_projects(findings: dict[tuple[str, str], Finding], path: str, line_number: int, line: str) -> None:
+    comment = COMMENT_LINE_RE.match(line) is not None
     for match in PROJECT_DOMAIN_RE.finditer(line):
         host = match.group(0).lower()
         resolved = _project_from_host(host, (match.group("sub") or "").lower(), match.group("family").lower())
         if resolved is None:
             continue
         value, label, confidence = resolved
+        # A URL to a page is a link the author left for a reader; a URL to
+        # api.php is a call. Only the call says the tool works on that wiki.
+        page_link = line[match.end() :].startswith(WIKI_PAGE_PATH_PREFIX)
+        prose = comment or page_link
         _put(
             findings,
             kind="projects",
@@ -1532,8 +1558,8 @@ def _scan_projects(findings: dict[tuple[str, str], Finding], path: str, line_num
             label=label,
             category="wiki",
             confidence=confidence,
-            reason="Wikimedia project hostname detected.",
-            evidence=_evidence(path, line_number, line, host),
+            reason="Wikimedia project page linked." if page_link else "Wikimedia project hostname detected.",
+            evidence=(_prose_evidence if prose else _evidence)(path, line_number, line, host),
         )
     for match in PROJECT_DB_RE.finditer(line):
         value = match.group(0).lower()
@@ -1547,7 +1573,7 @@ def _scan_projects(findings: dict[tuple[str, str], Finding], path: str, line_num
             category="wiki",
             confidence=0.76,
             reason="Wikimedia database name detected.",
-            evidence=_evidence(path, line_number, line, value),
+            evidence=(_prose_evidence if comment else _evidence)(path, line_number, line, value),
         )
 
 
@@ -1601,9 +1627,9 @@ def _scan_technology(findings: dict[tuple[str, str], Finding], path: str, line_n
             reason="File named as a wiki user script.",
             evidence=_evidence(path, line_number, line, USER_SCRIPT_SUFFIX),
         )
-    for value, pattern, confidence in TECH_RULES:
-        allowed = TECH_RULE_SUFFIXES.get(value)
-        if allowed is not None and suffix not in allowed:
+    name = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    for value, pattern, confidence, allowed, reason in TECH_RULES:
+        if suffix not in allowed and name not in allowed:
             continue
         match = pattern.search(line)
         if match:
@@ -1614,7 +1640,7 @@ def _scan_technology(findings: dict[tuple[str, str], Finding], path: str, line_n
                 label=value,
                 category="framework",
                 confidence=confidence,
-                reason="Framework or library usage detected.",
+                reason=reason,
                 evidence=_evidence(path, line_number, line, match.group(0)),
             )
 
@@ -2008,7 +2034,11 @@ def _tool_type_suggestion(
         return WIKI_KIND_TOOL_TYPE.get(wiki_kind or (page.kind if page else ""))
     tech_values = {str(item.get("value")) for item in technology}
     api_values = {str(item.get("value")) for item in apis}
-    if tech_values & {"Flask", "Django", "React", "Node.js", "Vue"}:
+    # Node.js is a runtime, and a runtime does not make a web app: a scheduled
+    # bot runs on it too. It counts only when the finding that named it was a
+    # web framework in use, which the rule that saw the `require` records.
+    serves_pages = any(WEB_FRAMEWORK_REASON in (item.get("reasons") or ()) for item in technology)
+    if serves_pages or tech_values & WEB_FRAMEWORK_TECHNOLOGIES:
         return "web app"
     if "Pywikibot" in tech_values and api_values & {"mediawiki-action-api", "wikibase-api"}:
         return "bot"
@@ -2475,8 +2505,23 @@ def analyze_source_files(  # noqa: PLR0913 - each argument is a separate thing t
     normalized = _normalize_source_files(files, max_file_bytes=MAX_WIKI_FILE_BYTES if wiki_page else MAX_FILE_BYTES)
     findings: dict[tuple[str, str], Finding] = {}
     local_python_roots = _local_python_import_roots(normalized)
+    # Content already read, by digest. A LICENSE copied into three directories
+    # is one document three times; counting it three times satisfied the
+    # "more than one file agrees" test with nothing but itself. The second and
+    # later copies still count as files -- for the tree, the source classes
+    # and the documentation contexts -- but their lines are not read again.
+    seen_content: set[str] = set()
     for source_file in normalized:
         _scan_manifest_dependencies(findings, source_file)
+        digest = hashlib.sha256(source_file.content.encode("utf-8", "replace")).hexdigest()
+        if digest in seen_content:
+            continue
+        seen_content.add(digest)
+        # A license names no technology and no wiki; what it names is the
+        # English word "express" and a GNU URL. The rules read every other
+        # file because prose next to code can still be about the code.
+        if _documentation_kind(source_file.path) == "license":
+            continue
         # A lockfile is a resolved dependency graph with a registry URL on
         # nearly every line. Those registries belong to the package manager,
         # not to the tool, and the dependency scanner has already read this
