@@ -5,13 +5,11 @@ This file is generated with `npm run changelog:generate`; do not edit it by hand
 
 ## 2026-09-09
 
-### Documentation
+### Other
 
-- cover the Dependabot switch-off ([9373b832](https://github.com/schiste/toolhub-evolved/commit/9373b8321ef042ac4c32609ae0655f6659af62db))
-
-### Maintenance
-
-- switch off Dependabot version-update pull requests ([4a818551](https://github.com/schiste/toolhub-evolved/commit/4a81855112c560ff7c4a234197294930e5a4e82d))
+- fix the vitest and colord advisories ([ebf1c3d9](https://github.com/schiste/toolhub-evolved/commit/ebf1c3d9a440ffa0acfba2a0cdc143bbdd5d4e4e))
+- promote session 257 (Disable Dependabot version-update PRs so the dismissed groups do not come back) ([288e63a7](https://github.com/schiste/toolhub-evolved/commit/288e63a7310a492a330c58aedb917dc441898916))
+- promote session 257 (Disable Dependabot version-update PRs so the dismissed groups do not come back) ([90c027fb](https://github.com/schiste/toolhub-evolved/commit/90c027fb693e0a84d655340403f30590c72d4057))
 
 ## 2026-09-08
 
