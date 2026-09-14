@@ -47,6 +47,11 @@ from backend.sync import (
     clean_int,
     clean_review_status,
 )
+from backend.write_lifecycle import attempt_official_write as _attempt_official_write
+from backend.write_lifecycle import failure_payload as _failure_payload
+from backend.write_lifecycle import local_fallback_response as _local_fallback_response
+from backend.write_lifecycle import official_failure_response as _official_failure_response
+from backend.write_lifecycle import official_success_response as _official_success_response
 
 v1_write_bp = Blueprint("v1_write", __name__)
 
@@ -56,132 +61,6 @@ def _string_list(value: Any) -> list[str]:  # noqa: ANN401
     if not isinstance(value, list):
         return []
     return [str(item)[: common.MAX_NAME] for item in value[:50] if isinstance(item, str | int | float)]
-
-
-def _message_from_payload(payload: object, default: str) -> str:
-    """Extract the clearest user-facing message from a Toolhub error payload."""
-    if isinstance(payload, dict):
-        for key in ("message", "detail", "error"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()[: common.MAX_DESCRIPTION]
-    return default
-
-
-def _validation_errors(payload: object) -> list:
-    """Turn common Toolhub validation payload shapes into a UI-consumable list."""
-    if isinstance(payload, list):
-        return [item if isinstance(item, dict) else {"message": str(item)} for item in payload]
-    if not isinstance(payload, dict):
-        return []
-    direct = payload.get("validationErrors") or payload.get("validation_errors") or payload.get("errors")
-    if isinstance(direct, list):
-        return [item if isinstance(item, dict) else {"message": str(item)} for item in direct]
-    skipped = {"message", "detail", "error", "non_field_errors"}
-    field_lists = [
-        {"field": key, "messages": [str(message) for message in value]}
-        for key, value in payload.items()
-        if key not in skipped and isinstance(value, list)
-    ]
-    field_strings = [
-        {"field": key, "messages": [value.strip()]}
-        for key, value in payload.items()
-        if key not in skipped and isinstance(value, str) and value.strip()
-    ]
-    return field_lists + field_strings
-
-
-def _failure_payload(status: int, payload: object, default_message: str) -> dict:
-    details = payload if isinstance(payload, dict) else {"message": str(payload)}
-    return {
-        "ok": False,
-        "status": status,
-        "details": details,
-        "lastError": _message_from_payload(details, default_message),
-        "validationErrors": _validation_errors(details),
-    }
-
-
-def _attempt_official_write(user: User, method: str, path: str, payload: object | None) -> tuple[dict, Response | None]:
-    """Call Toolhub with the user's grant; auth failures remain non-fallback."""
-    try:
-        body, status = toolhub.api_request(user.id, method, path, json=payload)
-    except ValueError:
-        # toolhub.api_path refused the path, so nothing left the process. Return a
-        # denial rather than a failure payload: a failure here would be treated as
-        # "Toolhub rejected the write" and stored as a local fallback draft, which
-        # would persist a draft keyed on a path that can never be valid.
-        return {}, common.bad("invalid official Toolhub path")
-    except toolhub.ToolhubAuthError as exc:
-        resp = jsonify({"error": str(exc), "reauth": True})
-        resp.status_code = common.HTTP_UNAUTHORIZED
-        return {}, resp
-    except toolhub.ToolhubAPIError as exc:
-        return _failure_payload(exc.status_code, exc.payload, "official Toolhub rejected the write"), None
-    except toolhub.requests.RequestException:
-        return (
-            _failure_payload(502, {"message": "official Toolhub is unavailable"}, "official Toolhub is unavailable"),
-            None,
-        )
-    common.invalidate_official_api_cache(path, payload, body)
-    common.record_successful_toolhub_write(user, method, path, payload, body)
-    return {
-        "ok": True,
-        "status": status,
-        "toolhub": body if status != v1.HTTP_NO_CONTENT else {"ok": True},
-        "lastSyncedAt": common.iso(utcnow()),
-    }, None
-
-
-def _official_success_response(attempt: dict, local: dict | None = None) -> Response:
-    payload = {
-        "ok": True,
-        "result": "official",
-        "syncStatus": SYNC_OFFICIAL,
-        "lastSyncedAt": attempt["lastSyncedAt"],
-        "toolhub": attempt["toolhub"],
-    }
-    if local is not None:
-        payload["local"] = local
-    if attempt.get("crawlerFetch") is not None:
-        payload["crawlerFetch"] = attempt["crawlerFetch"]
-    resp = jsonify(payload)
-    resp.status_code = 200 if attempt["status"] == v1.HTTP_NO_CONTENT else int(attempt["status"])
-    return resp
-
-
-def _official_failure_response(failure: dict) -> Response:
-    resp = jsonify(
-        {
-            "error": "official Toolhub rejected the write",
-            "status": failure["status"],
-            "details": failure["details"],
-            "lastError": failure["lastError"],
-            "validationErrors": failure["validationErrors"],
-        }
-    )
-    resp.status_code = int(failure["status"])
-    return resp
-
-
-def _local_fallback_response(failure: dict, local: dict) -> Response:
-    details = failure.get("details") if isinstance(failure.get("details"), dict) else {}
-    payload = {
-        "ok": True,
-        "result": SYNC_LOCAL_FALLBACK,
-        "syncStatus": SYNC_LOCAL_FALLBACK,
-        "lastError": failure["lastError"],
-        "validationErrors": failure["validationErrors"],
-        "toolhubResponse": failure["details"],
-        "toolhubStatus": failure.get("status"),
-        "toolhubCode": details.get("code"),
-        "local": local,
-    }
-    if failure.get("crawlerFetch") is not None:
-        payload["crawlerFetch"] = failure["crawlerFetch"]
-    resp = jsonify(payload)
-    resp.status_code = 202
-    return resp
 
 
 def _compact_tool_payload(payload: dict, route_name: str | None = None) -> tuple[str | None, dict | None]:
