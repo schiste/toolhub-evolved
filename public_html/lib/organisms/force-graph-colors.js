@@ -58,7 +58,9 @@ function paletteFromTokens(styles) {
  */
 export function communityColors(communityMeta, opts = {}) {
 	const styles = rootStyles();
-	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(Boolean);
+	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(
+		Boolean
+	);
 	const neutral =
 		opts.neutral || cssVar(styles, "--color-text-muted", cssVar(styles, "--color-border", FALLBACK_COLORS.neutral));
 	const colors = new Map();
@@ -109,7 +111,9 @@ export function colorForNode(node, colors) {
 // Stryker disable all: buildColors only feeds the colour object consumed by colorForNode/drawNode/drawEdge/draw — every field ends up as a ctx fill/stroke style (canvas draw) with no observable effect. (communityColors itself is covered directly via its export.)
 export function buildColors(data, opts) {
 	const styles = rootStyles();
-	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(Boolean);
+	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(
+		Boolean
+	);
 	const neutral = cssVar(styles, "--color-text-muted", cssVar(styles, "--color-border", FALLBACK_COLORS.neutral));
 	return {
 		border: cssVar(styles, "--color-border", FALLBACK_COLORS.border),

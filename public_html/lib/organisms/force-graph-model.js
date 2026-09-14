@@ -93,7 +93,9 @@ export function graphStructure(data) {
 	const nodes = (data.nodes || []).map((node, index) => Object.assign({ index, x: 0, y: 0, vx: 0, vy: 0 }, node));
 	const byId = new Map(nodes.map((node) => [node.id, node]));
 	const edges = (data.edges || [])
-		.map((edge) => Object.assign({}, edge, { sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) }))
+		.map((edge) =>
+			Object.assign({}, edge, { sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) })
+		)
 		.filter((edge) => edge.sourceNode && edge.targetNode);
 	/** @type {Map<string, Set<string>>} */
 	// Stryker disable all: neighborMap and edgeSet are consumed only by activeIds() and drawEdge() — both feed canvas draw alpha/highlighting with no observable, assertable DOM/handle effect.

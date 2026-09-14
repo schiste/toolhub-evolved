@@ -1,15 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { t } from "../core/i18n.js";
 import { applyGroupAttraction, integrateNode } from "../core/graph-layout.js";
-import {
-	TWO_PI,
-	clamp,
-	edgeKey,
-	graphStructure,
-	nodeSize,
-	seedGroupedNodes,
-	seedNodes
-} from "./force-graph-model.js";
+import { TWO_PI, clamp, edgeKey, graphStructure, nodeSize, seedGroupedNodes, seedNodes } from "./force-graph-model.js";
 import { buildColors, colorForNode } from "./force-graph-colors.js";
 import { createGraphSurface } from "./force-graph-surface.js";
 

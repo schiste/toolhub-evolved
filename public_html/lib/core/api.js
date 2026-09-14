@@ -23,12 +23,7 @@ import {
 } from "./api-cache-policy.js";
 import { markFrontendTiming, markFrontendTimingOnce } from "./diagnostics.js";
 import { signedIn } from "./session.js";
-import {
-	publicApiCacheClear,
-	publicApiCacheLoad,
-	publicApiCacheSave,
-	recentOwnerCacheDelete
-} from "./store.js";
+import { publicApiCacheClear, publicApiCacheLoad, publicApiCacheSave, recentOwnerCacheDelete } from "./store.js";
 
 export {
 	INDEX,
