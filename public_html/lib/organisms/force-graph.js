@@ -1,37 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { t } from "../core/i18n.js";
 import { applyGroupAttraction, integrateNode } from "../core/graph-layout.js";
+import {
+	TWO_PI,
+	clamp,
+	edgeKey,
+	graphStructure,
+	nodeSize,
+	seedGroupedNodes,
+	seedNodes
+} from "./force-graph-model.js";
+import { buildColors, colorForNode } from "./force-graph-colors.js";
+import { createGraphSurface } from "./force-graph-surface.js";
 
-const TWO_PI = Math.PI * 2;
+export { communityColors } from "./force-graph-colors.js";
+
 const MAX_TICKS = 400;
 const MIN_ZOOM = 0.55;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 1.2;
 const STATIC_LAYOUT_NODE_LIMIT = 600;
-const COMMUNITY_PALETTE = [
-	"--wmf-blue-aaa",
-	"--wmf-green-aaa",
-	"--wmf-red-aaa",
-	"--wmf-orange",
-	"--wmf-purple",
-	"--wmf-yellow",
-	"--wmf-green-light",
-	"--wmf-orange-light"
-];
-const FALLBACK_COLORS = {
-	// Stryker disable next-line StringLiteral: only used as a buildColors fallback feeding ctx.strokeStyle (canvas) — no observable effect.
-	border: "ButtonBorder",
-	center: "LinkText", // observable via communityColors (empty-palette fallback)
-	// Stryker disable next-line StringLiteral: buildColors-only fallback feeding canvas label fills — no observable effect.
-	labelBg: "Canvas",
-	// Stryker disable next-line StringLiteral: buildColors-only fallback feeding canvas label text (ctx.strokeStyle) — no observable effect.
-	labelText: "CanvasText",
-	neutral: "GrayText", // observable via communityColors (neutral fallback)
-	// Stryker disable next-line StringLiteral: buildColors-only fallback feeding ctx.fillStyle (canvas) — no observable effect.
-	score: "Highlight",
-	// Stryker disable next-line StringLiteral: buildColors-only fallback feeding the canvas background fill — no observable effect.
-	surface: "Canvas"
-};
 
 /**
  * @typedef {object} FGOpts
@@ -102,241 +90,6 @@ const FALLBACK_COLORS = {
  * @property {string} surface
  * @property {string[]} palette
  */
-
-/**
- * @param {number} value
- * @param {number} min
- * @param {number} max
- */
-function clamp(value, min, max) {
-	return Math.max(min, Math.min(max, value));
-}
-
-/**
- * @param {CSSStyleDeclaration | null} styles
- * @param {string} name
- * @param {string} fallback
- * @returns {string}
- */
-function cssVar(styles, name, fallback) {
-	if (!styles) return fallback;
-	// Stryker disable next-line MethodExpression: CSS custom-property values are already whitespace-trimmed by the parser (verified in happy-dom), so the extra .trim() is a no-op — equivalent.
-	const value = styles.getPropertyValue(name).trim();
-	return value || fallback;
-}
-
-/** @returns {CSSStyleDeclaration | null} */
-function rootStyles() {
-	// Stryker disable next-line ConditionalExpression,StringLiteral: defensive SSR/environment guard — `document` and `getComputedStyle` are always present in browsers and in the happy-dom test environment, so neither branch (return null) is reachable from the test suite; the surviving variants are equivalent here.
-	if (typeof document === "undefined" || typeof getComputedStyle !== "function") return null;
-	return getComputedStyle(document.documentElement);
-}
-
-/** @param {CSSStyleDeclaration | null} styles */
-function paletteFromTokens(styles) {
-	// Stryker disable next-line MethodExpression: communityColors/buildColors re-apply `.filter(Boolean)` to this result, so dropping the filter here is masked and has no observable effect — equivalent.
-	return COMMUNITY_PALETTE.map((token) => cssVar(styles, token, "")).filter(Boolean);
-}
-
-/** @param {FGNode} node */
-function nodeSize(node) {
-	if (node.center) return 18;
-	const weight = Math.max(0, Number(node.weight) || 0);
-	return clamp(7 + Math.sqrt(weight) * 3.2, 7, 18);
-}
-
-/**
- * @param {FGNode} node
- * @param {FGColors} colors
- * @returns {string}
- */
-// Stryker disable all: colorForNode's return value is only ever assigned to ctx.fillStyle (a canvas draw); it has no observable, assertable effect on the DOM/handle, so every mutant here is equivalent (per the canvas-draw exclusion).
-function colorForNode(node, colors) {
-	if (node.center) return colors.center;
-	const group = node.group ?? node.community;
-	if (group !== null && group !== undefined) {
-		if (typeof colors.communityColor === "function") {
-			const custom = colors.communityColor(group);
-			if (custom) return custom;
-		}
-		const colorMap = (node.group !== null && node.group !== undefined && colors.groupMap) || colors.communityMap;
-		if (colorMap.has(group)) {
-			return /** @type {string} */ (colorMap.get(group));
-		}
-		if (colorMap.has(String(group))) {
-			return /** @type {string} */ (colorMap.get(String(group)));
-		}
-		const index = Number(group);
-		if (Number.isFinite(index)) return colors.palette[index % colors.palette.length];
-	}
-	if (node.score !== null && node.score !== undefined) return colors.score;
-	return colors.palette[0];
-}
-// Stryker restore all
-
-/**
- * @param {{ id: string | number }[] | null | undefined} communityMeta
- * @param {{ palette?: string[]; neutral?: string }} [opts]
- * @returns {Map<string | number, string>}
- */
-export function communityColors(communityMeta, opts = {}) {
-	const styles = rootStyles();
-	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(
-		Boolean
-	);
-	const neutral =
-		opts.neutral || cssVar(styles, "--color-text-muted", cssVar(styles, "--color-border", FALLBACK_COLORS.neutral));
-	const colors = new Map();
-	for (const [index, community] of (communityMeta || []).entries()) {
-		if (!community) continue;
-		const color = palette.length > 0 ? palette[index % palette.length] : FALLBACK_COLORS.center;
-		colors.set(community.id, color);
-		colors.set(String(community.id), color);
-	}
-	colors.set("other", neutral);
-	return colors;
-}
-
-/**
- * @param {FGData} data
- * @param {FGOpts} opts
- * @returns {FGColors}
- */
-// Stryker disable all: buildColors only feeds the colour object consumed by colorForNode/drawNode/drawEdge/draw — every field ends up as a ctx fill/stroke style (canvas draw) with no observable effect. (communityColors itself is covered directly via its export.)
-function buildColors(data, opts) {
-	const styles = rootStyles();
-	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(
-		Boolean
-	);
-	const neutral = cssVar(styles, "--color-text-muted", cssVar(styles, "--color-border", FALLBACK_COLORS.neutral));
-	return {
-		border: cssVar(styles, "--color-border", FALLBACK_COLORS.border),
-		center: cssVar(styles, "--color-progressive-hover", FALLBACK_COLORS.center),
-		fit: cssVar(styles, "--color-progressive", FALLBACK_COLORS.center),
-		labelBg: cssVar(styles, "--color-surface", FALLBACK_COLORS.labelBg),
-		labelText: cssVar(styles, "--color-text", FALLBACK_COLORS.labelText),
-		communityMap: communityColors(data?.communityMeta || [], { palette, neutral }),
-		groupMap: communityColors(data?.groupMeta || data?.communityMeta || [], { palette, neutral }),
-		communityColor: typeof opts.communityColor === "function" ? opts.communityColor : null,
-		other: neutral,
-		score: cssVar(styles, "--wmf-green-aaa", FALLBACK_COLORS.score),
-		surface: cssVar(styles, "--color-surface", FALLBACK_COLORS.surface),
-		palette: palette.length > 0 ? palette : [FALLBACK_COLORS.center]
-	};
-}
-// Stryker restore all
-
-/**
- * @param {string} a
- * @param {string} b
- */
-// Stryker disable all: edgeKey only feeds edgeSet, consumed solely by drawEdge's isActive/alpha computation (a canvas draw) — no observable effect.
-function edgeKey(a, b) {
-	return a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
-}
-
-/**
- * @param {FGNode[]} nodes
- * @param {number} width
- * @param {number} height
- */
-function seedNodes(nodes, width, height) {
-	const cx = width / 2;
-	const cy = height / 2;
-	// Stryker disable next-line ArithmeticOperator,MethodExpression: `span` is only the initial seed radius; the simulation converges to a layout independent of it (verified by the hover fingerprint, which is unchanged when this magnitude changes) — equivalent.
-	const span = Math.max(40, Math.min(width, height) * 0.38);
-	nodes.forEach((node, index) => {
-		const angle = (index / Math.max(nodes.length, 1)) * TWO_PI;
-		// Stryker disable next-line ArithmeticOperator: `ring` only scales the initial seed radius; the settled layout is independent of it (verified by the fingerprint) — equivalent.
-		const ring = 0.35 + ((index % 17) / 16) * 0.65;
-		node.x = cx + Math.cos(angle) * span * ring;
-		node.y = cy + Math.sin(angle) * span * ring;
-		node.vx = 0;
-		node.vy = 0;
-	});
-}
-
-/**
- * @param {FGNode[]} nodes
- * @param {number} width
- * @param {number} height
- */
-function seedGroupedNodes(nodes, width, height) {
-	/** @type {Map<string | number, FGNode[]>} */
-	const groups = new Map();
-	for (const node of nodes) {
-		const group = node.group ?? "other";
-		const bucket = groups.get(group) ?? [];
-		if (bucket.length === 0) groups.set(group, bucket);
-		bucket.push(node);
-	}
-	const ordered = [...groups.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-	const columns = Math.max(1, Math.ceil(Math.sqrt(ordered.length)));
-	const rows = Math.max(1, Math.ceil(ordered.length / columns));
-	const cellWidth = width / columns;
-	const cellHeight = height / rows;
-	ordered.forEach(([, members], groupIndex) => {
-		const column = groupIndex % columns;
-		const row = Math.floor(groupIndex / columns);
-		const memberColumns = Math.max(1, Math.ceil(Math.sqrt(members.length)));
-		const memberRows = Math.max(1, Math.ceil(members.length / memberColumns));
-		const gapX = Math.max(8, (cellWidth - 44) / memberColumns);
-		const gapY = Math.max(8, (cellHeight - 44) / memberRows);
-		members.forEach((node, index) => {
-			const memberColumn = index % memberColumns;
-			const memberRow = Math.floor(index / memberColumns);
-			node.x = column * cellWidth + 22 + memberColumn * gapX;
-			node.y = row * cellHeight + 30 + memberRow * gapY;
-			node.vx = 0;
-			node.vy = 0;
-		});
-	});
-}
-
-/** @param {HTMLElement} container */
-function createGraphSurface(container) {
-	const canvas = document.createElement("canvas");
-	const tooltip = document.createElement("div");
-	const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
-	canvas.className = "force-graph";
-	canvas.setAttribute("aria-label", t("forceGraph.toolSimilarityGraph", "Tool similarity graph"));
-	canvas.setAttribute("role", "img");
-	canvas.setAttribute("tabindex", "0");
-	tooltip.className = "graph__tip";
-	tooltip.hidden = true;
-	container.innerHTML = "";
-	container.append(canvas, tooltip);
-	return { canvas, tooltip, ctx };
-}
-
-// Stryker restore all
-/** @param {FGData} data */
-function graphStructure(data) {
-	const nodes = /** @type {FGNode[]} */ (
-		(data.nodes || []).map((node, index) => Object.assign({ index, x: 0, y: 0, vx: 0, vy: 0 }, node))
-	);
-	const byId = new Map(nodes.map((node) => [node.id, node]));
-	const edges = /** @type {FGResolvedEdge[]} */ (
-		// Stryker disable next-line ArrayDeclaration: the `|| []` fallback only fires when data.edges is missing; a non-empty mutant fallback yields an edge whose string endpoints don't resolve to nodes, so it is dropped by the `sourceNode && targetNode` filter below — same result as the empty fallback — equivalent.
-		(data.edges || [])
-			.map((edge) =>
-				Object.assign({}, edge, { sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) })
-			)
-			.filter((edge) => edge.sourceNode && edge.targetNode)
-	);
-	/** @type {Map<string, Set<string>>} */
-	// Stryker disable all: neighborMap and edgeSet are consumed only by activeIds() and drawEdge() — both feed canvas draw alpha/highlighting with no observable, assertable effect.
-	const neighborMap = new Map(nodes.map((node) => [node.id, new Set()]));
-	/** @type {Set<string>} */
-	const edgeSet = new Set();
-	edges.forEach((edge) => {
-		neighborMap.get(edge.source)?.add(edge.target);
-		neighborMap.get(edge.target)?.add(edge.source);
-		edgeSet.add(edgeKey(edge.source, edge.target));
-	});
-	// Stryker restore all
-	return { nodes, edges, neighborMap, edgeSet };
-}
 
 /**
  * @param {HTMLElement} container
