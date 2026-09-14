@@ -1,17 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { hasValue } from "./util.js";
-import { localizedField, t } from "./i18n.js";
+import { isNewTool, newToolBase, normalizeTool } from "./tool-normalizer.js";
 import { markFrontendTiming, markFrontendTimingOnce } from "./diagnostics.js";
-import { signedIn, USER } from "./session.js";
+import { signedIn } from "./session.js";
 import {
 	publicApiCacheClear,
 	publicApiCacheLoad,
 	publicApiCacheSave,
-	recentOwnerCacheDelete,
-	toolEditsMap,
-	toolAnnosMap,
-	toolNewMap
+	recentOwnerCacheDelete
 } from "./store.js";
+
+export {
+	INDEX,
+	applyToolOverlay,
+	firstUrl,
+	isNewTool,
+	localToolBase,
+	newToolBase,
+	normalizeList,
+	normalizeTool,
+	pick,
+	statusOf
+} from "./tool-normalizer.js";
 
 export const READ_TIMEOUT_MS = 12_000;
 
@@ -87,153 +96,6 @@ export function fetchRead(input, init = {}) {
 		});
 }
 
-/* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
-   as local replica data arrives (search results, lists, tool pages). */
-/** @type {Record<string, Tool>} */
-export const INDEX = {};
-const OVERLAY_META_KEYS = new Set([
-	"source",
-	"syncStatus",
-	"syncLabel",
-	"lastSyncedAt",
-	"lastError",
-	"createdByUserId",
-	"created_by_user_id",
-	"deletedAt",
-	"deleted_at",
-	"officialId",
-	"officialName",
-	"visibility",
-	"toolhubResponse",
-	"toolhubStatus",
-	"toolhubCode",
-	"validationErrors",
-	"baseRevision",
-	"fieldStatuses",
-	"reviewStatus",
-	"viewerOwned"
-]);
-const CANONICAL_TOOL_KEYS = new Set(["name", "origin"]);
-
-/**
- * @param {Record<string, any>} patch
- * @returns {Record<string, any>}
- */
-function dataPatch(patch) {
-	return Object.fromEntries(
-		Object.entries(patch || {}).filter(([key]) => !OVERLAY_META_KEYS.has(key) && !CANONICAL_TOOL_KEYS.has(key))
-	);
-}
-
-/** @param {string} name */
-export function isNewTool(name) {
-	return Boolean(toolNewMap()[name]);
-}
-/**
- * @param {Tool} o
- * @returns {Tool}
- */
-export function applyToolOverlay(o) {
-	const e = toolEditsMap()[o.name];
-	if (e) {
-		Object.assign(o, dataPatch(e));
-		// `edited`/`annotated`/`status` (object) are runtime extras the static
-		// Tool interface doesn't model; cast through any for these writes.
-		/** @type {any} */ (o).edited = true;
-		/** @type {any} */ (o).editSyncStatus = e.syncStatus;
-		/** @type {any} */ (o).editLastError = e.lastError;
-		/** @type {any} */ (o).editValidationErrors = e.validationErrors;
-		/** @type {any} */ (o).editReviewStatus = e.reviewStatus;
-		/** @type {any} */ (o).editLastSyncedAt = e.lastSyncedAt;
-		/** @type {any} */ (o).editToolhubResponse = e.toolhubResponse;
-		/** @type {any} */ (o).editToolhubStatus = e.toolhubStatus;
-		/** @type {any} */ (o).editToolhubCode = e.toolhubCode;
-		/** @type {any} */ (o).editViewerOwned = e.viewerOwned;
-	}
-	const a = toolAnnosMap()[o.name];
-	if (a) {
-		Object.assign(o, dataPatch(a));
-		/** @type {any} */ (o).annotated = true;
-		/** @type {any} */ (o).annotationSyncStatus = a.syncStatus;
-		/** @type {any} */ (o).annotationLastError = a.lastError;
-		/** @type {any} */ (o).annotationValidationErrors = a.validationErrors;
-		/** @type {any} */ (o).annotationReviewStatus = a.reviewStatus;
-		/** @type {any} */ (o).annotationLastSyncedAt = a.lastSyncedAt;
-		/** @type {any} */ (o).annotationToolhubResponse = a.toolhubResponse;
-		/** @type {any} */ (o).annotationToolhubStatus = a.toolhubStatus;
-		/** @type {any} */ (o).annotationToolhubCode = a.toolhubCode;
-		/** @type {any} */ (o).annotationViewerOwned = a.viewerOwned;
-	}
-	if (e || a) o.status = /** @type {any} */ (statusOf(o)); // flags may have changed
-	return o;
-}
-// Build a compact tool object from a locally-registered record (the project
-// database that complements the replicated catalog), then overlay edits.
-/**
- * @param {string} name
- * @param {Record<string, any>} rec
- * @returns {Tool}
- */
-export function localToolBase(name, rec) {
-	// The defaults + record spread produce a structurally-complete compact tool;
-	// assert the Tool shape once here (same trust boundary as normalizeTool).
-	const o = /** @type {Tool} */ (
-		/** @type {unknown} */ (
-			Object.assign(
-				{
-					name,
-					keywords: [],
-					authors: [],
-					audiences: [],
-					tasks: [],
-					forWikis: [],
-					uiLanguages: [],
-					technologyUsed: [],
-					maintainer: USER.name,
-					deprecated: false,
-					experimental: false,
-					lifecycle: "",
-					origin: "api"
-				},
-				rec
-			)
-		)
-	);
-	o.name = name;
-	o.weeklyViews = 0;
-	/** @type {any} */ (o).viewerOwned = rec.viewerOwned;
-	o.status = statusOf(o);
-	INDEX[name] = o;
-	return applyToolOverlay(o);
-}
-// Net-new submission from this browser's overlay cache.
-/**
- * @param {string} name
- * @returns {Tool | null}
- */
-export function newToolBase(name) {
-	const rec = toolNewMap()[name];
-	return rec ? localToolBase(name, rec) : null;
-}
-/**
- * Rank what is worth saying about a tool, most consequential first.
- *
- * Deprecated and experimental come first because a maintainer said them about
- * their own tool. Archived is below both because nobody said it: it is this
- * codebase's observation that nothing it can see loads the tool, and a
- * maintainer's own claim about their work outranks our reading of the traffic.
- * @param {{ deprecated: boolean; experimental: boolean; lifecycle?: string }} t
- * @returns {ToolStatus}
- */
-export function statusOf(t) {
-	return t.deprecated
-		? { level: "red", label: "Deprecated" }
-		: t.experimental
-			? { level: "yellow", label: "Experimental" }
-			: t.lifecycle === "archived"
-				? { level: "grey", label: "Archived" }
-				: { level: "green", label: "Healthy" };
-}
 /* ================================================================= LOCAL CATALOG API
    Every product read comes from the same-origin, versioned local replica.
    Toolhub network access belongs to scheduled synchronization and authenticated
@@ -792,137 +654,6 @@ export async function paginate(path, params = {}, { pageSize = 100, maxPages = 1
 	}
 	return out;
 }
-/** @param {unknown} v */
-export function firstUrl(v) {
-	if (!v) return null;
-	if (typeof v === "string") return v;
-	if (Array.isArray(v) && v.length > 0) {
-		const x = v[0];
-		return x && typeof x === "object" ? x.url : x;
-	}
-	return null;
-}
-/**
- * Choose the first of core/annotation that has a value, else the fallback. The
- * fallback's type `T` is asserted onto the chosen raw value: this is the single
- * place normalizeTool trusts the upstream shape, so the constructed record can be
- * a checked `Tool` instead of `any`.
- * @template T
- * @param {unknown} core
- * @param {unknown} annotation
- * @param {T} fallback
- * @returns {T}
- */
-export function pick(core, annotation, fallback) {
-	if (hasValue(core)) return /** @type {T} */ (core);
-	if (hasValue(annotation)) return /** @type {T} */ (annotation);
-	return fallback;
-}
-/* Called lazily (not a module-level constant) so a locale catalog installed at
-   boot is picked up. Named helper because normalizeTool's raw-record param is
-   `t`, which shadows the i18n t() inside that function body. */
-function unknownMaintainer() {
-	return t("api.unknownMaintainer", "Unknown");
-}
-/**
- * Raw author records from the upstream API are heterogeneous (string | object |
- * null), so `a` is typed `any` here.
- * @param {any} a
- */
-function normalizeAuthorObj(a) {
-	if (!a) return null;
-	if (typeof a === "string") return a ? { name: a, url: null, wikiUsername: null, developerUsername: null } : null;
-	const name = a.name || "";
-	if (!name) return null;
-	return {
-		name,
-		url: a.url || null,
-		wikiUsername: a.wiki_username || null,
-		developerUsername: a.developer_username || null
-	};
-}
-/**
- * Normalize a raw upstream tool record into the compact `Tool` shape. The raw
- * record is untyped API JSON, so `t` is `any`; the constructed object is also
- * `any` because it is mutated post-construction (weeklyViews/status/overlay
- * flags) in ways the static `Tool` interface intentionally does not model.
- * @param {any} t
- * @returns {Tool}
- */
-export function normalizeTool(t) {
-	const ann = t.annotations || {};
-	const ra = t.author;
-	const titleField = localizedField(t.title, t._language);
-	const descriptionField = localizedField(t.description, t._language);
-	const subtitleField = localizedField(pick(t.subtitle, ann.subtitle, null), t._language);
-	const authors = Array.isArray(ra)
-		? ra.map((a) => (a && a.name) || (typeof a === "string" ? a : null)).filter(Boolean)
-		: typeof ra === "string" && ra
-			? [ra]
-			: [];
-	// filter(Boolean) drops the nulls at runtime but TS can't narrow it, so assert
-	// the post-filter element type (no soundness loss — the nulls are gone).
-	const authorObjs = /** @type {AuthorObj[]} */ (
-		Array.isArray(ra)
-			? ra.map((author) => normalizeAuthorObj(author)).filter(Boolean)
-			: [normalizeAuthorObj(ra)].filter(Boolean)
-	);
-	const deprecated = Boolean(t.deprecated || ann.deprecated);
-	const experimental = Boolean(t.experimental || ann.experimental);
-	// Not from any toolinfo, which is what the underscore says: the backend
-	// writes it for records it synthesized from a wiki, and leaves it off
-	// everything the official catalog supplied.
-	const lifecycle = typeof t._lifecycle === "string" ? t._lifecycle : "";
-	/** @type {Tool} */
-	const o = {
-		name: t.name,
-		title: titleField.value || t.name,
-		titleLanguage: titleField.value ? titleField.lang : null,
-		description: descriptionField.value || "",
-		descriptionLanguage: descriptionField.value ? descriptionField.lang : null,
-		url: pick(t.url, ann.url, ""),
-		icon: pick(t.icon, ann.icon, null),
-		keywords: t.keywords || [],
-		maintainer: authors[0] || (t.created_by && t.created_by.username) || unknownMaintainer(),
-		authors,
-		authorObjs,
-		wikidata: pick(t.wikidata_qid, ann.wikidata_qid, null),
-		subtitle: subtitleField.value || null,
-		subtitleLanguage: subtitleField.value ? subtitleField.lang : null,
-		sponsor: pick(t.sponsor, ann.sponsor, []),
-		replacedBy: pick(t.replaced_by, ann.replaced_by, null),
-		toolType: pick(t.tool_type, ann.tool_type, null),
-		license: pick(t.license, ann.license, null),
-		repository: pick(t.repository, ann.repository, null),
-		apiUrl: pick(t.api_url, ann.api_url, null),
-		technologyUsed: pick(t.technology_used, ann.technology_used, []),
-		audiences: pick(t.audiences, ann.audiences, []),
-		tasks: pick(t.tasks, ann.tasks, []),
-		forWikis: pick(t.for_wikis, ann.for_wikis, []),
-		uiLanguages: pick(t.available_ui_languages, ann.available_ui_languages, []),
-		userDocs: firstUrl(pick(t.user_docs_url, ann.user_docs_url, [])),
-		devDocs: firstUrl(pick(t.developer_docs_url, ann.developer_docs_url, [])),
-		feedback: firstUrl(pick(t.feedback_url, ann.feedback_url, [])),
-		bugtracker: pick(t.bugtracker_url, ann.bugtracker_url, null),
-		translate: pick(t.translate_url, ann.translate_url, null),
-		deprecated,
-		experimental,
-		lifecycle,
-		created: t.created_date || t.created || null,
-		modified: t.modified_date || t.modified || null,
-		origin: t.origin || "crawler",
-		catalogProjection: t._catalogProjection || null,
-		cachedIconUrl: t._cachedIconUrl || null,
-		accountRelationships: Array.isArray(t.accountRelationships) ? t.accountRelationships : [],
-		accountPerson: t.accountPerson && typeof t.accountPerson.id === "string" ? { ...t.accountPerson } : undefined,
-		relationshipPeople: Array.isArray(t.relationshipPeople) ? t.relationshipPeople : [],
-		weeklyViews: 0,
-		status: statusOf({ deprecated, experimental, lifecycle })
-	};
-	applyToolOverlay(o);
-	INDEX[o.name] = o; // cache for quick-view
-	return o;
-}
 /**
  * @param {string} name
  * @returns {Promise<Tool | null>}
@@ -1002,21 +733,6 @@ export async function cachedCanonicalTools(options = {}) {
 			return tool;
 		})
 		.filter(Boolean);
-}
-/**
- * @param {any} l
- * @returns {ToolList}
- */
-export function normalizeList(l) {
-	const tools = /** @type {any[]} */ (l.tools || []).map((tool) => normalizeTool(tool));
-	return {
-		id: l.id,
-		title: l.title || t("api.untitledList", "Untitled list"),
-		description: l.description || "",
-		toolCount: tools.length,
-		tools,
-		featured: Boolean(l.featured)
-	};
 }
 /* ===== Backend (/v1) transport — production server sync ====================
    The only other network calls in the app: same-origin requests to our own
