@@ -46,6 +46,7 @@ from backend.sync import (
     AUTHOR_CLAIM_UNVERIFIED,
     AUTHOR_CLAIM_VERIFIED,
     PERSON_REL_AUTHOR,
+    PERSON_REL_CATALOG_ACTOR,  # noqa: F401 - compatibility export for people_directory callers
     PUBLIC_PERSON_REL_VALUES,
     REVIEW_APPROVED,
     SOURCE_LOCAL,
@@ -2293,6 +2294,42 @@ def _current_verified_clause(*, checked_at: datetime) -> Any:  # noqa: ANN401 - 
             ToolPersonRelationship.expires_at > checked_at,
         ),
     )
+
+
+def _relationship_directory_filter(
+    *,
+    role: str,
+    verification: str,
+    project: str,
+    checked_at: datetime,
+) -> Any:  # noqa: ANN401 - compatibility SQL expression
+    """Compatibility wrapper for the extracted directory filter policy."""
+    # Local imports avoid a module cycle with people_directory's shared helpers.
+    from backend import (  # noqa: PLC0415
+        people_directory as _people_directory,
+    )
+
+    return _people_directory._relationship_directory_filter(  # noqa: SLF001
+        role=role,
+        verification=verification,
+        project=project,
+        checked_at=checked_at,
+    )
+
+
+def _directory_relationship_summaries(
+    s: Session,
+    person_ids: set[int],
+    *,
+    checked_at: datetime | None = None,
+) -> dict[int, dict[str, Any]]:
+    """Compatibility wrapper for extracted relationship aggregation."""
+    # Local imports avoid a module cycle with people_directory's shared helpers.
+    from backend import (  # noqa: PLC0415
+        people_directory as _people_directory,
+    )
+
+    return _people_directory._directory_relationship_summaries(s, person_ids, checked_at=checked_at)  # noqa: SLF001
 
 
 def find_people(s: Session, query: str, *, limit: int = 50) -> list[dict[str, Any]]:
