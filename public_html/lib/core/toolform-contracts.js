@@ -130,15 +130,14 @@ export function toolCoreChangeDescriptors(current, fields) {
 
 /** @param {{ audiences: string[]; tasks: string[]; toolType: string | null; icon: string | null }} anno */
 export function officialAnnotationPayload(anno) {
+	/** @type {{ audiences: string[]; tasks: string[]; tool_type?: string; icon?: string; comment: string }} */
 	const payload = {
 		audiences: anno.audiences,
 		tasks: anno.tasks,
-		tool_type: anno.toolType,
-		icon: anno.icon,
 		comment: "Annotated from Toolhub Evolved"
 	};
-	if (!payload.tool_type) delete payload.tool_type;
-	if (!payload.icon) delete payload.icon;
+	if (anno.toolType) payload.tool_type = anno.toolType;
+	if (anno.icon) payload.icon = anno.icon;
 	return payload;
 }
 
