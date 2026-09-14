@@ -14,8 +14,9 @@ import json
 import re
 import sys
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from backend import source_authorship, source_endpoints, wiki_sources
 from backend.source_analysis_assessments import (
@@ -157,9 +158,6 @@ from backend.source_analysis_common import (
     _parse_iso_datetime,
     _publishable_rows,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 
 class SourceAnalysisError(ValueError):
@@ -1094,7 +1092,14 @@ def _scan_pipfile_lock(findings: dict[tuple[str, str], Finding], source_file: So
     )
 
 
-def _scan_poetry_lock(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
+def _scan_toml_lock_packages(
+    findings: dict[tuple[str, str], Finding],
+    source_file: SourceFile,
+    *,
+    ecosystem: str,
+    reason: str,
+) -> None:
+    """Scan a TOML lockfile whose packages use the common name/version shape."""
     try:
         data = tomllib.loads(source_file.content)
     except tomllib.TOMLDecodeError:
@@ -1109,14 +1114,23 @@ def _scan_poetry_lock(findings: dict[tuple[str, str], Finding], source_file: Sou
         line_number, line = _line_for_text(source_file.content, str(name))
         _put_dependency(
             findings,
-            ecosystem="pypi",
+            ecosystem=ecosystem,
             name=name,
             category="locked",
             confidence=0.84,
-            reason="Locked Poetry dependency.",
+            reason=reason,
             evidence=_evidence(source_file.path, line_number, line, name),
             version=_mapping_version_spec(package),
         )
+
+
+def _scan_poetry_lock(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
+    _scan_toml_lock_packages(
+        findings,
+        source_file,
+        ecosystem="pypi",
+        reason="Locked Poetry dependency.",
+    )
 
 
 def _scan_composer_lock(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
@@ -1148,28 +1162,12 @@ def _scan_composer_lock(findings: dict[tuple[str, str], Finding], source_file: S
 
 
 def _scan_cargo_lock(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
-    try:
-        data = tomllib.loads(source_file.content)
-    except tomllib.TOMLDecodeError:
-        return
-    packages = data.get("package") if isinstance(data, dict) else None
-    for package in packages if isinstance(packages, list) else []:
-        if not isinstance(package, dict):
-            continue
-        name = _clean_dependency_name(package.get("name"))
-        if name is None:
-            continue
-        line_number, line = _line_for_text(source_file.content, str(name))
-        _put_dependency(
-            findings,
-            ecosystem="cargo",
-            name=name,
-            category="locked",
-            confidence=0.84,
-            reason="Locked Cargo dependency.",
-            evidence=_evidence(source_file.path, line_number, line, name),
-            version=_mapping_version_spec(package),
-        )
+    _scan_toml_lock_packages(
+        findings,
+        source_file,
+        ecosystem="cargo",
+        reason="Locked Cargo dependency.",
+    )
 
 
 def _scan_gemfile_lock(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
@@ -1240,22 +1238,37 @@ def _scan_yarn_lock(findings: dict[tuple[str, str], Finding], source_file: Sourc
     emit(pending, None)
 
 
+Scanner = Callable[[dict[tuple[str, str], Finding], SourceFile], None]
+
+_LOCKFILE_SCANNERS: dict[str, Scanner] = {
+    "package-lock.json": _scan_package_lock,
+    "npm-shrinkwrap.json": _scan_package_lock,
+    "pipfile.lock": _scan_pipfile_lock,
+    "poetry.lock": _scan_poetry_lock,
+    "composer.lock": _scan_composer_lock,
+    "cargo.lock": _scan_cargo_lock,
+    "gemfile.lock": _scan_gemfile_lock,
+    "yarn.lock": _scan_yarn_lock,
+    "pnpm-lock.yaml": _scan_yarn_lock,
+}
+
+_MANIFEST_SCANNERS: dict[str, Scanner] = {
+    "package.json": _scan_package_json,
+    "pyproject.toml": _scan_pyproject_toml,
+    "cargo.toml": _scan_pyproject_toml,
+    "pipfile": _scan_pipfile,
+    "composer.json": _scan_composer_json,
+    "go.mod": _scan_go_mod,
+    "gemfile": _scan_gemfile,
+    "requirements.txt": _scan_requirements_txt,
+}
+
+
 def _scan_lockfile_dependencies(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
     name = source_file.path.rsplit("/", 1)[-1].lower()
-    if name in {"package-lock.json", "npm-shrinkwrap.json"}:
-        _scan_package_lock(findings, source_file)
-    elif name == "pipfile.lock":
-        _scan_pipfile_lock(findings, source_file)
-    elif name == "poetry.lock":
-        _scan_poetry_lock(findings, source_file)
-    elif name == "composer.lock":
-        _scan_composer_lock(findings, source_file)
-    elif name == "cargo.lock":
-        _scan_cargo_lock(findings, source_file)
-    elif name == "gemfile.lock":
-        _scan_gemfile_lock(findings, source_file)
-    elif name in {"yarn.lock", "pnpm-lock.yaml"}:
-        _scan_yarn_lock(findings, source_file)
+    scanner = _LOCKFILE_SCANNERS.get(name)
+    if scanner is not None:
+        scanner(findings, source_file)
 
 
 def _external_js_package(value: str) -> str | None:
@@ -1363,20 +1376,11 @@ def _scan_import_dependencies(
 
 def _scan_manifest_dependencies(findings: dict[tuple[str, str], Finding], source_file: SourceFile) -> None:
     name = source_file.path.rsplit("/", 1)[-1].lower()
-    if name == "package.json":
-        _scan_package_json(findings, source_file)
-    elif name.startswith("requirements") and name.endswith(".txt"):
-        _scan_requirements_txt(findings, source_file)
-    elif name in {"pyproject.toml", "cargo.toml"}:
-        _scan_pyproject_toml(findings, source_file)
-    elif name == "pipfile":
-        _scan_pipfile(findings, source_file)
-    elif name == "composer.json":
-        _scan_composer_json(findings, source_file)
-    elif name == "go.mod":
-        _scan_go_mod(findings, source_file)
-    elif name == "gemfile":
-        _scan_gemfile(findings, source_file)
+    scanner = _MANIFEST_SCANNERS.get(name)
+    if scanner is None and name.startswith("requirements") and name.endswith(".txt"):
+        scanner = _scan_requirements_txt
+    if scanner is not None:
+        scanner(findings, source_file)
     elif name in LOCKFILE_KINDS:
         _scan_lockfile_dependencies(findings, source_file)
 
