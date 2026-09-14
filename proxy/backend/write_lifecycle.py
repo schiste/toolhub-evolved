@@ -3,16 +3,68 @@
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from flask import Response, jsonify
 
-from backend import toolhub
+from backend import db, toolhub
 from backend import v1_common as common
 from backend.models import User, utcnow
 from backend.sync import SYNC_LOCAL_FALLBACK, SYNC_OFFICIAL
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 HTTP_NO_CONTENT = 204
+
+
+@dataclass(frozen=True)
+class WriteHandlers:
+    """Resource callbacks for the shared official-first lifecycle."""
+
+    on_success: Callable[[Any, User, dict], dict | None]
+    on_fallback: Callable[[Any, User, dict], dict]
+    can_fallback: Callable[[User], bool]
+
+
+@dataclass(frozen=True)
+class WriteRequest:
+    """Immutable transport request passed through the lifecycle policy."""
+
+    user: User
+    method: str
+    path: str
+    payload: object | None
+
+
+def execute_official_first(
+    request: WriteRequest,
+    handlers: WriteHandlers,
+    *,
+    database: Any = db,  # noqa: ANN401 - injectable database facade
+    attempt_writer: Callable[[User, str, str, object | None], tuple[dict, Response | None]] | None = None,
+) -> Response:
+    """Run one official write and delegate resource-specific persistence.
+
+    The transport owns authentication/error normalization and this function owns
+    the branch that every resource otherwise had to repeat: persist official
+    success, reject when local fallback is not permitted, or persist a local
+    fallback and return the shared response contract.
+    """
+    writer = attempt_writer or attempt_official_write
+    attempt, denied = writer(request.user, request.method, request.path, request.payload)
+    if denied is not None:
+        return denied
+    if attempt["ok"]:
+        with database.session_scope() as session:
+            local = handlers.on_success(session, request.user, attempt)
+        return official_success_response(attempt, local)
+    if not handlers.can_fallback(request.user):
+        return official_failure_response(attempt)
+    with database.session_scope() as session:
+        local = handlers.on_fallback(session, request.user, attempt)
+    return local_fallback_response(attempt, local)
 
 
 def message_from_payload(payload: object, default: str) -> str:
