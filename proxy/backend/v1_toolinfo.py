@@ -2,9 +2,8 @@
 """The /v1/toolinfo/* endpoints, split out of backend/v1.py.
 
 URL paths are unchanged; only the Flask endpoint names move under their
-own blueprint. Helpers still shared with other families are reached as
-`v1.<name>` so there is exactly one binding for each and patching or
-reloading backend.v1 keeps working.
+own blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 import base64
@@ -17,7 +16,6 @@ from sqlalchemy import select
 from backend import (
     authz,
     db,
-    v1,
 )
 from backend import v1_common as common
 from backend.author_claims import (
@@ -38,6 +36,7 @@ from backend.toolinfo_control import (
 from backend.toolinfo_control import (
     expired as challenge_expired,
 )
+from backend.v1_policy import SIGNATURE_PLACEHOLDER
 
 v1_toolinfo_bp = Blueprint("v1_toolinfo", __name__)
 
@@ -56,7 +55,7 @@ def _toolinfo_body(value: Any) -> dict | None:  # noqa: ANN401 - untrusted JSON
 
 def _signature_metadata(key_id: str) -> dict:
     """Return the metadata block a maintainer adds after signing."""
-    return {"algorithm": "ed25519", "key_id": key_id, "signature": v1.SIGNATURE_PLACEHOLDER}
+    return {"algorithm": "ed25519", "key_id": key_id, "signature": SIGNATURE_PLACEHOLDER}
 
 
 @v1_toolinfo_bp.route("/v1/toolinfo/ownership-challenges/")

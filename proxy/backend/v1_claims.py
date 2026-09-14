@@ -2,9 +2,8 @@
 """The /v1/claims/* endpoints, split out of backend/v1.py.
 
 URL paths are unchanged; only the Flask endpoint names move under their
-own blueprint. Helpers still shared with other families are reached as
-`v1.<name>` so there is exactly one binding for each and patching or
-reloading backend.v1 keeps working.
+own blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 from flask import Blueprint, Response, jsonify
@@ -14,9 +13,9 @@ from backend import (
     authz,
     db,
     maintainer_index,
-    v1,
 )
 from backend import v1_common as common
+from backend import v1_compat as compat
 from backend.models import (
     ToolAuthorClaim,
     ToolinfoControlChallenge,
@@ -82,7 +81,7 @@ def v1_claim_verify(claim_id: int) -> Response:  # noqa: C901, PLR0911
             return error
         assert tool is not None  # noqa: S101 - helper returned no error
         if method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER:
-            rows = v1.TOOLFORGE_MAINTAINER_PROVIDER.verify(
+            rows = compat.value("TOOLFORGE_MAINTAINER_PROVIDER").verify(
                 s,
                 stored_user,
                 tool_name=row.tool_name,
@@ -95,7 +94,9 @@ def v1_claim_verify(claim_id: int) -> Response:  # noqa: C901, PLR0911
                 item = fetch_matching_item(row.evidence_url or "", row.tool_name)
             except Exception as exc:  # noqa: BLE001 - normalize bounded external proof failures
                 return common.bad(f"Could not read signed toolinfo: {clean_error(str(exc)) or 'fetch failed'}")
-            rows = v1.SIGNED_TOOLINFO_PROVIDER.verify(s, stored_user, toolinfo=item, evidence_url=row.evidence_url)
+            rows = compat.value("SIGNED_TOOLINFO_PROVIDER").verify(
+                s, stored_user, toolinfo=item, evidence_url=row.evidence_url
+            )
             updated = rows[0] if rows else row
         else:
             return common.bad("unsupported claim method")

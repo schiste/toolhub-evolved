@@ -2,9 +2,8 @@
 """The /v1/overlay/* endpoints, split out of backend/v1.py.
 
 URL paths are unchanged; only the Flask endpoint names move under their
-own blueprint. Helpers still shared with other families are reached as
-`v1.<name>` so there is exactly one binding for each and patching or
-reloading backend.v1 keeps working.
+own blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 from typing import Any
@@ -15,7 +14,6 @@ from sqlalchemy import delete, func, select
 from backend import (
     authz,
     db,
-    v1,
 )
 from backend import v1_common as common
 from backend.models import (
@@ -44,6 +42,7 @@ from backend.sync import (
     clean_source,
     clean_sync_status,
 )
+from backend.v1_policy import FEED_KEEP_CAP, MAX_ITEMS
 
 v1_overlay_bp = Blueprint("v1_overlay", __name__)
 
@@ -65,7 +64,7 @@ def v1_overlay_get() -> Response:
 def _put_favorites(uid: int, value: Any) -> Response | None:  # noqa: ANN401
     if not isinstance(value, list) or not all(isinstance(n, str) and 0 < len(n) <= common.MAX_NAME for n in value):
         return common.bad("favorites must be a list of tool names")
-    names = list(dict.fromkeys(value))[: v1.MAX_ITEMS]
+    names = list(dict.fromkeys(value))[:MAX_ITEMS]
     with db.session_scope() as s:
         s.execute(delete(Favorite).where(Favorite.user_id == uid))
         s.add_all(
@@ -87,7 +86,7 @@ def _put_favorites(uid: int, value: Any) -> Response | None:  # noqa: ANN401
 def _put_lists(uid: int, value: Any) -> Response | None:  # noqa: ANN401
     if not isinstance(value, list):
         return common.bad("lists must be a list")
-    for item in value[: v1.MAX_ITEMS]:
+    for item in value[:MAX_ITEMS]:
         ok = (
             isinstance(item, dict)
             and isinstance(item.get("id"), str)
@@ -98,7 +97,7 @@ def _put_lists(uid: int, value: Any) -> Response | None:  # noqa: ANN401
             return common.bad("each list needs id, title and tools")
     with db.session_scope() as s:
         s.execute(delete(ToolList).where(ToolList.user_id == uid))
-        for item in value[: v1.MAX_ITEMS]:
+        for item in value[:MAX_ITEMS]:
             official_id = clean_int(common.payload_value(item, "officialId", "official_list_id"))
             default_status = SYNC_OFFICIAL if official_id is not None else SYNC_LOCAL_DRAFT
             sync_status = clean_sync_status(common.payload_value(item, "syncStatus", "sync_status"), default_status)
@@ -114,7 +113,7 @@ def _put_lists(uid: int, value: Any) -> Response | None:  # noqa: ANN401
                     created_by_user_id=uid,
                     title=str(item["title"])[: common.MAX_NAME],
                     description=str(item.get("description", "")),
-                    tools=[str(t)[: common.MAX_NAME] for t in item["tools"][: v1.MAX_ITEMS]],
+                    tools=[str(t)[: common.MAX_NAME] for t in item["tools"][:MAX_ITEMS]],
                     created_at=common.parse_iso(item.get("created")),
                     modified_at=common.parse_iso(item.get("modified")),
                     official_list_id=official_id,
@@ -140,7 +139,7 @@ def _put_crawler_urls(uid: int, value: Any) -> Response | None:  # noqa: ANN401
         return common.bad("crawlerUrls must be a list of {url (https), added}")
     with db.session_scope() as s:
         s.execute(delete(CrawlerUrl).where(CrawlerUrl.user_id == uid))
-        for u in value[: v1.MAX_ITEMS]:
+        for u in value[:MAX_ITEMS]:
             official_id = clean_int(common.payload_value(u, "officialId") if "officialId" in u else u.get("id"))
             default_status = SYNC_OFFICIAL if official_id is not None else SYNC_LOCAL_DRAFT
             sync_status = clean_sync_status(common.payload_value(u, "syncStatus", "sync_status"), default_status)
@@ -293,7 +292,7 @@ def _put_tool_new(uid: int, entries: dict[str, dict], s: Any, *, can_review: boo
 def _put_tool_map(uid: int, value: Any, *, key: str, user: User) -> Response | None:  # noqa: ANN401
     if not _valid_map(value):
         return common.bad(f"{key} must be a map of tool name to object")
-    entries = dict(list(value.items())[: v1.MAX_ITEMS])
+    entries = dict(list(value.items())[:MAX_ITEMS])
     with db.session_scope() as s:
         can_review = authz.can(user, authz.ACTION_PUBLIC_REVIEW)
         if key == "toolNew":
@@ -346,7 +345,7 @@ def _put_feed(uid: int, value: Any, *, key: str) -> Response | None:  # noqa: AN
         # push other users' rows back — those must not be duplicated under the
         # caller's account.
         known = set(s.execute(select(ActivityRow.client_id).where(ActivityRow.kind == key)).scalars())
-        for row in value[: v1.MAX_ITEMS]:
+        for row in value[:MAX_ITEMS]:
             if row["id"] not in known:
                 known.add(row["id"])  # a payload may repeat an id — insert once
                 s.add(
@@ -360,14 +359,14 @@ def _put_feed(uid: int, value: Any, *, key: str) -> Response | None:  # noqa: AN
                     )
                 )
         total = s.execute(select(func.count()).select_from(ActivityRow).where(ActivityRow.kind == key)).scalar_one()
-        if total > v1.FEED_KEEP_CAP:
+        if total > FEED_KEEP_CAP:
             # Fetch victim ids first: MariaDB rejects LIMIT inside IN-subqueries.
             oldest_ids = list(
                 s.execute(
                     select(ActivityRow.id)
                     .where(ActivityRow.kind == key)
                     .order_by(ActivityRow.created_at, ActivityRow.id)
-                    .limit(total - v1.FEED_KEEP_CAP)
+                    .limit(total - FEED_KEEP_CAP)
                 ).scalars()
             )
             s.execute(delete(ActivityRow).where(ActivityRow.id.in_(oldest_ids)))

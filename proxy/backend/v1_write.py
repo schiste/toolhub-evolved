@@ -6,9 +6,8 @@ application's 87 routes across 23 unrelated resource families. These 17 routes
 and the 36 helpers only they use are the largest self-contained group in it.
 
 URL paths are unchanged; only the Flask endpoint names move under a second
-blueprint. Helpers still shared with other families are reached as `v1.<name>` so there
-is exactly one binding for each: importing the names instead binds a second
-reference, and patching backend.v1 then stops affecting this module.
+blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 from typing import Any
@@ -22,9 +21,9 @@ from backend import (
     authz,
     db,
     toolhub,
-    v1,
 )
 from backend import v1_common as common
+from backend import v1_compat as compat
 from backend.models import (
     CrawlerUrl,
     Favorite,
@@ -43,6 +42,16 @@ from backend.sync import (
     SYNC_OFFICIAL,
     clean_error,
     clean_int,
+)
+from backend.v1_policy import (
+    MAX_ITEMS,
+    OFFICIAL_STATUS_DISCARDED,
+    TOOL_FALLBACK_KINDS,
+    TOOL_OVERLAY_KIND_BY_FALLBACK,
+    TOOLINFO_CREATE_BOOL_FIELDS,
+    TOOLINFO_CREATE_LIST_FIELDS,
+    TOOLINFO_CREATE_MAX_ITEMS,
+    TOOLINFO_CREATE_OPT_FIELDS,
 )
 from backend.write_lifecycle import WriteHandlers, WriteRequest
 from backend.write_lifecycle import attempt_official_write as _attempt_official_write
@@ -157,7 +166,7 @@ def _matching_toolinfo_item(data: object, name: str) -> dict | None:
     if isinstance(data, dict):
         items = [data]
     elif isinstance(data, list):
-        items = data[: v1.TOOLINFO_CREATE_MAX_ITEMS]
+        items = data[:TOOLINFO_CREATE_MAX_ITEMS]
     else:
         return None
     for item in items:
@@ -170,15 +179,15 @@ def _merge_toolinfo_fields(fields: dict, record: dict) -> tuple[dict, list[str]]
     """Fill missing create fields from toolinfo while preserving explicit user input."""
     merged = dict(fields)
     enriched: list[str] = []
-    for field in v1.TOOLINFO_CREATE_OPT_FIELDS:
+    for field in TOOLINFO_CREATE_OPT_FIELDS:
         if not merged.get(field) and record.get(field):
             merged[field] = record[field]
             enriched.append(field)
-    for field in v1.TOOLINFO_CREATE_LIST_FIELDS:
+    for field in TOOLINFO_CREATE_LIST_FIELDS:
         if not merged.get(field) and record.get(field):
             merged[field] = record[field]
             enriched.append(field)
-    for field in v1.TOOLINFO_CREATE_BOOL_FIELDS:
+    for field in TOOLINFO_CREATE_BOOL_FIELDS:
         if not merged.get(field) and record.get(field):
             merged[field] = True
             enriched.append(field)
@@ -237,7 +246,9 @@ def _record_create_toolinfo_evidence(
         if toolinfo_item is not None:
             try:
                 owner = s.get(User, user.id) or user
-                v1.SIGNED_TOOLINFO_PROVIDER.verify(s, owner, toolinfo=toolinfo_item, evidence_url=toolinfo_url)
+                compat.value("SIGNED_TOOLINFO_PROVIDER").verify(
+                    s, owner, toolinfo=toolinfo_item, evidence_url=toolinfo_url
+                )
             except Exception:  # noqa: BLE001 - evidence collection must not break an already accepted create.
                 return
         return
@@ -311,9 +322,7 @@ def _clean_list_write_payload(uid: int, payload: dict, route_id: str | None = No
         "client_id": _list_client_id(uid, payload, route_id),
         "title": title.strip()[: common.MAX_NAME],
         "description": str(payload.get("description") or "")[: common.MAX_DESCRIPTION],
-        "tools": [
-            str(tool)[: common.MAX_NAME] for tool in tools[: v1.MAX_ITEMS] if isinstance(tool, str | int | float)
-        ],
+        "tools": [str(tool)[: common.MAX_NAME] for tool in tools[:MAX_ITEMS] if isinstance(tool, str | int | float)],
     }
 
 
@@ -854,13 +863,13 @@ def write_crawler_url_delete(url_id: int) -> Response:
 def _tool_fallback_kind() -> tuple[str | None, Response | None]:
     value = request.get_json(silent=True) or {}
     kind = value.get("kind") if isinstance(value, dict) else None
-    if kind not in v1.TOOL_FALLBACK_KINDS:
+    if kind not in TOOL_FALLBACK_KINDS:
         return None, common.bad("kind must be new, edit, or annotations")
     return str(kind), None
 
 
 def _discard_response() -> Response:
-    return jsonify({"ok": True, "result": v1.OFFICIAL_STATUS_DISCARDED})
+    return jsonify({"ok": True, "result": OFFICIAL_STATUS_DISCARDED})
 
 
 @v1_write_bp.route("/v1/write/tools/<name>/retry/", methods=["POST"])
@@ -893,7 +902,7 @@ def write_tool_retry(name: str) -> Response:
                 _official_tool_payload(clean_name, fields, include_name=True),
             )
         else:
-            overlay_kind = v1.TOOL_OVERLAY_KIND_BY_FALLBACK[kind]
+            overlay_kind = TOOL_OVERLAY_KIND_BY_FALLBACK[kind]
             row = s.execute(
                 select(ToolOverlay).where(
                     ToolOverlay.kind == overlay_kind,
@@ -920,7 +929,7 @@ def write_tool_retry(name: str) -> Response:
         else:
             s.execute(
                 delete(ToolOverlay).where(
-                    ToolOverlay.kind == v1.TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
+                    ToolOverlay.kind == TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
                     ToolOverlay.tool_name == clean_name,
                     ToolOverlay.user_id == owner.id,
                 )
@@ -943,7 +952,7 @@ def write_tool_retry(name: str) -> Response:
                 s,
                 owner,
                 clean_name,
-                v1.TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
+                TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
                 fields,
                 attempt,
             )
@@ -986,7 +995,7 @@ def write_tool_fallback_discard(name: str) -> Response:
         else:
             result = s.execute(
                 delete(ToolOverlay).where(
-                    ToolOverlay.kind == v1.TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
+                    ToolOverlay.kind == TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
                     ToolOverlay.tool_name == clean_name,
                     ToolOverlay.user_id == user.id,
                 )
@@ -999,8 +1008,8 @@ def write_tool_fallback_discard(name: str) -> Response:
             action="discarded",
             object_type="tool",
             object_key=clean_name,
-            official_status=v1.OFFICIAL_STATUS_DISCARDED,
-            payload={"syncStatus": v1.OFFICIAL_STATUS_DISCARDED},
+            official_status=OFFICIAL_STATUS_DISCARDED,
+            payload={"syncStatus": OFFICIAL_STATUS_DISCARDED},
         )
     return _discard_response()
 
@@ -1106,8 +1115,8 @@ def write_list_fallback_discard(client_id: str) -> Response:
             action="list-discarded",
             object_type="list",
             object_key=client_id,
-            official_status=v1.OFFICIAL_STATUS_DISCARDED,
-            payload={"syncStatus": v1.OFFICIAL_STATUS_DISCARDED},
+            official_status=OFFICIAL_STATUS_DISCARDED,
+            payload={"syncStatus": OFFICIAL_STATUS_DISCARDED},
             title=row.title,
         )
     return _discard_response()
@@ -1185,8 +1194,8 @@ def write_crawler_url_fallback_discard(local_id: int) -> Response:
             action="crawler-url-discarded",
             object_type="crawler_url",
             object_key=str(local_id),
-            official_status=v1.OFFICIAL_STATUS_DISCARDED,
-            payload={"syncStatus": v1.OFFICIAL_STATUS_DISCARDED},
+            official_status=OFFICIAL_STATUS_DISCARDED,
+            payload={"syncStatus": OFFICIAL_STATUS_DISCARDED},
         )
     return _discard_response()
 
@@ -1268,7 +1277,7 @@ def write_favorite_fallback_discard(tool_name: str) -> Response:
             action="favorite-discarded",
             object_type="favorite",
             object_key=name,
-            official_status=v1.OFFICIAL_STATUS_DISCARDED,
-            payload={"syncStatus": v1.OFFICIAL_STATUS_DISCARDED},
+            official_status=OFFICIAL_STATUS_DISCARDED,
+            payload={"syncStatus": OFFICIAL_STATUS_DISCARDED},
         )
     return _discard_response()

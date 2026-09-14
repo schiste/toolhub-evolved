@@ -5,9 +5,10 @@ from urllib.parse import urlencode
 
 from flask import Blueprint, Response, jsonify, request
 
-from backend import account_directory, db, paging, security, v1
+from backend import account_directory, db, paging, security
 from backend import v1_common as common
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_int
+from backend.v1_policy import HTTP_TOO_MANY
 
 v1_accounts_bp = Blueprint("v1_accounts", __name__)
 MAX_DIRECTORY_TEXT_LENGTH = 255
@@ -40,7 +41,7 @@ def _page_url(page: int | None) -> str | None:
 def v1_accounts() -> Response:
     """Search the synchronized official account projection."""
     if security.read_rate_limited(request.remote_addr):
-        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(HTTP_TOO_MANY, "rate limit exceeded")
     query = str(request.args.get("q") or "").strip()
     group = str(request.args.get("group") or "").strip()
     ordering = str(request.args.get("ordering") or account_directory.ORDER_NAME).strip()
@@ -82,7 +83,7 @@ def v1_accounts() -> Response:
 def v1_account(toolhub_user_id: str) -> Response:
     """Return one official account projection without an upstream request."""
     if security.read_rate_limited(request.remote_addr):
-        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(HTTP_TOO_MANY, "rate limit exceeded")
     with db.session_scope() as s:
         payload = account_directory.account_detail(s, toolhub_user_id)
     if payload is None:
