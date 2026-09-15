@@ -213,11 +213,6 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
     }
 
 
-def _stored_snapshot(session: Session) -> tuple[Any, dict[str, Any] | None]:
-    """Return the cache row and its decoded payload, or None when unusable."""
-    return snapshot_cache.load(session, SNAPSHOT_KEY)
-
-
 def snapshot(*, force: bool = False) -> dict[str, Any]:
     """Return the shared cached coverage snapshot, preferring stale to a rebuild.
 
@@ -233,11 +228,6 @@ def snapshot(*, force: bool = False) -> dict[str, Any]:
         builder=build_snapshot,
         database=db,
     )
-
-
-def _store(session: Session, payload: dict[str, Any], now: datetime) -> None:
-    """Write one rebuilt snapshot into the shared cache row."""
-    snapshot_cache.store(session, SNAPSHOT_KEY, payload, now)
 
 
 def refresh() -> dict[str, Any]:
