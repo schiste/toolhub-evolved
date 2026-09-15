@@ -311,6 +311,7 @@
 {"module":"tests.proxy.test_backend","symbol":"add_user","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2ehijyygo7rutaothbtn56untm","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"add_user","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2rn6wkih5ocqhrqhegkaty6mh4","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"add_user","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3dzsmr6bvuwojdqhk46nhm7b2m","file":"tests/proxy/test_backend.py"}
+{"module":"tests.proxy.test_backend","symbol":"add_user","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3i7wtlkixeegijx3pxf5b55i5m","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"add_user","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:455fvluho7h2e2j67difo5j4hm","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"add_user","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4abojwvrhdeig5fktaifa5zqoe","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"add_user","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4pm2uv3wwrkx6shcaoxzmhhmeu","file":"tests/proxy/test_backend.py"}
@@ -643,6 +644,7 @@
 {"module":"tests.proxy.test_backend","symbol":"client.open","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:f5xc3tw3feizg5gwmhe37zvp54","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"client.open","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vaprf5z35er7mpmyctl6z4iisy","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"client.post","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2u7rtr3gjhtdfkczkwvwozwztq","file":"tests/proxy/test_backend.py"}
+{"module":"tests.proxy.test_backend","symbol":"client.post","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:35is5khy7yd4nlzv74vyww5qr4","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"client.post","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3orhcwgkblnjow2sj6wehhhuaq","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"client.post","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3zhxpggugb54kss2yiinhvc3fy","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"client.post","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4ar6i4ynzjflh25ozcwqkyetv4","file":"tests/proxy/test_backend.py"}
@@ -1136,6 +1138,7 @@
 {"module":"tests.proxy.test_backend","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:r6orx5a34vopvnga7clww5ss6y","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rax2ggae2ccivvu4u7nkgtxuzi","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rgpvfvowr23va5s7kb2notqr64","file":"tests/proxy/test_backend.py"}
+{"module":"tests.proxy.test_backend","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rnyjaqipybt2ilx62ebfuqvzza","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rxy32by5gh2xnu2tjz65dzayga","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:smmyequ633lqobbrpw52txl7mu","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:swq7rjzfycntlpzwmokgyco564","file":"tests/proxy/test_backend.py"}
@@ -1203,6 +1206,7 @@
 {"module":"tests.proxy.test_backend","symbol":"parse_iso","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:oxoyshdfawmf3dgkydyldpzgma","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"parse_optional_iso","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7dnc4mbcpni4uvr7qqj24wch5a","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"parse_optional_iso","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yoc4jriinktubmpxifhs2jagj4","file":"tests/proxy/test_backend.py"}
+{"module":"tests.proxy.test_backend","symbol":"path.startswith","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5p62jem63a77oz7jhb4iyg4knq","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"pending.get_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hikngkcv6r756wsnqmrm2b46rm","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"people_index","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pjwagxv4aj6xjux7xpxezxe63q","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"people_index.ensure_person","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4wzen4zn3drnvwd7gmezepd2qa","file":"tests/proxy/test_backend.py"}
@@ -1349,6 +1353,7 @@
 {"module":"tests.proxy.test_backend","symbol":"resp.get_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:it7tkwg6zbtkk5vwq37a3yyctq","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"resp.get_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:jt7btgevttzg77mnc5tzoc5q7y","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"resp.get_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:jtzvavhfnk6ozxfxydj3opv2ty","file":"tests/proxy/test_backend.py"}
+{"module":"tests.proxy.test_backend","symbol":"resp.get_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kuwn2m5mjcen2xgw2i7djtlb4q","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"resp.get_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lc7xsha6xit64d6hv5ccneuwha","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"resp.get_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lcgl5mi6wnlp7itwmhtwpu7c44","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"resp.get_json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lhkn4wkssfqesbbs7nq2rbanom","file":"tests/proxy/test_backend.py"}
@@ -1651,6 +1656,7 @@
 {"module":"tests.proxy.test_backend","symbol":"sign_in","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:jruv4d4fydyo5ckgkmy7wz42zi","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"sign_in","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:laaoql5alj2mkf7mevrikrpluy","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"sign_in","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:leoz5xpzlu3bf2xmy6s2cwcm34","file":"tests/proxy/test_backend.py"}
+{"module":"tests.proxy.test_backend","symbol":"sign_in","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ljiuedskmdfvilmqq5h3ptd2wq","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"sign_in","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lknklcif44vdagkr3zapoelx3u","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"sign_in","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lrbexwllgkjib5afhftwlkjoze","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"sign_in","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lsy3dsv747fr6fdtmqkqnwa3xy","file":"tests/proxy/test_backend.py"}
@@ -2202,6 +2208,8 @@
 {"module":"tests.proxy.test_backend","symbol":"test_v1_user_stale_uid_clears_session","kind":"function","node_id":"function:toolhub-evolved:52gfryj47vzuu7qtqmrumrb224","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"test_write_annotations_and_crawler_failures_store_local_fallbacks","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:ephkirbh3pwgm3kqkoaneo234e","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"test_write_annotations_and_crawler_failures_store_local_fallbacks","kind":"function","node_id":"function:toolhub-evolved:wgadr5ypycdujwwybac6unkdmy","file":"tests/proxy/test_backend.py"}
+{"module":"tests.proxy.test_backend","symbol":"test_write_bridges_hide_auth_exception_details","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:mqiefc32ttznlmzhxholyli4fa","file":"tests/proxy/test_backend.py"}
+{"module":"tests.proxy.test_backend","symbol":"test_write_bridges_hide_auth_exception_details","kind":"function","node_id":"function:toolhub-evolved:dflyf5selwvbenslp3zb4bwnde","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"test_write_crawler_url_invalid_url_reports_field_validation","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:h4ucibs6ukrq72sjwlg4ktruni","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"test_write_crawler_url_invalid_url_reports_field_validation","kind":"function","node_id":"function:toolhub-evolved:l7nf7ljsx436ulax2yv5xhpxay","file":"tests/proxy/test_backend.py"}
 {"module":"tests.proxy.test_backend","symbol":"test_write_create_list_favorite_and_delete_fallback_paths","kind":"behavior_test_surface","node_id":"behavior_test_surface:toolhub-evolved:tm4upzg2g5xk34wy54ypsujoeq","file":"tests/proxy/test_backend.py"}
