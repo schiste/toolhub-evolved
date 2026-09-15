@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: a-comment-is-not-a-declaration -->
 <!-- Release title: A Comment Is Not A Declaration -->
-<!-- Source range: d169b7a6..f8b1455c (24 commits) -->
+<!-- Source range: d169b7a6..a813ad13 (25 commits) -->
 
 # Technical and Marketing Notes
 
@@ -11,6 +11,6 @@
 - Project sightings on comment-shaped lines (`//`, `#`, `/*`, `*`, `--`, `<!--`, `;`) and hostnames followed by `/wiki/` are recorded through `_prose_evidence`, which keeps the file's class but caps the source weight at the docs weight of 0.75, below the 0.85 trusted threshold. The runtime weight of 1.0 had turned a comment about logging errors "on wiki", written as one word, and a footnote link to a MediaWiki manual page into published wikis on the strength of one line each. An API endpoint URL in a config, or a database name in a string literal, is unchanged.
 - `PROJECT_DB_RE` adds `<`, `>` and `/` to its boundary class so `<nowiki>` and `</nowiki>` are tags rather than the Norwegian Wikipedia; the bare word in a string is still that wiki. Sixteen English compounds (on-wiki, off-wiki, cross-wiki, target wiki and the like, written as one word) join `IGNORED_PROJECT_DB_NAMES`; compounds that spell a language code (the Burmese, Italian and Oriya database names read as English words) cannot be listed, which is why the comment rule exists.
 - The scan loop skips license files and any file whose content digest it has already read. Three copies of the GPL had satisfied the "more than one file agrees" corroboration test with nothing but themselves; a copied README now counts once, and its contexts and source classes are still recorded.
-- Environment-specific settings now use one shared parser, snapshot rebuilds use one cache lifecycle, and source analysis accepts extensible dependency scanners; invalid environment fallbacks are covered and the shared snapshot lifecycle remains at literal 100% whole-tree coverage.
+- Environment-specific settings now use one shared parser, snapshot rebuilds use one cache lifecycle, and source analysis accepts extensible dependency scanners; invalid environment fallbacks are covered, the shared snapshot lifecycle remains at literal 100% whole-tree coverage, and generated Aethyme graph artifacts stay in sync.
 - Official writes share one transport and lifecycle policy with centralized fallback persistence; API tool normalization, cache policy, and tool-form contracts are separate while preserving existing payload boundaries. The JS toolchain pins the fixed TOML parser release 1.8.0.
 - People-directory queries, v1 route policy, response contracts, serializers, and force-graph data/rendering surfaces are isolated from their aggregators so each concern can evolve independently.
