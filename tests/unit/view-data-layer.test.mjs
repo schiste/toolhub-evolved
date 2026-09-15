@@ -111,6 +111,115 @@ test("fields are ordered most complete first, whatever order the payload arrives
 	assert.deepEqual(names, ["Title", "Description", "Keywords"]);
 });
 
+test("new catalog fields keep readable labels and their canonical field names", () => {
+	const extendedPayload = {
+		...payload,
+		fieldCount: 6,
+		fields: [
+			...payload.fields,
+			fieldDoc("content_types", {
+				kind: "list",
+				filled: 40,
+				missing: 60,
+				percent: 40,
+				primary: { toolinfo: 40 }
+			}),
+			fieldDoc("subject_domains", {
+				kind: "list",
+				filled: 30,
+				missing: 70,
+				percent: 30,
+				primary: { human: 30 }
+			}),
+			fieldDoc("url_alternates", {
+				kind: "list",
+				filled: 20,
+				missing: 80,
+				percent: 20,
+				primary: { toolinfo: 20 }
+			})
+		]
+	};
+	document.body.innerHTML = dataLayerHTML(extendedPayload);
+	const rows = [...document.querySelectorAll(".data-layer-table tbody tr")];
+	for (const [label, field] of [
+		["Content types", "content_types"],
+		["Subject domains", "subject_domains"],
+		["Alternate URLs", "url_alternates"]
+	]) {
+		const row = rows.find(
+			(candidate) => candidate.querySelector(".data-layer-field")?.textContent.trim() === label
+		);
+		assert.ok(row, `missing data-layer row: ${label}`);
+		assert.equal(row.querySelector("code").textContent, field);
+	}
+});
+
+test("every projected field gets a readable label, including future fields", () => {
+	const expectedLabels = {
+		api_url: "API URL",
+		available_ui_languages: "Interface languages",
+		bot_username: "Bot username",
+		bugtracker_url: "Bug tracker URL",
+		content_types: "Content types",
+		developer_docs_url: "Developer documentation",
+		description: "Description",
+		feedback_url: "Feedback URL",
+		for_wikis: "Wikimedia projects",
+		icon: "Icon",
+		keywords: "Keywords",
+		license: "License",
+		openhub_id: "OpenHub ID",
+		privacy_policy_url: "Privacy policy URL",
+		replaced_by: "Replaced by",
+		repository: "Repository",
+		sponsor: "Sponsor",
+		subject_domains: "Subject domains",
+		subtitle: "Subtitle",
+		tasks: "Tasks",
+		technology_used: "Technology",
+		title: "Title",
+		tool: "Tool",
+		tool_type: "Tool type",
+		toolinfo_url: "Toolinfo URL",
+		translate_url: "Translate URL",
+		url: "Tool URL",
+		url_alternates: "Alternate URLs",
+		user_docs_url: "User documentation",
+		wikidata_qid: "Wikidata ID",
+		custom_field: "Custom field"
+	};
+	const fields = Object.keys(expectedLabels).map((field) =>
+		fieldDoc(field, {
+			kind: [
+				"available_ui_languages",
+				"content_types",
+				"for_wikis",
+				"keywords",
+				"sponsor",
+				"subject_domains",
+				"tasks",
+				"technology_used",
+				"url_alternates"
+			].includes(field)
+				? "list"
+				: "scalar",
+			filled: 1,
+			missing: 0,
+			percent: 100,
+			primary: { toolinfo: 1 }
+		})
+	);
+	document.body.innerHTML = dataLayerHTML({ ...payload, tools: 1, fields, fieldCount: fields.length });
+	const actual = Object.fromEntries(
+		[...document.querySelectorAll(".data-layer-table tbody tr")].map((row) => [
+			row.querySelector("code").textContent,
+			row.querySelector(".data-layer-field").textContent.trim()
+		])
+	);
+	assert.deepEqual(actual, expectedLabels);
+});
+
 test("an AI value a stronger source overrode never reaches the bar or the filled count", () => {
 	document.body.innerHTML = dataLayerHTML(payload);
 	const description = [...document.querySelectorAll(".data-layer-table tbody tr")].find((row) =>

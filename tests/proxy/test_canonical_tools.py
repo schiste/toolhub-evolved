@@ -197,6 +197,22 @@ def test_ingest_payload_ignores_unrelated_paths_and_persists_valid_tools():
     assert canonical_tools.compact_record({"name": "alpha", "description": "A"})["name"] == "alpha"
 
 
+def test_compact_record_preserves_multiple_skill_extensions():
+    record = {
+        "name": "skill-catalog",
+        "skills": [
+            {"name": "lookup", "projects": ["enwiki"]},
+            {"name": "summarize", "projects": ["wikidatawiki"]},
+        ],
+        "skill": {"name": "legacy-single-skill"},
+    }
+
+    compact = canonical_tools.compact_record(record)
+
+    assert compact["skills"] == record["skills"]
+    assert compact["skill"] == record["skill"]
+
+
 def test_upsert_records_skips_blank_and_duplicate_names():
     count = canonical_tools.upsert_records(
         [
@@ -551,6 +567,31 @@ def test_read_projection_backfill_marks_an_empty_catalog_complete():
     assert canonical_tools.backfill_read_projection() == 0
     with db.session_scope() as session:
         assert session.get(ApiCacheMeta, canonical_tools.READ_PROJECTION_META_KEY).value == "complete"
+
+
+def test_read_projection_backfill_rebuilds_existing_cards_when_vocabulary_changes():
+    from backend.models import CanonicalToolCache  # noqa: PLC0415
+
+    canonical_tools.upsert_records(
+        [
+            {
+                "name": "skill-catalog",
+                "title": "Skills",
+                "skills": [{"name": "lookup", "projects": ["enwiki"]}],
+            },
+            {"name": "plain-catalog", "title": "Plain"},
+        ],
+        source_url="https://toolhub.wikimedia.org/api/tools/",
+    )
+    with db.session_scope() as session:
+        row = session.get(CanonicalToolCache, "skill-catalog")
+        row.card_record = {"name": "skill-catalog", "title": "Skills"}
+
+    assert canonical_tools.backfill_read_projection(batch_size=1) == 2
+
+    with db.session_scope() as session:
+        row = session.get(CanonicalToolCache, "skill-catalog")
+        assert row.card_record["skills"][0]["projects"] == ["enwiki"]
 
 
 def test_backfill_search_text_swallows_sqlalchemy_errors(monkeypatch):

@@ -69,9 +69,10 @@ def test_migrate_backfills_both_caches_and_is_idempotent(configured_db, capsys):
     assert first["text columns widened to MEDIUMTEXT"] == 0
     assert first["api_cache index columns"] == 1
     assert first["canonical search_text"] == 1
-    # search_text repair reassigns the same record and therefore fills every
-    # derived read column in one pass.
-    assert first["canonical card and sort projection"] == 0
+    # The version marker is absent on this pre-versioned database, so the new
+    # vocabulary backfill reports the row even though search_text repair already
+    # repopulated the same derived columns.
+    assert first["canonical card and sort projection"] == 1
 
     # Running again is a no-op, so a deploy can re-run it without thinking.
     second = {result.name: result.rows for result in migrate.run_once()}

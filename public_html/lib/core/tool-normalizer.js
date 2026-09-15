@@ -108,6 +108,24 @@ export function localToolBase(name, rec) {
 					forWikis: [],
 					uiLanguages: [],
 					technologyUsed: [],
+					urlAlternates: [],
+					contentTypes: [],
+					subjectDomains: [],
+					userDocsUrls: [],
+					devDocsUrls: [],
+					feedbackUrls: [],
+					privacyPolicyUrls: [],
+					bugtrackerUrls: [],
+					translateUrls: [],
+					botUsername: null,
+					openhubId: null,
+					privacyPolicy: null,
+					toolinfoUrl: null,
+					schema: null,
+					recordLanguage: null,
+					catalogMetadata: publicCatalogMetadata(rec),
+					skillMetadata: skillMetadata(rec),
+					evolvedMetadata: rec.evolved && typeof rec.evolved === "object" ? rec.evolved : null,
 					maintainer: USER.name,
 					deprecated: false,
 					experimental: false,
@@ -160,6 +178,10 @@ export function statusOf(t) {
 export function firstUrl(v) {
 	if (!v) return null;
 	if (typeof v === "string") return v;
+	if (typeof v === "object" && !Array.isArray(v)) {
+		const candidate = /** @type {{ url?: unknown }} */ (v).url;
+		return typeof candidate === "string" ? candidate : null;
+	}
 	if (Array.isArray(v) && v.length > 0) {
 		const x = v[0];
 		return x && typeof x === "object" ? x.url : x;
@@ -179,6 +201,48 @@ export function pick(core, annotation, fallback) {
 	if (hasValue(core)) return /** @type {T} */ (core);
 	if (hasValue(annotation)) return /** @type {T} */ (annotation);
 	return fallback;
+}
+
+/** @param {unknown} core @param {unknown} annotation @returns {any[]} */
+function listValue(core, annotation) {
+	const value = /** @type {unknown} */ (pick(core, annotation, []));
+	return Array.isArray(value) ? value : hasValue(value) ? [value] : [];
+}
+
+const NON_CATALOG_KEYS = new Set([
+	"_catalogProjection",
+	"_cachedIconUrl",
+	"accountRelationships",
+	"accountPerson",
+	"relationshipPeople",
+	"toolinfoDiscovery",
+	"toolinfoSource",
+	"toolforgeProjects",
+	"weeklyViews",
+	"status",
+	"canonicalRecord",
+	...OVERLAY_META_KEYS
+]);
+
+/** @param {any} record */
+function publicCatalogMetadata(record) {
+	if (!record || typeof record !== "object") return {};
+	return Object.fromEntries(Object.entries(record).filter(([key]) => !NON_CATALOG_KEYS.has(key)));
+}
+
+/** @param {any} record */
+function skillMetadata(record) {
+	if (!record || typeof record !== "object") return null;
+	const evolved = record.evolved;
+	const value = hasValue(record.skill)
+		? record.skill
+		: hasValue(record.skills)
+			? record.skills
+			: evolved && typeof evolved === "object"
+				? evolved.skill
+				: null;
+	if (Array.isArray(value)) return value.filter((item) => item && typeof item === "object");
+	return value && typeof value === "object" ? value : null;
 }
 
 /* Called lazily so a locale catalog installed at boot is picked up. */
@@ -209,7 +273,7 @@ function normalizeAuthorObj(a) {
  * @returns {Tool}
  */
 export function normalizeTool(t) {
-	const ann = t.annotations || {};
+	const ann = t.annotations && typeof t.annotations === "object" ? t.annotations : {};
 	const ra = t.author;
 	const titleField = localizedField(t.title, t._language);
 	const descriptionField = localizedField(t.description, t._language);
@@ -236,35 +300,53 @@ export function normalizeTool(t) {
 		descriptionLanguage: descriptionField.value ? descriptionField.lang : null,
 		url: pick(t.url, ann.url, ""),
 		icon: pick(t.icon, ann.icon, null),
-		keywords: t.keywords || [],
+		keywords: listValue(t.keywords, ann.keywords),
 		maintainer: authors[0] || (t.created_by && t.created_by.username) || unknownMaintainer(),
 		authors,
 		authorObjs,
 		wikidata: pick(t.wikidata_qid, ann.wikidata_qid, null),
 		subtitle: subtitleField.value || null,
 		subtitleLanguage: subtitleField.value ? subtitleField.lang : null,
-		sponsor: pick(t.sponsor, ann.sponsor, []),
+		sponsor: listValue(t.sponsor, ann.sponsor),
 		replacedBy: pick(t.replaced_by, ann.replaced_by, null),
 		toolType: pick(t.tool_type, ann.tool_type, null),
 		license: pick(t.license, ann.license, null),
 		repository: pick(t.repository, ann.repository, null),
-		apiUrl: pick(t.api_url, ann.api_url, null),
-		technologyUsed: pick(t.technology_used, ann.technology_used, []),
-		audiences: pick(t.audiences, ann.audiences, []),
-		tasks: pick(t.tasks, ann.tasks, []),
-		forWikis: pick(t.for_wikis, ann.for_wikis, []),
-		uiLanguages: pick(t.available_ui_languages, ann.available_ui_languages, []),
-		userDocs: firstUrl(pick(t.user_docs_url, ann.user_docs_url, [])),
-		devDocs: firstUrl(pick(t.developer_docs_url, ann.developer_docs_url, [])),
-		feedback: firstUrl(pick(t.feedback_url, ann.feedback_url, [])),
-		bugtracker: pick(t.bugtracker_url, ann.bugtracker_url, null),
-		translate: pick(t.translate_url, ann.translate_url, null),
+		apiUrl: firstUrl(pick(t.api_url, ann.api_url, null)),
+		urlAlternates: listValue(t.url_alternates, ann.url_alternates),
+		botUsername: pick(t.bot_username, ann.bot_username, null),
+		openhubId: pick(t.openhub_id, ann.openhub_id, null),
+		privacyPolicy: firstUrl(pick(t.privacy_policy_url, ann.privacy_policy_url, [])),
+		technologyUsed: listValue(t.technology_used, ann.technology_used),
+		contentTypes: listValue(t.content_types, ann.content_types),
+		subjectDomains: listValue(t.subject_domains, ann.subject_domains),
+		audiences: listValue(t.audiences, ann.audiences),
+		tasks: listValue(t.tasks, ann.tasks),
+		forWikis: listValue(t.for_wikis, ann.for_wikis),
+		uiLanguages: listValue(t.available_ui_languages, ann.available_ui_languages),
+		userDocsUrls: listValue(t.user_docs_url, ann.user_docs_url),
+		userDocs: firstUrl(listValue(t.user_docs_url, ann.user_docs_url)),
+		devDocsUrls: listValue(t.developer_docs_url, ann.developer_docs_url),
+		devDocs: firstUrl(listValue(t.developer_docs_url, ann.developer_docs_url)),
+		feedbackUrls: listValue(t.feedback_url, ann.feedback_url),
+		feedback: firstUrl(listValue(t.feedback_url, ann.feedback_url)),
+		privacyPolicyUrls: listValue(t.privacy_policy_url, ann.privacy_policy_url),
+		bugtrackerUrls: listValue(t.bugtracker_url, ann.bugtracker_url),
+		bugtracker: firstUrl(listValue(t.bugtracker_url, ann.bugtracker_url)),
+		translateUrls: listValue(t.translate_url, ann.translate_url),
+		translate: firstUrl(listValue(t.translate_url, ann.translate_url)),
 		deprecated,
 		experimental,
 		lifecycle,
 		created: t.created_date || t.created || null,
 		modified: t.modified_date || t.modified || null,
 		origin: t.origin || "crawler",
+		toolinfoUrl: firstUrl(pick(t.toolinfo_url, ann.toolinfo_url, null)),
+		schema: t._schema || null,
+		recordLanguage: t._language || null,
+		catalogMetadata: publicCatalogMetadata(t),
+		skillMetadata: skillMetadata(t),
+		evolvedMetadata: t.evolved && typeof t.evolved === "object" ? t.evolved : null,
 		catalogProjection: t._catalogProjection || null,
 		cachedIconUrl: t._cachedIconUrl || null,
 		accountRelationships: Array.isArray(t.accountRelationships) ? t.accountRelationships : [],

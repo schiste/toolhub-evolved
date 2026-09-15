@@ -12,7 +12,7 @@ import requests
 from sqlalchemy import select
 
 from backend import db, outbound, run_budget
-from backend.catalog_projection import URL_FIELDS
+from backend.catalog_projection import PROBED_URL_FIELDS
 from backend.models import CatalogToolProjection, utcnow
 
 # Distinct URLs probed per run, not rows written. 200 was set when the catalog
@@ -112,7 +112,7 @@ def _candidate_rows(limit: int) -> tuple[int, dict[str, list[tuple[str, str, str
         for row in rows:
             record = row.effective_record if isinstance(row.effective_record, dict) else {}
             validation = row.validation if isinstance(row.validation, dict) else {}
-            for field in sorted(URL_FIELDS):
+            for field in sorted(PROBED_URL_FIELDS):
                 value = _text(record.get(field))
                 if not value:
                     continue

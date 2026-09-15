@@ -46,7 +46,7 @@ from backend.models import CatalogToolProjection, utcnow
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sqlalchemy.orm import Session
 
-SNAPSHOT_KEY = "catalog_coverage_v1"
+SNAPSHOT_KEY = "catalog_coverage_v2"
 #: Matches the statistics snapshot: a request serves what the refresh job last
 #: stored, and only rebuilds when nothing exists or the copy is older than this.
 SNAPSHOT_STALE_LIMIT = timedelta(hours=6)

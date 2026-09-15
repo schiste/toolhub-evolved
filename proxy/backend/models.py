@@ -108,7 +108,13 @@ CATALOG_CARD_FIELDS = (
     "license",
     "repository",
     "api_url",
+    "url_alternates",
+    "bot_username",
+    "openhub_id",
+    "privacy_policy_url",
     "technology_used",
+    "content_types",
+    "subject_domains",
     "audiences",
     "tasks",
     "for_wikis",
@@ -118,6 +124,7 @@ CATALOG_CARD_FIELDS = (
     "feedback_url",
     "bugtracker_url",
     "translate_url",
+    "toolinfo_url",
     "deprecated",
     "experimental",
     # Not toolinfo. Evolved's own observation about whether anybody uses a tool,
@@ -130,6 +137,12 @@ CATALOG_CARD_FIELDS = (
     "origin",
     "annotations",
     "_language",
+    "_schema",
+    # Evolved skill extensions are optional and may describe more than one
+    # skill in a repository. Keep both spellings in compact fallback records so
+    # a locally cached list/detail read does not lose them before normalization.
+    "skill",
+    "skills",
 )
 
 

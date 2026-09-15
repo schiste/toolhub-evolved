@@ -780,6 +780,28 @@ test("newToolBase builds a compact record with defaults or null for unknown name
 	assert.equal(api.newToolBase("absent"), null);
 });
 
+test("newToolBase keeps multi-skill metadata available to the tool page", () => {
+	session.setServerUser("Ada Lovelace");
+	demoStore.set(DEMO_KEYS.toolNew, {
+		SK: {
+			title: "Skills",
+			toolType: "skills",
+			skills: [
+				{ name: "lookup", projects: ["enwiki"] },
+				{ name: "summarize", projects: ["wikidatawiki"] }
+			]
+		}
+	});
+
+	const skillTool = api.newToolBase("SK");
+
+	assert.deepEqual(skillTool.skillMetadata, [
+		{ name: "lookup", projects: ["enwiki"] },
+		{ name: "summarize", projects: ["wikidatawiki"] }
+	]);
+	assert.deepEqual(skillTool.catalogMetadata.skills, skillTool.skillMetadata);
+});
+
 test("normalizeTool applies the overlay even if legacy feature mode is disabled", () => {
 	demoStore.set(DEMO_KEYS.toolEdits, { OV: { description: "overlaid" } });
 	session.applyExp(false);

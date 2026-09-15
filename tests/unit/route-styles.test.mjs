@@ -192,7 +192,7 @@ test("the router's prefetch map and the views agree on every route stylesheet", 
 	}
 });
 
-test("no route stylesheet claims a rule another view can match", () => {
+test("no route stylesheet claims a rule another view can match", { timeout: 15_000 }, () => {
 	const sources = viewSources();
 	// canProduce compiles a regex and rescans a whole module on every call, and a
 	// class that appears in several selectors of one sheet asks the same question

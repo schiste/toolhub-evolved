@@ -10,12 +10,47 @@ export const STYLESHEET = "/styles/data-layer.css";
 
 const SKELETON_ROWS = 8;
 
+/** @type {Record<string, () => string>} */
+const FIELD_LABELS = {
+	api_url: () => t("dataLayer.fieldApiUrl", "API URL"),
+	available_ui_languages: () => t("dataLayer.fieldAvailableUiLanguages", "Interface languages"),
+	bot_username: () => t("dataLayer.fieldBotUsername", "Bot username"),
+	bugtracker_url: () => t("dataLayer.fieldBugtrackerUrl", "Bug tracker URL"),
+	content_types: () => t("dataLayer.fieldContentTypes", "Content types"),
+	developer_docs_url: () => t("dataLayer.fieldDeveloperDocsUrl", "Developer documentation"),
+	description: () => t("dataLayer.fieldDescription", "Description"),
+	feedback_url: () => t("dataLayer.fieldFeedbackUrl", "Feedback URL"),
+	for_wikis: () => t("dataLayer.fieldForWikis", "Wikimedia projects"),
+	icon: () => t("dataLayer.fieldIcon", "Icon"),
+	keywords: () => t("dataLayer.fieldKeywords", "Keywords"),
+	license: () => t("dataLayer.fieldLicense", "License"),
+	openhub_id: () => t("dataLayer.fieldOpenhubId", "OpenHub ID"),
+	privacy_policy_url: () => t("dataLayer.fieldPrivacyPolicyUrl", "Privacy policy URL"),
+	replaced_by: () => t("dataLayer.fieldReplacedBy", "Replaced by"),
+	repository: () => t("dataLayer.fieldRepository", "Repository"),
+	sponsor: () => t("dataLayer.fieldSponsor", "Sponsor"),
+	subject_domains: () => t("dataLayer.fieldSubjectDomains", "Subject domains"),
+	subtitle: () => t("dataLayer.fieldSubtitle", "Subtitle"),
+	tasks: () => t("dataLayer.fieldTasks", "Tasks"),
+	technology_used: () => t("dataLayer.fieldTechnologyUsed", "Technology"),
+	title: () => t("dataLayer.fieldTitle", "Title"),
+	tool: () => t("dataLayer.fieldTool", "Tool"),
+	tool_type: () => t("dataLayer.fieldToolType", "Tool type"),
+	toolinfo_url: () => t("dataLayer.fieldToolinfoUrl", "Toolinfo URL"),
+	translate_url: () => t("dataLayer.fieldTranslateUrl", "Translate URL"),
+	url: () => t("dataLayer.fieldUrl", "Tool URL"),
+	url_alternates: () => t("dataLayer.fieldUrlAlternates", "Alternate URLs"),
+	user_docs_url: () => t("dataLayer.fieldUserDocsUrl", "User documentation"),
+	wikidata_qid: () => t("dataLayer.fieldWikidataQid", "Wikidata ID")
+};
+
 /** @param {unknown} value */
 const dateLabel = (value) => formatDateTime(value, t("dataLayer.dateUnavailable", "Date unavailable"));
 
 /** @param {string} value */
 function fieldLabel(value) {
-	return value.replaceAll(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase());
+	const known = FIELD_LABELS[value];
+	return known ? known() : value.replaceAll(/[_-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
 /**
