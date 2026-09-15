@@ -38,18 +38,16 @@ from backend import (
     tool_summaries,
 )
 from backend import v1_common as common
+from backend import v1_policy as policy
 from backend.author_claims import (
     AuthorNameProvider,
     SignedToolinfoProvider,
     ToolforgeMaintainerProvider,
 )
 from backend.models import (
-    CatalogCuration,
     IssueReport,
-    ToolHealthTarget,
     ToolMedia,
     ToolRecord,
-    ToolThanks,
     User,
     utcnow,
 )
@@ -58,15 +56,6 @@ from backend.oauth import dev_login_available
 from backend.public_identity import PublicIdentityResolver
 from backend.security import current_user_id, login_required, write_guard
 from backend.sync import (
-    AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
-    AUTHOR_CLAIM_SIGNED_TOOLINFO,
-    AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
-    AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
-    AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
-    REVIEW_APPROVED,
-    REVIEW_OPEN,
-    REVIEW_PENDING,
-    REVIEW_REJECTED,
     SOURCE_LOCAL,
     SYNC_EVOLVED_REAL,
     clean_error,
@@ -75,52 +64,43 @@ from backend.sync import (
 
 v1_bp = Blueprint("v1", __name__)
 
-HTTP_NO_CONTENT = 204
-HTTP_TOO_MANY = 429
-MAX_ITEMS = 500  # per overlay key per user
-FEED_KEEP_CAP = 500
-RSS_FEED_PAGE_SIZE = 30
-RSS_CONTENT_TYPE = "application/rss+xml; charset=utf-8"
+# Compatibility aliases for code that historically imported these from the
+# route aggregator. Resource blueprints depend on v1_policy directly.
+HTTP_NO_CONTENT = policy.HTTP_NO_CONTENT
+HTTP_TOO_MANY = policy.HTTP_TOO_MANY
+MAX_ITEMS = policy.MAX_ITEMS
+FEED_KEEP_CAP = policy.FEED_KEEP_CAP
+RSS_FEED_PAGE_SIZE = policy.RSS_FEED_PAGE_SIZE
+RSS_CONTENT_TYPE = policy.RSS_CONTENT_TYPE
+DEFAULT_PUBLIC_BASE_URL = policy.DEFAULT_PUBLIC_BASE_URL
+ME_TOOLS_SEARCH_PAGE_SIZE = policy.ME_TOOLS_SEARCH_PAGE_SIZE
+ME_TOOLS_MAX_SEARCH_TERMS = policy.ME_TOOLS_MAX_SEARCH_TERMS
+SIGNATURE_PLACEHOLDER = policy.SIGNATURE_PLACEHOLDER
+EVENT_TYPES = policy.EVENT_TYPES
+CLAIM_METHODS = policy.CLAIM_METHODS
+MODERATION_MODELS = policy.MODERATION_MODELS
+PUBLIC_REVIEW_STATUSES = policy.PUBLIC_REVIEW_STATUSES
+MODERATION_KINDS = policy.MODERATION_KINDS
+TOOL_FALLBACK_KINDS = policy.TOOL_FALLBACK_KINDS
+TOOL_OVERLAY_KIND_BY_FALLBACK = policy.TOOL_OVERLAY_KIND_BY_FALLBACK
+OFFICIAL_STATUS_DISCARDED = policy.OFFICIAL_STATUS_DISCARDED
+TOOLINFO_CREATE_MAX_ITEMS = policy.TOOLINFO_CREATE_MAX_ITEMS
+TOOLINFO_CREATE_OPT_FIELDS = policy.TOOLINFO_CREATE_OPT_FIELDS
+TOOLINFO_CREATE_LIST_FIELDS = policy.TOOLINFO_CREATE_LIST_FIELDS
+TOOLINFO_CREATE_BOOL_FIELDS = policy.TOOLINFO_CREATE_BOOL_FIELDS
+SOURCE_ANALYSIS_REVIEW_STATUSES = policy.SOURCE_ANALYSIS_REVIEW_STATUSES
+SOURCE_ANALYSIS_DEFAULT_LIMIT = policy.SOURCE_ANALYSIS_DEFAULT_LIMIT
+SOURCE_ANALYSIS_MAX_LIMIT = policy.SOURCE_ANALYSIS_MAX_LIMIT
+SOURCE_ANALYSIS_NOT_FOUND = policy.SOURCE_ANALYSIS_NOT_FOUND
+TOOL_SUMMARY_DEFAULT_LIMIT = policy.TOOL_SUMMARY_DEFAULT_LIMIT
+
 # Last-resort base URL for links inside publicly cached responses when
 # TOOLHUB_EVOLVED_BASE_URL is unset. A constant, never the request Host — see
 # _public_base_url for why that distinction is the whole point.
-DEFAULT_PUBLIC_BASE_URL = "https://toolhub-evolved.toolforge.org"
-ME_TOOLS_SEARCH_PAGE_SIZE = 100
-ME_TOOLS_MAX_SEARCH_TERMS = 20
-SIGNATURE_PLACEHOLDER = "<base64 signature>"
-EVENT_TYPES = {"view", "launch", "save", "list_add"}
-CLAIM_METHODS = {
-    AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
-    AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
-    AUTHOR_CLAIM_SIGNED_TOOLINFO,
-    AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
-    AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
-}
-MODERATION_MODELS = {
-    "catalog-curations": CatalogCuration,
-    "tool-records": ToolRecord,
-    "health-targets": ToolHealthTarget,
-    "media": ToolMedia,
-    "thanks": ToolThanks,
-}
-PUBLIC_REVIEW_STATUSES = {REVIEW_PENDING, REVIEW_APPROVED, REVIEW_REJECTED}
-MODERATION_KINDS = set(MODERATION_MODELS)
-TOOL_FALLBACK_KINDS = {"new", "edit", "annotations"}
-TOOL_OVERLAY_KIND_BY_FALLBACK = {"edit": "edits", "annotations": "annos"}
-OFFICIAL_STATUS_DISCARDED = "discarded"
 AUTHOR_NAME_PROVIDER = AuthorNameProvider()
 SIGNED_TOOLINFO_PROVIDER = SignedToolinfoProvider()
 TOOLFORGE_MAINTAINER_PROVIDER = ToolforgeMaintainerProvider()
 PUBLIC_IDENTITY_RESOLVER = PublicIdentityResolver()
-TOOLINFO_CREATE_MAX_ITEMS = 200
-TOOLINFO_CREATE_OPT_FIELDS = ("repository", "license", "toolType")
-TOOLINFO_CREATE_LIST_FIELDS = ("keywords", "forWikis", "uiLanguages")
-TOOLINFO_CREATE_BOOL_FIELDS = ("deprecated", "experimental")
-SOURCE_ANALYSIS_REVIEW_STATUSES = {REVIEW_OPEN, REVIEW_APPROVED, REVIEW_REJECTED}
-SOURCE_ANALYSIS_DEFAULT_LIMIT = 20
-SOURCE_ANALYSIS_MAX_LIMIT = 50
-SOURCE_ANALYSIS_NOT_FOUND = "source analysis report not found"
-TOOL_SUMMARY_DEFAULT_LIMIT = 24
 
 
 def _public_base_url() -> str:

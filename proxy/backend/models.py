@@ -1308,21 +1308,10 @@ class PersonProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
-class ToolRelationshipEvidence(Base):
-    """One provenance observation supporting a typed person/tool relationship."""
+class RelationshipEvidenceMetadataMixin:
+    """Columns shared by resolved and unresolved relationship observations."""
 
-    __tablename__ = "tool_relationship_evidence"
-    __table_args__ = (
-        UniqueConstraint("tool_name", "person_id", "relationship_type", "source", "method", "evidence_key"),
-    )
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tool_name: Mapped[str] = mapped_column(String(255), index=True)
-    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), index=True)
-    relationship_type: Mapped[str] = mapped_column(String(32), index=True)
-    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL, index=True)
-    method: Mapped[str] = mapped_column(String(64), default=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)
     evidence_key: Mapped[str] = mapped_column(String(255), default="")
-    observed_name: Mapped[str] = mapped_column(String(255), default="")
     verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
     confidence: Mapped[int] = mapped_column(Integer, default=0)
     # True only when the observation is a projection of canonical Toolhub
@@ -1339,7 +1328,23 @@ class ToolRelationshipEvidence(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
-class UnresolvedAttributionEvidence(Base):
+class ToolRelationshipEvidence(RelationshipEvidenceMetadataMixin, Base):
+    """One provenance observation supporting a typed person/tool relationship."""
+
+    __tablename__ = "tool_relationship_evidence"
+    __table_args__ = (
+        UniqueConstraint("tool_name", "person_id", "relationship_type", "source", "method", "evidence_key"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), index=True)
+    relationship_type: Mapped[str] = mapped_column(String(32), index=True)
+    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL, index=True)
+    method: Mapped[str] = mapped_column(String(64), default=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)
+    observed_name: Mapped[str] = mapped_column(String(255), default="")
+
+
+class UnresolvedAttributionEvidence(RelationshipEvidenceMetadataMixin, Base):
     """A relationship observation whose label is not a proven person identity."""
 
     __tablename__ = "unresolved_attribution_evidence"
@@ -1353,19 +1358,6 @@ class UnresolvedAttributionEvidence(Base):
     relationship_type: Mapped[str] = mapped_column(String(32), index=True)
     source: Mapped[str] = mapped_column(String(64), index=True)
     method: Mapped[str] = mapped_column(String(64), default="")
-    evidence_key: Mapped[str] = mapped_column(String(255), default="")
-    verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
-    confidence: Mapped[int] = mapped_column(Integer, default=0)
-    toolhub_canonical: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    evidence_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
-    evidence_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
-    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class ToolPersonRelationship(Base):

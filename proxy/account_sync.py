@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
 from datetime import UTC, datetime
@@ -15,6 +14,8 @@ import requests
 from sqlalchemy import delete, func, select
 
 from backend import db, job_runner, people_index, toolhub
+from backend.job_config import env_float as _env_float
+from backend.job_config import env_int as _env_int
 from backend.models import ToolhubAccountProjection, ToolhubAccountSyncState, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_error
 
@@ -386,20 +387,6 @@ def run_complete(
         if summary.get("completed"):
             return {**summary, "pages": pages, "records": records}
     raise _page_limit_error()
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except ValueError:
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, str(default)))
-    except ValueError:
-        return default
 
 
 def main(argv: list[str] | None = None) -> int:

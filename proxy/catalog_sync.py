@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from dataclasses import dataclass
@@ -16,6 +15,8 @@ from urllib.parse import quote, urlencode
 import requests
 
 from backend import canonical_tools, catalog_facets, db, digests, graph_enrichment, job_runner, toolhub
+from backend.job_config import env_float as _env_float
+from backend.job_config import env_int as _env_int
 from backend.models import ToolCatalogSyncState, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_error
 
@@ -869,20 +870,6 @@ def run(
             **hydration,
             **reconcile,
         }
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except ValueError:
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, str(default)))
-    except ValueError:
-        return default
 
 
 def main(argv: list[str] | None = None) -> int:

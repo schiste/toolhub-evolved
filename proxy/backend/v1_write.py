@@ -6,24 +6,24 @@ application's 87 routes across 23 unrelated resource families. These 17 routes
 and the 36 helpers only they use are the largest self-contained group in it.
 
 URL paths are unchanged; only the Flask endpoint names move under a second
-blueprint. Helpers still shared with other families are reached as `v1.<name>` so there
-is exactly one binding for each: importing the names instead binds a second
-reference, and patching backend.v1 then stops affecting this module.
+blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 from typing import Any
 from uuid import uuid4
 
 from flask import Blueprint, Response, jsonify, request
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, or_, select
+from sqlalchemy.orm import Session
 
 from backend import (
     authz,
     db,
     toolhub,
-    v1,
 )
 from backend import v1_common as common
+from backend import v1_compat as compat
 from backend.models import (
     CrawlerUrl,
     Favorite,
@@ -35,18 +35,37 @@ from backend.models import (
 )
 from backend.security import current_user_id, write_guard
 from backend.sync import (
-    REVIEW_OPEN,
-    REVIEW_PENDING,
     SOURCE_LOCAL,
-    SOURCE_OFFICIAL,
     SYNC_ERROR,
     SYNC_EVOLVED_REAL,
     SYNC_LOCAL_FALLBACK,
     SYNC_OFFICIAL,
     clean_error,
     clean_int,
-    clean_review_status,
 )
+from backend.v1_policy import (
+    MAX_ITEMS,
+    OFFICIAL_STATUS_DISCARDED,
+    TOOL_FALLBACK_KINDS,
+    TOOL_OVERLAY_KIND_BY_FALLBACK,
+    TOOLINFO_CREATE_BOOL_FIELDS,
+    TOOLINFO_CREATE_LIST_FIELDS,
+    TOOLINFO_CREATE_MAX_ITEMS,
+    TOOLINFO_CREATE_OPT_FIELDS,
+)
+from backend.write_lifecycle import WriteHandlers, WriteRequest
+from backend.write_lifecycle import attempt_official_write as _attempt_official_write
+from backend.write_lifecycle import execute_official_first as _execute_official_first
+from backend.write_lifecycle import failure_payload as _failure_payload
+from backend.write_lifecycle import message_from_payload as _message_from_payload  # noqa: F401
+from backend.write_lifecycle import official_failure_response as _official_failure_response
+from backend.write_lifecycle import official_success_response as _official_success_response
+from backend.write_lifecycle import validation_errors as _validation_errors  # noqa: F401
+from backend.write_persistence import store_crawler_url_row as _store_crawler_url_row
+from backend.write_persistence import store_list_row as _store_list_row
+from backend.write_persistence import store_tool_overlay_fallback as _store_tool_overlay_fallback
+from backend.write_persistence import store_tool_record_fallback as _store_tool_record_fallback
+from backend.write_persistence import upsert_favorite as _upsert_favorite
 
 v1_write_bp = Blueprint("v1_write", __name__)
 
@@ -56,132 +75,6 @@ def _string_list(value: Any) -> list[str]:  # noqa: ANN401
     if not isinstance(value, list):
         return []
     return [str(item)[: common.MAX_NAME] for item in value[:50] if isinstance(item, str | int | float)]
-
-
-def _message_from_payload(payload: object, default: str) -> str:
-    """Extract the clearest user-facing message from a Toolhub error payload."""
-    if isinstance(payload, dict):
-        for key in ("message", "detail", "error"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()[: common.MAX_DESCRIPTION]
-    return default
-
-
-def _validation_errors(payload: object) -> list:
-    """Turn common Toolhub validation payload shapes into a UI-consumable list."""
-    if isinstance(payload, list):
-        return [item if isinstance(item, dict) else {"message": str(item)} for item in payload]
-    if not isinstance(payload, dict):
-        return []
-    direct = payload.get("validationErrors") or payload.get("validation_errors") or payload.get("errors")
-    if isinstance(direct, list):
-        return [item if isinstance(item, dict) else {"message": str(item)} for item in direct]
-    skipped = {"message", "detail", "error", "non_field_errors"}
-    field_lists = [
-        {"field": key, "messages": [str(message) for message in value]}
-        for key, value in payload.items()
-        if key not in skipped and isinstance(value, list)
-    ]
-    field_strings = [
-        {"field": key, "messages": [value.strip()]}
-        for key, value in payload.items()
-        if key not in skipped and isinstance(value, str) and value.strip()
-    ]
-    return field_lists + field_strings
-
-
-def _failure_payload(status: int, payload: object, default_message: str) -> dict:
-    details = payload if isinstance(payload, dict) else {"message": str(payload)}
-    return {
-        "ok": False,
-        "status": status,
-        "details": details,
-        "lastError": _message_from_payload(details, default_message),
-        "validationErrors": _validation_errors(details),
-    }
-
-
-def _attempt_official_write(user: User, method: str, path: str, payload: object | None) -> tuple[dict, Response | None]:
-    """Call Toolhub with the user's grant; auth failures remain non-fallback."""
-    try:
-        body, status = toolhub.api_request(user.id, method, path, json=payload)
-    except ValueError:
-        # toolhub.api_path refused the path, so nothing left the process. Return a
-        # denial rather than a failure payload: a failure here would be treated as
-        # "Toolhub rejected the write" and stored as a local fallback draft, which
-        # would persist a draft keyed on a path that can never be valid.
-        return {}, common.bad("invalid official Toolhub path")
-    except toolhub.ToolhubAuthError as exc:
-        resp = jsonify({"error": str(exc), "reauth": True})
-        resp.status_code = common.HTTP_UNAUTHORIZED
-        return {}, resp
-    except toolhub.ToolhubAPIError as exc:
-        return _failure_payload(exc.status_code, exc.payload, "official Toolhub rejected the write"), None
-    except toolhub.requests.RequestException:
-        return (
-            _failure_payload(502, {"message": "official Toolhub is unavailable"}, "official Toolhub is unavailable"),
-            None,
-        )
-    common.invalidate_official_api_cache(path, payload, body)
-    common.record_successful_toolhub_write(user, method, path, payload, body)
-    return {
-        "ok": True,
-        "status": status,
-        "toolhub": body if status != v1.HTTP_NO_CONTENT else {"ok": True},
-        "lastSyncedAt": common.iso(utcnow()),
-    }, None
-
-
-def _official_success_response(attempt: dict, local: dict | None = None) -> Response:
-    payload = {
-        "ok": True,
-        "result": "official",
-        "syncStatus": SYNC_OFFICIAL,
-        "lastSyncedAt": attempt["lastSyncedAt"],
-        "toolhub": attempt["toolhub"],
-    }
-    if local is not None:
-        payload["local"] = local
-    if attempt.get("crawlerFetch") is not None:
-        payload["crawlerFetch"] = attempt["crawlerFetch"]
-    resp = jsonify(payload)
-    resp.status_code = 200 if attempt["status"] == v1.HTTP_NO_CONTENT else int(attempt["status"])
-    return resp
-
-
-def _official_failure_response(failure: dict) -> Response:
-    resp = jsonify(
-        {
-            "error": "official Toolhub rejected the write",
-            "status": failure["status"],
-            "details": failure["details"],
-            "lastError": failure["lastError"],
-            "validationErrors": failure["validationErrors"],
-        }
-    )
-    resp.status_code = int(failure["status"])
-    return resp
-
-
-def _local_fallback_response(failure: dict, local: dict) -> Response:
-    details = failure.get("details") if isinstance(failure.get("details"), dict) else {}
-    payload = {
-        "ok": True,
-        "result": SYNC_LOCAL_FALLBACK,
-        "syncStatus": SYNC_LOCAL_FALLBACK,
-        "lastError": failure["lastError"],
-        "validationErrors": failure["validationErrors"],
-        "toolhubResponse": failure["details"],
-        "toolhubStatus": failure.get("status"),
-        "toolhubCode": details.get("code"),
-        "local": local,
-    }
-    if failure.get("crawlerFetch") is not None:
-        payload["crawlerFetch"] = failure["crawlerFetch"]
-    resp = jsonify(payload)
-    resp.status_code = 202
-    return resp
 
 
 def _compact_tool_payload(payload: dict, route_name: str | None = None) -> tuple[str | None, dict | None]:
@@ -275,7 +168,7 @@ def _matching_toolinfo_item(data: object, name: str) -> dict | None:
     if isinstance(data, dict):
         items = [data]
     elif isinstance(data, list):
-        items = data[: v1.TOOLINFO_CREATE_MAX_ITEMS]
+        items = data[:TOOLINFO_CREATE_MAX_ITEMS]
     else:
         return None
     for item in items:
@@ -288,15 +181,15 @@ def _merge_toolinfo_fields(fields: dict, record: dict) -> tuple[dict, list[str]]
     """Fill missing create fields from toolinfo while preserving explicit user input."""
     merged = dict(fields)
     enriched: list[str] = []
-    for field in v1.TOOLINFO_CREATE_OPT_FIELDS:
+    for field in TOOLINFO_CREATE_OPT_FIELDS:
         if not merged.get(field) and record.get(field):
             merged[field] = record[field]
             enriched.append(field)
-    for field in v1.TOOLINFO_CREATE_LIST_FIELDS:
+    for field in TOOLINFO_CREATE_LIST_FIELDS:
         if not merged.get(field) and record.get(field):
             merged[field] = record[field]
             enriched.append(field)
-    for field in v1.TOOLINFO_CREATE_BOOL_FIELDS:
+    for field in TOOLINFO_CREATE_BOOL_FIELDS:
         if not merged.get(field) and record.get(field):
             merged[field] = True
             enriched.append(field)
@@ -355,7 +248,9 @@ def _record_create_toolinfo_evidence(
         if toolinfo_item is not None:
             try:
                 owner = s.get(User, user.id) or user
-                v1.SIGNED_TOOLINFO_PROVIDER.verify(s, owner, toolinfo=toolinfo_item, evidence_url=toolinfo_url)
+                compat.value("SIGNED_TOOLINFO_PROVIDER").verify(
+                    s, owner, toolinfo=toolinfo_item, evidence_url=toolinfo_url
+                )
             except Exception:  # noqa: BLE001 - evidence collection must not break an already accepted create.
                 return
         return
@@ -429,9 +324,7 @@ def _clean_list_write_payload(uid: int, payload: dict, route_id: str | None = No
         "client_id": _list_client_id(uid, payload, route_id),
         "title": title.strip()[: common.MAX_NAME],
         "description": str(payload.get("description") or "")[: common.MAX_DESCRIPTION],
-        "tools": [
-            str(tool)[: common.MAX_NAME] for tool in tools[: v1.MAX_ITEMS] if isinstance(tool, str | int | float)
-        ],
+        "tools": [str(tool)[: common.MAX_NAME] for tool in tools[:MAX_ITEMS] if isinstance(tool, str | int | float)],
     }
 
 
@@ -449,152 +342,6 @@ def _official_id(body: object, fallback: int | None = None) -> int | None:
     if isinstance(body, dict):
         return clean_int(body.get("id")) or fallback
     return fallback
-
-
-def _store_tool_record_fallback(s: Any, user: User, name: str, fields: dict, failure: dict) -> dict:  # noqa: ANN401
-    row = s.execute(
-        select(ToolRecord).where(ToolRecord.tool_name == name, ToolRecord.user_id == user.id)
-    ).scalar_one_or_none()
-    if row is None:
-        row = ToolRecord(tool_name=name, user_id=user.id, created_by_user_id=user.id)
-        s.add(row)
-    row.created_by_user_id = row.created_by_user_id or user.id
-    row.record = fields
-    row.modified_at = utcnow()
-    row.visibility = common.VISIBILITY_PRIVATE
-    row.source = SOURCE_LOCAL
-    row.sync_status = SYNC_LOCAL_FALLBACK
-    row.review_status = clean_review_status(row.review_status, REVIEW_PENDING)
-    row.last_synced_at = None
-    row.last_error = clean_error(failure["lastError"])
-    row.last_toolhub_response = failure["details"]
-    row.validation_errors = failure["validationErrors"]
-    row.deleted_at = None
-    return common.tool_record_payload(row)
-
-
-def _store_tool_overlay_fallback(  # noqa: PLR0913, PLR0917 - fallback persistence keeps route semantics explicit
-    s: Any,  # noqa: ANN401
-    user: User,
-    name: str,
-    kind: str,
-    patch: dict,
-    failure: dict,
-) -> dict:
-    row = s.execute(
-        select(ToolOverlay).where(
-            ToolOverlay.kind == kind,
-            ToolOverlay.tool_name == name,
-            ToolOverlay.user_id == user.id,
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        row = ToolOverlay(kind=kind, tool_name=name, user_id=user.id, created_by_user_id=user.id)
-        s.add(row)
-    row.created_by_user_id = row.created_by_user_id or user.id
-    row.patch = common.data_patch(patch)
-    row.modified_at = utcnow()
-    row.source = SOURCE_LOCAL
-    row.sync_status = SYNC_LOCAL_FALLBACK
-    row.last_synced_at = None
-    row.last_error = clean_error(failure["lastError"])
-    row.last_toolhub_response = failure["details"]
-    row.validation_errors = failure["validationErrors"]
-    row.review_status = clean_review_status(row.review_status, REVIEW_OPEN)
-    row.deleted_at = None
-    return common.with_common_meta(row.patch, row)
-
-
-def _store_list_row(  # noqa: PLR0913 - list lifecycle writes official and fallback metadata together
-    s: Any,  # noqa: ANN401
-    user: User,
-    fields: dict,
-    *,
-    sync_status: str,
-    official_id: int | None = None,
-    failure: dict | None = None,
-    toolhub_body: object | None = None,
-) -> ToolList:
-    row = s.get(ToolList, fields["client_id"])
-    if row is None:
-        row = ToolList(
-            client_id=fields["client_id"],
-            user_id=user.id,
-            created_by_user_id=user.id,
-            title=fields["title"],
-        )
-        s.add(row)
-    row.user_id = user.id
-    row.created_by_user_id = row.created_by_user_id or user.id
-    row.title = fields["title"]
-    row.description = fields["description"]
-    row.tools = fields["tools"]
-    row.modified_at = utcnow()
-    row.official_list_id = official_id
-    row.source = SOURCE_OFFICIAL if sync_status == SYNC_OFFICIAL else SOURCE_LOCAL
-    row.sync_status = sync_status
-    row.last_synced_at = utcnow() if sync_status == SYNC_OFFICIAL else None
-    row.last_error = clean_error(failure["lastError"]) if failure else None
-    row.last_toolhub_response = (
-        failure["details"] if failure else toolhub_body if isinstance(toolhub_body, dict) else None
-    )
-    row.validation_errors = failure["validationErrors"] if failure else None
-    row.deleted_at = None
-    return row
-
-
-def _store_crawler_url_row(  # noqa: PLR0913 - crawler URL lifecycle writes official and fallback metadata
-    s: Any,  # noqa: ANN401
-    user: User,
-    url: str,
-    *,
-    sync_status: str,
-    official_id: int | None = None,
-    failure: dict | None = None,
-    toolhub_body: object | None = None,
-) -> CrawlerUrl:
-    row = s.execute(select(CrawlerUrl).where(CrawlerUrl.user_id == user.id, CrawlerUrl.url == url)).scalar_one_or_none()
-    if row is None:
-        row = CrawlerUrl(user_id=user.id, created_by_user_id=user.id, url=url[: common.MAX_URL])
-        s.add(row)
-    row.created_by_user_id = row.created_by_user_id or user.id
-    row.url = url[: common.MAX_URL]
-    row.official_crawler_url_id = official_id
-    row.source = SOURCE_OFFICIAL if sync_status == SYNC_OFFICIAL else SOURCE_LOCAL
-    row.sync_status = sync_status
-    row.enabled = True
-    row.last_synced_at = utcnow() if sync_status == SYNC_OFFICIAL else None
-    row.last_error = clean_error(failure["lastError"]) if failure else None
-    row.last_toolhub_response = (
-        failure["details"] if failure else toolhub_body if isinstance(toolhub_body, dict) else None
-    )
-    row.validation_errors = failure["validationErrors"] if failure else None
-    return row
-
-
-def _upsert_favorite(
-    s: Any,  # noqa: ANN401
-    user: User,
-    name: str,
-    *,
-    sync_status: str,
-    failure: dict | None = None,
-) -> Favorite:
-    row = s.execute(
-        select(Favorite).where(Favorite.user_id == user.id, Favorite.tool_name == name)
-    ).scalar_one_or_none()
-    if row is None:
-        position = int(
-            s.execute(select(func.count()).select_from(Favorite).where(Favorite.user_id == user.id)).scalar_one()
-        )
-        row = Favorite(user_id=user.id, created_by_user_id=user.id, tool_name=name, position=position)
-        s.add(row)
-    row.created_by_user_id = row.created_by_user_id or user.id
-    row.source = SOURCE_OFFICIAL if sync_status == SYNC_OFFICIAL else SOURCE_LOCAL
-    row.sync_status = sync_status
-    row.last_synced_at = utcnow() if sync_status == SYNC_OFFICIAL else None
-    row.last_error = clean_error(failure["lastError"]) if failure else None
-    return row
 
 
 def _local_write_allowed(user: User) -> bool:
@@ -633,53 +380,39 @@ def _write_tool_core(route_name: str | None = None) -> Response:
         toolinfo_url,
         create_like=create_like,
     )
-    attempt, denied = _attempt_official_write(
-        user,
-        method,
-        path,
-        _official_tool_payload(name, fields, include_name=create_like),
-    )
-    if denied is not None:
-        return denied
-    _with_crawler_fetch(attempt, crawler_fetch)
-    if attempt["ok"]:
-        with db.session_scope() as s:
-            s.execute(delete(ToolRecord).where(ToolRecord.tool_name == name, ToolRecord.user_id == user.id))
-            s.execute(
-                delete(ToolOverlay).where(
-                    ToolOverlay.tool_name == name,
-                    ToolOverlay.user_id == user.id,
-                    ToolOverlay.kind == "edits",
-                )
+
+    def on_success(s: Session, owner: User, attempt: dict) -> None:
+        s.execute(delete(ToolRecord).where(ToolRecord.tool_name == name, ToolRecord.user_id == owner.id))
+        s.execute(
+            delete(ToolOverlay).where(
+                ToolOverlay.tool_name == name,
+                ToolOverlay.user_id == owner.id,
+                ToolOverlay.kind == "edits",
             )
-            _record_create_toolinfo_evidence(s, user, toolinfo_url, toolinfo_item, crawler_fetch)
-            common.emit_structured_activity(
-                s,
-                user,
-                action="created" if create_like else "edited",
-                object_type="tool",
-                object_key=name,
-                official_status=SYNC_OFFICIAL,
-                payload=_with_crawler_fetch(
-                    {"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
-                    crawler_fetch,
-                ),
-                title=fields["title"],
-            )
-        return _official_success_response(attempt)
-    if not _local_write_allowed(user):
-        return _official_failure_response(attempt)
-    with db.session_scope() as s:
-        if create_like:
-            local = _store_tool_record_fallback(s, user, name, fields, attempt)
-            action = "created"
-        else:
-            local = _store_tool_overlay_fallback(s, user, name, "edits", fields, attempt)
-            action = "edited"
-        _record_create_toolinfo_evidence(s, user, toolinfo_url, toolinfo_item, crawler_fetch)
+        )
+        _record_create_toolinfo_evidence(s, owner, toolinfo_url, toolinfo_item, crawler_fetch)
         common.emit_structured_activity(
             s,
-            user,
+            owner,
+            action="created" if create_like else "edited",
+            object_type="tool",
+            object_key=name,
+            official_status=SYNC_OFFICIAL,
+            payload=_with_crawler_fetch({"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL}, crawler_fetch),
+            title=fields["title"],
+        )
+
+    def on_fallback(s: Session, owner: User, attempt: dict) -> dict:
+        if create_like:
+            local = _store_tool_record_fallback(s, owner, name, fields, attempt)
+            action = "created"
+        else:
+            local = _store_tool_overlay_fallback(s, owner, name, "edits", fields, attempt)
+            action = "edited"
+        _record_create_toolinfo_evidence(s, owner, toolinfo_url, toolinfo_item, crawler_fetch)
+        common.emit_structured_activity(
+            s,
+            owner,
             action=action,
             object_type="tool",
             object_key=name,
@@ -696,7 +429,26 @@ def _write_tool_core(route_name: str | None = None) -> Response:
             ),
             title=fields["title"],
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    attempt_payload = _official_tool_payload(name, fields, include_name=create_like)
+
+    def attempt_with_crawler(
+        owner: User,
+        write_method: str,
+        write_path: str,
+        body: object | None,
+    ) -> tuple[dict, Response | None]:
+        attempt, denied = _attempt_official_write(owner, write_method, write_path, body)
+        _with_crawler_fetch(attempt, crawler_fetch)
+        return attempt, denied
+
+    return _execute_official_first(
+        WriteRequest(user, method, path, attempt_payload),
+        WriteHandlers(on_success, on_fallback, _local_write_allowed),
+        database=db,
+        attempt_writer=attempt_with_crawler,
+    )
 
 
 @v1_write_bp.route("/v1/write/tools/", methods=["POST"])
@@ -749,47 +501,49 @@ def write_annotations_update(name: str) -> Response:
     assert value is not None  # noqa: S101 - err covers non-dict bodies
     fields = _compact_annotation_payload(value)
     user = common.require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
-    attempt, denied = _attempt_official_write(
-        user,
-        "PUT",
-        common.upstream_path(f"tools/{clean_name}/annotations/"),
-        _official_annotation_payload(fields),
-    )
-    if denied is not None:
-        return denied
-    if attempt["ok"]:
-        with db.session_scope() as s:
-            s.execute(
-                delete(ToolOverlay).where(
-                    ToolOverlay.kind == "annos",
-                    ToolOverlay.tool_name == clean_name,
-                    ToolOverlay.user_id == user.id,
-                )
+
+    def on_success(s: Session, owner: User, attempt: dict) -> None:
+        s.execute(
+            delete(ToolOverlay).where(
+                ToolOverlay.kind == "annos",
+                ToolOverlay.tool_name == clean_name,
+                ToolOverlay.user_id == owner.id,
             )
-            common.emit_structured_activity(
-                s,
-                user,
-                action="annotated",
-                object_type="tool",
-                object_key=clean_name,
-                official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
-            )
-        return _official_success_response(attempt)
-    if not _local_write_allowed(user):
-        return _official_failure_response(attempt)
-    with db.session_scope() as s:
-        local = _store_tool_overlay_fallback(s, user, clean_name, "annos", fields, attempt)
+        )
         common.emit_structured_activity(
             s,
-            user,
+            owner,
+            action="annotated",
+            object_type="tool",
+            object_key=clean_name,
+            official_status=SYNC_OFFICIAL,
+            payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
+        )
+
+    def on_fallback(s: Session, owner: User, attempt: dict) -> dict:
+        local = _store_tool_overlay_fallback(s, owner, clean_name, "annos", fields, attempt)
+        common.emit_structured_activity(
+            s,
+            owner,
             action="annotated",
             object_type="tool",
             object_key=clean_name,
             official_status=SYNC_LOCAL_FALLBACK,
             payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    return _execute_official_first(
+        WriteRequest(
+            user,
+            "PUT",
+            common.upstream_path(f"tools/{clean_name}/annotations/"),
+            _official_annotation_payload(fields),
+        ),
+        WriteHandlers(on_success, on_fallback, _local_write_allowed),
+        database=db,
+        attempt_writer=_attempt_official_write,
+    )
 
 
 def _write_list_core(route_id: str | None = None) -> Response:
@@ -804,38 +558,34 @@ def _write_list_core(route_id: str | None = None) -> Response:
         return common.bad("list write needs title and tools")
     method = "POST" if route_id is None else "PUT"
     path = "/api/lists/" if route_id is None else common.upstream_path(f"lists/{official_route_id}/")
-    attempt, denied = _attempt_official_write(user, method, path, _official_list_payload(fields))
-    if denied is not None:
-        return denied
-    if attempt["ok"]:
-        official_id = _official_id(attempt["toolhub"], official_route_id)
-        with db.session_scope() as s:
-            row = _store_list_row(
-                s,
-                user,
-                fields,
-                sync_status=SYNC_OFFICIAL,
-                official_id=official_id,
-                toolhub_body=attempt["toolhub"],
-            )
-            local = common.list_payload(row)
-            common.emit_structured_activity(
-                s,
-                user,
-                action="list-created" if route_id is None else "list-edited",
-                object_type="list",
-                object_key=row.client_id,
-                official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "local": local, "syncStatus": SYNC_OFFICIAL},
-                title=row.title,
-            )
-        return _official_success_response(attempt, local)
-    if not _local_write_allowed(user):
-        return _official_failure_response(attempt)
-    with db.session_scope() as s:
+    action = "list-created" if route_id is None else "list-edited"
+
+    def on_success(s: Session, owner: User, attempt: dict) -> dict:
         row = _store_list_row(
             s,
-            user,
+            owner,
+            fields,
+            sync_status=SYNC_OFFICIAL,
+            official_id=_official_id(attempt["toolhub"], official_route_id),
+            toolhub_body=attempt["toolhub"],
+        )
+        local = common.list_payload(row)
+        common.emit_structured_activity(
+            s,
+            owner,
+            action=action,
+            object_type="list",
+            object_key=row.client_id,
+            official_status=SYNC_OFFICIAL,
+            payload={"toolhub": attempt["toolhub"], "local": local, "syncStatus": SYNC_OFFICIAL},
+            title=row.title,
+        )
+        return local
+
+    def on_fallback(s: Session, owner: User, attempt: dict) -> dict:
+        row = _store_list_row(
+            s,
+            owner,
             fields,
             sync_status=SYNC_LOCAL_FALLBACK,
             official_id=official_route_id,
@@ -844,15 +594,22 @@ def _write_list_core(route_id: str | None = None) -> Response:
         local = common.list_payload(row)
         common.emit_structured_activity(
             s,
-            user,
-            action="list-created" if route_id is None else "list-edited",
+            owner,
+            action=action,
             object_type="list",
             object_key=row.client_id,
             official_status=SYNC_LOCAL_FALLBACK,
             payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
             title=row.title,
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    return _execute_official_first(
+        WriteRequest(user, method, path, _official_list_payload(fields)),
+        WriteHandlers(on_success, on_fallback, _local_write_allowed),
+        database=db,
+        attempt_writer=_attempt_official_write,
+    )
 
 
 @v1_write_bp.route("/v1/write/lists/", methods=["POST"])
@@ -914,26 +671,22 @@ def write_favorite_add() -> Response:
     if name is None:
         return common.bad("favorite needs a tool name")
     user = common.require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
-    attempt, denied = _attempt_official_write(user, "POST", "/api/user/favorites/", {"name": name})
-    if denied is not None:
-        return denied
-    if attempt["ok"]:
-        with db.session_scope() as s:
-            _upsert_favorite(s, user, name, sync_status=SYNC_OFFICIAL)
-            common.emit_structured_activity(
-                s,
-                user,
-                action="favorited",
-                object_type="favorite",
-                object_key=name,
-                official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
-            )
-        return _official_success_response(attempt, {"name": name, "syncStatus": SYNC_OFFICIAL})
-    if not _local_write_allowed(user):
-        return _official_failure_response(attempt)
-    with db.session_scope() as s:
-        _upsert_favorite(s, user, name, sync_status=SYNC_LOCAL_FALLBACK, failure=attempt)
+
+    def on_success(s: Session, owner: User, attempt: dict) -> dict:
+        _upsert_favorite(s, owner, name, sync_status=SYNC_OFFICIAL)
+        common.emit_structured_activity(
+            s,
+            owner,
+            action="favorited",
+            object_type="favorite",
+            object_key=name,
+            official_status=SYNC_OFFICIAL,
+            payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
+        )
+        return {"name": name, "syncStatus": SYNC_OFFICIAL}
+
+    def on_fallback(s: Session, owner: User, attempt: dict) -> dict:
+        _upsert_favorite(s, owner, name, sync_status=SYNC_LOCAL_FALLBACK, failure=attempt)
         local = {
             "name": name,
             "source": SOURCE_LOCAL,
@@ -944,14 +697,21 @@ def write_favorite_add() -> Response:
         }
         common.emit_structured_activity(
             s,
-            user,
+            owner,
             action="favorited",
             object_type="favorite",
             object_key=name,
             official_status=SYNC_LOCAL_FALLBACK,
             payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    return _execute_official_first(
+        WriteRequest(user, "POST", "/api/user/favorites/", {"name": name}),
+        WriteHandlers(on_success, on_fallback, _local_write_allowed),
+        database=db,
+        attempt_writer=_attempt_official_write,
+    )
 
 
 @v1_write_bp.route("/v1/write/user/favorites/<tool_name>/", methods=["DELETE"])
@@ -962,45 +722,56 @@ def write_favorite_delete(tool_name: str) -> Response:
     if name is None:
         return common.bad("favorite needs a tool name")
     user = common.require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
-    attempt, denied = _attempt_official_write(user, "DELETE", common.upstream_path(f"user/favorites/{name}/"), None)
-    if denied is not None:
-        return denied
-    if attempt["ok"]:
-        with db.session_scope() as s:
-            s.execute(delete(Favorite).where(Favorite.user_id == user.id, Favorite.tool_name == name))
-            common.emit_structured_activity(
-                s,
-                user,
-                action="favorite-removed",
-                object_type="favorite",
-                object_key=name,
-                official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
+
+    def remove_favorite(s: Session, owner: User, attempt: dict, *, status: str) -> dict:
+        s.execute(delete(Favorite).where(Favorite.user_id == owner.id, Favorite.tool_name == name))
+        if status == SYNC_OFFICIAL:
+            local = {"name": name, "deleted": True, "syncStatus": SYNC_OFFICIAL}
+        else:
+            local = {
+                "name": name,
+                "deleted": True,
+                "source": SOURCE_LOCAL,
+                "syncStatus": SYNC_LOCAL_FALLBACK,
+            }
+            local.update(
+                {
+                    "lastError": attempt["lastError"],
+                    "toolhubResponse": attempt["details"],
+                    "validationErrors": attempt["validationErrors"],
+                }
             )
-        return _official_success_response(attempt, {"name": name, "deleted": True, "syncStatus": SYNC_OFFICIAL})
-    if not _local_write_allowed(user):
-        return _official_failure_response(attempt)
-    with db.session_scope() as s:
-        s.execute(delete(Favorite).where(Favorite.user_id == user.id, Favorite.tool_name == name))
-        local = {
-            "name": name,
-            "deleted": True,
-            "source": SOURCE_LOCAL,
-            "syncStatus": SYNC_LOCAL_FALLBACK,
-            "lastError": attempt["lastError"],
-            "toolhubResponse": attempt["details"],
-            "validationErrors": attempt["validationErrors"],
-        }
         common.emit_structured_activity(
             s,
-            user,
+            owner,
             action="favorite-removed",
             object_type="favorite",
             object_key=name,
-            official_status=SYNC_LOCAL_FALLBACK,
-            payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
+            official_status=status,
+            payload=(
+                {"toolhub": attempt["toolhub"], "syncStatus": status}
+                if status == SYNC_OFFICIAL
+                else {"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local}
+            ),
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    def on_success(s: Session, owner: User, attempt: dict) -> dict:
+        return remove_favorite(s, owner, attempt, status=SYNC_OFFICIAL)
+
+    def on_fallback(s: Session, owner: User, attempt: dict) -> dict:
+        return remove_favorite(s, owner, attempt, status=SYNC_LOCAL_FALLBACK)
+
+    return _execute_official_first(
+        WriteRequest(user, "DELETE", common.upstream_path(f"user/favorites/{name}/"), None),
+        WriteHandlers(
+            on_success,
+            on_fallback,
+            _local_write_allowed,
+        ),
+        database=db,
+        attempt_writer=_attempt_official_write,
+    )
 
 
 @v1_write_bp.route("/v1/write/crawler/urls/", methods=["POST"])
@@ -1017,46 +788,43 @@ def write_crawler_url_add() -> Response:
         return common.url_validation_bad("url", error)
     url = str(raw_url).strip()
     user = common.require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
-    attempt, denied = _attempt_official_write(user, "POST", "/api/crawler/urls/", {"url": url})
-    if denied is not None:
-        return denied
-    if attempt["ok"]:
-        official_id = _official_id(attempt["toolhub"])
-        with db.session_scope() as s:
-            row = _store_crawler_url_row(
-                s,
-                user,
-                url,
-                sync_status=SYNC_OFFICIAL,
-                official_id=official_id,
-                toolhub_body=attempt["toolhub"],
-            )
-            local = common.crawler_url_payload(row)
-            common.emit_structured_activity(
-                s,
-                user,
-                action="crawler-url-added",
-                object_type="crawler_url",
-                object_key=url,
-                official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "local": local, "syncStatus": SYNC_OFFICIAL},
-            )
-        return _official_success_response(attempt, local)
-    if not _local_write_allowed(user):
-        return _official_failure_response(attempt)
-    with db.session_scope() as s:
-        row = _store_crawler_url_row(s, user, url, sync_status=SYNC_LOCAL_FALLBACK, failure=attempt)
+
+    def persist(s: Session, owner: User, attempt: dict, *, status: str) -> dict:
+        row = _store_crawler_url_row(
+            s,
+            owner,
+            url,
+            sync_status=status,
+            official_id=_official_id(attempt["toolhub"]) if status == SYNC_OFFICIAL else None,
+            failure=attempt if status == SYNC_LOCAL_FALLBACK else None,
+            toolhub_body=attempt["toolhub"] if status == SYNC_OFFICIAL else None,
+        )
         local = common.crawler_url_payload(row)
         common.emit_structured_activity(
             s,
-            user,
+            owner,
             action="crawler-url-added",
             object_type="crawler_url",
             object_key=url,
-            official_status=SYNC_LOCAL_FALLBACK,
-            payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
+            official_status=status,
+            payload=(
+                {"toolhub": attempt["toolhub"], "local": local, "syncStatus": SYNC_OFFICIAL}
+                if status == SYNC_OFFICIAL
+                else {"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local}
+            ),
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    return _execute_official_first(
+        WriteRequest(user, "POST", "/api/crawler/urls/", {"url": url}),
+        WriteHandlers(
+            lambda s, owner, attempt: persist(s, owner, attempt, status=SYNC_OFFICIAL),
+            lambda s, owner, attempt: persist(s, owner, attempt, status=SYNC_LOCAL_FALLBACK),
+            _local_write_allowed,
+        ),
+        database=db,
+        attempt_writer=_attempt_official_write,
+    )
 
 
 @v1_write_bp.route("/v1/write/crawler/urls/<int:url_id>/", methods=["DELETE"])
@@ -1097,18 +865,18 @@ def write_crawler_url_delete(url_id: int) -> Response:
 def _tool_fallback_kind() -> tuple[str | None, Response | None]:
     value = request.get_json(silent=True) or {}
     kind = value.get("kind") if isinstance(value, dict) else None
-    if kind not in v1.TOOL_FALLBACK_KINDS:
+    if kind not in TOOL_FALLBACK_KINDS:
         return None, common.bad("kind must be new, edit, or annotations")
     return str(kind), None
 
 
 def _discard_response() -> Response:
-    return jsonify({"ok": True, "result": v1.OFFICIAL_STATUS_DISCARDED})
+    return jsonify({"ok": True, "result": OFFICIAL_STATUS_DISCARDED})
 
 
 @v1_write_bp.route("/v1/write/tools/<name>/retry/", methods=["POST"])
 @write_guard
-def write_tool_retry(name: str) -> Response:  # noqa: PLR0911 - retry exits mirror validation/not found/sync outcomes
+def write_tool_retry(name: str) -> Response:
     """Retry publishing one Evolved-local tool fallback."""
     clean_name = common.clean_name(name)
     kind, err = _tool_fallback_kind()
@@ -1136,7 +904,7 @@ def write_tool_retry(name: str) -> Response:  # noqa: PLR0911 - retry exits mirr
                 _official_tool_payload(clean_name, fields, include_name=True),
             )
         else:
-            overlay_kind = v1.TOOL_OVERLAY_KIND_BY_FALLBACK[kind]
+            overlay_kind = TOOL_OVERLAY_KIND_BY_FALLBACK[kind]
             row = s.execute(
                 select(ToolOverlay).where(
                     ToolOverlay.kind == overlay_kind,
@@ -1156,53 +924,57 @@ def write_tool_retry(name: str) -> Response:  # noqa: PLR0911 - retry exits mirr
                 if kind == "annotations"
                 else _official_tool_payload(clean_name, fields, include_name=False)
             )
-    attempt, denied = _attempt_official_write(user, method, path, official_payload)
-    if denied is not None:
-        return denied
-    if attempt["ok"]:
-        with db.session_scope() as s:
-            if kind == "new":
-                s.execute(delete(ToolRecord).where(ToolRecord.tool_name == clean_name, ToolRecord.user_id == user.id))
-            else:
-                s.execute(
-                    delete(ToolOverlay).where(
-                        ToolOverlay.kind == v1.TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
-                        ToolOverlay.tool_name == clean_name,
-                        ToolOverlay.user_id == user.id,
-                    )
-                )
-            common.emit_structured_activity(
-                s,
-                user,
-                action="retried",
-                object_type="tool",
-                object_key=clean_name,
-                official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
-            )
-        return _official_success_response(attempt)
-    with db.session_scope() as s:
+
+    def on_success(s: Session, owner: User, attempt: dict) -> None:
         if kind == "new":
-            local = _store_tool_record_fallback(s, user, clean_name, fields, attempt)
+            s.execute(delete(ToolRecord).where(ToolRecord.tool_name == clean_name, ToolRecord.user_id == owner.id))
+        else:
+            s.execute(
+                delete(ToolOverlay).where(
+                    ToolOverlay.kind == TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
+                    ToolOverlay.tool_name == clean_name,
+                    ToolOverlay.user_id == owner.id,
+                )
+            )
+        common.emit_structured_activity(
+            s,
+            owner,
+            action="retried",
+            object_type="tool",
+            object_key=clean_name,
+            official_status=SYNC_OFFICIAL,
+            payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
+        )
+
+    def on_fallback(s: Session, owner: User, attempt: dict) -> dict:
+        if kind == "new":
+            local = _store_tool_record_fallback(s, owner, clean_name, fields, attempt)
         else:
             local = _store_tool_overlay_fallback(
                 s,
-                user,
+                owner,
                 clean_name,
-                v1.TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
+                TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
                 fields,
                 attempt,
             )
         common.emit_structured_activity(
             s,
-            user,
+            owner,
             action="retry-failed",
             object_type="tool",
             object_key=clean_name,
             official_status=SYNC_LOCAL_FALLBACK,
             payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    return _execute_official_first(
+        WriteRequest(user, method, path, official_payload),
+        WriteHandlers(on_success, on_fallback, lambda _owner: True),
+        database=db,
+        attempt_writer=_attempt_official_write,
+    )
 
 
 @v1_write_bp.route("/v1/write/tools/<name>/fallback/", methods=["DELETE"])
@@ -1225,7 +997,7 @@ def write_tool_fallback_discard(name: str) -> Response:
         else:
             result = s.execute(
                 delete(ToolOverlay).where(
-                    ToolOverlay.kind == v1.TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
+                    ToolOverlay.kind == TOOL_OVERLAY_KIND_BY_FALLBACK[kind],
                     ToolOverlay.tool_name == clean_name,
                     ToolOverlay.user_id == user.id,
                 )
@@ -1238,8 +1010,8 @@ def write_tool_fallback_discard(name: str) -> Response:
             action="discarded",
             object_type="tool",
             object_key=clean_name,
-            official_status=v1.OFFICIAL_STATUS_DISCARDED,
-            payload={"syncStatus": v1.OFFICIAL_STATUS_DISCARDED},
+            official_status=OFFICIAL_STATUS_DISCARDED,
+            payload={"syncStatus": OFFICIAL_STATUS_DISCARDED},
         )
     return _discard_response()
 
@@ -1270,34 +1042,33 @@ def write_list_retry(client_id: str) -> Response:
         official_id = row.official_list_id
     method = "PUT" if official_id is not None else "POST"
     path = common.upstream_path(f"lists/{official_id}/") if official_id is not None else "/api/lists/"
-    attempt, denied = _attempt_official_write(user, method, path, _official_list_payload(fields))
-    if denied is not None:
-        return denied
-    with db.session_scope() as s:
-        if attempt["ok"]:
-            row = _store_list_row(
-                s,
-                user,
-                fields,
-                sync_status=SYNC_OFFICIAL,
-                official_id=_official_id(attempt["toolhub"], official_id),
-                toolhub_body=attempt["toolhub"],
-            )
-            local = common.list_payload(row)
-            common.emit_structured_activity(
-                s,
-                user,
-                action="list-retried",
-                object_type="list",
-                object_key=row.client_id,
-                official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "local": local, "syncStatus": SYNC_OFFICIAL},
-                title=row.title,
-            )
-            return _official_success_response(attempt, local)
+
+    def on_success(s: Session, owner: User, attempt: dict) -> dict:
         row = _store_list_row(
             s,
-            user,
+            owner,
+            fields,
+            sync_status=SYNC_OFFICIAL,
+            official_id=_official_id(attempt["toolhub"], official_id),
+            toolhub_body=attempt["toolhub"],
+        )
+        local = common.list_payload(row)
+        common.emit_structured_activity(
+            s,
+            owner,
+            action="list-retried",
+            object_type="list",
+            object_key=row.client_id,
+            official_status=SYNC_OFFICIAL,
+            payload={"toolhub": attempt["toolhub"], "local": local, "syncStatus": SYNC_OFFICIAL},
+            title=row.title,
+        )
+        return local
+
+    def on_fallback(s: Session, owner: User, attempt: dict) -> dict:
+        row = _store_list_row(
+            s,
+            owner,
             fields,
             sync_status=SYNC_LOCAL_FALLBACK,
             official_id=official_id,
@@ -1306,7 +1077,7 @@ def write_list_retry(client_id: str) -> Response:
         local = common.list_payload(row)
         common.emit_structured_activity(
             s,
-            user,
+            owner,
             action="list-retry-failed",
             object_type="list",
             object_key=row.client_id,
@@ -1314,7 +1085,14 @@ def write_list_retry(client_id: str) -> Response:
             payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
             title=row.title,
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    return _execute_official_first(
+        WriteRequest(user, method, path, _official_list_payload(fields)),
+        WriteHandlers(on_success, on_fallback, lambda _owner: True),
+        database=db,
+        attempt_writer=_attempt_official_write,
+    )
 
 
 @v1_write_bp.route("/v1/write/lists/<client_id>/fallback/", methods=["DELETE"])
@@ -1339,8 +1117,8 @@ def write_list_fallback_discard(client_id: str) -> Response:
             action="list-discarded",
             object_type="list",
             object_key=client_id,
-            official_status=v1.OFFICIAL_STATUS_DISCARDED,
-            payload={"syncStatus": v1.OFFICIAL_STATUS_DISCARDED},
+            official_status=OFFICIAL_STATUS_DISCARDED,
+            payload={"syncStatus": OFFICIAL_STATUS_DISCARDED},
             title=row.title,
         )
     return _discard_response()
@@ -1364,42 +1142,43 @@ def write_crawler_url_retry(local_id: int) -> Response:
         if not authz.can(user, authz.ACTION_PRIVATE_WRITE, row):
             return common.deny(common.HTTP_FORBIDDEN, "not allowed")
         url = row.url
-    attempt, denied = _attempt_official_write(user, "POST", "/api/crawler/urls/", {"url": url})
-    if denied is not None:
-        return denied
-    with db.session_scope() as s:
-        if attempt["ok"]:
-            row = _store_crawler_url_row(
-                s,
-                user,
-                url,
-                sync_status=SYNC_OFFICIAL,
-                official_id=_official_id(attempt["toolhub"]),
-                toolhub_body=attempt["toolhub"],
-            )
-            local = common.crawler_url_payload(row)
-            common.emit_structured_activity(
-                s,
-                user,
-                action="crawler-url-retried",
-                object_type="crawler_url",
-                object_key=url,
-                official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "local": local, "syncStatus": SYNC_OFFICIAL},
-            )
-            return _official_success_response(attempt, local)
-        row = _store_crawler_url_row(s, user, url, sync_status=SYNC_LOCAL_FALLBACK, failure=attempt)
+
+    def persist(s: Session, owner: User, attempt: dict, *, status: str) -> dict:
+        row = _store_crawler_url_row(
+            s,
+            owner,
+            url,
+            sync_status=status,
+            official_id=_official_id(attempt["toolhub"]) if status == SYNC_OFFICIAL else None,
+            failure=attempt if status == SYNC_LOCAL_FALLBACK else None,
+            toolhub_body=attempt["toolhub"] if status == SYNC_OFFICIAL else None,
+        )
         local = common.crawler_url_payload(row)
         common.emit_structured_activity(
             s,
-            user,
-            action="crawler-url-retry-failed",
+            owner,
+            action="crawler-url-retried" if status == SYNC_OFFICIAL else "crawler-url-retry-failed",
             object_type="crawler_url",
             object_key=url,
-            official_status=SYNC_LOCAL_FALLBACK,
-            payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
+            official_status=status,
+            payload=(
+                {"toolhub": attempt["toolhub"], "local": local, "syncStatus": SYNC_OFFICIAL}
+                if status == SYNC_OFFICIAL
+                else {"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local}
+            ),
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    return _execute_official_first(
+        WriteRequest(user, "POST", "/api/crawler/urls/", {"url": url}),
+        WriteHandlers(
+            lambda s, owner, attempt: persist(s, owner, attempt, status=SYNC_OFFICIAL),
+            lambda s, owner, attempt: persist(s, owner, attempt, status=SYNC_LOCAL_FALLBACK),
+            lambda _owner: True,
+        ),
+        database=db,
+        attempt_writer=_attempt_official_write,
+    )
 
 
 @v1_write_bp.route("/v1/write/crawler/urls/<int:local_id>/fallback/", methods=["DELETE"])
@@ -1417,8 +1196,8 @@ def write_crawler_url_fallback_discard(local_id: int) -> Response:
             action="crawler-url-discarded",
             object_type="crawler_url",
             object_key=str(local_id),
-            official_status=v1.OFFICIAL_STATUS_DISCARDED,
-            payload={"syncStatus": v1.OFFICIAL_STATUS_DISCARDED},
+            official_status=OFFICIAL_STATUS_DISCARDED,
+            payload={"syncStatus": OFFICIAL_STATUS_DISCARDED},
         )
     return _discard_response()
 
@@ -1439,24 +1218,22 @@ def write_favorite_retry(tool_name: str) -> Response:
             return common.deny(common.HTTP_NOT_FOUND, "fallback record not found")
         if not authz.can(user, authz.ACTION_PRIVATE_WRITE, row):
             return common.deny(common.HTTP_FORBIDDEN, "not allowed")
-    attempt, denied = _attempt_official_write(user, "POST", "/api/user/favorites/", {"name": name})
-    if denied is not None:
-        return denied
-    if attempt["ok"]:
-        with db.session_scope() as s:
-            _upsert_favorite(s, user, name, sync_status=SYNC_OFFICIAL)
-            common.emit_structured_activity(
-                s,
-                user,
-                action="favorite-retried",
-                object_type="favorite",
-                object_key=name,
-                official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
-            )
-        return _official_success_response(attempt, {"name": name, "syncStatus": SYNC_OFFICIAL})
-    with db.session_scope() as s:
-        _upsert_favorite(s, user, name, sync_status=SYNC_LOCAL_FALLBACK, failure=attempt)
+
+    def on_success(s: Session, owner: User, attempt: dict) -> dict:
+        _upsert_favorite(s, owner, name, sync_status=SYNC_OFFICIAL)
+        common.emit_structured_activity(
+            s,
+            owner,
+            action="favorite-retried",
+            object_type="favorite",
+            object_key=name,
+            official_status=SYNC_OFFICIAL,
+            payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
+        )
+        return {"name": name, "syncStatus": SYNC_OFFICIAL}
+
+    def on_fallback(s: Session, owner: User, attempt: dict) -> dict:
+        _upsert_favorite(s, owner, name, sync_status=SYNC_LOCAL_FALLBACK, failure=attempt)
         local = {
             "name": name,
             "source": SOURCE_LOCAL,
@@ -1467,14 +1244,21 @@ def write_favorite_retry(tool_name: str) -> Response:
         }
         common.emit_structured_activity(
             s,
-            user,
+            owner,
             action="favorite-retry-failed",
             object_type="favorite",
             object_key=name,
             official_status=SYNC_LOCAL_FALLBACK,
             payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
         )
-    return _local_fallback_response(attempt, local)
+        return local
+
+    return _execute_official_first(
+        WriteRequest(user, "POST", "/api/user/favorites/", {"name": name}),
+        WriteHandlers(on_success, on_fallback, lambda _owner: True),
+        database=db,
+        attempt_writer=_attempt_official_write,
+    )
 
 
 @v1_write_bp.route("/v1/write/user/favorites/<tool_name>/fallback/", methods=["DELETE"])
@@ -1495,7 +1279,7 @@ def write_favorite_fallback_discard(tool_name: str) -> Response:
             action="favorite-discarded",
             object_type="favorite",
             object_key=name,
-            official_status=v1.OFFICIAL_STATUS_DISCARDED,
-            payload={"syncStatus": v1.OFFICIAL_STATUS_DISCARDED},
+            official_status=OFFICIAL_STATUS_DISCARDED,
+            payload={"syncStatus": OFFICIAL_STATUS_DISCARDED},
         )
     return _discard_response()

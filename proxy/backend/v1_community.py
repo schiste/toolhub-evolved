@@ -5,9 +5,10 @@ from urllib.parse import urlencode
 
 from flask import Blueprint, Response, jsonify, request
 
-from backend import community_search, db, people_index, security, v1
+from backend import community_search, db, people_index, security
 from backend import v1_common as common
 from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL, clean_int
+from backend.v1_policy import HTTP_TOO_MANY
 
 v1_community_bp = Blueprint("v1_community", __name__)
 ORDERINGS = {"relevance", "relationship", "recent", "name"}
@@ -51,7 +52,7 @@ def _page_url(page: int | None) -> str | None:
 def v1_community() -> Response:
     """Search identities, official accounts, tools, and unresolved labels together."""
     if security.read_rate_limited(request.remote_addr):
-        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(HTTP_TOO_MANY, "rate limit exceeded")
     query = str(request.args.get("q") or "").strip()
     project = str(request.args.get("project") or "").strip()
     if len(query) > MAX_TEXT_LENGTH or len(project) > MAX_TEXT_LENGTH:

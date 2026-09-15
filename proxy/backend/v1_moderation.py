@@ -2,9 +2,8 @@
 """The /v1/moderation/* endpoints, split out of backend/v1.py.
 
 URL paths are unchanged; only the Flask endpoint names move under their
-own blueprint. Helpers still shared with other families are reached as
-`v1.<name>` so there is exactly one binding for each and patching or
-reloading backend.v1 keeps working.
+own blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 from typing import Any
@@ -17,7 +16,6 @@ from backend import (
     catalog_projection,
     db,
     people_reconcile,
-    v1,
 )
 from backend import v1_common as common
 from backend.models import (
@@ -38,6 +36,7 @@ from backend.sync import (
     SOURCE_LOCAL,
     SYNC_EVOLVED_REAL,
 )
+from backend.v1_policy import MODERATION_KINDS, MODERATION_MODELS, PUBLIC_REVIEW_STATUSES
 
 v1_moderation_bp = Blueprint("v1_moderation", __name__)
 PEOPLE_CONFLICT_STATUSES = {"pending", "resolved", "dismissed"}
@@ -236,7 +235,7 @@ def v1_moderation_people_conflict_update(conflict_id: int) -> Response:
 
 
 def _moderation_row(s: Any, kind: str, item_id: int) -> object | None:  # noqa: ANN401
-    return s.get(v1.MODERATION_MODELS[kind], item_id)
+    return s.get(MODERATION_MODELS[kind], item_id)
 
 
 def _moderation_row_visible(kind: str, row: object | None) -> bool:
@@ -321,14 +320,14 @@ def v1_moderation_public_data() -> Response:
 @write_guard
 def v1_moderation_public_data_update(kind: str, item_id: int) -> Response:
     """Apply reviewer moderation to one Evolved-owned public record."""
-    if kind not in v1.MODERATION_KINDS:
+    if kind not in MODERATION_KINDS:
         return common.deny(common.HTTP_NOT_FOUND, "moderation record not found")
     user = common.require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
     value = request.get_json(silent=True)
     if not isinstance(value, dict):
         return common.bad("moderation body must be a JSON object")
     review_status = value.get("reviewStatus") or value.get("review_status")
-    if review_status not in v1.PUBLIC_REVIEW_STATUSES:
+    if review_status not in PUBLIC_REVIEW_STATUSES:
         return common.bad("reviewStatus must be pending, approved, or rejected")
     with db.session_scope() as s:
         row = _moderation_row(s, kind, item_id)

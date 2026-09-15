@@ -2,6 +2,13 @@
 import { $, $input, dirAttrs, esc, isHttpUrl, textAttrs } from "../lib/core/dom.js";
 import { fmt, t } from "../lib/core/i18n.js";
 import {
+	annotationChangeDescriptors,
+	localCurationPatch,
+	officialAnnotationPayload,
+	officialToolPayload,
+	toolCoreChangeDescriptors
+} from "../lib/core/toolform-contracts.js";
+import {
 	backendErrorExplanation,
 	backendErrorBody,
 	backendGetJson,
@@ -176,36 +183,6 @@ function applyBackendFieldErrors(error, fieldMap) {
 	}
 }
 
-/**
- * @param {string} name
- * @param {Record<string, any>} fields
- * @param {{ includeName?: boolean }} [options]
- * @returns {Record<string, any>}
- */
-function officialToolPayload(name, fields, { includeName = true } = {}) {
-	/** @type {Record<string, any>} */
-	const payload = {
-		title: fields.title,
-		description: fields.description,
-		url: fields.url,
-		repository: fields.repository,
-		license: fields.license,
-		tool_type: fields.toolType,
-		keywords: fields.keywords,
-		for_wikis: fields.forWikis,
-		available_ui_languages: fields.uiLanguages,
-		deprecated: fields.deprecated,
-		experimental: fields.experimental,
-		comment: fields.comment || "Published from Toolhub Evolved"
-	};
-	if (includeName) payload.name = name;
-	if (includeName && fields.toolinfoUrl) payload.toolinfo_url = fields.toolinfoUrl;
-	if (!payload.repository) delete payload.repository;
-	if (!payload.license) delete payload.license;
-	if (!payload.tool_type) delete payload.tool_type;
-	return payload;
-}
-
 const TOOL_LIFECYCLE_KEYS = ["officialName", "visibility", "reviewStatus"];
 
 /** @param {any} res */
@@ -231,97 +208,6 @@ function readToolFormFields() {
 		experimental: checkedValue("tf-experimental"),
 		toolinfoUrl: fieldValue("tf-toolinfo-url") || null
 	};
-}
-
-/** @param {Tool} current @param {Record<string, any>} fields */
-function localCurationPatch(current, fields) {
-	const pairs = [
-		["title", current.title, fields.title],
-		["description", current.description, fields.description],
-		["url", current.url, fields.url],
-		["repository", current.repository || "", fields.repository || ""],
-		["license", current.license || "", fields.license || ""],
-		["tool_type", current.toolType || "", fields.toolType || ""],
-		["keywords", current.keywords || [], fields.keywords],
-		["for_wikis", current.forWikis || [], fields.forWikis],
-		["available_ui_languages", current.uiLanguages || [], fields.uiLanguages]
-	];
-	return Object.fromEntries(
-		pairs
-			.filter(([_key, before, after]) => JSON.stringify(before) !== JSON.stringify(after))
-			.map(([key, _before, after]) => [key, after])
-	);
-}
-
-/**
- * @param {Tool} current
- * @param {Record<string, any>} fields
- * @returns {import("../lib/molecules/change-review.js").ChangeDescriptor[]}
- */
-function toolCoreChangeDescriptors(current, fields) {
-	return /** @type {import("../lib/molecules/change-review.js").ChangeDescriptor[]} */ ([
-		{ key: "title", label: t("toolforms.fieldTitle", "Title"), before: current.title, after: fields.title },
-		{
-			key: "description",
-			label: t("toolforms.fieldDescription", "Description"),
-			before: current.description,
-			after: fields.description
-		},
-		{ key: "url", label: t("toolforms.fieldUrl", "URL"), before: current.url, after: fields.url },
-		{
-			key: "repository",
-			label: t("toolforms.fieldRepository", "Source code repository"),
-			before: current.repository,
-			after: fields.repository
-		},
-		{
-			key: "license",
-			label: t("toolforms.fieldLicenseShort", "License"),
-			before: current.license,
-			after: fields.license
-		},
-		{
-			key: "toolType",
-			label: t("toolforms.fieldToolType", "Tool type"),
-			before: current.toolType,
-			after: fields.toolType
-		},
-		{
-			key: "keywords",
-			label: t("toolforms.fieldKeywordsShort", "Keywords"),
-			before: current.keywords,
-			after: fields.keywords,
-			type: "set"
-		},
-		{
-			key: "forWikis",
-			label: t("toolforms.fieldWikisShort", "Works on wikis"),
-			before: current.forWikis,
-			after: fields.forWikis,
-			type: "set"
-		},
-		{
-			key: "uiLanguages",
-			label: t("toolforms.fieldLangsShort", "Interface languages"),
-			before: current.uiLanguages,
-			after: fields.uiLanguages,
-			type: "set"
-		},
-		{
-			key: "deprecated",
-			label: t("toolforms.fieldDeprecated", "Deprecated"),
-			before: current.deprecated,
-			after: fields.deprecated,
-			type: "boolean"
-		},
-		{
-			key: "experimental",
-			label: t("toolforms.experimentalBadge", "Experimental"),
-			before: current.experimental,
-			after: fields.experimental,
-			type: "boolean"
-		}
-	]);
 }
 
 /**
@@ -607,56 +493,6 @@ function setupAnnotationRetry(name) {
 			);
 		}
 	});
-}
-
-/** @param {Record<string, any>} anno */
-function officialAnnotationPayload(anno) {
-	const payload = {
-		audiences: anno.audiences,
-		tasks: anno.tasks,
-		tool_type: anno.toolType,
-		icon: anno.icon,
-		comment: "Annotated from Toolhub Evolved"
-	};
-	if (!payload.tool_type) delete payload.tool_type;
-	if (!payload.icon) delete payload.icon;
-	return payload;
-}
-
-/**
- * @param {Tool} current
- * @param {{ audiences: string[], tasks: string[], toolType: string | null, icon: string | null }} anno
- * @returns {import("../lib/molecules/change-review.js").ChangeDescriptor[]}
- */
-function annotationChangeDescriptors(current, anno) {
-	return /** @type {import("../lib/molecules/change-review.js").ChangeDescriptor[]} */ ([
-		{
-			key: "audiences",
-			label: t("toolforms.fieldAudiencesShort", "Audiences"),
-			before: current.audiences,
-			after: anno.audiences,
-			type: "set"
-		},
-		{
-			key: "tasks",
-			label: t("toolforms.fieldTasksShort", "Tasks"),
-			before: current.tasks,
-			after: anno.tasks,
-			type: "set"
-		},
-		{
-			key: "toolType",
-			label: t("toolforms.fieldToolType", "Tool type"),
-			before: current.toolType,
-			after: anno.toolType
-		},
-		{
-			key: "icon",
-			label: t("toolforms.fieldIconShort", "Icon"),
-			before: current.icon,
-			after: anno.icon
-		}
-	]);
 }
 
 function toolhubSignInRequiredMessage() {

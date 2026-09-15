@@ -3,16 +3,14 @@
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from sqlalchemy import select
 
-from backend import db, people_index, people_policy
+from backend import db, people_index, people_policy, snapshot_cache
 from backend.models import (
-    ApiCacheMeta,
     CanonicalToolCache,
     CatalogToolProjection,
     Person,
@@ -49,6 +47,11 @@ SNAPSHOT_MAX_AGE = timedelta(minutes=15)
 # visitor wait: past this, the refresh job is not running and somebody has
 # to rebuild for the page to mean anything.
 SNAPSHOT_STALE_LIMIT = timedelta(hours=6)
+SNAPSHOT_POLICY = snapshot_cache.SnapshotPolicy(
+    key=SNAPSHOT_KEY,
+    lock_name="catalog-statistics-refresh",
+    stale_limit=SNAPSHOT_STALE_LIMIT,
+)
 # Rows are consumed in batches so a 17,000-tool catalog never lands in
 # memory at once; the size is a throughput/allocation trade-off, not a
 # correctness one.
@@ -717,18 +720,6 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
     }
 
 
-def _stored_snapshot(session: Session) -> tuple[Any, dict[str, Any] | None]:
-    """Return the cache row and its decoded payload, or None when unusable."""
-    cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
-    if cached is None:
-        return None, None
-    try:
-        decoded = json.loads(cached.value)
-    except json.JSONDecodeError:
-        return cached, None
-    return cached, decoded if isinstance(decoded, dict) else None
-
-
 def snapshot(*, force: bool = False) -> dict[str, Any]:
     """Return the shared cached snapshot, preferring a stale one to a rebuild.
 
@@ -747,44 +738,13 @@ def snapshot(*, force: bool = False) -> dict[str, Any]:
     worker at a time; the others go on serving the stale payload rather than
     turning cache contention into a 500.
     """
-    now = utcnow()
-    # One connection on the path almost every request takes. Holding the
-    # rebuild lock here too cost two, which is a webservice worker's whole pool,
-    # so a single request starved its own worker and the next one waited out
-    # pool_timeout. The lock decides who may rebuild; reading the stored copy
-    # is not rebuilding.
-    with db.session_scope() as session:
-        cached, cached_payload = _stored_snapshot(session)
-        if cached_payload is not None and not force and cached.updated_at >= now - SNAPSHOT_STALE_LIMIT:
-            return cached_payload
-
-    # Missing, or stale past the bound on how long a dead refresh job may
-    # freeze the page. Only here is the lock worth its connection.
-    with (
-        db.advisory_lock("catalog-statistics-refresh", timeout_seconds=2) as acquired,
-        db.session_scope() as session,
-    ):
-        # Re-read first: whoever held the lock while this request queued for it
-        # has probably just stored a fresh copy.
-        cached, cached_payload = _stored_snapshot(session)
-        if cached_payload is not None and not force:
-            serve_stale = cached.updated_at >= now - SNAPSHOT_STALE_LIMIT or not acquired
-            if serve_stale:
-                return cached_payload
-        payload = build_snapshot(session, now=now.replace(tzinfo=UTC))
-        if acquired:
-            _store(session, payload, now)
-        return payload
-
-
-def _store(session: Session, payload: dict[str, Any], now: datetime) -> None:
-    """Write one rebuilt snapshot into the shared cache row."""
-    cached = session.get(ApiCacheMeta, SNAPSHOT_KEY)
-    if cached is None:
-        cached = ApiCacheMeta(key=SNAPSHOT_KEY, value="")
-        session.add(cached)
-    cached.value = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    cached.updated_at = now
+    return snapshot_cache.get_or_rebuild(
+        policy=SNAPSHOT_POLICY,
+        force=force,
+        now=utcnow(),
+        builder=build_snapshot,
+        database=db,
+    )
 
 
 def refresh() -> dict[str, Any]:
@@ -795,17 +755,17 @@ def refresh() -> dict[str, Any]:
     allowed to store, and because the caller needs to report whether the
     stored copy actually moved.
     """
-    now = utcnow()
-    with (
-        db.advisory_lock("catalog-statistics-refresh", timeout_seconds=2) as acquired,
-        db.session_scope() as session,
-    ):
-        if not acquired:
-            return {"stored": False, "reason": "another refresh holds the lock"}
-        payload = build_snapshot(session, now=now.replace(tzinfo=UTC))
-        _store(session, payload, now)
-        return {
-            "stored": True,
-            "generatedAt": payload["generatedAt"],
-            "totalTools": payload["catalog"]["totalTools"],
-        }
+    stored, payload = snapshot_cache.refresh(
+        policy=SNAPSHOT_POLICY,
+        now=utcnow(),
+        builder=build_snapshot,
+        database=db,
+    )
+    if not stored:
+        return {"stored": False, "reason": "another refresh holds the lock"}
+    assert payload is not None  # noqa: S101 - stored implies a built payload
+    return {
+        "stored": True,
+        "generatedAt": payload["generatedAt"],
+        "totalTools": payload["catalog"]["totalTools"],
+    }

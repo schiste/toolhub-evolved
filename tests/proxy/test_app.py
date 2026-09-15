@@ -699,20 +699,21 @@ def test_path_traversal_falls_back_to_index_not_the_file():
 def test_client_cache_policy_mirrors_the_server_policy():
     """The SPA duplicates the server's freshness windows; fail if they drift.
 
-    public_html/lib/core/api.js keeps its own copy of the cache policy so it can
+    public_html/lib/core/api-cache-policy.js owns the client copy so it can
     decide synchronously whether a cached response is still fresh. Two hand-kept
     copies of the same numbers drift, and the failure is silent: the browser
     would serve something the shared cache already considers stale (or refetch
-    something it considers fresh). Recompute one from the other instead.
+    something it considers fresh). Keep this canonical client module aligned
+    with the server policy.
     """
     from backend import api_cache
 
-    source = (ROOT / "public_html" / "lib" / "core" / "api.js").read_text(encoding="utf-8")
+    source = (ROOT / "public_html" / "lib" / "core" / "api-cache-policy.js").read_text(encoding="utf-8")
 
     def js_ttl_ms(name: str) -> int:
         # e.g. `const API_SEARCH_TTL_MS = 30 * 60 * 1000;`
         match = re.search(rf"const {name}\s*=\s*([0-9*\s]+);", source)
-        assert match, f"{name} not found in api.js — the client policy moved"
+        assert match, f"{name} not found in api-cache-policy.js — the client policy moved"
         return eval(match.group(1))  # noqa: S307 - digits and '*' only, matched by the regex above
 
     expected = {
@@ -726,7 +727,7 @@ def test_client_cache_policy_mirrors_the_server_policy():
     }
     for js_name, server_seconds in expected.items():
         assert js_ttl_ms(js_name) == server_seconds * 1000, (
-            f"{js_name} in api.js disagrees with backend/api_cache.py ({server_seconds}s)"
+            f"{js_name} in api-cache-policy.js disagrees with backend/api_cache.py ({server_seconds}s)"
         )
 
 

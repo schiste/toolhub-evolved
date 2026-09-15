@@ -6211,7 +6211,7 @@ def test_official_write_requires_stored_toolhub_grant(client):
     sign_in(client, uid)
     resp = client.post("/v1/toolhub/tools/", json={"name": "x"}, headers={"X-CSRF-Token": "tok"})
     assert resp.status_code == 401
-    assert resp.get_json()["reauth"] is True
+    assert resp.get_json() == {"error": toolhub.TOOLHUB_REAUTH_MESSAGE, "reauth": True}
 
 
 def test_official_tool_write_forwards_with_bearer_token(client, monkeypatch):
@@ -6772,9 +6772,25 @@ def test_write_lifecycle_requires_toolhub_grant_before_fallback(client):
     sign_in(client, uid)
     resp = client.post("/v1/write/tools/", json=TOOL_WRITE_PAYLOAD, headers={"X-CSRF-Token": "tok"})
     assert resp.status_code == 401
-    assert resp.get_json()["reauth"] is True
+    assert resp.get_json() == {"error": toolhub.TOOLHUB_REAUTH_MESSAGE, "reauth": True}
     with db.session_scope() as s:
         assert s.query(ToolRecord).count() == 0
+
+
+@pytest.mark.parametrize("path", ["/v1/toolhub/tools/", "/v1/write/tools/"])
+def test_write_bridges_hide_auth_exception_details(client, monkeypatch, path):
+    uid = add_user()
+    sign_in(client, uid)
+
+    def raise_auth_error(*_args, **_kwargs):
+        raise toolhub.ToolhubAuthError("secret token and stack trace")
+
+    monkeypatch.setattr(toolhub, "api_request", raise_auth_error)
+    payload = {"name": "x"} if path.startswith("/v1/toolhub/") else TOOL_WRITE_PAYLOAD
+    resp = client.post(path, json=payload, headers={"X-CSRF-Token": "tok"})
+
+    assert resp.status_code == 401
+    assert resp.get_json() == {"error": toolhub.TOOLHUB_REAUTH_MESSAGE, "reauth": True}
 
 
 def test_write_annotations_and_crawler_failures_store_local_fallbacks(client, monkeypatch):

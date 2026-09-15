@@ -2,9 +2,8 @@
 """The /v1/toolhub/* endpoints, split out of backend/v1.py.
 
 URL paths are unchanged; only the Flask endpoint names move under their
-own blueprint. Helpers still shared with other families are reached as
-`v1.<name>` so there is exactly one binding for each and patching or
-reloading backend.v1 keeps working.
+own blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 from flask import Blueprint, Response, jsonify, request
@@ -12,10 +11,10 @@ from flask import Blueprint, Response, jsonify, request
 from backend import (
     authz,
     toolhub,
-    v1,
 )
 from backend import v1_common as common
 from backend.security import write_guard
+from backend.v1_policy import HTTP_NO_CONTENT
 
 v1_toolhub_bp = Blueprint("v1_toolhub", __name__)
 
@@ -29,8 +28,8 @@ def _official_response(method: str, path: str, payload: object | None = None) ->
         # toolhub.api_path refused the path (outside /api/, or a dot segment that
         # urllib3 would normalize into an escape). Nothing left the process.
         return common.bad("invalid official Toolhub path")
-    except toolhub.ToolhubAuthError as exc:
-        resp = jsonify({"error": str(exc), "reauth": True})
+    except toolhub.ToolhubAuthError:
+        resp = jsonify({"error": toolhub.TOOLHUB_REAUTH_MESSAGE, "reauth": True})
         resp.status_code = 401
         return resp
     except toolhub.ToolhubAPIError as exc:
@@ -45,7 +44,7 @@ def _official_response(method: str, path: str, payload: object | None = None) ->
         return resp
     common.invalidate_official_api_cache(path, payload, body)
     common.record_successful_toolhub_write(user, method, path, payload, body)
-    if status == v1.HTTP_NO_CONTENT:
+    if status == HTTP_NO_CONTENT:
         return jsonify({"ok": True})
     resp = jsonify({"ok": True, "toolhub": body})
     resp.status_code = status

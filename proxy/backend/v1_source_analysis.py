@@ -2,9 +2,8 @@
 """The /v1/source-analysis/* endpoints, split out of backend/v1.py.
 
 URL paths are unchanged; only the Flask endpoint names move under their
-own blueprint. Helpers still shared with other families are reached as
-`v1.<name>` so there is exactly one binding for each and patching or
-reloading backend.v1 keeps working.
+own blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 from typing import Any
@@ -18,7 +17,6 @@ from backend import (
     maintainer_index,
     people_index,
     source_analyzer,
-    v1,
 )
 from backend import v1_common as common
 from backend.models import (
@@ -33,6 +31,12 @@ from backend.sync import (
     SYNC_EVOLVED_REAL,
     clean_error,
     clean_int,
+)
+from backend.v1_policy import (
+    SOURCE_ANALYSIS_DEFAULT_LIMIT,
+    SOURCE_ANALYSIS_MAX_LIMIT,
+    SOURCE_ANALYSIS_NOT_FOUND,
+    SOURCE_ANALYSIS_REVIEW_STATUSES,
 )
 
 v1_source_analysis_bp = Blueprint("v1_source_analysis", __name__)
@@ -102,8 +106,8 @@ def v1_source_analysis_list() -> Response:
     assert uid is not None  # noqa: S101 — login_required guarantees this
     common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     limit = min(
-        max(clean_int(request.args.get("limit")) or v1.SOURCE_ANALYSIS_DEFAULT_LIMIT, 1),
-        v1.SOURCE_ANALYSIS_MAX_LIMIT,
+        max(clean_int(request.args.get("limit")) or SOURCE_ANALYSIS_DEFAULT_LIMIT, 1),
+        SOURCE_ANALYSIS_MAX_LIMIT,
     )
     tool_name = common.clean_name(request.args.get("tool", ""))
     stmt = select(SourceAnalysisReport).where(SourceAnalysisReport.user_id == uid)
@@ -185,7 +189,7 @@ def v1_source_analysis_detail(report_id: int) -> Response:
     with db.session_scope() as s:
         row = s.get(SourceAnalysisReport, report_id)
         if row is None or row.user_id != uid:
-            return common.deny(common.HTTP_NOT_FOUND, v1.SOURCE_ANALYSIS_NOT_FOUND)
+            return common.deny(common.HTTP_NOT_FOUND, SOURCE_ANALYSIS_NOT_FOUND)
         payload = common.source_analysis_payload(row)
     return jsonify({"sourceAnalysis": payload})
 
@@ -202,13 +206,13 @@ def v1_source_analysis_review(report_id: int) -> Response:
         return bad
     assert body is not None  # noqa: S101 — common.json_object_body returned no error
     review_status = str(common.payload_value(body, "reviewStatus", "review_status") or "").strip()
-    if review_status not in v1.SOURCE_ANALYSIS_REVIEW_STATUSES:
+    if review_status not in SOURCE_ANALYSIS_REVIEW_STATUSES:
         return common.bad("reviewStatus must be open, approved, or rejected")
     review_notes = clean_error(common.payload_value(body, "reviewNotes", "review_notes"))
     with db.session_scope() as s:
         row = s.get(SourceAnalysisReport, report_id)
         if row is None or row.user_id != uid:
-            return common.deny(common.HTTP_NOT_FOUND, v1.SOURCE_ANALYSIS_NOT_FOUND)
+            return common.deny(common.HTTP_NOT_FOUND, SOURCE_ANALYSIS_NOT_FOUND)
         row.review_status = review_status
         row.review_notes = review_notes
         row.reviewed_at = None if review_status == REVIEW_OPEN else utcnow()

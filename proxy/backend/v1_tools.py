@@ -2,9 +2,8 @@
 """The /v1/tools/* endpoints, split out of backend/v1.py.
 
 URL paths are unchanged; only the Flask endpoint names move under their
-own blueprint. Helpers still shared with other families are reached as
-`v1.<name>` so there is exactly one binding for each and patching or
-reloading backend.v1 keeps working.
+own blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 from datetime import timedelta
@@ -22,9 +21,9 @@ from backend import (
     people_policy,
     tool_summaries,
     toolhub,
-    v1,
 )
 from backend import v1_common as common
+from backend import v1_compat as compat
 from backend.author_claims import (
     DISPLAY_NAME_CLAIM_TTL,
     author_names_from_toolhub_tool,
@@ -65,6 +64,8 @@ from backend.toolinfo_control import (
     challenge_payload,
     fetch_matching_item,
 )
+from backend.v1_policy import CLAIM_METHODS as DEFAULT_CLAIM_METHODS
+from backend.v1_policy import EVENT_TYPES as DEFAULT_EVENT_TYPES
 
 v1_tools_bp = Blueprint("v1_tools", __name__)
 
@@ -223,7 +224,7 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
         return bad
     assert body is not None  # noqa: S101 - body parser returned no error
     method = str(common.payload_value(body, "method") or "").strip()
-    if method not in v1.CLAIM_METHODS:
+    if method not in compat.value("CLAIM_METHODS", DEFAULT_CLAIM_METHODS):
         return common.bad("unknown claim verification method")
     if method == AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS:
         return common.deny(
@@ -264,7 +265,7 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
             toolforge_names = toolforge_names_from_toolhub_tool(tool_name, tool)
             if not toolforge_names:
                 return common.deny(common.HTTP_CONFLICT, "this Toolhub record does not identify a Toolforge tool")
-            resolved = v1.PUBLIC_IDENTITY_RESOLVER.resolve(stored_user.wikimedia_global_user_id or "")
+            resolved = compat.value("PUBLIC_IDENTITY_RESOLVER").resolve(stored_user.wikimedia_global_user_id or "")
             toolforge_identity = resolved.toolforge if resolved is not None else None
             memberships = {
                 value.casefold(): value for value in (toolforge_identity.tool_names if toolforge_identity else ())
@@ -276,7 +277,7 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
                     "Toolforge membership could not be verified for this Wikimedia account",
                 )
             rows = [
-                v1.TOOLFORGE_MAINTAINER_PROVIDER.record_membership(
+                compat.value("TOOLFORGE_MAINTAINER_PROVIDER").record_membership(
                     s,
                     stored_user,
                     tool_name=tool_name,
@@ -315,7 +316,9 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
                 item = fetch_matching_item(toolinfo_url, tool_name)
             except Exception as exc:  # noqa: BLE001 - normalize bounded external proof failures
                 return common.bad(f"Could not read signed toolinfo: {clean_error(str(exc)) or 'fetch failed'}")
-            rows = v1.SIGNED_TOOLINFO_PROVIDER.verify(s, stored_user, toolinfo=item, evidence_url=toolinfo_url)
+            rows = compat.value("SIGNED_TOOLINFO_PROVIDER").verify(
+                s, stored_user, toolinfo=item, evidence_url=toolinfo_url
+            )
             if not rows:
                 return common.bad("the matching toolinfo item has no supported signature metadata")
         s.flush()
@@ -443,7 +446,7 @@ def v1_tool_event(name: str) -> Response:
     clean_name = common.clean_name(name)
     value = request.get_json(silent=True) or {}
     event_type = value.get("eventType") if isinstance(value, dict) else None
-    if clean_name is None or event_type not in v1.EVENT_TYPES:
+    if clean_name is None or event_type not in compat.value("EVENT_TYPES", DEFAULT_EVENT_TYPES):
         return common.bad("eventType must be one of view, launch, save, list_add")
     now = utcnow()
     with db.session_scope() as s:

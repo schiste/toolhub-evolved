@@ -2,9 +2,8 @@
 """The /v1/people/* endpoints, split out of backend/v1.py.
 
 URL paths are unchanged; only the Flask endpoint names move under their
-own blueprint. Helpers still shared with other families are reached as
-`v1.<name>` so there is exactly one binding for each and patching or
-reloading backend.v1 keeps working.
+own blueprint. Shared policy has an explicit owner, while the compatibility
+adapter preserves provider patch points for existing integrations.
 """
 
 from urllib.parse import urlencode
@@ -16,7 +15,6 @@ from backend import (
     paging,
     people_index,
     security,
-    v1,
 )
 from backend import v1_common as common
 from backend.sync import (
@@ -24,6 +22,7 @@ from backend.sync import (
     SYNC_EVOLVED_REAL,
     clean_int,
 )
+from backend.v1_policy import HTTP_TOO_MANY
 
 v1_people_bp = Blueprint("v1_people", __name__)
 
@@ -79,7 +78,7 @@ def _person_tool_page_url(page: int | None) -> str | None:
 def v1_tool_people(name: str) -> Response:
     """Read the local people projection for a canonical Toolhub tool."""
     if security.read_rate_limited(request.remote_addr):
-        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(HTTP_TOO_MANY, "rate limit exceeded")
     clean_name = common.clean_name(name)
     if clean_name is None:
         return common.bad("tool name is required")
@@ -91,7 +90,7 @@ def v1_tool_people(name: str) -> Response:
 def v1_people() -> Response:
     """Search public Evolved people without treating handles as stable ids."""
     if security.read_rate_limited(request.remote_addr):
-        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(HTTP_TOO_MANY, "rate limit exceeded")
     query = str(request.args.get("q") or "").strip()
     project = str(request.args.get("project") or "").strip()
     if len(query) > MAX_DIRECTORY_TEXT_LENGTH:
@@ -140,7 +139,7 @@ def v1_people() -> Response:
 def v1_people_attributions() -> Response:
     """Search display-only labels without publishing them as people."""
     if security.read_rate_limited(request.remote_addr):
-        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(HTTP_TOO_MANY, "rate limit exceeded")
     query = str(request.args.get("q") or "").strip()
     project = str(request.args.get("project") or "").strip()
     if len(query) > MAX_DIRECTORY_TEXT_LENGTH:
@@ -180,7 +179,7 @@ def v1_people_attributions() -> Response:
 def v1_people_resolve() -> Response:
     """Resolve a legacy name route only through one unique exact handle."""
     if security.read_rate_limited(request.remote_addr):
-        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(HTTP_TOO_MANY, "rate limit exceeded")
     handle = str(request.args.get("handle") or "").strip()
     if not handle:
         return common.bad("handle is required")
@@ -201,7 +200,7 @@ def v1_people_resolve() -> Response:
 def v1_person(person_reference: str) -> Response:
     """Return one person by canonical slug or legacy immutable public id."""
     if security.read_rate_limited(request.remote_addr):
-        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(HTTP_TOO_MANY, "rate limit exceeded")
     try:
         tool_page = _positive_arg("tool_page", 1)
         tool_page_size = _positive_arg("tool_page_size", 24, maximum=50)
