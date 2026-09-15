@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: a-comment-is-not-a-declaration -->
 <!-- Release title: A Comment Is Not A Declaration -->
-<!-- Source range: d169b7a6..811312e1 (20 commits) -->
+<!-- Source range: d169b7a6..f8b1455c (24 commits) -->
 
 # Technical and Marketing Notes
 
@@ -14,3 +14,4 @@
 - Environment-specific settings now use one shared parser, snapshot rebuilds use one cache lifecycle, and source analysis accepts extensible dependency scanners.
 - Official writes share one transport and lifecycle policy with centralized fallback persistence; API tool normalization, cache policy, and tool-form contracts are separate while preserving existing payload boundaries. The JS toolchain pins the fixed TOML parser release 1.8.0.
 - People-directory queries, v1 route policy, response contracts, serializers, and force-graph data/rendering surfaces are isolated from their aggregators so each concern can evolve independently.
+- The Python proxy quality gate now exercises invalid environment settings and keeps its shared snapshot lifecycle at literal 100% whole-tree coverage; uncalled adapter wrappers were removed after the cache extraction.
