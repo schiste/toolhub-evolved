@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Stateless streamable-HTTP MCP endpoint behavior."""
 
+import hashlib
 import json
 from datetime import timedelta
 
@@ -74,6 +75,98 @@ def _seed(s):
     _facet(s, "sfedits", "detected_technology", "python", "Python", 9400)
     _facet(s, "sfedits", "technology", "python", "Python (declared)", 10000)
     _facet(s, "cite-checker", "dependency", "pypi:pywikibot", "pywikibot (pypi)", 8000)
+
+
+def _skill_record():
+    """One repository record containing two independently addressable skills."""
+    source = {
+        "id": "github:example/skill-repository",
+        "repository": "https://github.com/example/skill-repository",
+        "ref": "main",
+        "commit": "abc123",
+        "base_path": "skills/",
+    }
+
+    def resource(path, uri, content, mime_type="text/markdown"):
+        body = content.encode("utf-8")
+        return {
+            "path": path,
+            "uri": uri,
+            "mime_type": mime_type,
+            "size": len(body),
+            "sha256": hashlib.sha256(body).hexdigest(),
+            # Inline bytes model the local resource cache. The public manifest
+            # never exposes this field; resources/read serves it lazily.
+            "content": content,
+        }
+
+    return {
+        "name": "skill-repository",
+        "title": "Repository skills",
+        "source": source,
+        "skills": [
+            {
+                "tool_type": "skill",
+                "id": "github:example/skill-repository#skills/lookup",
+                "name": "lookup",
+                "description": "Look up Wikimedia project data.",
+                "projects": ["enwiki", "wikidatawiki"],
+                "skill": {
+                    "root": "skills/lookup",
+                    "entrypoint": "SKILL.md",
+                    "frontmatter": {
+                        "name": "lookup",
+                        "description": "Look up Wikimedia project data.",
+                        "projects": ["enwiki", "wikidatawiki"],
+                        "license": "GPL-3.0-or-later",
+                    },
+                    "resources": [
+                        resource(
+                            "skills/lookup/SKILL.md",
+                            "skill://toolhub-evolved/catalog/lookup/SKILL.md",
+                            "# Lookup\n\nUse the catalog.\n",
+                        ),
+                        resource(
+                            "skills/lookup/references/api.md",
+                            "skill://toolhub-evolved/catalog/lookup/references/api.md",
+                            "# API reference\n",
+                        ),
+                    ],
+                },
+                "evolved": {
+                    "visibility": "public",
+                    "review_status": "approved",
+                    "mcp": {"resource_uri": "skill://toolhub-evolved/catalog/lookup/SKILL.md"},
+                },
+            },
+            {
+                "tool_type": "skill",
+                "id": "github:example/skill-repository#skills/summarize",
+                "name": "summarize",
+                "description": "Summarize a Wikimedia project report.",
+                "skill": {
+                    "root": "skills/summarize",
+                    "entrypoint": "SKILL.md",
+                    "frontmatter": {
+                        "name": "summarize",
+                        "description": "Summarize a Wikimedia project report.",
+                    },
+                    "resources": [
+                        resource(
+                            "skills/summarize/SKILL.md",
+                            "skill://toolhub-evolved/catalog/summarize/SKILL.md",
+                            "# Summarize\n",
+                        )
+                    ],
+                },
+                "evolved": {
+                    "visibility": "public",
+                    "review_status": "approved",
+                    "mcp": {"resource_uri": "skill://toolhub-evolved/catalog/summarize/SKILL.md"},
+                },
+            },
+        ],
+    }
 
 
 def test_mcp_rate_limiter_trips_and_clears():
@@ -178,6 +271,183 @@ def test_tools_list_shapes(client):
     for tool in tools:
         assert tool["description"]
         assert tool["inputSchema"]["type"] == "object"
+
+
+def test_skill_capabilities_are_additive(client):
+    initialized = _rpc(client, "initialize", {"protocolVersion": "2025-06-18"}).get_json()["result"]
+    assert initialized["capabilities"]["resources"] == {"subscribe": False, "listChanged": False}
+    assert initialized["capabilities"]["extensions"]["io.modelcontextprotocol/skills"] == {
+        "directoryRead": False
+    }
+    discovered = _rpc(client, "server/discover").get_json()["result"]
+    assert discovered["capabilities"]["resources"] == {"subscribe": False, "listChanged": False}
+    assert "io.modelcontextprotocol/skills" in discovered["capabilities"]["extensions"]
+    # The existing tools surface remains exactly the four catalog tools.
+    assert [tool["name"] for tool in _rpc(client, "tools/list").get_json()["result"]["tools"]] == [
+        "search_tools",
+        "facet_tools",
+        "list_facet_values",
+        "get_tool",
+    ]
+
+
+def test_skills_list_keeps_multiple_skills_from_one_repository(client):
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="skill-repository",
+                record=_skill_record(),
+                expires_at=utcnow() + timedelta(hours=1),
+                stale_until=utcnow() + timedelta(hours=2),
+            )
+        )
+
+    result = _rpc(client, "skills/list").get_json()["result"]
+    assert result["resultType"] == "complete"
+    assert [skill["frontmatter"]["name"] for skill in result["skills"]] == ["lookup", "summarize"]
+    lookup = result["skills"][0]
+    assert lookup["uri"] == "skill://toolhub-evolved/catalog/lookup/SKILL.md"
+    assert [resource["uri"] for resource in lookup["resources"]] == [
+        "skill://toolhub-evolved/catalog/lookup/SKILL.md",
+        "skill://toolhub-evolved/catalog/lookup/references/api.md",
+    ]
+    assert lookup["resources"][0]["size"] == len("# Lookup\n\nUse the catalog.\n".encode("utf-8"))
+    assert "content" not in lookup["resources"][0]
+    assert lookup["frontmatter"]["projects"] == ["enwiki", "wikidatawiki"]
+    assert lookup["_meta"]["io.modelcontextprotocol/skills/evolved"]["review_status"] == "approved"
+    assert lookup["_meta"]["io.modelcontextprotocol/skills/source"]["commit"] == "abc123"
+    assert lookup["_meta"]["io.modelcontextprotocol/skills/catalog"]["projects"] == ["enwiki", "wikidatawiki"]
+
+
+def test_evolved_catalog_artifacts_and_skill_pagination_are_supported(client):
+    record = _skill_record()
+    evolved_catalog = {
+        "_schema": "/toolinfo/evolved/1.0.0",
+        "type": "evolved-catalog",
+        "source": record["source"],
+        "artifacts": record["skills"],
+    }
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="evolved-skill-catalog",
+                record=evolved_catalog,
+                expires_at=utcnow() + timedelta(hours=1),
+                stale_until=utcnow() + timedelta(hours=2),
+            )
+        )
+
+    first = _rpc(client, "skills/list", {"limit": 1}).get_json()["result"]
+    assert [skill["frontmatter"]["name"] for skill in first["skills"]] == ["lookup"]
+    assert first["nextCursor"] == "1"
+    assert first["skills"][0]["_meta"]["io.modelcontextprotocol/skills/artifactId"].endswith("#skills/lookup")
+    second = _rpc(client, "skills/list", {"cursor": first["nextCursor"], "limit": 1}).get_json()["result"]
+    assert [skill["frontmatter"]["name"] for skill in second["skills"]] == ["summarize"]
+    assert "nextCursor" not in second
+
+
+def test_skill_uri_generation_preserves_repository_path_and_object_shape(client):
+    skill = _skill_record()["skills"][0]
+    for resource in skill["skill"]["resources"]:
+        resource.pop("uri")
+    skill["evolved"]["mcp"].pop("resource_uri")
+    record = {
+        "name": "object-shaped-skill-repository",
+        "source": {
+            "id": "github:example/object-shaped-skill-repository",
+            "repository": "https://github.com/example/object-shaped-skill-repository",
+        },
+        # Accept the single-skill spelling as well as the multi-skill array.
+        "skills": skill,
+    }
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="object-shaped-skill-repository",
+                record=record,
+                expires_at=utcnow() + timedelta(hours=1),
+                stale_until=utcnow() + timedelta(hours=2),
+            )
+        )
+
+    result = _rpc(client, "skills/list").get_json()["result"]
+    assert [entry["frontmatter"]["name"] for entry in result["skills"]] == ["lookup"]
+    uri = result["skills"][0]["uri"]
+    assert uri == "skill://toolhub-evolved/catalog/github/example/object-shaped-skill-repository/skills/lookup/SKILL.md"
+    assert result["skills"][0]["resources"][0]["uri"] == uri
+
+
+def test_skills_get_and_resources_read_are_lazy(client):
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="skill-repository",
+                record=_skill_record(),
+                expires_at=utcnow() + timedelta(hours=1),
+                stale_until=utcnow() + timedelta(hours=2),
+            )
+        )
+
+    uri = "skill://toolhub-evolved/catalog/lookup/SKILL.md"
+    skill = _rpc(client, "skills/get", {"uri": uri}).get_json()["result"]["skill"]
+    assert skill["uri"] == uri
+    assert skill["frontmatter"]["name"] == "lookup"
+    assert skill["resources"][0]["digest"].startswith("sha256:")
+
+    listed = _rpc(client, "resources/list").get_json()["result"]["resources"]
+    assert [resource["uri"] for resource in listed] == [
+        "skill://toolhub-evolved/catalog/lookup/SKILL.md",
+        "skill://toolhub-evolved/catalog/lookup/references/api.md",
+        "skill://toolhub-evolved/catalog/summarize/SKILL.md",
+    ]
+    read = _rpc(client, "resources/read", {"uri": uri}).get_json()["result"]
+    assert read["contents"] == [
+        {"uri": uri, "mimeType": "text/markdown", "text": "# Lookup\n\nUse the catalog.\n"}
+    ]
+
+    assert _rpc(client, "skills/get", {"uri": "skill://toolhub-evolved/catalog/missing/SKILL.md"}).get_json()[
+        "error"
+    ]["code"] == -32602
+    assert _rpc(client, "resources/read", {"uri": "skill://toolhub-evolved/catalog/missing.txt"}).get_json()[
+        "error"
+    ]["code"] == -32602
+
+
+def test_manifest_without_cached_body_stays_discoverable_but_not_readable(client):
+    record = _skill_record()
+    for skill in record["skills"]:
+        for resource in skill["skill"]["resources"]:
+            resource.pop("content")
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="metadata-only-skill-repository",
+                record=record,
+                expires_at=utcnow() + timedelta(hours=1),
+                stale_until=utcnow() + timedelta(hours=2),
+            )
+        )
+    uri = "skill://toolhub-evolved/catalog/lookup/SKILL.md"
+    assert _rpc(client, "skills/get", {"uri": uri}).get_json()["result"]["skill"]["frontmatter"]["name"] == "lookup"
+    error = _rpc(client, "resources/read", {"uri": uri}).get_json()["error"]
+    assert error["code"] == -32602
+    assert "not available" in error["message"]
+
+
+def test_malformed_skill_manifest_is_not_served(client):
+    record = _skill_record()
+    record["skills"][0]["skill"]["resources"][0]["sha256"] = "0" * 64
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="invalid-skill-repository",
+                record=record,
+                expires_at=utcnow() + timedelta(hours=1),
+                stale_until=utcnow() + timedelta(hours=2),
+            )
+        )
+    result = _rpc(client, "skills/list").get_json()["result"]
+    assert [skill["frontmatter"]["name"] for skill in result["skills"]] == ["summarize"]
 
 
 def test_search_tools_call(client):
