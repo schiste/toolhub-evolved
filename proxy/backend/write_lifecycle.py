@@ -125,8 +125,8 @@ def attempt_official_write(
         # A path rejected before the request leaves the process is a denial, not
         # an upstream outage that should become a local draft.
         return {}, common.bad("invalid official Toolhub path")
-    except toolhub.ToolhubAuthError as exc:
-        resp = jsonify({"error": str(exc), "reauth": True})
+    except toolhub.ToolhubAuthError:
+        resp = jsonify({"error": toolhub.TOOLHUB_REAUTH_MESSAGE, "reauth": True})
         resp.status_code = common.HTTP_UNAUTHORIZED
         return {}, resp
     except toolhub.ToolhubAPIError as exc:

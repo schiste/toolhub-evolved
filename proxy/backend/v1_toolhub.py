@@ -28,8 +28,8 @@ def _official_response(method: str, path: str, payload: object | None = None) ->
         # toolhub.api_path refused the path (outside /api/, or a dot segment that
         # urllib3 would normalize into an escape). Nothing left the process.
         return common.bad("invalid official Toolhub path")
-    except toolhub.ToolhubAuthError as exc:
-        resp = jsonify({"error": str(exc), "reauth": True})
+    except toolhub.ToolhubAuthError:
+        resp = jsonify({"error": toolhub.TOOLHUB_REAUTH_MESSAGE, "reauth": True})
         resp.status_code = 401
         return resp
     except toolhub.ToolhubAPIError as exc:
