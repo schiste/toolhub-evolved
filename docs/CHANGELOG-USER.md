@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: a-comment-is-not-a-declaration -->
 <!-- Release title: A Comment Is Not A Declaration -->
-<!-- Source range: d169b7a6..a813ad13 (25 commits) -->
+<!-- Source range: d169b7a6..d862c6ec (30 commits) -->
 
 # What's New for Users
 
@@ -13,4 +13,4 @@
 - Tool pages, people details, and the relationship graph now keep a more consistent picture of the catalog when data is refreshed or edited.
 - Creating and editing a tool now keeps official details and local curation changes coordinated through the same flow, while preserving legacy form data and handling optional annotation fields clearly.
 - Catalog views normalize tool information consistently, so the same tool is represented the same way across screens.
-- The proxy's environment fallbacks and catalog snapshot paths now meet the project's complete coverage guarantee, keeping refresh failures visible during validation instead of after release; its navigation graph is refreshed alongside those code changes.
+- The proxy's environment fallbacks and catalog snapshot paths now meet the project's complete coverage guarantee, keeping refresh failures visible during validation instead of after release; its navigation graph is refreshed alongside those code changes, and authentication failures now return a safe reauthentication message without exposing exception details.
