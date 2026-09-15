@@ -1,0 +1,4 @@
+{"module":"proxy.backend.v1_compat","symbol":"Any","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6p36szkshfqf6sksm2jntjyrnu","file":"proxy/backend/v1_compat.py"}
+{"module":"proxy.backend.v1_compat","symbol":"getattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kumt7lau64yn2ucktrdw3ual3q","file":"proxy/backend/v1_compat.py"}
+{"module":"proxy.backend.v1_compat","symbol":"legacy_v1","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:raotq3xqwthwsvwraiii4znuhu","file":"proxy/backend/v1_compat.py"}
+{"module":"proxy.backend.v1_compat","symbol":"value","kind":"function","node_id":"function:toolhub-evolved:xekmrk7r3nflfhoktbu3v7rrwe","file":"proxy/backend/v1_compat.py"}

@@ -4,7 +4,10 @@
 {"module":"proxy.backend.v1_moderation","symbol":"CatalogCuration.deleted_at.is_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xffd3thvm37kbh3eo7hjpmekua","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"CatalogCuration.id.desc","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:knnsguy645sok77cs2jwn44bcq","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"CatalogCuration.modified_at.desc","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2jq3edclc2zouk5p73xvvn2o4q","file":"proxy/backend/v1_moderation.py"}
+{"module":"proxy.backend.v1_moderation","symbol":"MODERATION_KINDS","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lk5jvqep5wexankezu5rgffoxm","file":"proxy/backend/v1_moderation.py"}
+{"module":"proxy.backend.v1_moderation","symbol":"MODERATION_MODELS","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wpj7gp2bsxwbpncciz2a3ksowa","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"PEOPLE_CONFLICT_STATUSES","kind":"global_variable","node_id":"global_variable:toolhub-evolved:4z6bdngcbyxlx5qf3o6niod44m","file":"proxy/backend/v1_moderation.py"}
+{"module":"proxy.backend.v1_moderation","symbol":"PUBLIC_REVIEW_STATUSES","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qjdqz6hvxn3ahvhps53vqae2xy","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"Person","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:fcsk65gwghnxkmaph5rimxjfqy","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"Person.id.in_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:buc45oxjuee4eka62joynqjdti","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"PersonReconciliationConflict","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vcaoptmehhgv56p3rswpvumxru","file":"proxy/backend/v1_moderation.py"}
@@ -135,7 +138,6 @@
 {"module":"proxy.backend.v1_moderation","symbol":"utcnow","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6if4icufikyqxsedidilvfb76i","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"utcnow","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bjrgqsbov45i5vunswcc6h35s4","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"utcnow","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kw2ajxw6updhh25y7vafet32qe","file":"proxy/backend/v1_moderation.py"}
-{"module":"proxy.backend.v1_moderation","symbol":"v1","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:m6llljmng6ijzpa46cmduyaopu","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"v1_moderation_bp","kind":"global_variable","node_id":"global_variable:toolhub-evolved:6ssubvlva255y7rstc75l2a4cm","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"v1_moderation_people_candidate_update","kind":"function","node_id":"function:toolhub-evolved:cbutiwvnl2zvz44kzw5mtov4pq","file":"proxy/backend/v1_moderation.py"}
 {"module":"proxy.backend.v1_moderation","symbol":"v1_moderation_people_candidates","kind":"function","node_id":"function:toolhub-evolved:2f34dhjdd7ckxr57pz4so767by","file":"proxy/backend/v1_moderation.py"}

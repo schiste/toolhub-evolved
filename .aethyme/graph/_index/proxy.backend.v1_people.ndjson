@@ -1,4 +1,5 @@
 {"module":"proxy.backend.v1_people","symbol":"Blueprint","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nigkcyivbnvvpdfsvd4czaikbi","file":"proxy/backend/v1_people.py"}
+{"module":"proxy.backend.v1_people","symbol":"HTTP_TOO_MANY","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cnxd7blvr3urxfrp3qxpxjbdga","file":"proxy/backend/v1_people.py"}
 {"module":"proxy.backend.v1_people","symbol":"InvalidPeopleQueryError","kind":"class","node_id":"class:toolhub-evolved:y67saenw7uxzr6uxrkj7bpysce","file":"proxy/backend/v1_people.py"}
 {"module":"proxy.backend.v1_people","symbol":"InvalidPeopleQueryError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3vbnklytxvw5vnmyzmxxxuywbq","file":"proxy/backend/v1_people.py"}
 {"module":"proxy.backend.v1_people","symbol":"InvalidPeopleQueryError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xsxn2kpiexsj7nhpkdnsnmcgfe","file":"proxy/backend/v1_people.py"}
@@ -87,7 +88,6 @@
 {"module":"proxy.backend.v1_people","symbol":"urlencode","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:f4tuxwojrddpmg7ul46j2xpkiy","file":"proxy/backend/v1_people.py"}
 {"module":"proxy.backend.v1_people","symbol":"urlencode","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rwwolt7k4a25bf6y7rgu62bpi4","file":"proxy/backend/v1_people.py"}
 {"module":"proxy.backend.v1_people","symbol":"urlencode","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tti67y7bexdmtrfxov5eov4hgm","file":"proxy/backend/v1_people.py"}
-{"module":"proxy.backend.v1_people","symbol":"v1","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kk6r3pvpmx2w3p55bj5tw4z3nq","file":"proxy/backend/v1_people.py"}
 {"module":"proxy.backend.v1_people","symbol":"v1_people","kind":"function","node_id":"function:toolhub-evolved:za72mcnbssedrwdpv74p4myzeu","file":"proxy/backend/v1_people.py"}
 {"module":"proxy.backend.v1_people","symbol":"v1_people_attributions","kind":"function","node_id":"function:toolhub-evolved:onakjbjiyq42kwas36y5zoujyu","file":"proxy/backend/v1_people.py"}
 {"module":"proxy.backend.v1_people","symbol":"v1_people_bp","kind":"global_variable","node_id":"global_variable:toolhub-evolved:3s3wo5jz5qvtynsmsqlla4kwpe","file":"proxy/backend/v1_people.py"}

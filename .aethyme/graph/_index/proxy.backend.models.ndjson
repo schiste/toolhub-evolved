@@ -55,6 +55,7 @@
 {"module":"proxy.backend.models","symbol":"REVIEW_APPROVED","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kggkncyen6aab6afaz5q5uxu2e","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"REVIEW_OPEN","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:btf2q3c24bbarrr6xzozyjtqvu","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"REVIEW_PENDING","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pj37c3f6teenxl6wpad4s4v36y","file":"proxy/backend/models.py"}
+{"module":"proxy.backend.models","symbol":"RelationshipEvidenceMetadataMixin","kind":"class","node_id":"class:toolhub-evolved:mkabsbwuajwcogkzkfxjqx3mtq","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"RepositoryAnalysisState","kind":"class","node_id":"class:toolhub-evolved:abg4jhrhf65wmh3oxnmubr5rti","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"RepositoryHostMetadata","kind":"class","node_id":"class:toolhub-evolved:7hhs7pvtknmgb3twgm6qabrlp4","file":"proxy/backend/models.py"}
 {"module":"proxy.backend.models","symbol":"SEARCH_TEXT_MAX_CHARS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:4hmsrtlksxttpp7vaxxxiprqpu","file":"proxy/backend/models.py"}
