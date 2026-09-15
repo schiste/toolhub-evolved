@@ -39,8 +39,6 @@
 {"module":"proxy.backend.catalog_coverage","symbol":"_bucket","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tngzkmwiccimfbjkxejfcpbqae","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"_primary","kind":"function","node_id":"function:toolhub-evolved:jvbyq2bhnbfw6ff7he3r5wzubi","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"_primary","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yfep6p3q6x4prtdpokvwv3p4ia","file":"proxy/backend/catalog_coverage.py"}
-{"module":"proxy.backend.catalog_coverage","symbol":"_store","kind":"function","node_id":"function:toolhub-evolved:4qcxtvgpt4h7khnt2bg4wmnks4","file":"proxy/backend/catalog_coverage.py"}
-{"module":"proxy.backend.catalog_coverage","symbol":"_stored_snapshot","kind":"function","node_id":"function:toolhub-evolved:4hmqbw5kg232dextxq5rbk4lcu","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"annotations","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vzrwc477usqqs5g66sn4kwqqj4","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"blob.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:q7xhsg7ffzp3h6we2zssjutc2i","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"bucket.startswith","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:fgr7ytunvxpbkz6ssbxobisoam","file":"proxy/backend/catalog_coverage.py"}
@@ -73,9 +71,7 @@
 {"module":"proxy.backend.catalog_coverage","symbol":"snapshot","kind":"function","node_id":"function:toolhub-evolved:dh4xex33n35ogrlmd4pxg3kdwm","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"snapshot_cache","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cfw55p5q6lw3jew7ayxhkp6htm","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"snapshot_cache.get_or_rebuild","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5nlj5ineu737ciyq2gcf6h7njm","file":"proxy/backend/catalog_coverage.py"}
-{"module":"proxy.backend.catalog_coverage","symbol":"snapshot_cache.load","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qzxfpbjzolv625ftihgznsehly","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"snapshot_cache.refresh","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:uifzv7sl7gdol6r6bjfyhppkqa","file":"proxy/backend/catalog_coverage.py"}
-{"module":"proxy.backend.catalog_coverage","symbol":"snapshot_cache.store","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:swkefen4nqvprylftq7xc7tamu","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"sorted","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:itjaenkqwm2zh7eaq5mka6pjwa","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"sorted","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pk3fbjysnkdloxowwnuj3bo6oi","file":"proxy/backend/catalog_coverage.py"}
 {"module":"proxy.backend.catalog_coverage","symbol":"str","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7jxyxk755awicnkya6wtzodxsm","file":"proxy/backend/catalog_coverage.py"}
