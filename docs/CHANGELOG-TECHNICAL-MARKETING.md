@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: a-comment-is-not-a-declaration -->
 <!-- Release title: A Comment Is Not A Declaration -->
-<!-- Source range: d169b7a6..026486488a22 (32 commits) -->
+<!-- Source range: d169b7a6..21977d0db65e (33 commits) -->
 
 # Technical and Marketing Notes
 
@@ -13,4 +13,4 @@
 - The scan loop skips license files and any file whose content digest it has already read. Three copies of the GPL had satisfied the "more than one file agrees" corroboration test with nothing but themselves; a copied README now counts once, and its contexts and source classes are still recorded.
 - Environment-specific settings now use one shared parser, snapshot rebuilds use one cache lifecycle, and source analysis accepts extensible dependency scanners; invalid environment fallbacks are covered, the shared snapshot lifecycle remains at literal 100% whole-tree coverage, and generated Aethyme graph artifacts stay in sync.
 - Official writes share one transport and lifecycle policy with centralized fallback persistence; API tool normalization, cache policy, and tool-form contracts are separate while preserving existing payload boundaries. Authentication failures return a stable authorization response without serializing exception details. The JS toolchain pins the fixed TOML parser release 1.8.0.
-- People-directory queries, v1 route policy, response contracts, serializers, and force-graph data/rendering surfaces are isolated from their aggregators so each concern can evolve independently. The catalog data layer now preserves all canonical metadata, including skill-target projects, and the MCP surface discovers and delivers multi-skill repository catalogs through additive skills and resources methods without changing existing tools.
+- People-directory queries, v1 route policy, response contracts, serializers, and force-graph data/rendering surfaces are isolated from their aggregators so each concern can evolve independently. The catalog data layer now preserves all canonical metadata, including skill-target projects, and the MCP surface discovers and delivers multi-skill repository catalogs through additive skills and resources methods without changing existing tools. The release regression test parses rendered metadata and compares URLs exactly, satisfying CodeQL's URL-safety check.
