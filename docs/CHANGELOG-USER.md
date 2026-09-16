@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: a-comment-is-not-a-declaration -->
 <!-- Release title: A Comment Is Not A Declaration -->
-<!-- Source range: d169b7a6..21977d0db65e (33 commits) -->
+<!-- Source range: d169b7a6..05c4b5beb (10 commits) -->
 
 # What's New for Users
 
