@@ -413,6 +413,35 @@ def test_skills_get_and_resources_read_are_lazy(client):
     ]["code"] == -32602
 
 
+def test_skill_pagination_parameter_edges_and_binary_resource(client, monkeypatch):
+    assert _rpc(client, "skills/list", {"cursor": "not-a-number"}).get_json()["error"]["code"] == -32602
+    assert _rpc(client, "skills/list", {"cursor": -1}).get_json()["error"]["code"] == -32602
+    assert _rpc(client, "skills/list", {"limit": "not-a-number"}).status_code == 200
+    assert _rpc(client, "skills/get", {"uri": ""}).get_json()["error"]["code"] == -32602
+    assert _rpc(client, "resources/read", {"uri": ""}).get_json()["error"]["code"] == -32602
+
+    from backend import mcp_server
+
+    uri = "skill://toolhub-evolved/catalog/binary/references/icon.bin"
+    resource = mcp_server.skill_catalog.SkillResource(
+        uri,
+        "icon.bin",
+        "application/octet-stream",
+        2,
+        "sha256:" + "a" * 64,
+        b"\xff\x00",
+    )
+    entry = mcp_server.skill_catalog.SkillEntry(uri, {}, (resource,), "", {}, {}, {})
+    monkeypatch.setattr(
+        mcp_server.skill_catalog,
+        "find_resource",
+        lambda candidate: (entry, resource) if candidate == uri else None,
+    )
+
+    result = _rpc(client, "resources/read", {"uri": uri}).get_json()["result"]
+    assert result["contents"] == [{"uri": uri, "mimeType": "application/octet-stream", "blob": "/wA="}]
+
+
 def test_manifest_without_cached_body_stays_discoverable_but_not_readable(client):
     record = _skill_record()
     for skill in record["skills"]:
