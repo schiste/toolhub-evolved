@@ -89,6 +89,20 @@ vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 const { applyExp, setServerUser } = await import("../../public_html/lib/core/session.js");
 const tool = await import("../../public_html/views/tool.js");
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+function hasExactMetadataUrl(html, expectedUrl) {
+	const template = document.createElement("template");
+	template.innerHTML = html;
+	return [...template.content.querySelectorAll("pre.catalog-evidence__raw")].some((pre) => {
+		try {
+			const metadata = JSON.parse(pre.textContent || "");
+			const alternates = Array.isArray(metadata) ? metadata : metadata?.url_alternates;
+			return Array.isArray(alternates) && alternates.some((alternate) => alternate?.url === expectedUrl);
+		} catch {
+			return false;
+		}
+	});
+}
+
 async function mountedDetailHtml(view, name) {
 	const originalRequestIdleCallback = window.requestIdleCallback;
 	const originalRequestAnimationFrame = window.requestAnimationFrame;
@@ -768,7 +782,7 @@ test("viewTool displays complete metadata including skill target projects", asyn
 	assert.ok(r.html.includes("Complete catalog metadata"));
 	assert.ok(r.html.includes("custom_field"));
 	assert.ok(r.html.includes('href="https://example.org/privacy"'));
-	assert.ok(r.html.includes("https://fr.example/skill"));
+	assert.ok(hasExactMetadataUrl(r.html, "https://fr.example/skill"));
 });
 
 test("viewTool renders every catalog provenance field and safe metadata variant", async () => {
