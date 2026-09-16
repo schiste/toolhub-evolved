@@ -75,7 +75,9 @@ stored.
 
 Toolhub Evolved exposes catalog discovery as a stateless HTTP MCP server for use
 in LLM-based workflows. Any MCP-capable client can add the endpoint and access
-four tools plus a prior-art-review prompt. The public
+four tools plus a prior-art-review prompt. When Evolved skill manifests are
+indexed, the same endpoint also exposes them through the experimental MCP
+Skills extension. The public
 [`/mcp-server`](https://toolhub-evolved.toolforge.org/mcp-server) guide includes
 separate, verified setup examples for Claude Code, Visual Studio Code, Cursor,
 and raw HTTP.
@@ -94,6 +96,16 @@ claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolfo
 **Prompt**:
 
 - **`prior-art-review`** — guided workflow to evaluate greenfield tool ideas. The prompt characterizes the idea, retrieves via search and facets, and reports findings in three sections: build/reuse/differentiate, adjacent tools, and recommended stack (ranked by adoption). Includes caveat instructions about coverage and facet limitations.
+
+**Skills (experimental)**:
+
+- **`skills/list`** — enumerate independently addressable skills, including multiple skills from one repository. Each entry keeps its complete frontmatter and resource manifest, so project targets, review metadata, and digests remain available without loading file contents.
+- **`skills/get`** — refresh one skill manifest by its `SKILL.md` resource URI.
+- **`resources/read`** — load one manifest-listed file on demand. The server serves only locally cached bytes and verifies them against the published size and SHA-256 digest; a manifest without cached bytes remains discoverable but is not readable until its resource cache is populated.
+
+Skills stay outside `tools/list` and are identified by their URI rather than by
+name alone. This keeps same-named skills in different repositories distinct and
+leaves existing catalog-tool clients unchanged.
 
 The endpoint speaks both legacy `initialize`-handshake protocol (2025-06-18 and earlier) and the newer 2026-07-28 stateless revision. Rate-limited to 60 requests per rolling minute per client IP; no session cookies and no request-time Toolhub call. See [`docs/deploy-toolforge.md`](docs/deploy-toolforge.md) for deployment notes and conformance testing with the official MCP inspector.
 

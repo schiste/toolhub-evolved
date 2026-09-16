@@ -85,6 +85,27 @@ function toolTable() {
 	);
 }
 
+function skillTable() {
+	return table(
+		[t("mcpServer.skillMethod", "Method"), t("mcpServer.question", "What it answers")],
+		[
+			[
+				code("skills/list"),
+				esc(t("mcpServer.skillsList", "List indexed skills and their complete frontmatter/resource manifests."))
+			],
+			[
+				code("skills/get"),
+				esc(t("mcpServer.skillsGet", "Fetch one skill manifest by its exact SKILL.md resource URI."))
+			],
+			[
+				code("resources/read"),
+				esc(t("mcpServer.skillsRead", "Read one manifest-listed skill file only when it is requested."))
+			]
+		],
+		t("mcpServer.skillsTableCaption", "Read-only skills and resource methods")
+	);
+}
+
 function facetTable() {
 	return table(
 		[t("mcpServer.facet", "Facet"), t("mcpServer.source", "Source and meaning")],
@@ -152,6 +173,10 @@ export function viewMcpServer() {
 			<p>${tWithElements("mcpServer.prompt", "Ask your client to run the $1 prompt with a short project description. It searches several phrasings, checks relevant facets, and reports whether to reuse, contribute, differentiate, or build.", { html: code("prior-art-review") })}</p>
 			${toolTable()}
 
+			<h2>${t("mcpServer.skillsTitle", "Skills over MCP (experimental)")}</h2>
+			<p>${t("mcpServer.skillsIntro", "When Evolved skill manifests are indexed, the server declares io.modelcontextprotocol/skills. Skills stay separate from tools/list, support multiple skills per repository, and are addressed by full resource URI rather than name alone.")}</p>
+			${skillTable()}
+
 			<h2>${t("mcpServer.facets", "Facet names and evidence")}</h2>
 			${facetTable()}
 			<p>${t("mcpServer.filterLogic", "Values within one facet are OR alternatives; different facets combine with AND. Unknown values legitimately match zero tools instead of widening the request.")}</p>
@@ -165,7 +190,7 @@ export function viewMcpServer() {
 			</ul>
 
 			<h2>${t("mcpServer.freshness", "Freshness, limits, and privacy")}</h2>
-			<p>${t("mcpServer.localReplica", "Every tool call reads the local database. Scheduled jobs synchronize official Toolhub changes into an atomic catalog generation; no page or MCP request contacts Toolhub while it is being served.")}</p>
+			<p>${t("mcpServer.localReplica", "Every catalog call reads the local database. Scheduled jobs synchronize catalog metadata into atomic generations; no page or MCP request contacts Toolhub while it is being served.")}</p>
 			<ul>
 				<li>${t("mcpServer.syncCadence", "Incremental catalog synchronization normally runs every 15 minutes, with periodic integrity reconciliation as a safety net.")}</li>
 				<li>${t("mcpServer.rateLimit", "The endpoint allows 60 requests per rolling minute per client address.")}</li>

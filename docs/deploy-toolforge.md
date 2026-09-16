@@ -128,10 +128,22 @@ limiter is now active.
 The `/mcp` endpoint (POST only) exposes catalog discovery as a stateless HTTP MCP
 server for use in LLM workflows. It requires the same ProxyFix configuration as
 the facets endpoints, but uses its own rate limit of 60 requests per rolling
-minute per client IP (separate from the 120-per-minute facets limit). All four
-tools read the synchronized local catalog database; serving an MCP request never
-contacts Toolhub. Browser visitors who open `/mcp` with GET receive a JSON 405
-response pointing to the public setup guide at `/mcp-server`.
+minute per client IP (separate from the 120-per-minute facets limit). The four
+existing tools and the additive Skills extension read the synchronized local
+catalog database; serving an MCP request never contacts Toolhub. Browser visitors
+who open `/mcp` with GET receive a JSON 405 response pointing to the public setup
+guide at `/mcp-server`.
+
+The Skills extension declares `io.modelcontextprotocol/skills` and implements
+`skills/list`, `skills/get`, `resources/list`, and `resources/read`. Skills are
+separate from the existing `tools/list` response and are keyed by their full
+resource URI, so one repository may publish several skills and two repositories
+may publish the same skill name. `skills/list` and `skills/get` return the
+manifest, frontmatter, source/provenance metadata, projects, review state, and
+resource digests without fetching content. `resources/read` is lazy and serves
+only bytes already present in the local resource cache; a manifest without a
+cached body is intentionally reported as unavailable rather than fetched from a
+repository during a web request.
 
 **Testing conformance locally:**
 
@@ -147,6 +159,8 @@ npx @modelcontextprotocol/inspector --cli --transport http \
   http://localhost:8000/mcp
 npx @modelcontextprotocol/inspector --cli --transport http \
   --method prompts/list http://localhost:8000/mcp
+npx @modelcontextprotocol/inspector --cli --transport http \
+  --method skills/list http://localhost:8000/mcp
 ```
 
 3. Verify valid JSON-RPC responses with the correct protocol version

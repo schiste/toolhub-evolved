@@ -192,4 +192,5 @@
 {"module":"public_html.i18n.en","symbol":"static.healthScore.runtimeVariablesItem","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:vhiex64ryqsmanolqsu6fw7afq","file":"public_html/i18n/en.json"}
 {"module":"public_html.i18n.en","symbol":"static.rulesOfEngagement.catalogSyncBackfill","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:mey2ampsllncvyywirxoan3wve","file":"public_html/i18n/en.json"}
 {"module":"public_html.i18n.en","symbol":"syncStatus.upstreamDiagnostic","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:ue3sc4ksbvqaxmjroe4xwjzieq","file":"public_html/i18n/en.json"}
+{"module":"public_html.i18n.en","symbol":"tool.skillMetadataIntro","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:tjpcqclatci36rwr4hxjje66g4","file":"public_html/i18n/en.json"}
 {"module":"public_html.i18n.en","symbol":"toolforms.errInvalidWikiTarget","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:u3scjxereswmbpguobn5kqhpwu","file":"public_html/i18n/en.json"}

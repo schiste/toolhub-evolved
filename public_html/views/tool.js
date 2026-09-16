@@ -408,11 +408,20 @@ const CATALOG_SOURCE_LABELS = {
 	wiki_talk_page: "Wiki talk page"
 };
 
-/** @param {unknown} value */
+/** @param {unknown} value @returns {string} */
 function evidenceValue(value) {
-	if (Array.isArray(value)) return value.join(", ");
+	if (Array.isArray(value)) {
+		return value
+			.map((item) => evidenceValue(item))
+			.filter(Boolean)
+			.join(", ");
+	}
 	if (value && typeof value === "object") {
 		const localized = /** @type {Record<string, any>} */ (value);
+		if (localized.url) {
+			const language = localized.language ? ` (${localized.language})` : "";
+			return `${localized.url}${language}`;
+		}
 		return String(localized.en || localized.mul || Object.values(localized)[0] || "");
 	}
 	return String(value ?? "");
@@ -422,7 +431,7 @@ function evidenceValue(value) {
 function comparableEvidence(value) {
 	const text = Array.isArray(value)
 		? value
-				.map((item) => String(item ?? "").trim())
+				.map((item) => evidenceValue(item).trim())
 				.sort()
 				.join(", ")
 		: evidenceValue(value);
@@ -600,6 +609,51 @@ function completenessPanel(complete, projection) {
 				</div>`;
 }
 
+/** @type {Record<string, () => string>} */
+const CATALOG_PROVENANCE_LABELS = {
+	api_url: () => t("tool.provenanceApiField", "API URL"),
+	audiences: () => t("tool.provenanceAudiencesField", "Audiences"),
+	available_ui_languages: () => t("tool.provenanceLanguagesField", "Interface languages"),
+	bot_username: () => t("tool.provenanceBotUsernameField", "Bot username"),
+	bugtracker_url: () => t("tool.provenanceBugtrackerField", "Bug tracker"),
+	content_types: () => t("tool.provenanceContentTypesField", "Content types"),
+	description: () => t("tool.provenanceDescriptionField", "Description"),
+	developer_docs_url: () => t("tool.provenanceDeveloperDocsField", "Developer documentation"),
+	feedback_url: () => t("tool.provenanceFeedbackField", "Feedback"),
+	for_wikis: () => t("tool.provenanceWikisField", "Wikimedia projects"),
+	icon: () => t("tool.provenanceIconField", "Icon"),
+	keywords: () => t("tool.provenanceKeywordsField", "Keywords"),
+	license: () => t("tool.provenanceLicenseField", "License"),
+	openhub_id: () => t("tool.provenanceOpenhubIdField", "OpenHub ID"),
+	privacy_policy_url: () => t("tool.provenancePrivacyPolicyField", "Privacy policy"),
+	replaced_by: () => t("tool.provenanceReplacedByField", "Replaced by"),
+	repository: () => t("tool.provenanceRepositoryField", "Repository"),
+	sponsor: () => t("tool.provenanceSponsorField", "Sponsor"),
+	subject_domains: () => t("tool.provenanceSubjectDomainsField", "Subject domains"),
+	subtitle: () => t("tool.provenanceSubtitleField", "Subtitle"),
+	tasks: () => t("tool.provenanceTasksField", "Tasks"),
+	technology_used: () => t("tool.provenanceTechnologyField", "Technologies"),
+	title: () => t("tool.provenanceTitleField", "Title"),
+	tool: () => t("tool.provenanceToolField", "Tool"),
+	tool_type: () => t("tool.provenanceTypeField", "Tool type"),
+	toolinfo_url: () => t("tool.provenanceToolinfoField", "Toolinfo URL"),
+	translate_url: () => t("tool.provenanceTranslateField", "Translation"),
+	url: () => t("tool.provenanceUrlField", "Tool URL"),
+	url_alternates: () => t("tool.provenanceUrlAlternatesField", "Alternate URLs"),
+	user_docs_url: () => t("tool.provenanceUserDocsField", "User documentation"),
+	wikidata_qid: () => t("tool.provenanceWikidataField", "Wikidata ID")
+};
+
+/** @param {string} field */
+function catalogProvenanceLabel(field) {
+	const label = CATALOG_PROVENANCE_LABELS[field];
+	return label
+		? label()
+		: String(field)
+				.replaceAll(/[_-]+/g, " ")
+				.replace(/^./, (letter) => letter.toUpperCase());
+}
+
 /**
  * @param {Record<string, any> | null | undefined} projection
  * @param {Record<string, any> | null | undefined} [repository]
@@ -608,21 +662,17 @@ function catalogProvenancePanel(projection, repository) {
 	// A tool with no source analysis has no provenance and still has a repository
 	// record, so the panel is empty only when both are, not when the first one is.
 	const provenance = projection?.provenance && typeof projection.provenance === "object" ? projection.provenance : {};
-	const labels = {
-		title: t("tool.provenanceTitleField", "Title"),
-		description: t("tool.provenanceDescriptionField", "Description"),
-		url: t("tool.provenanceUrlField", "Tool URL"),
-		repository: t("tool.provenanceRepositoryField", "Repository"),
-		icon: t("tool.provenanceIconField", "Icon"),
-		tool_type: t("tool.provenanceTypeField", "Tool type"),
-		for_wikis: t("tool.provenanceWikisField", "Wikis"),
-		technology_used: t("tool.provenanceTechnologyField", "Technologies"),
-		user_docs_url: t("tool.provenanceUserDocsField", "User documentation")
-	};
-	const sections = Object.entries(labels)
-		.map(([field, label]) => {
+	const fields = Object.keys(provenance).sort((left, right) => {
+		const leftKnown = Object.hasOwn(CATALOG_PROVENANCE_LABELS, left);
+		const rightKnown = Object.hasOwn(CATALOG_PROVENANCE_LABELS, right);
+		if (leftKnown !== rightKnown) return leftKnown ? -1 : 1;
+		return left.localeCompare(right);
+	});
+	const sections = fields
+		.map((field) => {
 			const rows = Array.isArray(provenance[field]) ? provenance[field] : [];
 			if (rows.length === 0) return "";
+			const label = catalogProvenanceLabel(field);
 			const fieldValidation = projection?.validation?.[field] || {};
 			const warning =
 				fieldValidation.reachable === false
@@ -652,6 +702,116 @@ function catalogProvenancePanel(projection, repository) {
 	const panel = sections + repositoryDataSection(repository);
 	if (!panel) return "";
 	return `<section class="catalog-evidence" aria-labelledby="catalog-evidence-title"><h2 class="toolpage__h2" id="catalog-evidence-title">${t("tool.provenanceTitle", "Metadata evidence")}</h2><p>${t("tool.provenanceIntro", "Toolhub Evolved keeps the official record intact and shows which local evidence supports each displayed field.")}</p>${panel}</section>`;
+}
+
+/** @param {unknown} value */
+function metadataJson(value) {
+	try {
+		return JSON.stringify(value, null, 2) ?? String(value ?? "");
+	} catch {
+		return String(value ?? "");
+	}
+}
+
+/** @param {unknown} value */
+function metadataHasValue(value) {
+	return value !== undefined && value !== null && value !== "" && (!Array.isArray(value) || value.length > 0);
+}
+
+/** @param {Tool} tool */
+function catalogMetadataSection(tool) {
+	const metadata = tool.catalogMetadata && typeof tool.catalogMetadata === "object" ? tool.catalogMetadata : {};
+	const rows = Object.entries(metadata)
+		.filter(([, value]) => metadataHasValue(value))
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(
+			([field, value]) => `<details class="catalog-evidence__field">
+				<summary>${esc(catalogProvenanceLabel(field))} <code>${esc(field)}</code></summary>
+				<pre class="catalog-evidence__raw" dir="auto">${esc(metadataJson(value))}</pre>
+			</details>`
+		)
+		.join("");
+	if (!rows) return "";
+	return `<section class="catalog-evidence" aria-labelledby="catalog-metadata-title">
+		<h2 class="toolpage__h2" id="catalog-metadata-title">${t("tool.completeMetadataTitle", "Complete catalog metadata")}</h2>
+		<p>${t("tool.completeMetadataIntro", "Every public field received from Toolhub is retained here, including fields this interface does not interpret yet.")}</p>
+		${rows}
+	</section>`;
+}
+
+/** @param {unknown} value */
+function metadataListLabel(value) {
+	const values = Array.isArray(value) ? value : metadataHasValue(value) ? [value] : [];
+	return values
+		.map((item) => evidenceValue(item))
+		.filter(Boolean)
+		.join(", ");
+}
+
+/** @param {Record<string, any>} skill @param {Tool} tool */
+function skillProjects(skill, tool) {
+	for (const key of ["projects", "target_projects", "targetProjects", "for_wikis", "forWikis", "wikis"]) {
+		const value = metadataListLabel(skill[key]);
+		if (value) return value;
+	}
+	return metadataListLabel(tool.forWikis);
+}
+
+/** @param {Record<string, any>} skill @param {string[]} keys */
+function skillValue(skill, keys) {
+	for (const key of keys) {
+		if (metadataHasValue(skill[key])) return metadataListLabel(skill[key]);
+	}
+	return "";
+}
+
+/** @param {Tool} tool */
+function skillMetadataSection(tool) {
+	const candidate = tool.skillMetadata;
+	const records = Array.isArray(candidate)
+		? candidate.filter((item) => item && typeof item === "object")
+		: candidate && typeof candidate === "object"
+			? Array.isArray(candidate.skills)
+				? candidate.skills.filter((item) => item && typeof item === "object")
+				: [candidate]
+			: [];
+	const isSkill = records.length > 0 || /skill/i.test(String(tool.toolType || ""));
+	if (!isSkill) return "";
+	const sections =
+		records.length > 0
+			? records
+					.map((skill, index) => {
+						const title =
+							skill.name ||
+							skill.title ||
+							skill.slug ||
+							t("tool.skillNumber", "Skill $1", String(index + 1));
+						const values = [
+							[t("tool.skillProjects", "Projects / wikis"), skillProjects(skill, tool)],
+							[t("tool.skillRoot", "Skill root"), skillValue(skill, ["root", "path"])],
+							[t("tool.skillEntrypoint", "Entrypoint"), skillValue(skill, ["entrypoint", "entry_point"])],
+							[t("tool.skillVisibility", "Visibility"), skillValue(skill, ["visibility"])],
+							[
+								t("tool.skillReviewStatus", "Review status"),
+								skillValue(skill, ["review_status", "reviewStatus"])
+							],
+							[
+								t("tool.skillResources", "Resources"),
+								skillValue(skill, ["resources", "resource_uris", "resourceUris"])
+							]
+						]
+							.filter(([, value]) => value)
+							.map(([label, value]) => metaItem(label, esc(value)))
+							.join("");
+						return `<div class="skill-metadata__item"><h3>${esc(String(title))}</h3><div class="detail__meta">${values}</div><details class="catalog-evidence__field"><summary>${t("tool.skillRawMetadata", "Raw skill metadata")}</summary><pre class="catalog-evidence__raw" dir="auto">${esc(metadataJson(skill))}</pre></details></div>`;
+					})
+					.join("")
+			: `<div class="detail__meta">${metaItem(t("tool.skillProjects", "Projects / wikis"), esc(metadataListLabel(tool.forWikis)))}</div>`;
+	return `<section class="catalog-evidence skill-metadata" aria-labelledby="skill-metadata-title">
+		<h2 class="toolpage__h2" id="skill-metadata-title">${t("tool.skillMetadataTitle", "Skill metadata")}</h2>
+		<p>${t("tool.skillMetadataIntro", "Skills can target several Wikimedia projects and carry their own resources and review metadata.")}</p>
+		${sections}
+	</section>`;
 }
 
 /** @param {Record<string, any> | null} signals */
@@ -1009,6 +1169,8 @@ export async function viewTool(name) {
 		linkOut(t("tool.reportABug", "Report a bug"), tool.bugtracker) +
 			(tool.bugtracker ? mark("bugtracker_url") : ""),
 		linkOut(t("tool.giveFeedback", "Give feedback"), tool.feedback) + (tool.feedback ? mark("feedback_url") : ""),
+		linkOut(t("tool.privacyPolicy", "Privacy policy"), tool.privacyPolicy) +
+			(tool.privacyPolicy ? mark("privacy_policy_url") : ""),
 		linkOut(t("tool.translate", "Translate"), tool.translate) + (tool.translate ? mark("translate_url") : "")
 	].join("");
 
@@ -1073,6 +1235,11 @@ export async function viewTool(name) {
 					${metaItem(t("tool.metaWorksOn", "Works on"), wikiLabel(tool.forWikis) + mark("for_wikis"))}
 					${metaItem(t("tool.metaInterfaceLanguages", "Interface languages"), langLabel(tool.uiLanguages))}
 					${metaItem(t("tool.metaTechnology", "Technology"), technologyLabels(tool.technologyUsed, evolvedSummary?.health?.sourceHealth?.technologies) + mark("technology_used"))}
+					${metaItem(t("tool.metaTasks", "Tasks"), metadataListLabel(tool.tasks) + mark("tasks"))}
+					${metaItem(t("tool.metaContentTypes", "Content types"), metadataListLabel(tool.contentTypes) + mark("content_types"))}
+					${metaItem(t("tool.metaSubjectDomains", "Subject domains"), metadataListLabel(tool.subjectDomains) + mark("subject_domains"))}
+					${tool.botUsername ? metaItem(t("tool.metaBotUsername", "Bot username"), esc(tool.botUsername) + mark("bot_username")) : ""}
+					${tool.openhubId ? metaItem(t("tool.metaOpenhubId", "OpenHub ID"), esc(tool.openhubId) + mark("openhub_id")) : ""}
 					${metaItem(
 						t("tool.metaAudiences", "Audiences"),
 						(tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", ") +
@@ -1080,6 +1247,8 @@ export async function viewTool(name) {
 					)}
 				</div>
 				${catalogProvenancePanel(tool.catalogProjection, evolvedSummary?.health?.sourceHealth?.repository)}
+				${skillMetadataSection(tool)}
+				${catalogMetadataSection(tool)}
 
 				<div data-related-tools-slot></div>
 				<div data-neighborhood-slot></div>

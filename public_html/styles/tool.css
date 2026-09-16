@@ -94,6 +94,32 @@
 	margin-block: var(--space-2) var(--space-0);
 }
 
+.catalog-evidence__raw {
+	box-sizing: border-box;
+	max-height: 32rem;
+	max-width: 100%;
+	overflow: auto;
+	margin: var(--space-2) var(--space-0) var(--space-0);
+	padding: var(--space-2);
+	border: var(--border-base);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface-muted);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	line-height: 1.45;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.skill-metadata__item + .skill-metadata__item {
+	margin-block-start: var(--space-4);
+}
+
+.skill-metadata__item h3 {
+	margin: var(--space-0) var(--space-0) var(--space-2);
+	font-size: var(--fs-body);
+}
+
 .catalog-evidence__effective {
 	color: var(--color-success);
 }

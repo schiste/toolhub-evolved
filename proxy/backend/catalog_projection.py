@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 from collections import defaultdict
@@ -50,6 +51,10 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+# 8: The projection now carries the complete public metadata vocabulary needed
+# by the detail page, including annotation fallbacks and localized URL values.
+# Existing rows must re-project so the new evidence and effective values reach
+# the data layer rather than only appearing for newly synchronized tools.
 # 7: `for_wikis` is normalized to dbnames. The catalogue carried 1,888 distinct
 # values in two formats -- Toolhub's dbnames and both wiki lanes' domains -- so
 # the same wiki was two entries in every facet and two options in every filter.
@@ -66,7 +71,7 @@ _log = logging.getLogger(__name__)
 # 4: purpose annotations (tasks, audiences) are lifted out of `annotations`.
 # Version 3 was already used for Wikimedia user-script maintainership, so
 # existing version-3 rows must all re-project.
-PROJECTION_VERSION = 7
+PROJECTION_VERSION = 8
 # Measured 2026-08-27: this sweep costs 0.046s a tool and was capped at 500,
 # so it finished in 23 seconds of its hour against a catalogue of 53,178. The cap is
 # a safety rail against a runaway loop, not a throughput setting; sized here so
@@ -155,37 +160,87 @@ LIST_FIELDS = (
     "tasks",
     "audiences",
     "available_ui_languages",
+    "content_types",
+    "subject_domains",
+    "sponsor",
+    "url_alternates",
+    "user_docs_url",
+    "developer_docs_url",
+    "feedback_url",
+    "privacy_policy_url",
 )
 SCALAR_FIELDS = (
     "title",
+    "subtitle",
     "description",
     "url",
     "repository",
     "icon",
     "tool_type",
     "license",
-    "user_docs_url",
-    "developer_docs_url",
-    "feedback_url",
+    "api_url",
+    "bot_username",
+    "openhub_id",
+    "wikidata_qid",
+    "replaced_by",
+    "tool",
     "bugtracker_url",
     "translate_url",
     "toolinfo_url",
 )
 PROJECTED_FIELDS = (*SCALAR_FIELDS, *LIST_FIELDS)
-# Toolhub serves these purpose fields only under `annotations`. Fields with a
-# top-level counterpart deliberately stay out so source precedence is stable.
-ANNOTATION_ONLY_FIELDS = ("tasks", "audiences")
-URL_FIELDS = {
-    "url",
-    "repository",
-    "icon",
-    "user_docs_url",
-    "developer_docs_url",
-    "feedback_url",
-    "bugtracker_url",
-    "translate_url",
-    "toolinfo_url",
-}
+# Toolhub accepts annotations as a fallback for these fields. The top-level
+# value wins when both are populated; copying only an empty/missing core value
+# to the merge boundary keeps that rule true for every source, not just the
+# purpose fields that originally motivated the projection.
+ANNOTATION_FALLBACK_FIELDS = frozenset(
+    {
+        "api_url",
+        "audiences",
+        "available_ui_languages",
+        "bugtracker_url",
+        "content_types",
+        "developer_docs_url",
+        "feedback_url",
+        "for_wikis",
+        "icon",
+        "privacy_policy_url",
+        "replaced_by",
+        "repository",
+        "subject_domains",
+        "tasks",
+        "tool_type",
+        "translate_url",
+        "user_docs_url",
+        "url",
+        "wikidata_qid",
+    }
+)
+MULTILINGUAL_URL_FIELDS = frozenset(
+    {
+        "url_alternates",
+        "user_docs_url",
+        "developer_docs_url",
+        "feedback_url",
+        "privacy_policy_url",
+    }
+)
+URL_FIELDS = frozenset(
+    {
+        "url",
+        "repository",
+        "icon",
+        "api_url",
+        "bugtracker_url",
+        "translate_url",
+        "toolinfo_url",
+    }
+    | MULTILINGUAL_URL_FIELDS
+)
+# The background probe stores one checked value per field. Localized fields can
+# contain several URLs, so they receive syntax validation in the projection but
+# are not sent through the single-value reachability cursor.
+PROBED_URL_FIELDS = frozenset(URL_FIELDS - MULTILINGUAL_URL_FIELDS)
 FACET_FIELDS = facet_names.PROJECTED_FIELD_TO_STORAGE
 SOURCE_CONFIDENCE = {
     SOURCE_CANONICAL: 100,
@@ -231,10 +286,43 @@ def _clean_text(value: Any) -> str:  # noqa: ANN401 - public metadata
     return " ".join(str(value or "").split()).strip()
 
 
+def _has_value(value: Any) -> bool:  # noqa: ANN401 - public metadata
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(_clean_text(value))
+    if isinstance(value, list | dict):
+        return bool(value)
+    return True
+
+
+def _value_text(value: Any) -> str:  # noqa: ANN401 - structured public metadata
+    """Return searchable/display text without destroying structured values."""
+    if isinstance(value, dict):
+        preferred = []
+        if _has_value(value.get("url")):
+            preferred.append(value.get("url"))
+        if _has_value(value.get("language")):
+            preferred.append(value.get("language"))
+        if preferred:
+            return " ".join(_clean_text(item) for item in preferred if _has_value(item))
+        return " ".join(_clean_text(item) for item in value.values() if _has_value(item))
+    if isinstance(value, list):
+        return " ".join(_value_text(item) for item in value if _has_value(item))
+    return _clean_text(value)
+
+
+def _value_key(value: Any) -> str:  # noqa: ANN401 - structured public metadata
+    """Build a stable comparison key while retaining the original value."""
+    if isinstance(value, dict | list):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).casefold()
+    return _value_text(value).casefold()
+
+
 def _values(value: Any) -> list[Any]:  # noqa: ANN401 - public metadata
     if isinstance(value, list):
-        return [item for item in value if _clean_text(item)]
-    return [value] if _clean_text(value) else []
+        return [item for item in value if _has_value(item)]
+    return [value] if _has_value(value) else []
 
 
 def _iso(value: datetime | None) -> str:
@@ -264,6 +352,18 @@ def _url_validation(value: Any) -> dict[str, Any]:  # noqa: ANN401 - public meta
     return {"valid": True, "state": "syntax_valid"}
 
 
+def _field_validation(field: str, value: Any) -> dict[str, Any]:  # noqa: ANN401 - public metadata
+    """Validate direct and localized URL claims without flattening their shape."""
+    if field not in URL_FIELDS:
+        return {"valid": True, "state": "accepted"}
+    if field in MULTILINGUAL_URL_FIELDS:
+        candidate = value.get("url") if isinstance(value, dict) else value
+        if not _has_value(candidate):
+            return {"valid": False, "state": "invalid", "reason": "A localized URL must contain a URL."}
+        return _url_validation(candidate)
+    return _url_validation(value)
+
+
 def _casefold_deduped_list(raw: list[Any]) -> list[str]:
     """Bound a curated list value, deduping casefolded but keeping the first spelling.
 
@@ -289,6 +389,9 @@ def validate_curation_patch(value: Any) -> tuple[dict[str, Any], list[dict[str, 
     for field, raw in value.items():
         if field not in PROJECTED_FIELDS:
             errors.append({"field": str(field), "message": "field is not locally curatable"})
+            continue
+        if field in MULTILINGUAL_URL_FIELDS:
+            errors.append({"field": field, "message": "localized URL fields are not locally curatable"})
             continue
         if field in LIST_FIELDS:
             if not isinstance(raw, list):
@@ -611,15 +714,15 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
     return sources
 
 
-def _lift_purpose_annotations(payload: dict[str, Any]) -> dict[str, Any]:
-    """Copy Toolhub's annotation-only purpose fields to the merge boundary."""
+def _lift_annotations(payload: dict[str, Any]) -> dict[str, Any]:
+    """Apply Toolhub's core-over-annotation fallback at the merge boundary."""
     annotations = payload.get("annotations")
     if not isinstance(annotations, dict):
         return payload
     lifted = {
         field: annotations[field]
-        for field in ANNOTATION_ONLY_FIELDS
-        if not payload.get(field) and annotations.get(field)
+        for field in ANNOTATION_FALLBACK_FIELDS
+        if not _has_value(payload.get(field)) and _has_value(annotations.get(field))
     }
     return {**payload, **lifted} if lifted else payload
 
@@ -642,6 +745,30 @@ def _canonical_wikis(values: list[Any], dbnames: dict[str, str]) -> list[Any]:
     return [dbnames.get(_clean_text(value).casefold(), value) for value in values]
 
 
+def _field_evidence(
+    field: str, values: list[Any], source_row: dict[str, Any], source: str, observed: str
+) -> list[dict[str, Any]]:
+    """Build validated evidence entries while retaining the original value shape."""
+    entries = []
+    for value in values:
+        entry = {
+            "value": value,
+            "source": source,
+            "sourceUrl": source_row.get("url") or "",
+            "observedAt": observed,
+            "confidence": SOURCE_CONFIDENCE[source],
+            "effective": False,
+            **_field_validation(field, value),
+        }
+        # Absent unless a source declares one, so every row written before this
+        # existed keeps the shape it had and no reader has to tell "no lane"
+        # from "the old default".
+        if lane := source_row.get("lane"):
+            entry["lane"] = lane
+        entries.append(entry)
+    return entries
+
+
 def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in one ordered pass.
     name: str, sources: list[dict[str, Any]], dbnames: dict[str, str] | None = None
 ) -> tuple[dict, dict, dict, dict]:
@@ -657,7 +784,7 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
     ordered = sorted(sources, key=lambda row: row["source"] in FILL_ONLY_SOURCES)
 
     for source_row in ordered:
-        payload = _lift_purpose_annotations(source_row["payload"])
+        payload = _lift_annotations(source_row["payload"])
         source = source_row["source"]
         fill_only = source in FILL_ONLY_SOURCES
         observed = _iso(source_row.get("observed"))
@@ -669,43 +796,31 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
                 field_values = _canonical_wikis(field_values, dbnames)
             if not field_values:
                 continue
-            for value in field_values:
-                validation = _url_validation(value) if field in URL_FIELDS else {"valid": True, "state": "accepted"}
-                entry = {
-                    "value": value,
-                    "source": source,
-                    "sourceUrl": source_row.get("url") or "",
-                    "observedAt": observed,
-                    "confidence": SOURCE_CONFIDENCE[source],
-                    "effective": False,
-                    **validation,
-                }
-                # Absent unless a source declares one, so every row written
-                # before this existed keeps the shape it had and no reader has
-                # to tell "no lane" from "the old default".
-                if lane := source_row.get("lane"):
-                    entry["lane"] = lane
-                evidence[field].append(entry)
+            field_entries = _field_evidence(field, field_values, source_row, source, observed)
+            evidence[field].extend(field_entries)
+            valid_values = [entry["value"] for entry in field_entries if entry.get("valid")]
             if source == SOURCE_CURATION:
                 curations[field] = payload.get(field)
-            elif fill_only and _values(effective.get(field)):
+            if not valid_values:
+                continue
+            if fill_only and _values(effective.get(field)):
                 existing = _values(effective.get(field))
                 if field != "keywords" or len(existing) >= KEYWORD_FILL_FLOOR:
                     # Somebody already said something here. The value stays in
                     # `evidence` so the tool page can still show what was inferred.
                     continue
-                merged = {_clean_text(item).casefold(): item for item in existing}
-                for value in field_values:
+                merged = {_value_key(item): item for item in existing}
+                for value in valid_values:
                     if len(merged) >= KEYWORD_FILL_CEILING:
                         break
-                    merged.setdefault(_clean_text(value).casefold(), value)
+                    merged.setdefault(_value_key(value), value)
                 effective[field] = list(merged.values())
             elif field in LIST_FIELDS:
-                merged = {_clean_text(item).casefold(): item for item in _values(effective.get(field))}
-                for value in field_values:
-                    merged.setdefault(_clean_text(value).casefold(), value)
+                merged = {_value_key(item): item for item in _values(effective.get(field))}
+                for value in valid_values:
+                    merged.setdefault(_value_key(value), value)
                 effective[field] = list(merged.values())
-            elif field not in effective and any(item.get("valid") for item in evidence[field][-len(field_values) :]):
+            elif field not in effective:
                 effective[field] = payload.get(field)
 
     # Approved local corrections are the only source allowed to replace an
@@ -717,9 +832,9 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
 
     validation: dict[str, dict[str, Any]] = {}
     for field, rows in evidence.items():
-        current_values = {_clean_text(item).casefold() for item in _values(effective.get(field))}
+        current_values = {_value_key(item) for item in _values(effective.get(field))}
         for item in rows:
-            item["effective"] = item.get("valid", True) and _clean_text(item["value"]).casefold() in current_values
+            item["effective"] = item.get("valid", True) and _value_key(item["value"]) in current_values
         effective_rows = [item for item in rows if item["effective"]]
         invalid_rows = [item for item in rows if not item.get("valid", True)]
         validation[field] = {
@@ -732,7 +847,7 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
 
 def _search_text(record: dict[str, Any]) -> str:
     parts = [record.get("name"), _localized_text(record.get("title")), _localized_text(record.get("description"))]
-    parts.extend(_clean_text(value) for field in LIST_FIELDS for value in _values(record.get(field)))
+    parts.extend(_value_text(value) for field in LIST_FIELDS for value in _values(record.get(field)))
     return "\n".join(part for part in (_clean_text(value) for value in parts) if part).casefold()[:12000]
 
 
@@ -881,7 +996,7 @@ def _replace_facets(s: Any, name: str, record: dict, provenance: dict, now: date
 def _preserve_url_checks(record: dict, validation: dict, previous: Any) -> dict:  # noqa: ANN401
     """Carry a probe result forward only while its effective URL is unchanged."""
     old = previous if isinstance(previous, dict) else {}
-    for field in URL_FIELDS:
+    for field in PROBED_URL_FIELDS:
         prior = old.get(field) if isinstance(old.get(field), dict) else {}
         value = _clean_text(record.get(field))
         if value and prior.get("checkedValue") == value:

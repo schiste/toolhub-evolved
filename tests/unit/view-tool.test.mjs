@@ -89,6 +89,20 @@ vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 const { applyExp, setServerUser } = await import("../../public_html/lib/core/session.js");
 const tool = await import("../../public_html/views/tool.js");
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+function hasExactMetadataUrl(html, expectedUrl) {
+	const template = document.createElement("template");
+	template.innerHTML = html;
+	return [...template.content.querySelectorAll("pre.catalog-evidence__raw")].some((pre) => {
+		try {
+			const metadata = JSON.parse(pre.textContent || "");
+			const alternates = Array.isArray(metadata) ? metadata : metadata?.url_alternates;
+			return Array.isArray(alternates) && alternates.some((alternate) => alternate?.url === expectedUrl);
+		} catch {
+			return false;
+		}
+	});
+}
+
 async function mountedDetailHtml(view, name) {
 	const originalRequestIdleCallback = window.requestIdleCallback;
 	const originalRequestAnimationFrame = window.requestAnimationFrame;
@@ -524,11 +538,27 @@ function toolFixture(name, o = {}) {
 		tasks: o.tasks ?? [],
 		forWikis: o.forWikis ?? [],
 		uiLanguages: o.uiLanguages ?? [],
+		urlAlternates: o.urlAlternates ?? [],
+		botUsername: o.botUsername ?? null,
+		openhubId: o.openhubId ?? null,
+		privacyPolicy: o.privacyPolicy ?? null,
+		contentTypes: o.contentTypes ?? [],
+		subjectDomains: o.subjectDomains ?? [],
 		userDocs: o.userDocs ?? null,
+		userDocsUrls: o.userDocsUrls ?? [],
 		devDocs: o.devDocs ?? null,
+		devDocsUrls: o.devDocsUrls ?? [],
 		feedback: o.feedback ?? null,
+		feedbackUrls: o.feedbackUrls ?? [],
+		privacyPolicyUrls: o.privacyPolicyUrls ?? [],
 		bugtracker: o.bugtracker ?? null,
+		bugtrackerUrls: o.bugtrackerUrls ?? [],
 		translate: o.translate ?? null,
+		translateUrls: o.translateUrls ?? [],
+		toolinfoUrl: o.toolinfoUrl ?? null,
+		catalogMetadata: o.catalogMetadata ?? {},
+		skillMetadata: o.skillMetadata ?? null,
+		evolvedMetadata: o.evolvedMetadata ?? null,
 		deprecated: o.deprecated ?? false,
 		experimental: o.experimental ?? false,
 		modified: o.modified ?? "2026-01-01T00:00:00Z",
@@ -659,6 +689,8 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 		forWikis: ["commons.wikimedia.org"],
 		uiLanguages: ["en", "fr"],
 		technologyUsed: ["JavaScript", "Python"],
+		contentTypes: ["data::structured"],
+		subjectDomains: ["maps"],
 		authors: ["Ada Lovelace", "Grace Hopper"],
 		authorObjs: [
 			{ name: "Ada Lovelace", url: "https://example.org/ada", wikiUsername: "Ada" },
@@ -685,6 +717,203 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	const mountedHtml = await mountedDetailHtml(r, "full");
 	assert.ok(mountedHtml.includes("Related tools"));
 	assert.ok(mountedHtml.includes("Neighborhood"));
+});
+
+test("viewTool displays complete metadata including skill target projects", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("skill", {
+			title: "A skill",
+			toolType: "skill",
+			forWikis: ["en.wikipedia.org"],
+			tasks: ["analysis"],
+			contentTypes: ["data::structured"],
+			subjectDomains: ["science"],
+			botUsername: "SkillBot",
+			openhubId: "openhub-42",
+			privacyPolicy: "https://example.org/privacy",
+			urlAlternates: [{ language: "fr", url: "https://fr.example/skill" }],
+			userDocsUrls: [{ language: "fr", url: "https://fr.example/docs" }],
+			catalogMetadata: {
+				name: "skill",
+				url_alternates: [{ language: "fr", url: "https://fr.example/skill" }],
+				skill: { name: "lookup", projects: ["enwiki", "wikidatawiki"], resources: ["r1"] },
+				custom_field: { nested: true }
+			},
+			skillMetadata: [
+				{
+					name: "lookup",
+					projects: ["enwiki", "wikidatawiki"],
+					root: "skills/lookup",
+					entrypoint: "SKILL.md",
+					resources: ["resource://lookup"]
+				},
+				{
+					name: "summarize",
+					projects: ["commonswiki"],
+					root: "skills/summarize",
+					entrypoint: "SKILL.md"
+				}
+			],
+			catalogProjection: {
+				provenance: {
+					tasks: [{ value: "analysis", source: "official_toolhub", effective: true }],
+					content_types: [{ value: "data::structured", source: "official_toolhub", effective: true }],
+					subject_domains: [{ value: "science", source: "official_toolhub", effective: true }],
+					privacy_policy_url: [
+						{
+							value: { language: "en", url: "https://example.org/privacy" },
+							source: "official_toolhub",
+							effective: true
+						}
+					]
+				}
+			}
+		})
+	);
+	const r = await tool.viewTool("skill");
+	assert.ok(r.html.includes("Projects / wikis"));
+	assert.ok(r.html.includes("enwiki"));
+	assert.ok(r.html.includes("wikidatawiki"));
+	assert.ok(r.html.includes("summarize"));
+	assert.ok(r.html.includes("commonswiki"));
+	assert.ok(r.html.includes("Content types"));
+	assert.ok(r.html.includes("Subject domains"));
+	assert.ok(r.html.includes("Privacy policy"));
+	assert.ok(r.html.includes("Complete catalog metadata"));
+	assert.ok(r.html.includes("custom_field"));
+	assert.ok(r.html.includes('href="https://example.org/privacy"'));
+	assert.ok(hasExactMetadataUrl(r.html, "https://fr.example/skill"));
+});
+
+test("viewTool renders every catalog provenance field and safe metadata variant", async () => {
+	const fields = [
+		"api_url",
+		"audiences",
+		"available_ui_languages",
+		"bot_username",
+		"bugtracker_url",
+		"content_types",
+		"description",
+		"developer_docs_url",
+		"feedback_url",
+		"for_wikis",
+		"icon",
+		"keywords",
+		"license",
+		"openhub_id",
+		"privacy_policy_url",
+		"replaced_by",
+		"repository",
+		"sponsor",
+		"subject_domains",
+		"subtitle",
+		"tasks",
+		"technology_used",
+		"title",
+		"tool",
+		"tool_type",
+		"toolinfo_url",
+		"translate_url",
+		"url",
+		"url_alternates",
+		"user_docs_url",
+		"wikidata_qid"
+	];
+	const provenance = Object.fromEntries(
+		fields.map((field) => [
+			field,
+			[
+				{
+					value: field === "url_alternates" ? { language: "fr", url: "https://fr.example/all" } : "x",
+					source: "official_toolhub",
+					sourceUrl: "https://example.org/source",
+					effective: true
+				}
+			]
+		])
+	);
+	provenance.api_url = [
+		provenance.api_url[0],
+		{ value: "https://example.org/stale", source: "repository_analysis", effective: false, valid: false }
+	];
+	provenance.empty_field = [];
+	provenance.future_field = [{ value: "future", source: "", effective: true }];
+	const cyclic = {};
+	cyclic.self = cyclic;
+	h.getTool.mockResolvedValue(
+		toolFixture("all-metadata", {
+			title: "All metadata",
+			toolType: "skill",
+			url: "https://example.org/all",
+			repository: "https://github.com/example/all",
+			apiUrl: "https://example.org/all/api",
+			userDocs: "https://example.org/all/docs",
+			devDocs: "https://example.org/all/dev",
+			feedback: "https://example.org/all/feedback",
+			bugtracker: "https://example.org/all/issues",
+			privacyPolicy: "https://example.org/all/privacy",
+			translate: "https://translatewiki.net/all",
+			forWikis: ["fallbackwiki"],
+			catalogMetadata: { empty: "", missing: null, emptyList: [], cyclic },
+			skillMetadata: {
+				skills: [
+					{
+						title: "Nested skill",
+						targetProjects: ["enwiki"],
+						path: "skills/nested",
+						entry_point: "SKILL.md",
+						visibility: "public",
+						reviewStatus: "approved",
+						resourceUris: ["resource://nested"]
+					},
+					{ name: "Fallback projects" }
+				]
+			},
+			catalogProjection: { provenance, validation: { repository: { reachable: false } } }
+		})
+	);
+	const r = await tool.viewTool("all-metadata");
+	for (const label of [
+		"API URL",
+		"Audiences",
+		"Interface languages",
+		"Bot username",
+		"Bug tracker",
+		"Content types",
+		"Description",
+		"Developer documentation",
+		"Feedback",
+		"Wikimedia projects",
+		"Icon",
+		"Keywords",
+		"License",
+		"OpenHub ID",
+		"Privacy policy",
+		"Replaced by",
+		"Repository",
+		"Sponsor",
+		"Subject domains",
+		"Subtitle",
+		"Tasks",
+		"Technologies",
+		"Title",
+		"Tool",
+		"Tool type",
+		"Toolinfo URL",
+		"Translation",
+		"Tool URL",
+		"Alternate URLs",
+		"User documentation",
+		"Wikidata ID",
+		"Future field"
+	]) {
+		assert.ok(r.html.includes(label), `missing provenance label: ${label}`);
+	}
+	assert.ok(r.html.includes("URL currently unreachable"));
+	assert.ok(r.html.includes("invalid evidence retained"));
+	assert.ok(r.html.includes("Unknown source"));
+	assert.ok(r.html.includes("Nested skill"));
+	assert.ok(r.html.includes("fallbackwiki"));
 });
 
 test("viewTool labels invalid source and issue metadata instead of linking it", async () => {
@@ -1660,7 +1889,7 @@ test("viewTool does not call a unioned field a contradiction", async () => {
 	// Eight technologies and eleven wikis is what one agreeing tool looks like:
 	// every row is effective, so nothing was overruled and nothing disagreed.
 	assert.ok(r.html.includes("Technologies"));
-	assert.ok(r.html.includes("Wikis"));
+	assert.ok(r.html.includes("Wikimedia projects"));
 	assert.ok(!r.html.includes("sources disagree"));
 });
 
@@ -1921,6 +2150,9 @@ const DETAIL_ROW_FIELDS = {
 	"Works on": "for_wikis",
 	Technology: "technology_used",
 	Audiences: "audiences",
+	Tasks: "tasks",
+	"Content types": "content_types",
+	"Subject domains": "subject_domains",
 	// Not in the projection's provenance at all: `ui_languages` is read straight
 	// off the Toolhub record, so there is no derived source to disclose.
 	"Interface languages": null
@@ -2009,6 +2241,7 @@ const ACTION_LINK_FIELDS = {
 	"Developer docs": "developer_docs_url",
 	"Report a bug": "bugtracker_url",
 	"Give feedback": "feedback_url",
+	"Privacy policy": "privacy_policy_url",
 	Translate: "translate_url",
 	// Not a projected field: the API endpoint is read straight off the Toolhub
 	// record, so there is no derived source to disclose.
@@ -2028,6 +2261,7 @@ async function renderActionsWithProvenance(source = "wiki_talk_page") {
 			devDocs: "https://example.org/acted/dev",
 			bugtracker: "https://en.wikipedia.org/wiki/User_talk:Alice/foo.js",
 			feedback: "https://example.org/acted/feedback",
+			privacyPolicy: "https://example.org/acted/privacy",
 			translate: "https://translatewiki.net/acted",
 			catalogProjection: { provenance }
 		})

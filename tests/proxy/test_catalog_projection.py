@@ -1544,7 +1544,7 @@ def test_purpose_annotations_project_as_task_and_audience_facets():
     assert facets >= {("tasks", "analysis"), ("audiences", "researchers")}
 
 
-def test_annotation_lift_does_not_reorder_top_level_field_precedence():
+def test_annotation_fallback_uses_annotations_when_core_fields_are_empty():
     with db.session_scope() as s:
         s.add(
             _canonical(
@@ -1557,11 +1557,63 @@ def test_annotation_lift_does_not_reorder_top_level_field_precedence():
 
     payload = catalog_projection.projection_payload("narrow")
     assert payload["record"]["tasks"] == ["analysis"]
-    assert "tool_type" not in payload["record"]
-    assert "for_wikis" not in payload["record"]
+    assert payload["record"]["tool_type"] == "bot"
+    assert payload["record"]["for_wikis"] == ["commons.wikimedia.org"]
     with db.session_scope() as s:
         fields = {row.field for row in s.query(CatalogFacetValue).filter_by(tool_name="narrow")}
-    assert fields == {"tasks"}
+    assert fields >= {"tasks", "tool_type", "wiki"}
+
+
+def test_projection_preserves_annotation_metadata_and_localized_urls():
+    with db.session_scope() as s:
+        s.add(
+            _canonical(
+                "metadata",
+                annotations={
+                    "api_url": "https://example.org/api",
+                    "for_wikis": ["www.wikidata.org"],
+                    "content_types": ["data::structured"],
+                    "subject_domains": ["science"],
+                    "tasks": ["analysis"],
+                    "wikidata_qid": "Q42",
+                    "user_docs_url": [{"language": "fr", "url": "https://docs.example/fr"}],
+                },
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["metadata"])
+
+    payload = catalog_projection.projection_payload("metadata")
+    record = payload["record"]
+    assert record["api_url"] == "https://example.org/api"
+    assert record["for_wikis"] == ["www.wikidata.org"]
+    assert record["content_types"] == ["data::structured"]
+    assert record["subject_domains"] == ["science"]
+    assert record["tasks"] == ["analysis"]
+    assert record["wikidata_qid"] == "Q42"
+    assert record["user_docs_url"] == [{"language": "fr", "url": "https://docs.example/fr"}]
+    user_docs = payload["provenance"]["user_docs_url"]
+    assert user_docs[0]["value"] == {"language": "fr", "url": "https://docs.example/fr"}
+    assert user_docs[0]["valid"] is True
+    assert user_docs[0]["effective"] is True
+
+
+def test_annotation_metadata_does_not_override_a_populated_core_value():
+    with db.session_scope() as s:
+        s.add(
+            _canonical(
+                "core-wins",
+                tool_type="web app",
+                for_wikis=["en.wikipedia.org"],
+                annotations={"tool_type": "bot", "for_wikis": ["commons.wikimedia.org"]},
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["core-wins"])
+
+    record = catalog_projection.projection_payload("core-wins")["record"]
+    assert record["tool_type"] == "web app"
+    assert record["for_wikis"] == ["en.wikipedia.org"]
 
 
 # --- display labels ----------------------------------------------------------
@@ -2027,3 +2079,26 @@ def test_normalising_wikis_needs_no_registry_to_be_safe():
         "enwiki",
         "en.wikipedia.org",
     ]
+
+
+def test_structured_metadata_text_and_curation_validation_cover_all_shapes():
+    assert catalog_projection._has_value(0) is True  # noqa: SLF001
+    assert catalog_projection._value_text({"url": "https://example.org", "language": "en"}) == (  # noqa: SLF001
+        "https://example.org en"
+    )
+    assert catalog_projection._value_text({"url": "", "language": "en"}) == "en"  # noqa: SLF001
+    assert catalog_projection._value_text({"url": "", "language": ""}) == ""  # noqa: SLF001
+    assert catalog_projection._value_text([{"url": "https://example.org"}, "label"]) == (  # noqa: SLF001
+        "https://example.org label"
+    )
+
+    assert catalog_projection._field_validation("title", "Title") == {  # noqa: SLF001
+        "valid": True,
+        "state": "accepted",
+    }
+    assert catalog_projection._field_validation("privacy_policy_url", {})["valid"] is False  # noqa: SLF001
+    patch, errors = catalog_projection.validate_curation_patch(  # noqa: SLF001
+        {"privacy_policy_url": [{"language": "fr", "url": "https://example.org/privacy"}]}
+    )
+    assert patch == {}
+    assert errors == [{"field": "privacy_policy_url", "message": "localized URL fields are not locally curatable"}]

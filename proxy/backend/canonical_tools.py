@@ -55,7 +55,9 @@ LEGACY_TOOLFORGE_PATH_HOSTS = ("tools.wmflabs.org", "tools-static.wmflabs.org")
 # Suffixes whose subdomain names a project. Checked after the path hosts above,
 # so `tools.wmflabs.org` is never misread as a project called "tools".
 RUNTIME_HOST_SUFFIXES = (".toolforge.org", ".wmflabs.org", ".wmcloud.org")
-READ_PROJECTION_META_KEY = "catalog:read-projection:v1"
+# Bump when `CATALOG_CARD_FIELDS` changes so existing rows are rebuilt with the
+# current compact record rather than being mistaken for completed backfills.
+READ_PROJECTION_META_KEY = "catalog:read-projection:v3"
 
 
 def _clean_name(value: Any) -> str:  # noqa: ANN401 - untrusted official API JSON
@@ -665,21 +667,25 @@ def backfill_search_text(*, batch_size: int = 500) -> int:
 
 
 def backfill_read_projection(*, batch_size: int = 500) -> int:
-    """Populate compact card JSON and indexed modification timestamps once."""
+    """Populate compact card JSON and indexed modification timestamps once.
+
+    A missing version marker means the card vocabulary changed, so existing
+    non-null cards are candidates too. The old null-only cursor would mark a
+    new version complete while leaving every already-backfilled row stale.
+    """
     with db.session_scope() as session:
         if session.get(ApiCacheMeta, READ_PROJECTION_META_KEY) is not None:
             return 0
     filled = 0
+    last_tool_name = ""
     while True:
         with db.session_scope() as session:
-            rows = list(
-                session.execute(
-                    select(CanonicalToolCache)
-                    .where(CanonicalToolCache.card_record.is_(None))
-                    .order_by(CanonicalToolCache.tool_name)
-                    .limit(max(1, batch_size))
-                ).scalars()
+            statement = (
+                select(CanonicalToolCache)
+                .where(CanonicalToolCache.tool_name > last_tool_name)
+                .order_by(CanonicalToolCache.tool_name)
             )
+            rows = list(session.execute(statement.limit(max(1, batch_size))).scalars())
             if not rows:
                 marker = session.get(ApiCacheMeta, READ_PROJECTION_META_KEY)
                 # Only a concurrent backfill can publish this marker between
@@ -690,6 +696,7 @@ def backfill_read_projection(*, batch_size: int = 500) -> int:
             for row in rows:
                 row.record = row.record or {}
                 filled += 1
+            last_tool_name = rows[-1].tool_name
 
 
 def backfill_status_flags(*, batch_size: int = 500) -> int:

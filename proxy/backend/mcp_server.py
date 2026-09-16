@@ -13,6 +13,7 @@ response fields are additive. No sessions are ever issued, which is valid
 stateless behavior in every supported revision.
 """
 
+import base64
 import json
 import logging
 from collections.abc import Callable
@@ -20,7 +21,7 @@ from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
 
-from backend import canonical_tools, catalog_read, db, facet_names, security, v1_facets
+from backend import canonical_tools, catalog_read, db, facet_names, security, skill_catalog, v1_facets
 from backend import tool_facets as facets_backend
 
 mcp_bp = Blueprint("mcp", __name__)
@@ -76,12 +77,24 @@ def _result(req_id: Any, result: dict[str, Any]) -> Response:  # noqa: ANN401
     return jsonify({"jsonrpc": "2.0", "id": req_id, "result": result})
 
 
+def _capabilities(*, discover: bool) -> dict[str, Any]:
+    """Return the additive base and skills capabilities advertised to clients."""
+    tools = {"listChanged": False} if discover else {}
+    prompts = {"listChanged": False} if discover else {}
+    return {
+        "tools": tools,
+        "prompts": prompts,
+        "resources": {"subscribe": False, "listChanged": False},
+        "extensions": {skill_catalog.SKILLS_EXTENSION: {"directoryRead": False}},
+    }
+
+
 def _initialize(params: dict[str, Any]) -> dict[str, Any]:
     requested = str(params.get("protocolVersion") or "")
     negotiated = requested if requested in LEGACY_PROTOCOL_VERSIONS else DEFAULT_LEGACY_VERSION
     return {
         "protocolVersion": negotiated,
-        "capabilities": {"tools": {}, "prompts": {}},
+        "capabilities": _capabilities(discover=False),
         "serverInfo": SERVER_INFO,
     }
 
@@ -90,7 +103,7 @@ def _server_discover(_params: dict[str, Any]) -> dict[str, Any]:
     return {
         "resultType": "complete",
         "protocolVersion": CURRENT_PROTOCOL_VERSION,
-        "capabilities": {"tools": {"listChanged": False}, "prompts": {"listChanged": False}},
+        "capabilities": _capabilities(discover=True),
         "serverInfo": SERVER_INFO,
     }
 
@@ -482,6 +495,93 @@ def _prompts_get(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _cursor_offset(params: dict[str, Any]) -> int:
+    """Decode the deliberately opaque-as-enough integer page cursor."""
+    raw = params.get("cursor")
+    if raw in (None, ""):
+        return 0
+    msg = "cursor must be a non-negative page cursor"
+    try:
+        offset = int(str(raw), 10)
+    except (TypeError, ValueError) as exc:
+        raise _ParamError(msg) from exc
+    if offset < 0:
+        raise _ParamError(msg)
+    return offset
+
+
+def _skill_page(params: dict[str, Any], entries: list[Any]) -> dict[str, Any]:
+    offset = _cursor_offset(params)
+    try:
+        page_size = int(params.get("limit") or skill_catalog.MAX_SKILLS_PAGE)
+    except (TypeError, ValueError):
+        page_size = skill_catalog.MAX_SKILLS_PAGE
+    page_size = max(1, min(skill_catalog.MAX_SKILLS_PAGE, page_size))
+    selected = entries[offset : offset + page_size]
+    result: dict[str, Any] = {
+        "resultType": "complete",
+        "ttlMs": LIST_TTL_MS,
+        "cacheScope": "public",
+    }
+    if offset + page_size < len(entries):
+        result["nextCursor"] = str(offset + page_size)
+    return result | {"entries": selected}
+
+
+def _skills_list(params: dict[str, Any]) -> dict[str, Any]:
+    """Enumerate normalized skills without fetching any resource body."""
+    page = _skill_page(params, skill_catalog.all_entries())
+    entries = page.pop("entries")
+    return {**page, "skills": [entry.public_entry() for entry in entries]}
+
+
+def _skills_get(params: dict[str, Any]) -> dict[str, Any]:
+    """Return one skill's manifest by its root SKILL.md URI."""
+    uri = str(params.get("uri") or "").strip()
+    if not uri:
+        msg = "uri must be a non-empty skill SKILL.md URI"
+        raise _ParamError(msg)
+    entry = skill_catalog.find_skill(uri)
+    if entry is None:
+        msg = f"unknown skill URI: {uri}"
+        raise _ParamError(msg)
+    return {"resultType": "complete", "skill": entry.public_entry()}
+
+
+def _resources_list(params: dict[str, Any]) -> dict[str, Any]:
+    """Expose static skill files through the base MCP resource listing."""
+    page = _skill_page(params, skill_catalog.resource_entries())
+    entries = page.pop("entries")
+    return {**page, "resources": [resource.listing() for _entry, resource in entries]}
+
+
+def _resources_read(params: dict[str, Any]) -> dict[str, Any]:
+    """Read one cached skill file only after an exact manifest lookup."""
+    uri = str(params.get("uri") or "").strip()
+    if not uri:
+        msg = "uri must be a non-empty resource URI"
+        raise _ParamError(msg)
+    found = skill_catalog.find_resource(uri)
+    if found is None:
+        msg = f"unknown resource URI: {uri}"
+        raise _ParamError(msg)
+    _entry, resource = found
+    if resource.content is None:
+        msg = "resource content is not available in the local catalog yet"
+        raise _ParamError(msg)
+    content: dict[str, Any] = {"uri": resource.uri, "mimeType": resource.mime_type}
+    try:
+        content["text"] = resource.content.decode("utf-8")
+    except UnicodeDecodeError:
+        content["blob"] = base64.b64encode(resource.content).decode("ascii")
+    return {
+        "resultType": "complete",
+        "contents": [content],
+        "ttlMs": LIST_TTL_MS,
+        "cacheScope": "public",
+    }
+
+
 _METHODS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "initialize": _initialize,
     "server/discover": _server_discover,
@@ -490,4 +590,8 @@ _METHODS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "tools/call": _tools_call,
     "prompts/list": _prompts_list,
     "prompts/get": _prompts_get,
+    "skills/list": _skills_list,
+    "skills/get": _skills_get,
+    "resources/list": _resources_list,
+    "resources/read": _resources_read,
 }

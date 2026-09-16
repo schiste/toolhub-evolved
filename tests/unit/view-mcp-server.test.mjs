@@ -10,7 +10,10 @@ test("MCP guide publishes client-specific setup and the local-replica contract",
 	assert.ok(view.html.includes("claude mcp add --transport http"));
 	assert.ok(view.html.includes("&quot;servers&quot;"));
 	assert.ok(view.html.includes("&quot;mcpServers&quot;"));
-	assert.ok(view.html.includes("Every tool call reads the local database"));
+	assert.ok(view.html.includes("Every catalog call reads the local database"));
+	assert.ok(view.html.includes("skills/list"));
+	assert.ok(view.html.includes("resources/read"));
+	assert.ok(view.html.includes("io.modelcontextprotocol/skills"));
 	assert.ok(view.html.includes("detected_technology"));
 	assert.ok(view.html.includes("declared_technology"));
 	assert.ok(view.html.includes("Compatibility alias for detected_technology"));

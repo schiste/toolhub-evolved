@@ -12,6 +12,12 @@ interface AuthorObj {
 	developerUsername: string | null;
 }
 
+/** A localized URL as returned by Toolhub for documentation and feedback. */
+interface LocalizedUrl {
+	language?: string;
+	url: string;
+}
+
 /** A local Evolved verification badge for a per-tool author claim. */
 interface AuthorVerificationBadge {
 	label: string;
@@ -106,16 +112,28 @@ interface Tool {
 	license: string | null;
 	repository: string | null;
 	apiUrl: string | null;
+	urlAlternates: Array<string | LocalizedUrl>;
+	botUsername: string | null;
+	openhubId: string | null;
+	privacyPolicy: string | null;
 	technologyUsed: string[];
+	contentTypes: string[];
+	subjectDomains: string[];
 	audiences: string[];
 	tasks: string[];
 	forWikis: string[];
 	uiLanguages: string[];
 	userDocs: string | null;
+	userDocsUrls: Array<string | LocalizedUrl>;
 	devDocs: string | null;
+	devDocsUrls: Array<string | LocalizedUrl>;
 	feedback: string | null;
+	feedbackUrls: Array<string | LocalizedUrl>;
+	privacyPolicyUrls: Array<string | LocalizedUrl>;
 	bugtracker: string | null;
+	bugtrackerUrls: Array<string | LocalizedUrl>;
 	translate: string | null;
+	translateUrls: Array<string | LocalizedUrl>;
 	deprecated: boolean;
 	experimental: boolean;
 	// "active", "archived", or "" when nothing has measured whether anybody uses
@@ -128,6 +146,13 @@ interface Tool {
 	created: string | null;
 	modified: string | null;
 	origin: string;
+	toolinfoUrl: string | null;
+	schema: string | null;
+	recordLanguage: string | null;
+	/** Public canonical fields retained for forward-compatible renderers. */
+	catalogMetadata: Record<string, unknown>;
+	skillMetadata: Record<string, unknown> | Array<Record<string, unknown>> | null;
+	evolvedMetadata: Record<string, unknown> | null;
 	catalogProjection?: Record<string, any> | null;
 	cachedIconUrl?: string | null;
 	canonicalRecord?: Record<string, any>;

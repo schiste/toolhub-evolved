@@ -85,7 +85,7 @@ test("API scalar helpers preserve core data priority and empty semantics", () =>
 	assert.equal(api.firstUrl([{ url: "https://docs.example" }]), "https://docs.example");
 	assert.equal(api.firstUrl(["https://plain.example"]), "https://plain.example");
 	assert.equal(api.firstUrl([]), null);
-	assert.equal(api.firstUrl({ url: "https://ignored.example" }), null);
+	assert.equal(api.firstUrl({ url: "https://ignored.example" }), "https://ignored.example");
 	assert.equal(util.hasValue([]), false);
 	assert.equal(util.hasValue(["x"]), true);
 	assert.equal(util.hasValue(""), false);
@@ -110,6 +110,17 @@ test("normalizeTool maps live Toolhub schema into compact UI schema", () => {
 		url: "",
 		icon: null,
 		keywords: ["toolforge"],
+		url_alternates: [{ language: "fr", url: "https://fr.example/tool" }],
+		bot_username: "ToolforgeBot",
+		openhub_id: "openhub-42",
+		privacy_policy_url: [{ language: "en", url: "https://example.org/privacy" }],
+		content_types: ["data::structured"],
+		subject_domains: ["infrastructure"],
+		toolinfo_url: "https://example.org/toolinfo.json",
+		_schema: "1.2.0",
+		_language: "en",
+		skill: { name: "admin-skill", projects: ["enwiki"], resources: ["https://example.org/resource"] },
+		evolved: { source: "local" },
 		author: [{ name: "Bryan Davis", wiki_username: "BDavis (WMF)", url: "https://meta.example/User" }],
 		created_by: { username: "fallback" },
 		annotations: {
@@ -117,6 +128,11 @@ test("normalizeTool maps live Toolhub schema into compact UI schema", () => {
 			icon: "https://commons.example/icon.svg",
 			audiences: ["developer"],
 			user_docs_url: [{ url: "https://wikitech.example/docs" }],
+			developer_docs_url: [{ language: "en", url: "https://wikitech.example/dev" }],
+			feedback_url: [{ language: "fr", url: "https://wikitech.example/feedback" }],
+			privacy_policy_url: [{ language: "fr", url: "https://wikitech.example/privacy" }],
+			content_types: ["data::tabular"],
+			subject_domains: ["operations"],
 			deprecated: false
 		},
 		for_wikis: ["*"],
@@ -127,7 +143,7 @@ test("normalizeTool maps live Toolhub schema into compact UI schema", () => {
 	assert.equal(normalized.title, "toolforge-admin");
 	assert.equal(normalized.titleLanguage, null);
 	assert.equal(normalized.description, "Admin interface");
-	assert.equal(normalized.descriptionLanguage, null);
+	assert.equal(normalized.descriptionLanguage, "en");
 	assert.equal(normalized.url, "https://admin.toolforge.org/");
 	assert.equal(normalized.icon, "https://commons.example/icon.svg");
 	assert.deepEqual(normalized.authors, ["Bryan Davis"]);
@@ -137,6 +153,29 @@ test("normalizeTool maps live Toolhub schema into compact UI schema", () => {
 	assert.deepEqual(normalized.forWikis, ["*"]);
 	assert.equal(normalized.toolType, "web app");
 	assert.equal(normalized.userDocs, "https://wikitech.example/docs");
+	assert.deepEqual(normalized.userDocsUrls, [{ url: "https://wikitech.example/docs" }]);
+	assert.deepEqual(normalized.devDocsUrls, [{ language: "en", url: "https://wikitech.example/dev" }]);
+	assert.equal(normalized.devDocs, "https://wikitech.example/dev");
+	assert.deepEqual(normalized.feedbackUrls, [{ language: "fr", url: "https://wikitech.example/feedback" }]);
+	assert.equal(normalized.feedback, "https://wikitech.example/feedback");
+	assert.deepEqual(normalized.urlAlternates, [{ language: "fr", url: "https://fr.example/tool" }]);
+	assert.equal(normalized.botUsername, "ToolforgeBot");
+	assert.equal(normalized.openhubId, "openhub-42");
+	assert.equal(normalized.privacyPolicy, "https://example.org/privacy");
+	assert.deepEqual(normalized.contentTypes, ["data::structured"]);
+	assert.deepEqual(normalized.subjectDomains, ["infrastructure"]);
+	assert.equal(normalized.toolinfoUrl, "https://example.org/toolinfo.json");
+	assert.equal(normalized.schema, "1.2.0");
+	assert.equal(normalized.recordLanguage, "en");
+	assert.deepEqual(normalized.skillMetadata, {
+		name: "admin-skill",
+		projects: ["enwiki"],
+		resources: ["https://example.org/resource"]
+	});
+	assert.equal(normalized.evolvedMetadata.source, "local");
+	assert.equal(normalized.catalogMetadata.url_alternates[0].url, "https://fr.example/tool");
+	assert.equal(normalized.catalogMetadata._schema, "1.2.0");
+	assert.equal(normalized.catalogMetadata._catalogProjection, undefined);
 	assert.equal(normalized.status.level, "green");
 	assert.equal(typeof normalized.weeklyViews, "number");
 });
