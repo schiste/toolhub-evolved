@@ -4,6 +4,7 @@
 {"module":"types.app-domain.d","symbol":"AuthorVerificationBadge","kind":"interface","node_id":"interface:toolhub-evolved:behtzubpoz5kldasdsiuwvfqiy","file":"types/app-domain.d.ts"}
 {"module":"types.app-domain.d","symbol":"GraphEdge","kind":"interface","node_id":"interface:toolhub-evolved:oewlcwbzuzx7rwkwdrey2dui7i","file":"types/app-domain.d.ts"}
 {"module":"types.app-domain.d","symbol":"GraphNode","kind":"interface","node_id":"interface:toolhub-evolved:aa2zslyhstlfnxjgmgymawya4e","file":"types/app-domain.d.ts"}
+{"module":"types.app-domain.d","symbol":"LocalizedUrl","kind":"interface","node_id":"interface:toolhub-evolved:45zzhieg4e6kyp2kuq4dcopq6m","file":"types/app-domain.d.ts"}
 {"module":"types.app-domain.d","symbol":"RelationshipPerson","kind":"interface","node_id":"interface:toolhub-evolved:faznofunr6xyxrfscdv7qyrryq","file":"types/app-domain.d.ts"}
 {"module":"types.app-domain.d","symbol":"Tool","kind":"interface","node_id":"interface:toolhub-evolved:ccdhwf53lrfdu3sdx3vhufxila","file":"types/app-domain.d.ts"}
 {"module":"types.app-domain.d","symbol":"ToolList","kind":"interface","node_id":"interface:toolhub-evolved:6ray5i6i6vzlzoyy4uvty2ybve","file":"types/app-domain.d.ts"}
