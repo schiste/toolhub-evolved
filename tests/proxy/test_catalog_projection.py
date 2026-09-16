@@ -2079,3 +2079,26 @@ def test_normalising_wikis_needs_no_registry_to_be_safe():
         "enwiki",
         "en.wikipedia.org",
     ]
+
+
+def test_structured_metadata_text_and_curation_validation_cover_all_shapes():
+    assert catalog_projection._has_value(0) is True  # noqa: SLF001
+    assert catalog_projection._value_text({"url": "https://example.org", "language": "en"}) == (  # noqa: SLF001
+        "https://example.org en"
+    )
+    assert catalog_projection._value_text({"url": "", "language": "en"}) == "en"  # noqa: SLF001
+    assert catalog_projection._value_text({"url": "", "language": ""}) == ""  # noqa: SLF001
+    assert catalog_projection._value_text([{"url": "https://example.org"}, "label"]) == (  # noqa: SLF001
+        "https://example.org label"
+    )
+
+    assert catalog_projection._field_validation("title", "Title") == {  # noqa: SLF001
+        "valid": True,
+        "state": "accepted",
+    }
+    assert catalog_projection._field_validation("privacy_policy_url", {})["valid"] is False  # noqa: SLF001
+    patch, errors = catalog_projection.validate_curation_patch(  # noqa: SLF001
+        {"privacy_policy_url": [{"language": "fr", "url": "https://example.org/privacy"}]}
+    )
+    assert patch == {}
+    assert errors == [{"field": "privacy_policy_url", "message": "localized URL fields are not locally curatable"}]
