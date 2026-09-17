@@ -172,26 +172,26 @@ def refresh_candidates(
     bounded = max(1, min(MAX_CHECKS, int(limit or 1)))
     clock = budget or run_budget.Budget(DEFAULT_BUDGET)
     total, targets = _candidate_rows(bounded)
-    http = session or requests.Session()
     reachable = errors = recorded = processed = 0
-    for target, fields in targets.items():
-        if not clock.remains():
-            break
-        processed += 1
-        try:
-            response = outbound.probe_reachable(http, target, caller=CALLER)
-            result = {
-                "reachable": True,
-                "statusCode": response.status_code,
-                "contentType": response.content_type,
-                "finalUrl": response.url,
-                "lastError": "",
-            }
-            reachable += 1
-        except (requests.RequestException, ValueError) as exc:
-            result = {"reachable": False, "lastError": str(exc)[:1000]}
-            errors += 1
-        recorded += _record(fields, result)
+    with outbound.managed_session(session) as http:
+        for target, fields in targets.items():
+            if not clock.remains():
+                break
+            processed += 1
+            try:
+                response = outbound.probe_reachable(http, target, caller=CALLER)
+                result = {
+                    "reachable": True,
+                    "statusCode": response.status_code,
+                    "contentType": response.content_type,
+                    "finalUrl": response.url,
+                    "lastError": "",
+                }
+                reachable += 1
+            except (requests.RequestException, ValueError) as exc:
+                result = {"reachable": False, "lastError": str(exc)[:1000]}
+                errors += 1
+            recorded += _record(fields, result)
     return {
         "candidates": total,
         "processed": processed,

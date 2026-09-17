@@ -420,3 +420,33 @@ test("re-seeding the composed home payload does not evict a stored full summary"
 	assert.deepEqual(calls, [], "re-seeding forced the breakdown to be fetched again");
 	assert.deepEqual(tools[0].evolvedSummary, FULL);
 });
+
+test("in-memory evolved summaries evict old names", async () => {
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return {
+			ok: true,
+			json: async () => ({ results: { "summary-cap-0": { health: { score: 999 } } } })
+		};
+	};
+	vi.resetModules();
+	const signals = await import(SIGNALS);
+	const summaries = Object.fromEntries(
+		Array.from({ length: signals.EVOLVED_SUMMARY_CACHE_MAX + 1 }, (_, index) => [
+			`summary-cap-${index}`,
+			{ health: { score: index } }
+		])
+	);
+	signals.seedEvolvedSummaries(summaries);
+
+	const evicted = [{ name: "summary-cap-0" }];
+	await signals.attachEvolvedSummaries(evicted, { waitForFresh: true });
+	assert.equal(calls.length, 1, "the oldest summary should have been evicted");
+	assert.equal(evicted[0].evolvedSummary.health.score, 999);
+
+	calls.length = 0;
+	const retained = [{ name: `summary-cap-${signals.EVOLVED_SUMMARY_CACHE_MAX}` }];
+	await signals.attachEvolvedSummaries(retained, { waitForFresh: true });
+	assert.equal(calls.length, 0, "the newest summary should remain available");
+});

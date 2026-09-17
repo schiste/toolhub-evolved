@@ -167,7 +167,8 @@ def test_prewarm_asks_for_json_without_pinning_a_starved_cdn_variant():
 def test_run_once_warms_missing_endpoint_and_skips_fresh_endpoint():
     endpoint = cache_prewarm.HotEndpoint("/api/schema/")
     url = cache_prewarm.url_for_endpoint(endpoint)
-    session = FakePrewarmSession([FakePrewarmResponse(body=b'{"schema":true}', headers={"etag": "schema-v1"})])
+    response = FakePrewarmResponse(body=b'{"schema":true}', headers={"etag": "schema-v1"})
+    session = FakePrewarmSession([response])
 
     summary = cache_prewarm.run_once(session, endpoints=[endpoint])
 
@@ -178,6 +179,7 @@ def test_run_once_warms_missing_endpoint_and_skips_fresh_endpoint():
     assert cached is not None
     assert cached.body == b'{"schema":true}'
     assert cached.etag == "schema-v1"
+    assert response.closed is True
 
     skipped = cache_prewarm.run_once(session, endpoints=[endpoint])
     assert skipped.warmed == 0

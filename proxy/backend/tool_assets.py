@@ -180,7 +180,8 @@ def refresh_tool(tool_name: str, *, session: requests.Session | None = None) -> 
             row.last_error = None
         return {"toolName": name, "status": "missing"}
     try:
-        response, suffix = _fetch_icon(session or requests.Session(), url)
+        with outbound.managed_session(session) as http:
+            response, suffix = _fetch_icon(http, url)
         digest, path = _store_file(response.body, suffix)
     except (requests.RequestException, OSError, ValueError) as exc:
         with db.session_scope() as s:
@@ -257,45 +258,44 @@ def refresh_candidates(limit: int = MAX_CANDIDATES, *, budget: run_budget.Budget
     clock = budget or run_budget.Budget(DEFAULT_BUDGET)
     candidates: list[str] = []
     settlements: list[tuple[str, str]] = []
+    candidate_count = settlement_count = 0
     with db.session_scope() as s:
         # Columns, not entities, and the projection scan streams. This loop
         # keeps only tool names, but selecting `CatalogToolProjection` loaded
-        # four JSON blobs and `search_text` per row -- ~10KB each -- and
+        # two JSON blobs rather than the entity's four JSON blobs plus
+        # `search_text` per row -- ~10KB each -- and
         # `ToolAssetCache` whole on top of it. Once discovery opened up to
         # every Wikimedia project the projection table outgrew the job's
         # memory, and every hourly tick was OOM-killed for a day. `yield_per`
         # keeps peak memory at one batch of projections however far the
-        # catalogue grows; the asset side stays a dict because the loop needs
-        # random access to it.
-        assets = {
-            row.tool_name: row
-            for row in s.execute(
-                select(
-                    ToolAssetCache.tool_name,
-                    ToolAssetCache.source_url,
-                    ToolAssetCache.status,
-                    ToolAssetCache.next_attempt_at,
-                )
-            )
-        }
+        # catalogue grows. The outer join supplies the asset columns in the
+        # same streamed result, so an all-assets dictionary cannot grow with
+        # the catalogue either.
         projections = s.execute(
             select(
                 CatalogToolProjection.tool_name,
                 CatalogToolProjection.effective_record,
                 CatalogToolProjection.provenance,
+                ToolAssetCache.source_url.label("asset_source_url"),
+                ToolAssetCache.status.label("asset_status"),
+                ToolAssetCache.next_attempt_at.label("asset_next_attempt_at"),
             )
+            .outerjoin(ToolAssetCache, ToolAssetCache.tool_name == CatalogToolProjection.tool_name)
             .order_by(CatalogToolProjection.tool_name)
             .execution_options(yield_per=STREAM_BATCH_SIZE)
         )
         for projection in projections:
             url, source = _icon_source(projection)
-            asset = assets.get(projection.tool_name)
-            retry_ready = asset is not None and (asset.next_attempt_at is None or asset.next_attempt_at <= utcnow())
+            asset_source_url = projection.asset_source_url
+            asset_status = projection.asset_status
+            asset_next_attempt_at = projection.asset_next_attempt_at
+            has_asset = asset_source_url is not None or asset_status is not None or asset_next_attempt_at is not None
+            retry_ready = has_asset and (asset_next_attempt_at is None or asset_next_attempt_at <= utcnow())
             if not (
-                asset is None
-                or asset.source_url != url
-                or asset.status == "pending"
-                or (asset.status == "error" and retry_ready)
+                not has_asset
+                or asset_source_url != url
+                or asset_status == "pending"
+                or (asset_status == "error" and retry_ready)
             ):
                 continue
             # Which list decides whether this tool costs a request. Neither the
@@ -303,27 +303,31 @@ def refresh_candidates(limit: int = MAX_CANDIDATES, *, budget: run_budget.Budget
             # every wiki tool lands in `settlements` and is finished without
             # touching the network.
             if url:
-                candidates.append(projection.tool_name)
+                candidate_count += 1
+                if len(candidates) < bounded:
+                    candidates.append(projection.tool_name)
             else:
-                settlements.append((projection.tool_name, source))
-    missing = _settle_missing(settlements[:MAX_SETTLEMENTS])
+                settlement_count += 1
+                if len(settlements) < MAX_SETTLEMENTS:
+                    settlements.append((projection.tool_name, source))
+    missing = _settle_missing(settlements)
     ready = errors = processed = 0
-    http = requests.Session()
-    for name in candidates[:bounded]:
-        if not clock.remains():
-            break
-        processed += 1
-        result = refresh_tool(name, session=http)
-        ready += result["status"] == "ready"
-        errors += result["status"] == "error"
+    with outbound.managed_session() as http:
+        for name in candidates:
+            if not clock.remains():
+                break
+            processed += 1
+            result = refresh_tool(name, session=http)
+            ready += result["status"] == "ready"
+            errors += result["status"] == "error"
     return {
-        "candidates": len(candidates) + len(settlements),
-        "fetches": len(candidates),
+        "candidates": candidate_count + settlement_count,
+        "fetches": candidate_count,
         "processed": processed,
         "ready": ready,
         "errors": errors,
         "settled": missing,
-        "settlements": len(settlements),
+        "settlements": settlement_count,
         "spentSeconds": round(clock.spent(), 1),
         "budgeted": int(clock.seconds),
     }

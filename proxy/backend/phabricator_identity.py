@@ -25,7 +25,7 @@ from urllib.parse import quote
 
 import requests
 
-from backend import toolhub
+from backend import outbound, toolhub
 
 PHABRICATOR_BASE_URL = "https://phabricator.wikimedia.org"
 PHABRICATOR_TIMEOUT = 10
@@ -130,4 +130,7 @@ class PhabricatorProfileProvider:
             headers={"User-Agent": toolhub.USER_AGENT, "Accept": "text/html"},
             timeout=PHABRICATOR_TIMEOUT,
         )
-        return response.status_code, response.text
+        try:
+            return response.status_code, response.text
+        finally:
+            outbound.close_response(response)

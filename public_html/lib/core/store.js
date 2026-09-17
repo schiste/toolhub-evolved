@@ -99,8 +99,8 @@ export function toolSummaryCacheRead() {
 		const now = Date.now();
 		const raw = JSON.parse(localStorage.getItem(TOOL_SUMMARY_CACHE_KEY) || "{}");
 		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-		return Object.fromEntries(
-			Object.entries(raw).filter(([, entry]) => {
+		const valid = Object.entries(raw)
+			.filter(([, entry]) => {
 				return (
 					entry &&
 					typeof entry === "object" &&
@@ -109,7 +109,9 @@ export function toolSummaryCacheRead() {
 					now - entry.ts <= TOOL_SUMMARY_CACHE_TTL_MS
 				);
 			})
-		);
+			.sort(([, a], [, b]) => b.ts - a.ts)
+			.slice(0, TOOL_SUMMARY_CACHE_MAX);
+		return Object.fromEntries(valid);
 	} catch {
 		return {};
 	}
@@ -149,8 +151,8 @@ function recentOwnerCacheRead() {
 		const now = Date.now();
 		const raw = JSON.parse(localStorage.getItem(RECENT_OWNER_CACHE_KEY) || "{}");
 		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-		return Object.fromEntries(
-			Object.entries(raw).filter(([, entry]) => {
+		const valid = Object.entries(raw)
+			.filter(([, entry]) => {
 				return (
 					entry &&
 					typeof entry === "object" &&
@@ -159,7 +161,9 @@ function recentOwnerCacheRead() {
 					now - entry.ts <= RECENT_OWNER_CACHE_TTL_MS
 				);
 			})
-		);
+			.sort(([, a], [, b]) => b.ts - a.ts)
+			.slice(0, RECENT_OWNER_CACHE_MAX);
+		return Object.fromEntries(valid);
 	} catch {
 		return {};
 	}
