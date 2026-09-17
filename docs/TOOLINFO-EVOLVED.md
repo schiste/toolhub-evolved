@@ -105,6 +105,37 @@ were removed. Snapshot storage must retain each sibling's last-good version
 until a complete observation explicitly changes its state. Unknown major
 schema versions are rejected rather than guessed.
 
+## Repository-scan discovery
+
+Repository analysis discovers every repository-relative `SKILL.md` in the
+acquired tree in sorted path order. Each entrypoint becomes one artifact whose
+stable ID is `<source.id>#<skill-root>`. A repository may therefore contain
+multiple skills, including a normal skill and a nested skill root. Resources
+belonging to a nested root are excluded from its parent manifest and are
+reported by the nested artifact instead.
+
+The discovery result is stored alongside the existing source-analysis report:
+
+| Report field               | Meaning                                                                                        |
+| -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `evolvedSkills`            | The versioned Evolved catalog envelope, including source, refresh, artifacts, and provenance.  |
+| `evolvedSkillsDiscovery`   | Run counters: `discovered`, `failed`, and `observedFiles`.                                     |
+| `refresh.failed_artifacts` | Per-entrypoint errors with the candidate path, stable ID, bounded message, and retryable flag. |
+
+The bounded discovery parser accepts the Agent Skills frontmatter needed by
+the data layer (`name`, `description`, and declared fields such as `projects`)
+and retains unknown keys. Invalid UTF-8, missing frontmatter, malformed
+frontmatter, and unreadable entrypoints fail only that candidate. A run is
+`complete` when all candidates succeed, `partial` when at least one succeeds
+and one fails, and `failed` when every candidate fails. An empty repository
+scan is a complete catalog with zero artifacts.
+
+The scanner records immutable source evidence (`source.id`, repository URL,
+and commit) plus a run ID on each artifact. Resource contents remain outside
+the public envelope; the resource manifest records repository-relative paths,
+byte sizes, and SHA-256 digests so a later snapshot/cache stage can serve the
+skill without changing discovery semantics.
+
 Examples:
 
 - [toolinfo-evolved-multi-skill.json](../tests/proxy/fixtures/toolinfo-evolved-multi-skill.json):
