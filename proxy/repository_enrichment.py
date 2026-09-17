@@ -351,7 +351,7 @@ def candidates(limit: int = DEFAULT_LIMIT) -> list[str]:
             )
             .order_by(
                 case((RepositoryHostMetadata.url_hash.is_(None), 0), else_=1),
-                RepositoryHostMetadata.next_attempt_at.asc().nullsfirst(),
+                RepositoryHostMetadata.next_attempt_at.asc().nulls_first(),
                 RepositoryAnalysisState.repository_url,
             )
             .limit(bounded)
