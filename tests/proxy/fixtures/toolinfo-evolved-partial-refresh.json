@@ -1,0 +1,64 @@
+{
+	"_schema": "/toolinfo/evolved/1.0.0",
+	"type": "evolved-catalog",
+	"source": {
+		"id": "github:example/partial-repository",
+		"repository": "https://github.com/example/partial-repository",
+		"ref": "main",
+		"commit": "ghi789"
+	},
+	"refresh": {
+		"run_id": "2026-09-17T10:15:00Z-ghi789",
+		"status": "partial",
+		"failed_artifacts": [
+			{
+				"id": "github:example/partial-repository#skills/failed",
+				"error": "resource manifest could not be read",
+				"retryable": true
+			}
+		]
+	},
+	"artifacts": [
+		{
+			"id": "github:example/partial-repository#skills/kept",
+			"tool_type": "skill",
+			"name": "kept",
+			"description": "A sibling that was observed successfully.",
+			"skill": {
+				"root": "skills/kept",
+				"entrypoint": "SKILL.md",
+				"frontmatter": {
+					"name": "kept",
+					"description": "A sibling that was observed successfully."
+				},
+				"resources": [
+					{
+						"path": "skills/kept/SKILL.md",
+						"size": 12,
+						"sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+					}
+				]
+			}
+		},
+		{
+			"id": "github:example/partial-repository#skills/failed",
+			"tool_type": "skill",
+			"name": "failed",
+			"description": "This artifact has no usable resource digest.",
+			"skill": {
+				"root": "skills/failed",
+				"entrypoint": "SKILL.md",
+				"frontmatter": {
+					"name": "failed",
+					"description": "This artifact has no usable resource digest."
+				},
+				"resources": [
+					{
+						"path": "skills/failed/SKILL.md",
+						"size": 12
+					}
+				]
+			}
+		}
+	]
+}

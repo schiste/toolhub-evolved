@@ -132,6 +132,56 @@ def test_scan_tool_stores_approved_repository_report_and_commit_state(monkeypatc
         assert state.report_id == report.id
 
 
+def test_scan_tool_records_evolved_skill_discovery_with_sibling_failures(monkeypatch):
+    commit = "def4567890123456789012345678901234567890"
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: commit)
+
+    def fake_checkout(_url, destination):
+        destination.mkdir(parents=True)
+        return commit
+
+    monkeypatch.setattr(repository_scan, "clone_repository", fake_checkout)
+    monkeypatch.setattr(
+        repository_scan,
+        "_read_repository_tree",
+        lambda _repo: [
+            {
+                "path": "skills/lookup/SKILL.md",
+                "content": "---\nname: lookup\ndescription: Look up data.\nprojects: enwiki\n---\n# Lookup\n",
+            },
+            {"path": "skills/lookup/reference.md", "content": "# Reference\n"},
+            {"path": "skills/broken/SKILL.md", "content": "not frontmatter"},
+        ],
+    )
+    monkeypatch.setattr(repository_scan, "_local_git_context", lambda _paths: {})
+    monkeypatch.setattr(
+        repository_scan, "analyze_source_files", lambda files, **_kwargs: {"filesAnalyzed": len(files)}
+    )
+    monkeypatch.setattr(repository_scan.tool_summaries, "refresh", lambda *_args: 1)
+
+    result = repository_scan.scan_tool(
+        "skill-tool",
+        {
+            "repository": "https://github.com/example/skill-tool",
+            "source": {
+                "id": "github:example/skill-tool",
+                "repository": "https://github.com/example/skill-tool",
+            },
+        },
+    )
+
+    assert result == "analyzed"
+    with db.session_scope() as s:
+        report = s.execute(
+            select(SourceAnalysisReport).where(SourceAnalysisReport.tool_name == "skill-tool")
+        ).scalar_one()
+        catalog = report.report["evolvedSkills"]
+        assert catalog["source"]["commit"] == commit
+        assert catalog["refresh"]["status"] == "partial"
+        assert [artifact["name"] for artifact in catalog["artifacts"]] == ["lookup"]
+        assert report.report["evolvedSkillsDiscovery"] == {"discovered": 1, "failed": 1, "observedFiles": 3}
+
+
 def _empty_checkout(monkeypatch, commit):
     """Wire up a clone that succeeds and yields nothing the analyzer can read."""
     monkeypatch.setattr(repository_scan, "repository_head", lambda _url: commit)
