@@ -29,6 +29,8 @@ from backend import db
 from backend.models import CanonicalToolCache
 
 SKILLS_EXTENSION = "io.modelcontextprotocol/skills"
+EVOLVED_TOOLINFO_SCHEMA = "/toolinfo/evolved/1.0.0"
+EVOLVED_CATALOG_TYPE = "evolved-catalog"
 SKILL_ENTRYPOINT = "SKILL.md"
 MAX_SKILLS_PAGE = 50
 MAX_RESOURCES_PER_SKILL = 512
@@ -130,6 +132,15 @@ class SkillEntry:
 
 def _text(value: Any) -> str:  # noqa: ANN401 - catalog JSON is untrusted
     return value.strip() if isinstance(value, str) else ""
+
+
+def is_evolved_catalog(record: Any) -> bool:  # noqa: ANN401 - catalog JSON is untrusted
+    """Return whether a record declares the supported versioned Evolved envelope."""
+    return (
+        isinstance(record, dict)
+        and _text(record.get("_schema")) == EVOLVED_TOOLINFO_SCHEMA
+        and _text(record.get("type")) == EVOLVED_CATALOG_TYPE
+    )
 
 
 def _dict(value: Any) -> dict[str, Any]:  # noqa: ANN401 - catalog JSON is untrusted
@@ -388,6 +399,10 @@ def _candidate_frontmatter(skill: dict[str, Any], candidate: dict[str, Any], rec
 
 def _candidate_records(record: dict[str, Any]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """Return (candidate, repository source) pairs for all supported shapes."""
+    if _text(record.get("type")) == EVOLVED_CATALOG_TYPE and not is_evolved_catalog(record):
+        # The versioned envelope is fail-closed: guessing at a future major
+        # shape could publish the wrong artifact identity or review metadata.
+        return []
     source = _dict(record.get("source"))
     artifacts = record.get("artifacts")
     if isinstance(artifacts, list):
@@ -406,6 +421,7 @@ def _candidate_records(record: dict[str, Any]) -> list[tuple[dict[str, Any], dic
 
 
 def _entry_from_candidate(candidate: dict[str, Any], source: dict[str, Any], record: dict[str, Any]) -> SkillEntry:
+    canonical = is_evolved_catalog(record)
     skill = _candidate_skill_payload(candidate)
     source = _dict(candidate.get("source")) or source or _dict(record.get("source"))
     frontmatter = _candidate_frontmatter(skill, candidate, record)
@@ -413,6 +429,8 @@ def _entry_from_candidate(candidate: dict[str, Any], source: dict[str, Any], rec
     description = _first_text(frontmatter.get("description"), skill.get("description"), candidate.get("description"))
     if not name or not description:
         _invalid("skill frontmatter requires name and description")
+    if canonical and not _text(candidate.get("id")):
+        _invalid("versioned skill artifacts require an id")
     frontmatter.setdefault("name", name)
     frontmatter.setdefault("description", description)
     evolved = _dict(candidate.get("evolved"))
@@ -428,6 +446,11 @@ def _entry_from_candidate(candidate: dict[str, Any], source: dict[str, Any], rec
         skill.get("uri"),
     )
     root = _first_text(skill.get("root"), candidate.get("root"))
+    entrypoint = _first_text(skill.get("entrypoint"), candidate.get("entrypoint"), SKILL_ENTRYPOINT)
+    if canonical and not root:
+        _invalid("versioned skill artifacts require a repository-relative root")
+    if entrypoint != SKILL_ENTRYPOINT:
+        _invalid("skill entrypoint must be SKILL.md")
     skill_uri = _normalise_uri(uri or _generated_uri(name, source, root))
     resources = _resource_entries(
         skill.get("resources", candidate.get("resources")),

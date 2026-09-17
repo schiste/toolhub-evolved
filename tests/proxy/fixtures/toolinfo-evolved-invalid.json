@@ -1,0 +1,30 @@
+{
+	"_schema": "/toolinfo/evolved/1.0.0",
+	"type": "evolved-catalog",
+	"source": {
+		"id": "github:example/invalid-repository",
+		"repository": "https://github.com/example/invalid-repository"
+	},
+	"artifacts": [
+		{
+			"id": "github:example/invalid-repository#skills/no-description",
+			"tool_type": "skill",
+			"name": "no-description",
+			"description": "",
+			"skill": {
+				"root": "skills/no-description",
+				"entrypoint": "SKILL.md",
+				"frontmatter": {
+					"name": "no-description"
+				},
+				"resources": [
+					{
+						"path": "skills/no-description/SKILL.md",
+						"size": 0,
+						"sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+					}
+				]
+			}
+		}
+	]
+}
