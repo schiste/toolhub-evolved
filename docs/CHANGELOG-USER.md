@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: a-comment-is-not-a-declaration -->
 <!-- Release title: A Comment Is Not A Declaration -->
-<!-- Source range: d169b7a6..7854dd806 (12 commits) -->
+<!-- Source range: 7854dd806..ecfec539 (2 commits) -->
 
 # What's New for Users
 
@@ -13,4 +13,4 @@
 - Tool pages, people details, and the relationship graph now keep a more consistent picture of the catalog when data is refreshed or edited, with all available catalog metadata—including the projects a skill targets—kept visible.
 - Creating and editing a tool now keeps official details and local curation changes coordinated through the same flow, while preserving legacy form data and handling optional annotation fields clearly.
 - Catalog views normalize tool information consistently, so the same tool is represented the same way across screens.
-- The proxy's environment fallbacks and catalog snapshot paths now meet the project's complete coverage guarantee, keeping refresh failures visible during validation instead of after release; its navigation graph is refreshed alongside those code changes, and authentication failures now return a safe authorization message without exposing exception details. The MCP server can also discover and deliver skills and their local resources, while preserving the existing tool catalog contract. Release validation now checks rendered metadata URLs for exact values rather than unsafe substrings.
+- The proxy's environment fallbacks and catalog snapshot paths now meet the project's complete coverage guarantee, keeping refresh failures visible during validation instead of after release; its navigation graph is refreshed alongside those code changes, and authentication failures now return a safe authorization message without exposing exception details. The MCP server can also discover and deliver skills and their local resources, while preserving the existing tool catalog contract. Repository scans find every `SKILL.md`, keep multiple and nested skills independently addressable, preserve project targets and resource digests, and report a malformed sibling without discarding valid skills. Release validation now checks rendered metadata URLs for exact values rather than unsafe substrings.
