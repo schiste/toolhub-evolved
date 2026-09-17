@@ -1,0 +1,39 @@
+{
+	"_schema": "/toolinfo/evolved/1.0.0",
+	"type": "evolved-catalog",
+	"source": {
+		"id": "github:example/mixed-repository",
+		"repository": "https://github.com/example/mixed-repository",
+		"ref": "main",
+		"commit": "def456"
+	},
+	"artifacts": [
+		{
+			"id": "github:example/mixed-repository#tool",
+			"tool_type": "web app",
+			"name": "Example web app",
+			"description": "An ordinary Toolhub-compatible artifact."
+		},
+		{
+			"id": "github:example/mixed-repository#skills/review",
+			"tool_type": "skill",
+			"name": "review",
+			"description": "Review a Wikimedia change.",
+			"skill": {
+				"root": "skills/review",
+				"entrypoint": "SKILL.md",
+				"frontmatter": {
+					"name": "review",
+					"description": "Review a Wikimedia change."
+				},
+				"resources": [
+					{
+						"path": "skills/review/SKILL.md",
+						"size": 19,
+						"sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+					}
+				]
+			}
+		}
+	]
+}
