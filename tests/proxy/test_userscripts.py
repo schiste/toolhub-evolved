@@ -43,6 +43,26 @@ def test_stripping_an_absent_body_is_not_an_error():
     assert userscripts.strip_comments("") == ""
 
 
+def test_dynamic_parser_caches_have_a_process_lifetime_bound():
+    caches = (userscripts._alias_prefix, userscripts._verbs, userscripts._call_pattern, userscripts._edge_pattern)
+    for cache in caches:
+        cache.cache_clear()
+    try:
+        for index in range(userscripts.REGEX_CACHE_MAXSIZE * 2):
+            wiki = f"wiki-{index}"
+            userscripts._alias_prefix((f"Namespace-{index}",))
+            userscripts._verbs(wiki)
+            userscripts._call_pattern(wiki)
+            userscripts._edge_pattern(wiki)
+        for cache in caches:
+            info = cache.cache_info()
+            assert info.maxsize == userscripts.REGEX_CACHE_MAXSIZE
+            assert info.currsize <= userscripts.REGEX_CACHE_MAXSIZE
+    finally:
+        for cache in caches:
+            cache.cache_clear()
+
+
 def test_a_wildcard_url_in_a_line_comment_does_not_open_a_block_comment():
     # `User:Yug/RenameOrReplace.js` on meta: a Tampermonkey header whose `@match`
     # ends in the URL wildcard `/*`. Stripping block comments before line

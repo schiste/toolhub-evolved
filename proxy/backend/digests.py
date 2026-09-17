@@ -16,7 +16,7 @@ from urllib.parse import quote, urlparse
 import requests
 from sqlalchemy import delete, func, or_, select
 
-from backend import db, people_index, toolinfo_authors
+from backend import db, outbound, people_index, toolinfo_authors
 from backend.http_headers import clean_header_value
 from backend.models import (
     CanonicalToolCache,
@@ -783,6 +783,7 @@ def generate_editorial(facts: list[dict[str, Any]], cadence: str) -> tuple[dict[
     if not raw_endpoint:
         return _fallback_editorial(facts, cadence), model, True, None
     response_payload: object | None = None
+    response = None
     try:
         # Built inside the try so a malformed LIFTWING_USER_AGENT degrades to the
         # deterministic fallback with a recorded diagnostic, like every other
@@ -819,6 +820,9 @@ def generate_editorial(facts: list[dict[str, Any]], cadence: str) -> tuple[dict[
         else:
             response_payload = {"_toolhub_generation_error": diagnostic}
         return _fallback_editorial(facts, cadence), model, True, response_payload
+    finally:
+        if response is not None:
+            outbound.close_response(response)
 
 
 def clean_liftwing_endpoint(value: str, *, model: str = "") -> str:

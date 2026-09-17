@@ -15,7 +15,7 @@ import requests
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend import api_cache, canonical_tools, db, token_crypto
+from backend import api_cache, canonical_tools, db, outbound, token_crypto
 from backend.models import ToolhubToken, utcnow
 
 DEFAULT_BASE_URL = "https://toolhub.wikimedia.org"
@@ -95,8 +95,11 @@ def exchange_code(*, code: str, redirect_uri: str) -> dict[str, object]:
         },
         timeout=REQUEST_TIMEOUT,
     )
-    resp.raise_for_status()
-    return resp.json()
+    try:
+        resp.raise_for_status()
+        return resp.json()
+    finally:
+        outbound.close_response(resp)
 
 
 def refresh_grant(refresh_token: str) -> dict[str, object]:
@@ -115,8 +118,11 @@ def refresh_grant(refresh_token: str) -> dict[str, object]:
         },
         timeout=REQUEST_TIMEOUT,
     )
-    resp.raise_for_status()
-    return resp.json()
+    try:
+        resp.raise_for_status()
+        return resp.json()
+    finally:
+        outbound.close_response(resp)
 
 
 def current_user(access_token: str) -> dict[str, object]:
@@ -321,24 +327,27 @@ def public_api_get(
             return _cached_json_payload(cached)
 
     resp = requests.get(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, timeout=REQUEST_TIMEOUT)
-    payload = _json_or_text(resp)
-    if not resp.ok:
-        raise ToolhubAPIError(resp.status_code, payload)
+    try:
+        payload = _json_or_text(resp)
+        if not resp.ok:
+            raise ToolhubAPIError(resp.status_code, payload)
 
-    if _CACHEABLE_MIN_STATUS <= resp.status_code < _CACHEABLE_MAX_STATUS:
-        body = resp.content or dumps(payload).encode("utf-8")
-        api_cache.put_success(
-            url,
-            api_cache.CacheableResponse(
-                status=resp.status_code,
-                content_type=resp.headers.get("content-type", "application/json"),
-                body=body,
-                etag=resp.headers.get("etag"),
-                last_modified=resp.headers.get("last-modified"),
-            ),
-        )
-        canonical_tools.ingest_payload(url, body)
-    return payload
+        if _CACHEABLE_MIN_STATUS <= resp.status_code < _CACHEABLE_MAX_STATUS:
+            body = resp.content or dumps(payload).encode("utf-8")
+            api_cache.put_success(
+                url,
+                api_cache.CacheableResponse(
+                    status=resp.status_code,
+                    content_type=resp.headers.get("content-type", "application/json"),
+                    body=body,
+                    etag=resp.headers.get("etag"),
+                    last_modified=resp.headers.get("last-modified"),
+                ),
+            )
+            canonical_tools.ingest_payload(url, body)
+        return payload
+    finally:
+        outbound.close_response(resp)
 
 
 def request_with_token(method: str, path: str, *, access_token: str, json: object | None = None) -> tuple[object, int]:
@@ -354,12 +363,15 @@ def request_with_token(method: str, path: str, *, access_token: str, json: objec
         json=json,
         timeout=REQUEST_TIMEOUT,
     )
-    if resp.status_code == HTTP_NO_CONTENT:
-        return {"ok": True}, HTTP_NO_CONTENT
-    payload = _json_or_text(resp)
-    if not resp.ok:
-        raise ToolhubAPIError(resp.status_code, payload)
-    return payload, resp.status_code
+    try:
+        if resp.status_code == HTTP_NO_CONTENT:
+            return {"ok": True}, HTTP_NO_CONTENT
+        payload = _json_or_text(resp)
+        if not resp.ok:
+            raise ToolhubAPIError(resp.status_code, payload)
+        return payload, resp.status_code
+    finally:
+        outbound.close_response(resp)
 
 
 def api_request(user_id: int, method: str, path: str, *, json: object | None = None) -> tuple[object, int]:

@@ -6,6 +6,8 @@ export const APP_BOOT_START = `${PREFIX}:app-boot-start`;
 /** @typedef {{ name: string, mark?: string, measure?: string, at: number, detail: Record<string, any> }} FrontendTiming */
 /** @type {FrontendTiming[]} */
 export const FRONTEND_TIMINGS = [];
+export const FRONTEND_TIMING_LIMIT = 200;
+export const PAGE_ERROR_LIMIT = 80;
 
 const markedOnce = new Set();
 const PAGE_LOG_LIMIT = 80;
@@ -35,6 +37,12 @@ function safeMark(markName, detail, startTime) {
 	const p = perf();
 	if (typeof p?.mark !== "function") return;
 	try {
+		// Performance entries live independently of FRONTEND_TIMINGS. Reusing a
+		// mark name without clearing the previous entry would therefore grow the
+		// browser's performance timeline forever during a long SPA session.
+		p.clearMarks?.(markName);
+	} catch {}
+	try {
 		p.mark(markName, startTime === undefined ? { detail } : { detail, startTime });
 	} catch {
 		try {
@@ -52,6 +60,11 @@ function safeMark(markName, detail, startTime) {
 function safeMeasure(measureName, start, end, detail) {
 	const p = perf();
 	if (typeof p?.measure !== "function") return;
+	try {
+		// Keep one current measurement per diagnostic name; the exported timing
+		// buffer already retains the bounded recent history used by the report UI.
+		p.clearMeasures?.(measureName);
+	} catch {}
 	try {
 		p.measure(measureName, { start, end, detail });
 	} catch {
@@ -71,6 +84,14 @@ function exposeTimings() {
 	} catch {}
 }
 
+/** @param {FrontendTiming} entry */
+function rememberTiming(entry) {
+	FRONTEND_TIMINGS.push(entry);
+	if (FRONTEND_TIMINGS.length > FRONTEND_TIMING_LIMIT) {
+		FRONTEND_TIMINGS.splice(0, FRONTEND_TIMINGS.length - FRONTEND_TIMING_LIMIT);
+	}
+}
+
 /**
  * @param {string} name
  * @param {Record<string, any>} [detail]
@@ -81,7 +102,7 @@ export function markFrontendTiming(name, detail = {}, startTime) {
 	const markName = `${PREFIX}:${name}`;
 	const at = startTime === undefined ? now() : startTime;
 	const entry = { name, mark: markName, at, detail };
-	FRONTEND_TIMINGS.push(entry);
+	rememberTiming(entry);
 	safeMark(markName, detail, startTime);
 	try {
 		document.dispatchEvent(new CustomEvent("toolhub:frontend-timing", { detail: entry }));
@@ -111,7 +132,7 @@ export function measureFrontendTiming(name, detail = {}, startMark = APP_BOOT_ST
 	safeMark(endMark, detail);
 	safeMeasure(`${PREFIX}:${name}`, startMark, endMark, detail);
 	const entry = { name, measure: `${PREFIX}:${name}`, at: endedAt, detail };
-	FRONTEND_TIMINGS.push(entry);
+	rememberTiming(entry);
 	return entry;
 }
 
@@ -121,7 +142,7 @@ export function markAppBootStart() {
 
 /** @param {unknown} value @param {number} [depth] @returns {string} */
 function diagnosticValue(value, depth = 0) {
-	if (value instanceof Error) return redact(`${value.name}: ${value.message}\n${value.stack || ""}`);
+	if (value instanceof Error) return redact(`${value.name}: ${value.message}\n${value.stack || ""}`).slice(0, 4000);
 	if (value === null || value === undefined) return String(value);
 	if (typeof value === "string") return redact(value).slice(0, 4000);
 	if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -167,6 +188,12 @@ function recordConsole(level, args) {
 	if (PAGE_LOGS.length > PAGE_LOG_LIMIT) PAGE_LOGS.splice(0, PAGE_LOGS.length - PAGE_LOG_LIMIT);
 }
 
+/** @param {{ kind: string, message: string, at: number }} entry */
+function rememberPageError(entry) {
+	PAGE_ERRORS.push(entry);
+	if (PAGE_ERRORS.length > PAGE_ERROR_LIMIT) PAGE_ERRORS.splice(0, PAGE_ERRORS.length - PAGE_ERROR_LIMIT);
+}
+
 /**
  * Install a bounded console/error buffer. It keeps only the current route's
  * entries when the report drawer asks for context; original console behavior is preserved.
@@ -190,14 +217,14 @@ export function initPageDiagnostics() {
 	}
 	if (typeof window === "object") {
 		window.addEventListener("error", (event) => {
-			PAGE_ERRORS.push({
+			rememberPageError({
 				kind: "error",
 				message: redact(event.message || "Unknown window error").slice(0, 4000),
 				at: Date.now()
 			});
 		});
 		window.addEventListener("unhandledrejection", (event) => {
-			PAGE_ERRORS.push({ kind: "unhandledrejection", message: diagnosticValue(event.reason), at: Date.now() });
+			rememberPageError({ kind: "unhandledrejection", message: diagnosticValue(event.reason), at: Date.now() });
 		});
 	}
 }

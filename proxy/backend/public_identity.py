@@ -11,7 +11,7 @@ from typing import Any
 
 import requests
 
-from backend import toolhub
+from backend import outbound, toolhub
 
 try:  # pragma: no cover - production uses ldap3; tests inject a lookup.
     from ldap3 import Connection, Server
@@ -203,15 +203,24 @@ class WikimediaIdentityProvider:
                 headers={"User-Agent": toolhub.USER_AGENT, "Accept": "application/json"},
                 timeout=toolhub.REQUEST_TIMEOUT,
             )
-            if response.status_code not in RATE_LIMIT_STATUSES:
-                break
-            if attempt < RATE_LIMIT_RETRIES:
-                time.sleep(retry_delay_seconds(response.headers.get("Retry-After")))
-        try:
-            payload: object = response.json()
-        except ValueError:
-            payload = None
-        return response.status_code, payload
+            try:
+                if response.status_code not in RATE_LIMIT_STATUSES:
+                    try:
+                        payload: object = response.json()
+                    except ValueError:
+                        payload = None
+                    return response.status_code, payload
+                if attempt >= RATE_LIMIT_RETRIES:
+                    try:
+                        payload = response.json()
+                    except ValueError:
+                        payload = None
+                    return response.status_code, payload
+                delay = retry_delay_seconds(response.headers.get("Retry-After"))
+            finally:
+                outbound.close_response(response)
+            time.sleep(delay)
+        return 0, None  # pragma: no cover - every configured attempt returns above
 
     @staticmethod
     def _fetch(global_user_id: str) -> tuple[int, object]:
@@ -228,10 +237,13 @@ class WikimediaIdentityProvider:
             timeout=toolhub.REQUEST_TIMEOUT,
         )
         try:
-            payload: object = response.json()
-        except ValueError:
-            payload = None
-        return response.status_code, payload
+            try:
+                payload: object = response.json()
+            except ValueError:
+                payload = None
+            return response.status_code, payload
+        finally:
+            outbound.close_response(response)
 
 
 class ToolforgeIdentityProvider:

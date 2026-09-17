@@ -13,7 +13,7 @@ from typing import Any
 import requests
 
 import cache_prewarm
-from backend import api_cache, job_runner, recent_owners
+from backend import api_cache, job_runner, outbound, recent_owners
 
 UPSTREAM = "https://toolhub.wikimedia.org"
 RECENT_INVALIDATION_URL = f"{UPSTREAM}/api/recent/?page_size=50"
@@ -23,26 +23,29 @@ TIMEOUT = 10
 
 def fetch_recent_change_rows(session: requests.Session | None = None) -> list[dict[str, Any]]:
     """Fetch Toolhub's newest recent rows for cache invalidation only."""
-    http = session or requests.Session()
-    try:
-        upstream = http.get(
-            RECENT_INVALIDATION_URL,
-            headers={"User-Agent": UA, "Accept": "application/json"},
-            timeout=TIMEOUT,
-            allow_redirects=False,
-        )
-    except requests.RequestException:
-        return []
-    if not upstream.ok:
-        return []
-    try:
-        payload = upstream.json()
-    except ValueError:
-        return []
-    results = payload.get("results") if isinstance(payload, dict) else None
-    if not isinstance(results, list):
-        return []
-    return [row for row in results if isinstance(row, dict)]
+    with outbound.managed_session(session) as http:
+        try:
+            upstream = http.get(
+                RECENT_INVALIDATION_URL,
+                headers={"User-Agent": UA, "Accept": "application/json"},
+                timeout=TIMEOUT,
+                allow_redirects=False,
+            )
+        except requests.RequestException:
+            return []
+        try:
+            if not upstream.ok:
+                return []
+            try:
+                payload = upstream.json()
+            except ValueError:
+                return []
+            results = payload.get("results") if isinstance(payload, dict) else None
+            if not isinstance(results, list):
+                return []
+            return [row for row in results if isinstance(row, dict)]
+        finally:
+            outbound.close_response(upstream)
 
 
 def run_once(session: requests.Session | None = None) -> int:
@@ -55,8 +58,12 @@ def main() -> int:
 
     def body() -> None:
         removed = run_once()
+        api_purged = api_cache.purge_expired()
         purged = recent_owners.purge_expired()
-        sys.stdout.write(f"cache-invalidation: {removed} rows invalidated, {purged} owner rows purged\n")
+        sys.stdout.write(
+            f"cache-invalidation: {removed} rows invalidated, {api_purged} API cache rows purged, "
+            f"{purged} owner rows purged\n"
+        )
         sys.stdout.write(f"{cache_prewarm.run_once().log_line()}\n")
 
     return job_runner.run_job("api-cache-invalidator", body)

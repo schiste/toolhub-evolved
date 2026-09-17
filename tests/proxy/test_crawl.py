@@ -47,6 +47,7 @@ class FakeResp:
         self.status_code = status
         self.is_redirect = 300 <= status < 400
         self.is_permanent_redirect = status in (301, 308)
+        self.closed = False
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -62,6 +63,9 @@ class FakeResp:
     def __exit__(self, *exc):
         return False
 
+    def close(self):
+        self.closed = True
+
 
 class FakeSession:
     """Routes toolinfo-URL GETs and upstream-existence GETs separately."""
@@ -71,15 +75,18 @@ class FakeSession:
         self.feed_status = feed_status
         self.upstream_status = upstream_status
         self.raises = raises
+        self.last_response = None
 
     def get(self, url, **kwargs):
         if url.startswith(crawl.UPSTREAM_TOOL):
             if self.raises == "upstream":
                 raise crawl.requests.RequestException("upstream down")
-            return FakeResp(status=self.upstream_status)
+            self.last_response = FakeResp(status=self.upstream_status)
+            return self.last_response
         if self.raises == "feed":
             raise crawl.requests.RequestException("fetch failed")
-        return FakeResp(self.feed_body, self.feed_status)
+        self.last_response = FakeResp(self.feed_body, self.feed_status)
+        return self.last_response
 
 
 def run_with(monkeypatch, session, *, public=True):
@@ -167,7 +174,9 @@ def test_upstream_success_status_is_present(monkeypatch, status):
 
 
 def test_upstream_404_is_absent():
-    assert crawl.upstream_state(FakeSession(upstream_status=404), "any-name") == crawl.UPSTREAM_ABSENT
+    session = FakeSession(upstream_status=404)
+    assert crawl.upstream_state(session, "any-name") == crawl.UPSTREAM_ABSENT
+    assert session.last_response.closed is True
 
 
 def test_toolhub_outage_does_not_claim_the_tool_exists_upstream(monkeypatch):

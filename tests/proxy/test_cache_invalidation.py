@@ -31,11 +31,15 @@ class FakeRecentResponse:
         self.ok = status_code < 400
         self._payload = payload if payload is not None else {"results": []}
         self._json_error = json_error
+        self.closed = False
 
     def json(self):
         if self._json_error is not None:
             raise self._json_error
         return self._payload
+
+    def close(self):
+        self.closed = True
 
 
 class FakeRecentSession:
@@ -59,18 +63,17 @@ def _put(url):
 
 
 def test_fetch_recent_change_rows_reads_toolhub_recent_rows():
+    response = FakeRecentResponse(
+        payload={
+            "results": [
+                {"id": 2, "content_type": "tool"},
+                "not-a-row",
+                {"id": 1, "content_type": "list"},
+            ]
+        }
+    )
     session = FakeRecentSession(
-        [
-            FakeRecentResponse(
-                payload={
-                    "results": [
-                        {"id": 2, "content_type": "tool"},
-                        "not-a-row",
-                        {"id": 1, "content_type": "list"},
-                    ]
-                }
-            )
-        ]
+        [response]
     )
 
     assert cache_invalidation.fetch_recent_change_rows(session) == [
@@ -81,6 +84,7 @@ def test_fetch_recent_change_rows_reads_toolhub_recent_rows():
     assert session.calls[0][1]["allow_redirects"] is False
     assert session.calls[0][1]["timeout"] == 10
     assert session.calls[0][1]["headers"]["Accept"] == "application/json"
+    assert response.closed is True
 
 
 def test_fetch_recent_change_rows_treats_failures_as_no_rows():
@@ -117,6 +121,21 @@ def test_run_once_invalidates_only_cache_rows_changed_since_last_marker(monkeypa
     assert api_cache.get("https://toolhub.wikimedia.org/api/schema/") is not None
 
 
+def test_api_cache_purges_rows_past_the_stale_window_without_touching_live_rows():
+    expired_url = "https://toolhub.wikimedia.org/api/search/tools/?q=expired"
+    live_url = "https://toolhub.wikimedia.org/api/search/tools/?q=live"
+    _put(expired_url)
+    _put(live_url)
+    now = api_cache.utcnow()
+    with db.session_scope() as s:
+        s.get(api_cache.ApiCache, api_cache._key(expired_url)).stale_until = now - timedelta(seconds=1)
+        s.get(api_cache.ApiCache, api_cache._key(live_url)).stale_until = now + timedelta(seconds=1)
+
+    assert api_cache.purge_expired() == 1
+    assert api_cache.get(expired_url) is None
+    assert api_cache.get(live_url) is not None
+
+
 def test_main_configures_db_runs_once_and_prints(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("TOOLHUB_DB_URL", f"sqlite:///{tmp_path}/cache.sqlite3")
     monkeypatch.setattr(cache_invalidation, "run_once", lambda: 7)
@@ -125,10 +144,11 @@ def test_main_configures_db_runs_once_and_prints(monkeypatch, capsys, tmp_path):
         "run_once",
         lambda: cache_invalidation.cache_prewarm.PrewarmSummary(endpoints=3, warmed=2, skipped=1),
     )
+    monkeypatch.setattr(cache_invalidation.api_cache, "purge_expired", lambda: 3)
     monkeypatch.setattr(cache_invalidation.recent_owners, "purge_expired", lambda: 4)
     assert cache_invalidation.main() == 0
     out = capsys.readouterr().out
-    assert "cache-invalidation: 7 rows invalidated, 4 owner rows purged" in out
+    assert "cache-invalidation: 7 rows invalidated, 3 API cache rows purged, 4 owner rows purged" in out
     assert "cache-prewarm: warmed=2 revalidated=0 skipped=1 failed=0 endpoints=3 owners=0 owner_cached=0" in out
     assert os.environ["TOOLHUB_DB_URL"].endswith("cache.sqlite3")
 

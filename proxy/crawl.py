@@ -73,11 +73,14 @@ def upstream_state(session: requests.Session, name: str) -> str:
         resp = session.get(f"{UPSTREAM_TOOL}{name}/", headers={"User-Agent": UA}, timeout=TIMEOUT)
     except requests.RequestException:
         return UPSTREAM_UNREACHABLE
-    if resp.status_code == HTTP_NOT_FOUND:
-        return UPSTREAM_ABSENT
-    if HTTP_OK <= resp.status_code < HTTP_MULTIPLE_CHOICES:
-        return UPSTREAM_PRESENT
-    return UPSTREAM_UNREACHABLE
+    try:
+        if resp.status_code == HTTP_NOT_FOUND:
+            return UPSTREAM_ABSENT
+        if HTTP_OK <= resp.status_code < HTTP_MULTIPLE_CHOICES:
+            return UPSTREAM_PRESENT
+        return UPSTREAM_UNREACHABLE
+    finally:
+        outbound.close_response(resp)
 
 
 def classify_upstream(state: str, name: str) -> tuple[str, str] | None:
@@ -204,7 +207,12 @@ def run_crawl_with_counts() -> tuple[CrawlerRun, int]:
     here so the job summary can distinguish a run that had nothing to do from
     one that could not ask.
     """
-    session = requests.Session()
+    with outbound.managed_session() as session:
+        return _run_crawl_with_session(session)
+
+
+def _run_crawl_with_session(session: requests.Session) -> tuple[CrawlerRun, int]:
+    """Run one crawl using a caller-owned session."""
     counts = {"added": 0, "updated": 0, "unreachable": 0}
     errors: list[str] = []
     skipped: list[str] = []

@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { avatar, AVATAR_COLORS, commonsThumb, iconMeta, toolIcon } from "../../public_html/lib/atoms/avatar.js";
+import {
+	avatar,
+	AVATAR_COLORS,
+	commonsThumb,
+	ICON_META_CACHE_MAX,
+	iconMeta,
+	toolIcon
+} from "../../public_html/lib/atoms/avatar.js";
 import { initIconFallbacks } from "../../public_html/lib/organisms/icon-fallbacks.js";
 
 // Frozen color list (hardcoded, not derived from source) — kills every color string literal.
@@ -260,6 +267,21 @@ test("iconMeta() caches normalized direct, Commons, generated, and invalid state
 	const invalid = iconMeta({ name: "t", title: "T", icon: "https://exa mple.org/a.png" });
 	assert.equal(invalid.state, "invalid");
 	assert.equal(invalid.src, "");
+});
+
+test("iconMeta() bounds process-local metadata retention", () => {
+	const firstTool = { name: "cache-first", title: "First", icon: "https://x.org/first.png" };
+	const first = iconMeta(firstTool);
+	for (let i = 1; i <= ICON_META_CACHE_MAX; i += 1) {
+		iconMeta({ name: `cache-${i}`, title: `Tool ${i}`, icon: `https://x.org/${i}.png` });
+	}
+
+	// The oldest entry was evicted, while a recent entry remains the same object
+	// returned by the cache.
+	assert.notEqual(iconMeta(firstTool), first);
+	const newest = { name: "cache-newest", title: "Newest", icon: "https://x.org/newest.png" };
+	const newestMeta = iconMeta(newest);
+	assert.equal(iconMeta(newest), newestMeta);
 });
 
 test("initIconFallbacks() replaces a broken avatar image with a generated fallback", () => {

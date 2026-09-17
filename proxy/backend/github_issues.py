@@ -8,6 +8,8 @@ from typing import Any
 
 import requests
 
+from backend import outbound
+
 DEFAULT_REPOSITORY = "schiste/toolhub-evolved"
 GITHUB_API = "https://api.github.com"
 MAX_TITLE = 200
@@ -115,6 +117,7 @@ def publish_issue(title: str, body: str) -> dict[str, Any]:
     labels = _labels()
     if labels:
         payload["labels"] = labels
+    response = None
     try:
         response = requests.post(
             url,
@@ -129,14 +132,18 @@ def publish_issue(title: str, body: str) -> dict[str, Any]:
         )
     except requests.RequestException as exc:
         raise IssueUnreachableError from exc
-    if response.status_code != HTTPStatus.CREATED:
-        raise IssueRejectedError
     try:
-        result = response.json()
-    except ValueError as exc:
-        raise IssueUnreadableError from exc
-    number = result.get("number")
-    html_url = result.get("html_url")
-    if not isinstance(number, int) or not isinstance(html_url, str):
-        raise IssueIncompleteError
-    return {"number": number, "url": html_url, "repository": repository()}
+        if response.status_code != HTTPStatus.CREATED:
+            raise IssueRejectedError
+        try:
+            result = response.json()
+        except ValueError as exc:
+            raise IssueUnreadableError from exc
+        number = result.get("number")
+        html_url = result.get("html_url")
+        if not isinstance(number, int) or not isinstance(html_url, str):
+            raise IssueIncompleteError
+        return {"number": number, "url": html_url, "repository": repository()}
+    finally:
+        if response is not None:
+            outbound.close_response(response)

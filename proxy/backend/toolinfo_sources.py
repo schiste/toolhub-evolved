@@ -101,9 +101,9 @@ def fetch_toolinfo_feed_once(url: str, session: requests.Session | None = None) 
     every redirect hop, so following one cannot reach anywhere the first URL
     could not.
     """
-    active_session = session or requests.Session()
-    body = outbound.fetch_bounded(active_session, url, policy=outbound.WIKIMEDIA_FEED, caller=_CALLER)
-    return json.loads(body.decode("utf-8"))
+    with outbound.managed_session(session) as active_session:
+        body = outbound.fetch_bounded(active_session, url, policy=outbound.WIKIMEDIA_FEED, caller=_CALLER)
+        return json.loads(body.decode("utf-8"))
 
 
 def _registered_rows_from_payload(payload: object) -> tuple[list[dict], bool]:
@@ -317,26 +317,26 @@ def index_official_crawler_sources(limit: int = 150) -> dict[str, int]:
     fetched = valid = invalid = errors = items = 0
     changed_names: list[str] = []
     changed_source_ids: list[int] = []
-    session = requests.Session()
-    for source_id, url in _source_targets(max(1, limit)):
-        try:
-            data = fetch_toolinfo_feed_once(url, session)
-            item_rows = _item_rows(data)
-            item_count, source_names = _store_source_items(source_id, item_rows)
-        except (requests.RequestException, TypeError, ValueError, json.JSONDecodeError) as exc:
-            changed_names.extend(_mark_source_error(source_id, str(exc)))
+    with outbound.managed_session() as session:
+        for source_id, url in _source_targets(max(1, limit)):
+            try:
+                data = fetch_toolinfo_feed_once(url, session)
+                item_rows = _item_rows(data)
+                item_count, source_names = _store_source_items(source_id, item_rows)
+            except (requests.RequestException, TypeError, ValueError, json.JSONDecodeError) as exc:
+                changed_names.extend(_mark_source_error(source_id, str(exc)))
+                fetched += 1
+                errors += 1
+                continue
             fetched += 1
-            errors += 1
-            continue
-        fetched += 1
-        items += item_count
-        if source_names or _source_needs_attestation(source_id):
-            changed_names.extend(source_names)
-            changed_source_ids.append(source_id)
-        if item_count:
-            valid += 1
-        else:
-            invalid += 1
+            items += item_count
+            if source_names or _source_needs_attestation(source_id):
+                changed_names.extend(source_names)
+                changed_source_ids.append(source_id)
+            if item_count:
+                valid += 1
+            else:
+                invalid += 1
     with db.session_scope() as s:
         attestation_summary = source_attestations.refresh_source_ids(
             s,

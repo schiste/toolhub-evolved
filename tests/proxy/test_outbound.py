@@ -57,6 +57,26 @@ def test_strict_public_still_refuses_http_everywhere(monkeypatch):
         guard("http://tools.wmflabs.org/toolinfo.json")
 
 
+def test_managed_session_closes_only_sessions_it_owns(monkeypatch):
+    class FakeSession:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    owned = FakeSession()
+    monkeypatch.setattr(outbound.requests, "Session", lambda: owned)
+    with outbound.managed_session() as active:
+        assert active is owned
+    assert owned.closed is True
+
+    supplied = FakeSession()
+    with outbound.managed_session(supplied) as active:
+        assert active is supplied
+    assert supplied.closed is False
+
+
 CALLER = outbound.Caller(
     user_agent="toolhub-evolved-tests/1.0 (https://example.org)",
     accept="*/*",

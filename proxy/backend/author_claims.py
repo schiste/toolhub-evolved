@@ -20,7 +20,7 @@ from urllib.parse import quote, unquote, urlparse
 import requests
 from sqlalchemy import and_, func, or_, select
 
-from backend import canonical_tools, toolhub, toolinfo_authors
+from backend import canonical_tools, outbound, toolhub, toolinfo_authors
 from backend.models import (
     ToolAuthorClaim,
     ToolAuthorKey,
@@ -458,7 +458,10 @@ class ToolforgeMaintainerProvider:
             headers={"User-Agent": toolhub.USER_AGENT, "Accept": "text/html"},
             timeout=TOOLFORGE_TIMEOUT,
         )
-        return response.status_code, response.text
+        try:
+            return response.status_code, response.text
+        finally:
+            outbound.close_response(response)
 
     def _fresh_rows(self, s: Session, user: User, tool_name: str, author_names: list[str]) -> list[ToolAuthorClaim]:
         """Return fresh verified rows in the requested author-name order."""

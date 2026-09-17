@@ -868,12 +868,16 @@ class _FakeResponse:
     def __init__(self, payload):
         self.payload = payload
         self.raised = False
+        self.closed = False
 
     def raise_for_status(self):
         self.raised = True
 
     def json(self):
         return self.payload
+
+    def close(self):
+        self.closed = True
 
 
 class _FakeSession:
@@ -884,10 +888,16 @@ class _FakeSession:
     def __init__(self):
         type(self).opened.append(self)
         self.posts = []
+        self.closed = False
 
     def post(self, url, *, json, headers, timeout):
         self.posts.append((url, json, headers, timeout))
-        return _FakeResponse(reply(REAL_REPLY))
+        response = _FakeResponse(reply(REAL_REPLY))
+        self.response = response
+        return response
+
+    def close(self):
+        self.closed = True
 
 
 @pytest.fixture
@@ -928,6 +938,17 @@ def test_one_thread_reuses_its_connection_across_pages(_liftwing):
     # A bare `requests.post` would pay a TLS handshake per page, which at this
     # concurrency is most of what the endpoint sees.
     assert len(_FakeSession.opened) == 1
+
+
+def test_liftwing_caller_exposes_cleanup_for_worker_owned_sessions(_liftwing):
+    ask = enrichment.liftwing_caller()
+    ask({"messages": []})
+
+    [session] = _FakeSession.opened
+    assert session.response.closed is True
+    assert callable(ask.close)
+    ask.close()
+    assert session.closed is True
 
 
 def test_each_worker_thread_gets_a_connection_of_its_own(_liftwing):

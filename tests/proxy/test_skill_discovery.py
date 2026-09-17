@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import skill_discovery  # noqa: E402
+from backend import skill_catalog, skill_discovery  # noqa: E402
 
 
 def _source() -> dict[str, str]:
@@ -174,6 +174,9 @@ def test_discovery_enumerates_nested_skills_and_isolates_failures():
         "skills/broken/SKILL.md",
         "skills/bytes/SKILL.md",
     }
+    entries = skill_catalog._entries_from_record(first.catalog)  # noqa: SLF001
+    assert [entry.frontmatter["name"] for entry in entries] == ["alpha", "nested"]
+    assert entries[0].catalog_metadata["projects"] == ["enwiki"]
 
 
 def test_discovery_reports_complete_empty_and_failed_runs():

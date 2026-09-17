@@ -44,7 +44,7 @@ import hashlib
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from functools import cache
+from functools import lru_cache
 from types import MappingProxyType
 from typing import Final, NamedTuple
 from urllib.parse import ParseResult, parse_qs, unquote, urlparse
@@ -121,6 +121,13 @@ MODULE_LOADER_VERB: Final = "mw.loader.load"
 # a loop, and the bound exists at all because an interwiki map may point back at
 # the wiki that published it.
 MAX_INTERWIKI_HOPS: Final = 4
+
+# Wiki and namespace data arrive from the corpus, so the set of regexes is not
+# known at import time. These are hot pure-function caches, but an unbounded
+# ``functools.cache`` turns every newly observed wiki into process-lifetime
+# memory. Keep enough entries for a normal multi-wiki crawl while making the
+# long-lived scheduled worker's upper bound explicit.
+REGEX_CACHE_MAXSIZE: Final = 512
 
 
 @dataclass(frozen=True)
@@ -221,7 +228,7 @@ _NAMESPACE_ALIASES: Final = ("User", "Utilisateur", "Utilisatrice")
 _ALIAS_ANYWHERE: Final = re.compile(rf"\b(?:{'|'.join(_NAMESPACE_ALIASES)})\s*:", re.IGNORECASE)
 
 
-@cache
+@lru_cache(maxsize=REGEX_CACHE_MAXSIZE)
 def _alias_prefix(spellings: tuple[str, ...]) -> re.Pattern[str]:
     """Match a user-namespace prefix written in any of these spellings.
 
@@ -301,14 +308,14 @@ def wiki_target(url: str, prefixes: Prefixes = no_prefixes) -> tuple[str, str]:
     return (host, title) if title is not None else ("", "")
 
 
-@cache
+@lru_cache(maxsize=REGEX_CACHE_MAXSIZE)
 def _verbs(wiki: str) -> tuple[str, ...]:
     """Every load verb recognized on `wiki`, longest-first within each family."""
     local = tuple(loader.verb for loader in LOCAL_LOADERS.get(wiki, ()))
     return GLOBAL_LOADER_VERBS + local
 
 
-@cache
+@lru_cache(maxsize=REGEX_CACHE_MAXSIZE)
 def _call_pattern(wiki: str) -> re.Pattern[str]:
     """Match a load *call*, whatever its argument looks like.
 
@@ -319,7 +326,7 @@ def _call_pattern(wiki: str) -> re.Pattern[str]:
     return re.compile(rf"(?<![A-Za-z0-9_$])(?P<verb>{alternatives})\s*\(")
 
 
-@cache
+@lru_cache(maxsize=REGEX_CACHE_MAXSIZE)
 def _edge_pattern(wiki: str) -> re.Pattern[str]:
     """Match a load call whose argument is a quoted literal we can resolve."""
     alternatives = "|".join(re.escape(verb) for verb in _verbs(wiki))

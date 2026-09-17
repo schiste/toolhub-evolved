@@ -40,6 +40,23 @@ import { toolCard } from "../lib/organisms/tool-card.js";
 let intentDocClick = null;
 /** @type {((e: KeyboardEvent) => void) | null} */
 let intentDocKeydown = null;
+let intentCleanupReady = false;
+
+function cleanupIntentListeners() {
+	if (intentDocClick) document.removeEventListener("click", intentDocClick);
+	if (intentDocKeydown) document.removeEventListener("keydown", intentDocKeydown);
+	intentDocClick = null;
+	intentDocKeydown = null;
+}
+
+function initIntentCleanup() {
+	if (intentCleanupReady || typeof document === "undefined") return;
+	intentCleanupReady = true;
+	// Route rendering replaces the home subtree. Remove document listeners at
+	// navigation start, while their old form is still reachable only through the
+	// listener closure, so leaving home releases that subtree immediately.
+	document.addEventListener("toolhub:route-render-start", cleanupIntentListeners);
+}
 
 const WIKI_OPTIONS = [
 	// Stryker disable next-line StringLiteral: projectItems() overrides the label for the value="" row with "any project", so this "Any wiki" string is never rendered — equivalent.
@@ -77,6 +94,7 @@ const INTENT_AXES = {
 // reads. Keep one request per signed-in user in flight and reuse its result for
 // a short window so cache-refresh repaints cannot re-run the resolver.
 const PERSONAL_HOME_TTL_MS = 30_000;
+export const PERSONAL_HOME_CACHE_MAX = 4;
 /** @type {Map<string, { model: PersonalHomeModel, expiresAt: number }>} */
 const personalHomeCache = new Map();
 /** @type {Map<string, Promise<PersonalHomeModel>>} */
@@ -326,7 +344,13 @@ async function attachAndCachePersonalHome(key, favorites, ownTools) {
 		attachEvolvedSummaries(allTools, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
 	]);
 	const model = { favorites, ownTools };
+	personalHomeCache.delete(key);
 	personalHomeCache.set(key, { model, expiresAt: Date.now() + PERSONAL_HOME_TTL_MS });
+	while (personalHomeCache.size > PERSONAL_HOME_CACHE_MAX) {
+		const oldest = personalHomeCache.keys().next().value;
+		if (oldest === undefined) break;
+		personalHomeCache.delete(oldest);
+	}
 	return model;
 }
 
@@ -561,6 +585,7 @@ function homeViewContext() {
 }
 
 export async function viewHome() {
+	initIntentCleanup();
 	const { initialState, authenticated } = homeViewContext();
 	// Signed-out home is composed in one request; filtered and personal views
 	// retain their parallel local queries and deferred enrichment.
@@ -796,12 +821,10 @@ export async function viewHome() {
 				refreshHome();
 				closeMenus();
 			});
-			// Remove the previous home mount's document listeners before adding this
-			// one's, so navigating back to home never accumulates handlers.
-			// Stryker disable next-line ConditionalExpression: forcing this guard true (on the first-ever mount, when intentDocClick is null) only calls removeEventListener with a null listener — a no-op — so it is unobservable: equivalent.
-			if (intentDocClick) document.removeEventListener("click", intentDocClick);
-			// Stryker disable next-line ConditionalExpression: as above — removing a null/absent keydown listener is a no-op: equivalent.
-			if (intentDocKeydown) document.removeEventListener("keydown", intentDocKeydown);
+			// Replacing a same-route view (for example after a background refresh)
+			// also emits route-render-start, but keep this defensive cleanup so a
+			// mount cannot ever leave an older pair attached.
+			cleanupIntentListeners();
 			intentDocClick = (e) => {
 				if (!intentForm.contains(/** @type {Node} */ (e.target))) closeMenus();
 			};

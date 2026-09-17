@@ -31,7 +31,7 @@ from http import HTTPStatus
 from typing import Any
 
 import requests
-from sqlalchemy import select
+from sqlalchemy import case, or_, select
 
 from backend import db, job_runner, outbound, source_hosts
 from backend.models import RepositoryAnalysisState, RepositoryHostMetadata, utcnow
@@ -54,6 +54,7 @@ REFRESH_AFTER_HOURS = 24
 MAX_BACKOFF_HOURS = 24
 BACKOFF_EXPONENT_CAP = 5
 MAX_ERROR_CHARS = 500
+MAX_ERROR_SAMPLES = 5
 
 STATUS_PENDING = "pending"
 STATUS_CURRENT = "current"
@@ -201,6 +202,12 @@ class Results:
         }
 
 
+def _remember_error(results: Results, message: str) -> None:
+    """Keep only the small operator-facing error sample, not every failure."""
+    if len(results.errors_seen) < MAX_ERROR_SAMPLES:
+        results.errors_seen.append(message[:MAX_ERROR_CHARS])
+
+
 @dataclass
 class Lane:
     """One pass in flight: the connection it reuses, its budget, and its tally."""
@@ -313,33 +320,43 @@ def candidates(limit: int = DEFAULT_LIMIT) -> list[str]:
     is the point of keying on the URL.
     """
     now = utcnow()
-    due: dict[str, RepositoryHostMetadata | None] = {}
+    bounded = max(1, int(limit or 1))
     with db.session_scope() as s:
-        urls = [
-            url
-            for (url,) in s.execute(
-                select(RepositoryAnalysisState.repository_url)
-                .where(RepositoryAnalysisState.repository_url != "")
-                .distinct()
+        # Join on the stored URL so the database can select only the bounded
+        # batch. The previous implementation first materialized every distinct
+        # URL and every matching ORM row, then sorted them in Python; a growing
+        # repository catalog therefore grew this job's peak memory with it.
+        statement = (
+            select(
+                RepositoryAnalysisState.repository_url,
+                RepositoryHostMetadata.url_hash,
+                RepositoryHostMetadata.next_attempt_at,
             )
-            if url
-        ]
-        rows = {
-            row.url_hash: row
-            for row in s.execute(
-                select(RepositoryHostMetadata).where(
-                    RepositoryHostMetadata.url_hash.in_([url_hash(url) for url in urls])
-                )
-            ).scalars()
-        }
-        for url in urls:
-            row = rows.get(url_hash(url))
-            if row is not None and row.next_attempt_at is not None and row.next_attempt_at > now:
-                continue
-            due[url] = row
-    # Never-fetched repositories first, then the longest-overdue. datetime.min
-    # is a sort key here, never a stored value.
-    return sorted(due, key=lambda url: (due[url] is not None, _due_order(due[url]), url))[:limit]
+            .outerjoin(
+                RepositoryHostMetadata,
+                RepositoryHostMetadata.repository_url == RepositoryAnalysisState.repository_url,
+            )
+            .where(
+                RepositoryAnalysisState.repository_url != "",
+                or_(
+                    RepositoryHostMetadata.url_hash.is_(None),
+                    RepositoryHostMetadata.next_attempt_at.is_(None),
+                    RepositoryHostMetadata.next_attempt_at <= now,
+                ),
+            )
+            .group_by(
+                RepositoryAnalysisState.repository_url,
+                RepositoryHostMetadata.url_hash,
+                RepositoryHostMetadata.next_attempt_at,
+            )
+            .order_by(
+                case((RepositoryHostMetadata.url_hash.is_(None), 0), else_=1),
+                RepositoryHostMetadata.next_attempt_at.asc().nulls_first(),
+                RepositoryAnalysisState.repository_url,
+            )
+            .limit(bounded)
+        )
+        return [url for url, _key, _next_attempt_at in s.execute(statement) if url]
 
 
 def _due_order(row: RepositoryHostMetadata | None) -> float:
@@ -370,7 +387,7 @@ def _enrich_one(lane: Lane, url: str) -> None:
             response = _fetch(lane, source_hosts.project_url(ref), ref, etag=row.etag)
         except (ValueError, requests.RequestException) as exc:
             lane.results.errors += 1
-            lane.results.errors_seen.append(f"{url}: {exc}"[:MAX_ERROR_CHARS])
+            _remember_error(lane.results, f"{url}: {exc}")
             _settle(row, STATUS_ERROR, error=str(exc))
             return
         if response is None:
@@ -404,14 +421,14 @@ def _record(
     if response.status_code != HTTPStatus.OK:
         lane.results.errors += 1
         message = f"{ref.provider} answered {response.status_code}"
-        lane.results.errors_seen.append(f"{row.repository_url}: {message}"[:MAX_ERROR_CHARS])
+        _remember_error(lane.results, f"{row.repository_url}: {message}")
         _settle(row, STATUS_ERROR, error=message)
         return
     try:
         facts = source_hosts.metadata_from_payload(ref, source_hosts.decode_payload(ref, response.body))
     except ValueError as exc:
         lane.results.errors += 1
-        lane.results.errors_seen.append(f"{row.repository_url}: unreadable payload ({exc})"[:MAX_ERROR_CHARS])
+        _remember_error(lane.results, f"{row.repository_url}: unreadable payload ({exc})")
         _settle(row, STATUS_ERROR, error=f"unreadable payload: {exc}")
         return
     contributors, commits = _counts(lane, ref)

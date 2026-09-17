@@ -10,7 +10,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from backend import DEFAULT_DB_URL, api_cache, db, recent_owners
+from backend import DEFAULT_DB_URL, api_cache, db, outbound, recent_owners
 
 DEFAULT_UPSTREAM = "https://toolhub.wikimedia.org"
 UA = "toolhub-evolved-cache-prewarm/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
@@ -155,7 +155,6 @@ def _read_capped_body(resp: requests.Response) -> bytes | None:
     for chunk in resp.iter_content(CHUNK_BYTES):
         body.extend(chunk)
         if len(body) > MAX_UPSTREAM_BYTES:
-            resp.close()
             return None
     return bytes(body)
 
@@ -184,44 +183,47 @@ def prewarm_endpoint(endpoint: HotEndpoint, *, session: requests.Session | None 
         return "skipped"
 
     stale = _cached_for_revalidation(url)
-    http = session or requests.Session()
-    try:
-        upstream = http.get(
-            url,
-            headers=_headers(stale),
-            timeout=TIMEOUT,
-            allow_redirects=False,
-            stream=True,
-        )
-    except requests.RequestException as exc:
-        api_cache.mark_failure(url, str(exc))
-        return "failed"
+    with outbound.managed_session(session) as http:
+        try:
+            upstream = http.get(
+                url,
+                headers=_headers(stale),
+                timeout=TIMEOUT,
+                allow_redirects=False,
+                stream=True,
+            )
+        except requests.RequestException as exc:
+            api_cache.mark_failure(url, str(exc))
+            return "failed"
 
-    if upstream.status_code == HTTP_NOT_MODIFIED and stale is not None:
-        api_cache.refresh(url)
-        return "revalidated"
+        try:
+            if upstream.status_code == HTTP_NOT_MODIFIED and stale is not None:
+                api_cache.refresh(url)
+                return "revalidated"
 
-    body = _read_capped_body(upstream)
-    if body is None:
-        api_cache.mark_failure(url, "upstream response too large")
-        return "failed"
+            body = _read_capped_body(upstream)
+            if body is None:
+                api_cache.mark_failure(url, "upstream response too large")
+                return "failed"
 
-    if CACHEABLE_MIN_STATUS <= upstream.status_code < CACHEABLE_MAX_STATUS:
-        api_cache.put_success(
-            url,
-            api_cache.CacheableResponse(
-                status=upstream.status_code,
-                content_type=upstream.headers.get("content-type", "application/json"),
-                body=body,
-                etag=upstream.headers.get("etag"),
-                last_modified=upstream.headers.get("last-modified"),
-            ),
-        )
-        return "warmed"
+            if CACHEABLE_MIN_STATUS <= upstream.status_code < CACHEABLE_MAX_STATUS:
+                api_cache.put_success(
+                    url,
+                    api_cache.CacheableResponse(
+                        status=upstream.status_code,
+                        content_type=upstream.headers.get("content-type", "application/json"),
+                        body=body,
+                        etag=upstream.headers.get("etag"),
+                        last_modified=upstream.headers.get("last-modified"),
+                    ),
+                )
+                return "warmed"
 
-    if upstream.status_code in TRANSIENT_UPSTREAM_STATUSES:
-        api_cache.mark_failure(url, f"HTTP {upstream.status_code}")
-    return "failed"
+            if upstream.status_code in TRANSIENT_UPSTREAM_STATUSES:
+                api_cache.mark_failure(url, f"HTTP {upstream.status_code}")
+            return "failed"
+        finally:
+            outbound.close_response(upstream)
 
 
 def _recent_rows_from_cache() -> list[dict[str, object]]:
@@ -321,11 +323,12 @@ def run_once(
 ) -> PrewarmSummary:
     """Prewarm the configured hot endpoint set once."""
     summary = PrewarmSummary()
-    for endpoint in endpoints or hot_endpoints():
-        summary.observe(prewarm_endpoint(endpoint, session=session))
-    summary.owners, summary.owner_cached = prewarm_recent_owners()
-    summary.revisions, summary.revisions_warmed = prewarm_tool_revisions(session)
-    summary.diffs, summary.diffs_warmed = prewarm_tool_diffs(session)
+    with outbound.managed_session(session) as http:
+        for endpoint in endpoints or hot_endpoints():
+            summary.observe(prewarm_endpoint(endpoint, session=http))
+        summary.owners, summary.owner_cached = prewarm_recent_owners()
+        summary.revisions, summary.revisions_warmed = prewarm_tool_revisions(http)
+        summary.diffs, summary.diffs_warmed = prewarm_tool_diffs(http)
     return summary
 
 

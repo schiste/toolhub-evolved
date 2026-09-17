@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
+from sqlalchemy import delete
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import canonical_tools, db
@@ -156,10 +157,7 @@ def purge_expired() -> int:
     now = utcnow()
     try:
         with db.session_scope() as s:
-            rows = s.query(ToolOwnerCache).filter(ToolOwnerCache.stale_until <= now).all()
-            for row in rows:
-                s.delete(row)
-            return len(rows)
+            return int(s.execute(delete(ToolOwnerCache).where(ToolOwnerCache.stale_until <= now)).rowcount or 0)
     except SQLAlchemyError:
         return 0
 

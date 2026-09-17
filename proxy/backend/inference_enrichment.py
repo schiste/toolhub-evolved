@@ -71,7 +71,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import requests
 from sqlalchemy import case, func, or_, select
 
-from backend import db, digests, gadget_toolinfo, run_budget, userscripts
+from backend import db, digests, gadget_toolinfo, outbound, run_budget, userscripts
 from backend.models import (
     LANE_GADGET,
     LANE_USER_SCRIPT,
@@ -1228,14 +1228,35 @@ def liftwing_caller() -> Callable[[dict[str, Any]], Any]:
     # sees; one shared Session across threads is the other way to get pooling
     # and is not documented as safe. Thread-local is both.
     local = threading.local()
+    sessions: set[requests.Session] = set()
+    sessions_lock = threading.Lock()
 
     def ask(payload: dict[str, Any]) -> Any:  # noqa: ANN401 - the model's reply is untrusted JSON
         http = getattr(local, "session", None)
         if http is None:
             http = local.session = requests.Session()
+            with sessions_lock:
+                sessions.add(http)
         response = http.post(endpoint, json=payload, headers=headers, timeout=timeout)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response.raise_for_status()
+            return response.json()
+        finally:
+            outbound.close_response(response)
+
+    def close_sessions() -> None:
+        """Close the per-worker pools after the bounded sweep completes."""
+        with sessions_lock:
+            owned = tuple(sessions)
+            sessions.clear()
+        for http in owned:
+            close = getattr(http, "close", None)
+            if callable(close):
+                close()
+
+    # `sweep()` keeps the public callable shape for existing callers while
+    # retaining an explicit cleanup hook for the worker-owned sessions.
+    ask.close = close_sessions
 
     return ask
 
@@ -1300,25 +1321,30 @@ def sweep(limit: int = BATCH, *, budget: run_budget.Budget | None = None) -> dic
     with db.session_scope() as session:
         candidates = _interleave(pending(session, limit=limit), gadget_pending(session, limit=limit))
     enriched: list[str] = []
-    with ThreadPoolExecutor(max_workers=width, thread_name_prefix="inference") as pool:
-        for start in range(0, len(candidates), width):
-            if not clock.remains():
-                break
-            with db.session_scope() as session:
-                wave = with_source(session, candidates[start : start + width])
-            # Everything in this slice went away or shrank below the floor
-            # since the window was read. Nothing to ask, and nothing to record.
-            if not wave:
-                continue
-            outcomes = list(pool.map(lambda candidate: _ask(candidate, ask, model=model), wave))
-            with db.session_scope() as session:
-                for candidate, outcome in zip(wave, outcomes, strict=True):
-                    counts["asked"] += 1
-                    counts[outcome.status] += 1
-                    counts[f"{candidate.lane}Asked"] = counts.get(f"{candidate.lane}Asked", 0) + 1
-                    record(session, candidate, outcome, model=model)
-                    if outcome.status == STATUS_READY:
-                        enriched.append(candidate.tool_name)
+    try:
+        with ThreadPoolExecutor(max_workers=width, thread_name_prefix="inference") as pool:
+            for start in range(0, len(candidates), width):
+                if not clock.remains():
+                    break
+                with db.session_scope() as session:
+                    wave = with_source(session, candidates[start : start + width])
+                # Everything in this slice went away or shrank below the floor
+                # since the window was read. Nothing to ask, and nothing to record.
+                if not wave:
+                    continue
+                outcomes = list(pool.map(lambda candidate: _ask(candidate, ask, model=model), wave))
+                with db.session_scope() as session:
+                    for candidate, outcome in zip(wave, outcomes, strict=True):
+                        counts["asked"] += 1
+                        counts[outcome.status] += 1
+                        counts[f"{candidate.lane}Asked"] = counts.get(f"{candidate.lane}Asked", 0) + 1
+                        record(session, candidate, outcome, model=model)
+                        if outcome.status == STATUS_READY:
+                            enriched.append(candidate.tool_name)
+    finally:
+        close = getattr(ask, "close", None)
+        if callable(close):
+            close()
     return {
         "counts": counts,
         "model": model,

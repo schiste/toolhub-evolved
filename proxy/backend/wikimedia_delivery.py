@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 import requests
 
+from backend import outbound
 from backend.http_headers import clean_header_value, clean_secret_header_value
 from backend.sync import clean_error
 from backend.wikimedia_urls import canonical_username, clean_wiki_domain
@@ -144,6 +145,7 @@ class WikimediaClient:
         """Perform one bounded Action API request and normalize all failures."""
         url = api_url(domain)
         values = {"format": "json", "formatversion": 2, **params}
+        response = None
         try:
             response = requests.request(
                 method,
@@ -160,6 +162,9 @@ class WikimediaClient:
             raise
         except (OSError, ValueError, requests.RequestException) as exc:
             raise self._failure(ERROR_TRANSPORT, self._redact(str(exc))) from exc
+        finally:
+            if response is not None:
+                outbound.close_response(response)
         if response.status_code >= HTTP_BAD_REQUEST or not isinstance(payload, dict) or "error" in payload:
             raise self._error(payload, response.status_code)
         return payload

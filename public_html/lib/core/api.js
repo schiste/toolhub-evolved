@@ -65,6 +65,16 @@ function takePreflight(input) {
 	return warm;
 }
 
+/** @param {any} response */
+function discardResponseBody(response) {
+	const body = response?.body;
+	if (!body || typeof body.cancel !== "function") return;
+	try {
+		const cancelled = body.cancel();
+		if (cancelled && typeof cancelled.catch === "function") cancelled.catch(() => {});
+	} catch {}
+}
+
 /**
  * Bound every read that can gate route or account rendering. Timeout failures
  * reject through the existing error paths, so the UI can recover instead of
@@ -85,12 +95,19 @@ export function fetchRead(input, init = {}) {
 		controller.abort();
 	}, READ_TIMEOUT_MS);
 	const warm = takePreflight(input);
+	let warmClaimed = false;
 	// A preflight runs on its own connection and cannot be cancelled from here,
 	// so the timeout is honoured by abandoning it rather than aborting it. The
-	// orphaned response is simply discarded.
+	// orphaned response body is cancelled when it eventually arrives.
+	const warmResponse = warm
+		? warm.then((response) => {
+				if (!warmClaimed && controller.signal.aborted) discardResponseBody(response);
+				return response;
+			})
+		: null;
 	const request = warm
 		? Promise.race([
-				warm,
+				warmResponse,
 				new Promise((_resolve, reject) => {
 					if (controller.signal.aborted) {
 						reject(controller.signal.reason);
@@ -103,6 +120,10 @@ export function fetchRead(input, init = {}) {
 			])
 		: fetch(input, { ...init, signal: controller.signal });
 	return request
+		.then((response) => {
+			warmClaimed = true;
+			return response;
+		})
 		.catch((error) => {
 			if (timedOut) throw new DOMException("Read timed out", "TimeoutError");
 			throw error;
@@ -136,6 +157,26 @@ const backendGetInflight = new Map(); // path -> Promise<data>
 const apiServerStaleFollowups = new Map();
 let apiCacheLoaded = false;
 let apiPersistScheduled = false;
+
+/**
+ * Keep process-local caches bounded as well as their localStorage projection.
+ * Search and detail URLs are user-generated, so expiring entries only when the
+ * same URL is requested lets a long-lived SPA session retain every query ever
+ * entered. Map insertion order gives us a small FIFO eviction policy without
+ * retaining a second bookkeeping structure.
+ * @param {Map<string, any>} cache
+ * @param {string} key
+ * @param {any} value
+ */
+function setBoundedCacheEntry(cache, key, value) {
+	cache.delete(key);
+	cache.set(key, value);
+	while (cache.size > API_STORAGE_MAX_ENTRIES) {
+		const oldest = cache.keys().next().value;
+		if (oldest === undefined) break;
+		cache.delete(oldest);
+	}
+}
 // Transient failures — a network blip (e.g. ERR_NETWORK_CHANGED on a WiFi/VPN
 // switch) or a momentary 5xx (e.g. the webservice restarting on deploy) — would
 // otherwise leave the SPA with no data. Retry those a few times with backoff so
@@ -176,6 +217,12 @@ function responseHeader(res, name) {
 /** @param {string} url */
 function scheduleServerStaleFollowup(url) {
 	if (apiServerStaleFollowups.has(url)) return;
+	while (apiServerStaleFollowups.size >= API_STORAGE_MAX_ENTRIES) {
+		const oldest = apiServerStaleFollowups.keys().next().value;
+		if (oldest === undefined) break;
+		clearTimeout(apiServerStaleFollowups.get(oldest));
+		apiServerStaleFollowups.delete(oldest);
+	}
 	const timer = setTimeout(() => {
 		apiServerStaleFollowups.delete(url);
 		apiFetch(url, { background: true }).catch(() => {});
@@ -190,7 +237,7 @@ function loadPersistentApiCache() {
 		for (const [url, entry] of publicApiCacheLoad(API_PERSISTENT_MAX_AGE_MS)) {
 			const policy = apiCachePolicy(url);
 			if (now - entry.ts > policy.freshMs + policy.staleIfErrorMs) continue;
-			apiCache.set(url, { data: entry.data, ts: entry.ts });
+			setBoundedCacheEntry(apiCache, url, { data: entry.data, ts: entry.ts });
 		}
 	} catch {
 		return;
@@ -318,7 +365,15 @@ async function fetchJson(url, attempts = API_RETRIES) {
 			await sleep(200 * 2 ** (attempt - 1));
 			continue;
 		}
-		if (res.ok) return { data: await res.json(), serverCache: responseHeader(res, SERVER_CACHE_HEADER) };
+		if (res.ok) {
+			try {
+				return { data: await res.json(), serverCache: responseHeader(res, SERVER_CACHE_HEADER) };
+			} catch (error) {
+				discardResponseBody(res);
+				throw error;
+			}
+		}
+		discardResponseBody(res);
 		if (!RETRYABLE_STATUS.has(res.status) || attempt >= attempts) throw new ApiError(res.status, url);
 		await sleep(200 * 2 ** (attempt - 1));
 	}
@@ -336,7 +391,7 @@ function apiFetch(url, options = {}) {
 			const serverStale = serverCache === SERVER_STALE_CACHE;
 			const policy = apiCachePolicy(url);
 			const ts = serverStale ? Date.now() - policy.freshMs : Date.now();
-			apiCache.set(url, { data, ts });
+			setBoundedCacheEntry(apiCache, url, { data, ts });
 			persistApiCache();
 			if (serverStale) {
 				markFrontendTiming("stale-cache-served", { url, source: "server" });
@@ -733,9 +788,18 @@ export async function backendGetJson(path) {
 		if (inflight) return inflight;
 	}
 	const request = fetchRead(path, { headers: { Accept: "application/json" } })
-		.then((res) => (res.ok ? res.json() : null))
+		.then((res) => {
+			if (res.ok) {
+				return res.json().catch((error) => {
+					discardResponseBody(res);
+					throw error;
+				});
+			}
+			discardResponseBody(res);
+			return null;
+		})
 		.then((data) => {
-			if (freshMs > 0) backendGetCache.set(path, { data, ts: Date.now() });
+			if (freshMs > 0) setBoundedCacheEntry(backendGetCache, path, { data, ts: Date.now() });
 			return data;
 		})
 		.finally(() => {
@@ -757,9 +821,16 @@ export async function backendWriteJson(method, path, body, csrf) {
 		headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
 		body: body === undefined ? undefined : JSON.stringify(body)
 	});
-	const data = res.status === 204 ? null : await res.json().catch(() => null);
-	if (!res.ok) throw new BackendError(res.status, path, data);
-	return data;
+	try {
+		const data = res.status === 204 ? null : await res.json().catch(() => null);
+		if (!res.ok) throw new BackendError(res.status, path, data);
+		return data;
+	} finally {
+		// Writes usually have a small JSON response, but error pages and proxies
+		// can leave an unread stream. Release it even when parsing or error
+		// construction fails so a burst of writes cannot retain connections.
+		discardResponseBody(res);
+	}
 }
 /**
  * @param {string} path
