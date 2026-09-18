@@ -1,0 +1,116 @@
+{
+	"_schema": "/toolinfo/evolved/1.0.0",
+	"type": "evolved-catalog",
+	"source": {
+		"id": "github:example/skill-repository",
+		"repository": "https://github.com/example/skill-repository",
+		"ref": "main",
+		"commit": "abc123",
+		"base_path": "skills/"
+	},
+	"refresh": {
+		"run_id": "2026-09-17T10:00:00Z-abc123",
+		"status": "complete"
+	},
+	"artifacts": [
+		{
+			"id": "github:example/skill-repository#skills/lookup",
+			"tool_type": "skill",
+			"name": "lookup",
+			"description": "Look up Wikimedia project data.",
+			"projects": ["enwiki", "wikidatawiki"],
+			"skill": {
+				"root": "skills/lookup",
+				"entrypoint": "SKILL.md",
+				"frontmatter": {
+					"name": "lookup",
+					"description": "Look up Wikimedia project data.",
+					"projects": ["enwiki", "wikidatawiki"],
+					"license": "GPL-3.0-or-later"
+				},
+				"resources": [
+					{
+						"path": "skills/lookup/SKILL.md",
+						"size": 18,
+						"sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+						"mime_type": "text/markdown"
+					},
+					{
+						"path": "skills/lookup/references/api.md",
+						"size": 15,
+						"sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+						"mime_type": "text/markdown"
+					}
+				]
+			},
+			"evolved": {
+				"visibility": "public",
+				"review_status": "approved",
+				"provenance": {
+					"source_kind": "github",
+					"commit": "abc123"
+				},
+				"mcp": {
+					"resource_uri": "skill://toolhub-evolved/catalog/lookup/SKILL.md"
+				}
+			}
+		},
+		{
+			"id": "github:example/skill-repository#skills/reports/weekly",
+			"tool_type": "skill",
+			"name": "weekly-report",
+			"description": "Summarize a weekly Wikimedia project report.",
+			"projects": ["commonswiki"],
+			"skill": {
+				"root": "skills/reports/weekly",
+				"entrypoint": "SKILL.md",
+				"frontmatter": {
+					"name": "weekly-report",
+					"description": "Summarize a weekly Wikimedia project report.",
+					"projects": ["commonswiki"]
+				},
+				"resources": [
+					{
+						"path": "skills/reports/weekly/SKILL.md",
+						"size": 22,
+						"sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+						"mime_type": "text/markdown"
+					}
+				]
+			},
+			"evolved": {
+				"visibility": "public",
+				"review_status": "pending",
+				"mcp": {
+					"resource_uri": "skill://toolhub-evolved/catalog/reports/weekly/SKILL.md"
+				}
+			}
+		},
+		{
+			"id": "github:example/skill-repository#skills/triage",
+			"tool_type": "skill",
+			"name": "triage",
+			"description": "Triage a Wikimedia maintenance report.",
+			"skill": {
+				"root": "skills/triage",
+				"entrypoint": "SKILL.md",
+				"frontmatter": {
+					"name": "triage",
+					"description": "Triage a Wikimedia maintenance report."
+				},
+				"resources": [
+					{
+						"path": "skills/triage/SKILL.md",
+						"size": 17,
+						"sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+						"mime_type": "text/markdown"
+					}
+				]
+			},
+			"evolved": {
+				"visibility": "unlisted",
+				"review_status": "draft"
+			}
+		}
+	]
+}

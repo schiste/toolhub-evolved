@@ -1,0 +1,304 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://toolhub-evolved.toolforge.org/schemas/toolinfo-evolved-1.0.0.schema.json",
+	"title": "Toolhub Evolved toolinfo.json v1",
+	"description": "The versioned Evolved catalog envelope. The artifacts array is intentionally able to contain several skills from one repository and ordinary Toolhub-compatible artifacts in the same refresh.",
+	"type": "object",
+	"required": ["_schema", "type", "source", "artifacts"],
+	"properties": {
+		"_schema": {
+			"const": "/toolinfo/evolved/1.0.0"
+		},
+		"type": {
+			"const": "evolved-catalog"
+		},
+		"source": {
+			"$ref": "#/$defs/source"
+		},
+		"artifacts": {
+			"type": "array",
+			"description": "The independently addressable artifacts observed in this repository revision. A skill is one artifact; do not collapse several skills into one repository row.",
+			"items": {
+				"$ref": "#/$defs/artifact"
+			}
+		},
+		"refresh": {
+			"$ref": "#/$defs/refresh"
+		},
+		"generated_at": {
+			"type": "string",
+			"format": "date-time"
+		},
+		"generator": {
+			"type": "string",
+			"minLength": 1
+		}
+	},
+	"additionalProperties": true,
+	"$defs": {
+		"non_empty_string": {
+			"type": "string",
+			"minLength": 1
+		},
+		"source": {
+			"type": "object",
+			"description": "The repository and immutable observation context shared by its artifacts.",
+			"required": ["id", "repository"],
+			"properties": {
+				"id": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"repository": {
+					"type": "string",
+					"format": "uri",
+					"minLength": 1
+				},
+				"ref": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"commit": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"base_path": {
+					"type": "string",
+					"minLength": 0
+				}
+			},
+			"additionalProperties": true
+		},
+		"artifact": {
+			"type": "object",
+			"description": "One independently reviewable artifact. The id is the stable identity within the source repository, not the display name.",
+			"required": ["id", "tool_type", "name", "description"],
+			"properties": {
+				"id": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"tool_type": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"name": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"title": {
+					"type": "string"
+				},
+				"description": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"projects": {
+					"type": "array",
+					"description": "Wikimedia projects or other declared targets for which this artifact is intended.",
+					"items": {
+						"$ref": "#/$defs/non_empty_string"
+					},
+					"uniqueItems": true
+				},
+				"source": {
+					"$ref": "#/$defs/source"
+				},
+				"skill": {
+					"$ref": "#/$defs/skill"
+				},
+				"evolved": {
+					"$ref": "#/$defs/evolved"
+				}
+			},
+			"allOf": [
+				{
+					"if": {
+						"properties": {
+							"tool_type": {
+								"const": "skill"
+							}
+						}
+					},
+					"then": {
+						"required": ["skill"]
+					}
+				}
+			],
+			"additionalProperties": true
+		},
+		"skill": {
+			"type": "object",
+			"description": "The skill-specific payload. root is repository-relative and entrypoint is the required Agent Skills entrypoint.",
+			"required": ["root", "entrypoint", "frontmatter", "resources"],
+			"properties": {
+				"root": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"entrypoint": {
+					"const": "SKILL.md"
+				},
+				"frontmatter": {
+					"$ref": "#/$defs/frontmatter"
+				},
+				"resources": {
+					"oneOf": [
+						{
+							"const": "dynamic"
+						},
+						{
+							"type": "array",
+							"minItems": 1,
+							"items": {
+								"$ref": "#/$defs/resource"
+							}
+						}
+					]
+				}
+			},
+			"additionalProperties": true
+		},
+		"frontmatter": {
+			"type": "object",
+			"description": "The frontmatter delivered to an Agent Skills client. Unknown fields are retained for forward-compatible skill metadata.",
+			"required": ["name", "description"],
+			"properties": {
+				"name": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"description": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"license": {
+					"type": "string"
+				},
+				"projects": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/non_empty_string"
+					},
+					"uniqueItems": true
+				}
+			},
+			"additionalProperties": true
+		},
+		"resource": {
+			"type": "object",
+			"description": "A manifest entry. Resource bytes are deliberately not part of the public toolinfo contract; they belong in the local snapshot/cache.",
+			"required": ["size", "sha256"],
+			"anyOf": [
+				{
+					"required": ["path"]
+				},
+				{
+					"required": ["uri"]
+				}
+			],
+			"properties": {
+				"path": {
+					"type": "string",
+					"minLength": 1
+				},
+				"uri": {
+					"type": "string",
+					"format": "uri",
+					"minLength": 1
+				},
+				"mime_type": {
+					"type": "string",
+					"minLength": 1
+				},
+				"mimeType": {
+					"type": "string",
+					"minLength": 1
+				},
+				"size": {
+					"type": "integer",
+					"minimum": 0
+				},
+				"sha256": {
+					"type": "string",
+					"pattern": "^(sha256:)?[0-9a-f]{64}$"
+				},
+				"description": {
+					"type": "string"
+				}
+			},
+			"additionalProperties": true
+		},
+		"evolved": {
+			"type": "object",
+			"description": "Evolved-only publication, provenance, and review metadata. It is not sent to the canonical Toolhub tool catalog.",
+			"properties": {
+				"visibility": {
+					"type": "string",
+					"enum": ["private", "unlisted", "public"]
+				},
+				"review_status": {
+					"type": "string",
+					"enum": ["draft", "pending", "approved", "rejected", "stale", "removed"]
+				},
+				"review": {
+					"type": "object",
+					"additionalProperties": true
+				},
+				"provenance": {
+					"type": "object",
+					"additionalProperties": true
+				},
+				"mcp": {
+					"type": "object",
+					"properties": {
+						"resource_uri": {
+							"type": "string",
+							"format": "uri",
+							"minLength": 1
+						},
+						"resourceUri": {
+							"type": "string",
+							"format": "uri",
+							"minLength": 1
+						}
+					},
+					"additionalProperties": true
+				}
+			},
+			"additionalProperties": true
+		},
+		"refresh": {
+			"type": "object",
+			"description": "Run-level evidence. A partial run never authorizes deletion of a sibling artifact; consumers must retain the previous last-good sibling until a later complete observation says otherwise.",
+			"required": ["run_id", "status"],
+			"properties": {
+				"run_id": {
+					"$ref": "#/$defs/non_empty_string"
+				},
+				"status": {
+					"type": "string",
+					"enum": ["complete", "partial", "failed"]
+				},
+				"started_at": {
+					"type": "string",
+					"format": "date-time"
+				},
+				"completed_at": {
+					"type": "string",
+					"format": "date-time"
+				},
+				"failed_artifacts": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["id", "error"],
+						"properties": {
+							"id": {
+								"$ref": "#/$defs/non_empty_string"
+							},
+							"error": {
+								"$ref": "#/$defs/non_empty_string"
+							},
+							"retryable": {
+								"type": "boolean"
+							}
+						},
+						"additionalProperties": true
+					}
+				}
+			},
+			"additionalProperties": true
+		}
+	}
+}

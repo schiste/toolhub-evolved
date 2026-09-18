@@ -1,16 +1,24 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Unit coverage for the Evolved skill catalog normalizer."""
 
+import copy
 import hashlib
+import json
 import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+FIXTURES = Path(__file__).parent / "fixtures"
+SCHEMA = ROOT / "schemas" / "toolinfo-evolved-1.0.0.schema.json"
 sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import skill_catalog  # noqa: E402
+
+
+def _fixture(name: str) -> dict:
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
 def _skill_uri(root="lookup"):
@@ -292,3 +300,116 @@ def test_dynamic_resources_are_excluded_from_resource_listing(monkeypatch):
     assert skill_catalog.resource_entries() == [(static, resource)]
     assert skill_catalog.find_skill(uri) is dynamic
     assert skill_catalog.find_resource(uri) == (static, resource)
+
+
+def test_schema_is_versioned_and_makes_artifacts_the_multi_skill_unit():
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["properties"]["_schema"]["const"] == skill_catalog.EVOLVED_TOOLINFO_SCHEMA
+    assert schema["properties"]["type"]["const"] == skill_catalog.EVOLVED_CATALOG_TYPE
+    assert schema["properties"]["artifacts"]["items"]["$ref"] == "#/$defs/artifact"
+    assert {"id", "tool_type", "name", "description"} <= set(schema["$defs"]["artifact"]["required"])
+    assert {"root", "entrypoint", "frontmatter", "resources"} <= set(schema["$defs"]["skill"]["required"])
+    assert schema["$defs"]["refresh"]["properties"]["status"]["enum"] == ["complete", "partial", "failed"]
+
+
+def test_three_skills_from_one_repository_keep_identity_targets_and_nested_roots():
+    record = _fixture("toolinfo-evolved-multi-skill.json")
+
+    assert skill_catalog.is_evolved_catalog(record)
+    entries = skill_catalog._entries_from_record(record)
+
+    assert [entry.artifact_id for entry in entries] == [
+        "github:example/skill-repository#skills/lookup",
+        "github:example/skill-repository#skills/reports/weekly",
+        "github:example/skill-repository#skills/triage",
+    ]
+    assert [entry.frontmatter["name"] for entry in entries] == ["lookup", "weekly-report", "triage"]
+    assert entries[0].frontmatter["projects"] == ["enwiki", "wikidatawiki"]
+    assert entries[1].frontmatter["projects"] == ["commonswiki"]
+    assert entries[1].uri == "skill://toolhub-evolved/catalog/reports/weekly/SKILL.md"
+    assert entries[2].resources[0].uri.endswith("/skills/triage/SKILL.md")
+
+
+def test_mixed_tool_and_skill_catalog_only_enters_skills_transport():
+    record = _fixture("toolinfo-evolved-mixed.json")
+
+    entries = skill_catalog._entries_from_record(record)
+
+    assert [entry.artifact_id for entry in entries] == ["github:example/mixed-repository#skills/review"]
+
+
+def test_partial_refresh_isolates_failed_sibling_and_keeps_valid_sibling():
+    record = _fixture("toolinfo-evolved-partial-refresh.json")
+
+    assert record["refresh"]["status"] == "partial"
+    assert [entry.artifact_id for entry in skill_catalog._entries_from_record(record)] == [
+        "github:example/partial-repository#skills/kept"
+    ]
+
+
+def test_invalid_skill_fixture_is_not_published():
+    assert skill_catalog._entries_from_record(_fixture("toolinfo-evolved-invalid.json")) == []
+
+
+def test_future_evolved_schema_is_rejected_without_guessing():
+    record = _fixture("toolinfo-evolved-multi-skill.json")
+    record["_schema"] = "/toolinfo/evolved/2.0.0"
+
+    assert not skill_catalog.is_evolved_catalog(record)
+    assert skill_catalog._entries_from_record(record) == []
+
+
+def test_versioned_skill_requires_identity_and_repository_root():
+    record = _fixture("toolinfo-evolved-multi-skill.json")
+
+    missing_id = copy.deepcopy(record)
+    del missing_id["artifacts"][0]["id"]
+    assert [entry.artifact_id for entry in skill_catalog._entries_from_record(missing_id)] == [
+        "github:example/skill-repository#skills/reports/weekly",
+        "github:example/skill-repository#skills/triage",
+    ]
+
+    missing_root = copy.deepcopy(record)
+    missing_root["artifacts"][0]["skill"]["root"] = ""
+    assert [entry.artifact_id for entry in skill_catalog._entries_from_record(missing_root)] == [
+        "github:example/skill-repository#skills/reports/weekly",
+        "github:example/skill-repository#skills/triage",
+    ]
+
+
+def test_skill_entrypoint_is_fixed_in_v1_and_legacy_shape_remains_supported():
+    record = _fixture("toolinfo-evolved-multi-skill.json")
+    record["artifacts"][0]["skill"]["entrypoint"] = "README.md"
+    assert [entry.artifact_id for entry in skill_catalog._entries_from_record(record)] == [
+        "github:example/skill-repository#skills/reports/weekly",
+        "github:example/skill-repository#skills/triage",
+    ]
+
+    legacy = {
+        "source": {
+            "id": "github:example/legacy",
+            "repository": "https://github.com/example/legacy",
+        },
+        "skills": {
+            "tool_type": "skill",
+            "name": "legacy",
+            "description": "A legacy single-skill record.",
+            "skill": {
+                "root": "skills/legacy",
+                "frontmatter": {
+                    "name": "legacy",
+                    "description": "A legacy single-skill record.",
+                },
+                "resources": [
+                    {
+                        "path": "skills/legacy/SKILL.md",
+                        "size": 0,
+                        "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+                    }
+                ],
+            },
+        },
+    }
+    assert [entry.frontmatter["name"] for entry in skill_catalog._entries_from_record(legacy)] == ["legacy"]
