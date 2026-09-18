@@ -17,8 +17,12 @@ vi.mock("../../public_html/lib/core/serversync.js", async (orig) => {
 	return { ...actual, serverWrite: h.serverWrite };
 });
 
-const { sourceAnalysisContextSampleJson, sourceAnalysisSampleJson, sourceAnalysisWorkspace } =
-	await import("../../public_html/lib/organisms/source-analysis.js");
+const {
+	SOURCE_ANALYSIS_REPORT_CACHE_MAX,
+	sourceAnalysisContextSampleJson,
+	sourceAnalysisSampleJson,
+	sourceAnalysisWorkspace
+} = await import("../../public_html/lib/organisms/source-analysis.js");
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -213,6 +217,21 @@ test("source analysis workspace loads saved reports and copies the suggested pat
 	await tick();
 	assert.match(h.writeText.mock.calls[0][0], /"for_wikis"/);
 	assert.equal(document.querySelector("[data-source-analysis-status]").textContent, "Suggested patch copied.");
+});
+
+test("source analysis report rendering stays bounded", async () => {
+	h.backendGetJson.mockResolvedValue({
+		results: Array.from({ length: SOURCE_ANALYSIS_REPORT_CACHE_MAX + 5 }, (_, index) => ({
+			...sourceReport(),
+			id: index + 1
+		}))
+	});
+	const workspace = sourceAnalysisWorkspace();
+	document.body.innerHTML = workspace.html;
+	workspace.mount();
+	await tick();
+
+	assert.equal(document.querySelectorAll("[data-source-analysis-report]").length, SOURCE_ANALYSIS_REPORT_CACHE_MAX);
 });
 
 test("source analysis workspace submits JSON source bundles and reviews reports", async () => {

@@ -301,6 +301,21 @@ def mark_failure(url: str, error: str) -> None:
         return
 
 
+def purge_expired() -> int:
+    """Delete cache rows whose stale-if-error window has fully elapsed.
+
+    Anonymous search/detail URLs are user-generated, so invalidation alone can
+    never remove every row. Use a database-side DELETE rather than loading body
+    blobs into Python; this keeps the scheduled sweep's memory flat even after
+    a large backlog of expired responses.
+    """
+    try:
+        with db.session_scope() as s:
+            return int(s.execute(delete(ApiCache).where(ApiCache.stale_until <= utcnow())).rowcount or 0)
+    except SQLAlchemyError:
+        return 0
+
+
 def needs_refresh(url: str, *, refresh_ahead_seconds: int = 0) -> bool:
     """Return true when a cache row is missing or close enough to expiry to refresh."""
     now = utcnow()

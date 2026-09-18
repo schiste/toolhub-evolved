@@ -13,6 +13,7 @@ export const AVATAR_COLORS = [
 	"var(--color-favorite)",
 	"var(--color-progressive-hover)"
 ];
+export const ICON_META_CACHE_MAX = 1024;
 const ICON_META_CACHE = new Map();
 /**
  * @param {string | null | undefined} title
@@ -110,6 +111,11 @@ export function iconMeta(t, variant) {
 		variant: variant === "lg" ? "lg" : ""
 	});
 	ICON_META_CACHE.set(key, meta);
+	while (ICON_META_CACHE.size > ICON_META_CACHE_MAX) {
+		const oldest = ICON_META_CACHE.keys().next().value;
+		if (oldest === undefined) break;
+		ICON_META_CACHE.delete(oldest);
+	}
 	return meta;
 }
 /** @param {{ state: string, fallbackSrc: string, raw: string, title: string }} meta */

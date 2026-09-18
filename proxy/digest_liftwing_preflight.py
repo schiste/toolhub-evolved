@@ -56,19 +56,19 @@ def fetch_edition_facts(
     session: requests.Session | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch one immutable public edition's frozen facts with a response bound."""
-    client = session or requests.Session()
-    url = f"{clean_public_base(public_base)}/v1/digests/{period.cadence}/{quote(period.key, safe='-')}/"
-    body = outbound.fetch_bounded(client, url, policy=SOURCE_POLICY, caller=SOURCE_CALLER)
-    payload = json.loads(body)
-    tools = payload.get("tools") if isinstance(payload, dict) else None
-    if not isinstance(tools, list) or not tools:
-        message = f"public digest {period.cadence}:{period.key} contained no tools"
-        raise ValueError(message)
-    facts = [item.get("facts") for item in tools if isinstance(item, dict)]
-    if len(facts) != len(tools) or not all(isinstance(fact, dict) and fact.get("name") for fact in facts):
-        message = f"public digest {period.cadence}:{period.key} contained malformed frozen facts"
-        raise ValueError(message)
-    return facts
+    with outbound.managed_session(session) as client:
+        url = f"{clean_public_base(public_base)}/v1/digests/{period.cadence}/{quote(period.key, safe='-')}/"
+        body = outbound.fetch_bounded(client, url, policy=SOURCE_POLICY, caller=SOURCE_CALLER)
+        payload = json.loads(body)
+        tools = payload.get("tools") if isinstance(payload, dict) else None
+        if not isinstance(tools, list) or not tools:
+            message = f"public digest {period.cadence}:{period.key} contained no tools"
+            raise ValueError(message)
+        facts = [item.get("facts") for item in tools if isinstance(item, dict)]
+        if len(facts) != len(tools) or not all(isinstance(fact, dict) and fact.get("name") for fact in facts):
+            message = f"public digest {period.cadence}:{period.key} contained malformed frozen facts"
+            raise ValueError(message)
+        return facts
 
 
 def run(periods: list[digests.Period], *, public_base: str = DEFAULT_PUBLIC_BASE) -> dict[str, object]:

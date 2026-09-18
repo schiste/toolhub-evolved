@@ -315,6 +315,17 @@ def test_a_transport_failure_backs_the_repository_off(monkeypatch):
     assert "no route" in summary["sampleErrors"][0]
 
 
+def test_error_samples_are_bounded_even_when_the_batch_has_many_failures(monkeypatch):
+    _install(monkeypatch, FakeApi(raises=lane.requests.ConnectionError("no route")))
+    for index in range(lane.MAX_ERROR_SAMPLES + 2):
+        _state(f"https://github.com/x/repository-{index}", f"tool-{index}")
+
+    summary = lane.run(limit=lane.MAX_ERROR_SAMPLES + 2)
+
+    assert summary["errors"] == lane.MAX_ERROR_SAMPLES + 2
+    assert len(summary["sampleErrors"]) == lane.MAX_ERROR_SAMPLES
+
+
 def test_a_guard_rejection_is_an_error_not_a_crash(monkeypatch):
     _install(monkeypatch, FakeApi(raises=ValueError("resolves to a non-public address")))
     _state(GITHUB_URL)

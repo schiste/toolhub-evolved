@@ -20,6 +20,8 @@ exemption stays deliberate.
 
 import ipaddress
 import socket
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
@@ -198,6 +200,40 @@ API_RESPONSE_HEADERS = frozenset(
 # 304 and 404 are answers, not failures: unchanged since last poll, and no such
 # project. Neither should raise, because the lane records both.
 API_NOT_MODIFIED = 304
+
+
+def close_response(response: object) -> None:
+    """Release a response body when the caller does not use ``with``.
+
+    Production responses expose ``close``. Keeping this tiny compatibility
+    shim tolerant of test doubles also makes the ownership rule explicit at
+    call sites without forcing every injected session to implement the whole
+    ``requests.Response`` context-manager protocol.
+    """
+    close = getattr(response, "close", None)
+    if callable(close):
+        close()
+
+
+@contextmanager
+def managed_session(session: requests.Session | None = None) -> Iterator[requests.Session]:
+    """Yield an HTTP session and close it only when this helper created it.
+
+    Callers frequently accept an optional session so one connection pool can be
+    shared across a scheduled pass or a test. The old ``session or
+    requests.Session()`` idiom made the ``None`` branch leak a pool on every
+    invocation. This helper centralizes that ownership distinction.
+    """
+    if session is not None:
+        yield session
+        return
+    owned = requests.Session()
+    try:
+        yield owned
+    finally:
+        close = getattr(owned, "close", None)
+        if callable(close):
+            close()
 
 
 def require_allowed(url: str, policy: FetchPolicy, *, scheme_error: str) -> None:

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, test, vi } from "vitest";
 import { installStorage } from "./_storage-setup.mjs";
 import * as api from "../../public_html/lib/core/api.js";
+import { API_STORAGE_MAX_ENTRIES } from "../../public_html/lib/core/api-cache-policy.js";
 import { FRONTEND_TIMINGS, resetFrontendTimingsForTests } from "../../public_html/lib/core/diagnostics.js";
 import * as session from "../../public_html/lib/core/session.js";
 import { demoStore, DEMO_KEYS, recentOwnerCacheGet, recentOwnerCacheSet } from "../../public_html/lib/core/store.js";
@@ -102,24 +103,38 @@ test("backendErrorExplanation gives platform-independent next steps", () => {
 
 test("backendWriteJson handles empty writes, invalid JSON bodies, and backend errors", async () => {
 	const seen = [];
+	let cancellations = 0;
 	globalThis.fetch = async (url, opts) => {
 		seen.push({ url: String(url), opts });
-		return { ok: true, status: 204, json: async () => ({ should: "not parse" }) };
+		return {
+			ok: true,
+			status: 204,
+			body: { cancel: () => (cancellations += 1) },
+			json: async () => ({ should: "not parse" })
+		};
 	};
 	assert.equal(await api.backendWriteJson("DELETE", "/v1/empty/", undefined, "csrf"), null);
 	assert.equal(seen[0].opts.body, undefined);
 	assert.equal(seen[0].opts.headers["X-CSRF-Token"], "csrf");
+	assert.equal(cancellations, 1);
 
 	globalThis.fetch = async () => ({
 		ok: true,
 		status: 200,
+		body: { cancel: () => (cancellations += 1) },
 		json: async () => {
 			throw new Error("not json");
 		}
 	});
 	assert.equal(await api.backendWriteJson("POST", "/v1/not-json/", { ok: true }, "csrf"), null);
+	assert.equal(cancellations, 2);
 
-	globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: "Bad write" }) });
+	globalThis.fetch = async () => ({
+		ok: false,
+		status: 400,
+		body: { cancel: () => (cancellations += 1) },
+		json: async () => ({ error: "Bad write" })
+	});
 	await assert.rejects(
 		() => api.backendWriteJson("POST", "/v1/bad/", { name: "x" }, "csrf"),
 		(error) => {
@@ -129,6 +144,7 @@ test("backendWriteJson handles empty writes, invalid JSON bodies, and backend er
 			return true;
 		}
 	);
+	assert.equal(cancellations, 3);
 });
 
 test("backendGetJson dedupes public search and graph reads without caching private v1 reads", async () => {
@@ -206,6 +222,36 @@ test("apiGet retries 502/503/504 with exact backoff and rethrows API <status>", 
 	} finally {
 		vi.unstubAllGlobals();
 	}
+});
+
+test("failed API reads cancel response bodies instead of retaining connections", async () => {
+	let cancellations = 0;
+	globalThis.fetch = async () => ({
+		ok: false,
+		status: 503,
+		body: {
+			cancel() {
+				cancellations += 1;
+				return Promise.resolve();
+			}
+		}
+	});
+
+	await assert.rejects(() => api.apiGet("/discard-api-body/"), /API 503/);
+	assert.equal(cancellations, 3, "each retry must release its failed response body");
+
+	globalThis.fetch = async () => ({
+		ok: false,
+		status: 500,
+		body: {
+			cancel() {
+				cancellations += 1;
+				return Promise.resolve();
+			}
+		}
+	});
+	assert.equal(await api.backendGetJson("/discard-backend-body/"), null);
+	assert.equal(cancellations, 4, "backend reads must release non-success responses too");
 });
 
 test("fetchJson sends the JSON Accept header to the proxied /api URL", async () => {
@@ -418,6 +464,29 @@ test("apiGet treats server-stale cache as visible data and follows up for fresh 
 	}
 });
 
+test("server-stale followups are bounded with the process-local caches", async () => {
+	vi.useFakeTimers();
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return {
+			ok: true,
+			headers: { get: () => "stale" },
+			json: async () => ({ calls })
+		};
+	};
+	try {
+		for (let i = 0; i < API_STORAGE_MAX_ENTRIES + 1; i += 1) {
+			await api.apiGet(`/server-stale-bound-${i}/`);
+		}
+		await vi.advanceTimersByTimeAsync(1200);
+		// The oldest scheduled followup was evicted when the extra URL arrived.
+		assert.equal(calls, API_STORAGE_MAX_ENTRIES + 1 + API_STORAGE_MAX_ENTRIES);
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
 test("apiGet discards cached data beyond the stale-if-error window", async () => {
 	let now = 8_000_000;
 	const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -479,6 +548,23 @@ test("persisted API cache stays inside a total storage budget, newest first", as
 	} finally {
 		nowSpy.mockRestore();
 	}
+});
+
+test("process-local API caches evict old query keys", async () => {
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return { ok: true, json: async () => ({ calls }) };
+	};
+
+	for (let i = 0; i < API_STORAGE_MAX_ENTRIES + 1; i += 1) {
+		await api.apiGet("/search/tools/", { q: `memory-bound-${i}` });
+	}
+	assert.equal(calls, API_STORAGE_MAX_ENTRIES + 1);
+
+	// The first query fell out of the FIFO cache and must fetch again.
+	await api.apiGet("/search/tools/", { q: "memory-bound-0" });
+	assert.equal(calls, API_STORAGE_MAX_ENTRIES + 2);
 });
 
 test("clearApiCache evicts cached GET data", async () => {

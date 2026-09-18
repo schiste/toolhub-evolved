@@ -47,14 +47,14 @@ def _fetch_body(session: requests.Session, url: str, *, accept: str) -> bytes:
 
 def fetch_toolinfo_json_once(url: str, session: requests.Session | None = None) -> object:
     """Fetch one candidate toolinfo.json document."""
-    active_session = session or requests.Session()
-    return json.loads(_fetch_body(active_session, url, accept="application/json").decode("utf-8"))
+    with outbound.managed_session(session) as active_session:
+        return json.loads(_fetch_body(active_session, url, accept="application/json").decode("utf-8"))
 
 
 def fetch_sitemap_xml_once(url: str, session: requests.Session | None = None) -> str:
     """Fetch one candidate sitemap XML document."""
-    active_session = session or requests.Session()
-    return _fetch_body(active_session, url, accept="application/xml,text/xml").decode("utf-8")
+    with outbound.managed_session(session) as active_session:
+        return _fetch_body(active_session, url, accept="application/xml,text/xml").decode("utf-8")
 
 
 def _exception_status(exc: BaseException) -> int | None:
@@ -155,54 +155,54 @@ def discover_toolinfo_url(
 ) -> dict:
     """Discover a concrete toolinfo.json URL by checking root first, then sitemap after root 404."""
     url = raw_url.strip()
-    active_session = session or requests.Session()
-    root_url = _root_toolinfo_url(url)
-    attempts: list[dict] = []
-    data, root_not_found = _discovery_attempt(root_url, "root", attempts, active_session)
-    if data is not None:
-        return _found_payload(url, root_url, "root", data, attempts, tool_name=tool_name)
-    if not root_not_found:
-        return {
-            "ok": False,
-            "status": STATUS_ERROR,
-            "inputUrl": url,
-            "attempts": attempts,
-            "lastError": attempts[-1].get("error") or "toolinfo.json could not be fetched",
-        }
-
-    sitemap_url = _sitemap_url(url)
-    try:
-        sitemap_xml = fetch_sitemap_xml_once(sitemap_url, active_session)
-        attempts.append({"url": sitemap_url, "method": "sitemap", "ok": True})
-    except (requests.RequestException, ValueError) as exc:
-        attempts.append(
-            {
-                "url": sitemap_url,
-                "method": "sitemap",
+    with outbound.managed_session(session) as active_session:
+        root_url = _root_toolinfo_url(url)
+        attempts: list[dict] = []
+        data, root_not_found = _discovery_attempt(root_url, "root", attempts, active_session)
+        if data is not None:
+            return _found_payload(url, root_url, "root", data, attempts, tool_name=tool_name)
+        if not root_not_found:
+            return {
                 "ok": False,
-                "status": _exception_status(exc),
-                "error": clean_error(str(exc)),
+                "status": STATUS_ERROR,
+                "inputUrl": url,
+                "attempts": attempts,
+                "lastError": attempts[-1].get("error") or "toolinfo.json could not be fetched",
             }
-        )
+
+        sitemap_url = _sitemap_url(url)
+        try:
+            sitemap_xml = fetch_sitemap_xml_once(sitemap_url, active_session)
+            attempts.append({"url": sitemap_url, "method": "sitemap", "ok": True})
+        except (requests.RequestException, ValueError) as exc:
+            attempts.append(
+                {
+                    "url": sitemap_url,
+                    "method": "sitemap",
+                    "ok": False,
+                    "status": _exception_status(exc),
+                    "error": clean_error(str(exc)),
+                }
+            )
+            return {
+                "ok": False,
+                "status": STATUS_NOT_FOUND,
+                "inputUrl": url,
+                "attempts": attempts,
+                "lastError": "toolinfo.json not found at root and sitemap.xml could not be used",
+            }
+
+        for candidate in _sitemap_toolinfo_urls(sitemap_xml, sitemap_url=sitemap_url, origin=_origin(url)):
+            data, _not_found = _discovery_attempt(candidate, "sitemap-toolinfo", attempts, active_session)
+            if data is not None:
+                return _found_payload(url, candidate, "sitemap", data, attempts, tool_name=tool_name)
         return {
             "ok": False,
             "status": STATUS_NOT_FOUND,
             "inputUrl": url,
             "attempts": attempts,
-            "lastError": "toolinfo.json not found at root and sitemap.xml could not be used",
+            "lastError": "toolinfo.json not found at root or in sitemap.xml",
         }
-
-    for candidate in _sitemap_toolinfo_urls(sitemap_xml, sitemap_url=sitemap_url, origin=_origin(url)):
-        data, _not_found = _discovery_attempt(candidate, "sitemap-toolinfo", attempts, active_session)
-        if data is not None:
-            return _found_payload(url, candidate, "sitemap", data, attempts, tool_name=tool_name)
-    return {
-        "ok": False,
-        "status": STATUS_NOT_FOUND,
-        "inputUrl": url,
-        "attempts": attempts,
-        "lastError": "toolinfo.json not found at root or in sitemap.xml",
-    }
 
 
 def _matching_record(data: object, tool_name: str) -> dict | None:
@@ -533,19 +533,19 @@ def refresh_known_discoveries(limit: int = 100) -> dict[str, int]:
             rows.append(upsert_pending(s, tool_name=tool_name, tool_url=tool_url))
         seeded += 1
 
-    session = requests.Session()
-    for row in rows[:limit]:
-        result = discover_toolinfo_url(row.tool_url, session, tool_name=row.tool_name)
-        with db.session_scope() as s:
-            upsert_result(s, tool_name=row.tool_name, tool_url=row.tool_url, result=result)
-        graph_enrichment.refresh_tool_names([row.tool_name])
-        refreshed += 1
-        if result.get("status") == STATUS_FOUND:
-            found += 1
-        elif result.get("status") == STATUS_NOT_FOUND:
-            missing += 1
-        else:
-            errors += 1
+    with outbound.managed_session() as session:
+        for row in rows[:limit]:
+            result = discover_toolinfo_url(row.tool_url, session, tool_name=row.tool_name)
+            with db.session_scope() as s:
+                upsert_result(s, tool_name=row.tool_name, tool_url=row.tool_url, result=result)
+            graph_enrichment.refresh_tool_names([row.tool_name])
+            refreshed += 1
+            if result.get("status") == STATUS_FOUND:
+                found += 1
+            elif result.get("status") == STATUS_NOT_FOUND:
+                missing += 1
+            else:
+                errors += 1
     return {
         "refreshed": refreshed,
         "seeded": seeded,

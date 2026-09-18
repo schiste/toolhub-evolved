@@ -283,6 +283,9 @@ const EVOLVED_SUMMARY_IDLE_FALLBACK_MS = 700;
    card-view hit can never satisfy the detail page. */
 export const SUMMARY_VIEW_CARD = "card";
 export const SUMMARY_VIEW_FULL = "full";
+export const EVOLVED_SUMMARY_CACHE_MAX = 250;
+export const EVOLVED_SUMMARY_MISSING_MAX = 500;
+export const EVOLVED_SUMMARY_PENDING_MAX = 500;
 /** @type {Map<string, { summary: any, ts: number, view: string }>} */
 const evolvedSummaryCache = new Map();
 /* Names the backend has no materialized summary for yet, with the time we last
@@ -313,11 +316,18 @@ const evolvedSummaryInflight = new Map();
 function storeEvolvedSummary(name, summary, view, ts) {
 	const previous = evolvedSummaryCache.get(name);
 	const keepFuller = previous?.view === SUMMARY_VIEW_FULL && view === SUMMARY_VIEW_CARD;
-	evolvedSummaryCache.set(name, {
+	const next = {
 		summary: keepFuller ? previous.summary : summary,
 		ts,
 		view: keepFuller ? SUMMARY_VIEW_FULL : view
-	});
+	};
+	evolvedSummaryCache.delete(name);
+	evolvedSummaryCache.set(name, next);
+	while (evolvedSummaryCache.size > EVOLVED_SUMMARY_CACHE_MAX) {
+		const oldest = evolvedSummaryCache.keys().next().value;
+		if (oldest === undefined) break;
+		evolvedSummaryCache.delete(oldest);
+	}
 	return !keepFuller && (!previous || !sameSummary(previous.summary, summary));
 }
 
@@ -334,7 +344,13 @@ function hydrateEvolvedSummaries() {
 	evolvedSummaryHydrated = true;
 	for (const [name, entry] of Object.entries(toolSummaryCacheRead())) {
 		if (!evolvedSummaryCache.has(name)) {
-			evolvedSummaryCache.set(name, { ...entry, view: entry.view || SUMMARY_VIEW_FULL });
+			const hydrated = { ...entry, view: entry.view || SUMMARY_VIEW_FULL };
+			evolvedSummaryCache.set(name, hydrated);
+			while (evolvedSummaryCache.size > EVOLVED_SUMMARY_CACHE_MAX) {
+				const oldest = evolvedSummaryCache.keys().next().value;
+				if (oldest === undefined) break;
+				evolvedSummaryCache.delete(oldest);
+			}
 		}
 	}
 }
@@ -384,6 +400,17 @@ export function seedEvolvedSummaries(summaries) {
 const evolvedSummaryPending = new Map();
 let evolvedSummaryScheduled = false;
 
+/** @param {string} name @param {number} at */
+function rememberMissingSummary(name, at) {
+	evolvedSummaryMissing.delete(name);
+	evolvedSummaryMissing.set(name, at);
+	while (evolvedSummaryMissing.size > EVOLVED_SUMMARY_MISSING_MAX) {
+		const oldest = evolvedSummaryMissing.keys().next().value;
+		if (oldest === undefined) break;
+		evolvedSummaryMissing.delete(oldest);
+	}
+}
+
 /** @param {string[]} names */
 function emitEvolvedSummaryRefresh(names) {
 	if (typeof document === "undefined" || typeof CustomEvent === "undefined") return;
@@ -431,7 +458,7 @@ function refreshEvolvedSummaryBatch(batch, view, opts) {
 				if (!summary) {
 					// Not materialized yet. Remember that, so the next render does
 					// not ask again immediately — see evolvedSummaryMissing.
-					evolvedSummaryMissing.set(name, Date.now());
+					rememberMissingSummary(name, Date.now());
 					continue;
 				}
 				evolvedSummaryMissing.delete(name);
@@ -484,6 +511,7 @@ function drainScheduledEvolvedSummaries() {
 		if (queued.size === 0) continue;
 		const batch = [...queued].slice(0, EVOLVED_SUMMARY_BATCH_SIZE);
 		for (const name of batch) queued.delete(name);
+		if (queued.size === 0) evolvedSummaryPending.delete(view);
 		refreshEvolvedSummaries(batch, { view }).finally(() => {
 			if (pendingSummaryCount() > 0) scheduleEvolvedSummaryRefresh([]);
 		});
@@ -496,6 +524,21 @@ function pendingSummaryCount() {
 	return total;
 }
 
+function trimPendingSummaryQueues() {
+	let overflow = pendingSummaryCount() - EVOLVED_SUMMARY_PENDING_MAX;
+	if (overflow <= 0) return;
+	for (const [view, queued] of evolvedSummaryPending) {
+		while (overflow > 0 && queued.size > 0) {
+			const oldest = queued.values().next().value;
+			if (oldest === undefined) break;
+			queued.delete(oldest);
+			overflow -= 1;
+		}
+		if (queued.size === 0) evolvedSummaryPending.delete(view);
+		if (overflow <= 0) break;
+	}
+}
+
 /**
  * @param {string[]} names
  * @param {string} [view]
@@ -506,6 +549,7 @@ function scheduleEvolvedSummaryRefresh(names, view = SUMMARY_VIEW_CARD) {
 	for (const name of names) {
 		if (name) queued.add(name);
 	}
+	trimPendingSummaryQueues();
 	if (evolvedSummaryScheduled || pendingSummaryCount() === 0) return;
 	evolvedSummaryScheduled = true;
 	scheduleIdle(drainScheduledEvolvedSummaries);

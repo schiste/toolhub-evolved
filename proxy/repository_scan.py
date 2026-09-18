@@ -96,6 +96,11 @@ REFRESH_INTERVAL_SECONDS = 60.0
 # cost a full table scan every second for one row of work.
 QUEUE_REFILL_SECONDS = 300.0
 QUEUE_DEPTH = 500
+# Candidate selection reads JSON records from a potentially large catalog. Keep
+# the database cursor bounded independently of the queue depth so the session
+# never accumulates a full result set while the caller retains only a small top
+# slice.
+STREAM_BATCH_SIZE = 500
 # A line per scanned tool would be 86400 lines a day against logs that are only
 # rotated nightly, so the loop reports cumulative totals on an interval instead.
 HEARTBEAT_SECONDS = 300.0
@@ -1176,24 +1181,39 @@ def _scan_order(state: RepositoryAnalysisState | None) -> tuple[bool, datetime]:
     return (True, state.checked_at or EARLIEST_CHECK)
 
 
+def _retain_earliest(
+    bucket: list[tuple[tuple[bool, datetime], str, dict[str, Any]]],
+    entry: tuple[tuple[bool, datetime], str, dict[str, Any]],
+    limit: int,
+) -> None:
+    """Keep only the earliest ``limit`` entries without sorting the whole catalog."""
+    if limit <= 0:
+        return
+    bucket.append(entry)
+    if len(bucket) <= limit:
+        return
+    worst = max(range(len(bucket)), key=lambda index: (*bucket[index][0], bucket[index][1]))
+    bucket.pop(worst)
+
+
 def candidate_tools(limit: int, tool_name: str | None = None) -> list[tuple[str, dict[str, Any]]]:
+    bounded = max(1, int(limit or 1))
+    candidates: list[tuple[tuple[bool, datetime], str, dict[str, Any]]] = []
     with db.session_scope() as s:
-        rows = list(s.execute(select(CanonicalToolCache).order_by(CanonicalToolCache.tool_name)).scalars())
-        states = {
-            row.tool_name: row
-            for row in s.execute(
-                select(RepositoryAnalysisState).where(
-                    RepositoryAnalysisState.tool_name.in_([row.tool_name for row in rows])
-                )
-            ).scalars()
-        }
-    candidates = [
-        (row.tool_name, row.record if isinstance(row.record, dict) else {})
-        for row in rows
-        if (not tool_name or row.tool_name == tool_name)
-        and _raw_tool_repository(row.record if isinstance(row.record, dict) else {})
-    ]
-    return sorted(candidates, key=lambda item: (*_scan_order(states.get(item[0])), item[0]))[: max(1, limit)]
+        statement = (
+            select(CanonicalToolCache, RepositoryAnalysisState)
+            .outerjoin(RepositoryAnalysisState, RepositoryAnalysisState.tool_name == CanonicalToolCache.tool_name)
+            .order_by(CanonicalToolCache.tool_name)
+            .execution_options(yield_per=STREAM_BATCH_SIZE)
+        )
+        if tool_name:
+            statement = statement.where(CanonicalToolCache.tool_name == tool_name)
+        for row, state in s.execute(statement):
+            record = row.record if isinstance(row.record, dict) else {}
+            if not _raw_tool_repository(record):
+                continue
+            _retain_earliest(candidates, (_scan_order(state), row.tool_name, record), bounded)
+    return [(name, record) for _, name, record in sorted(candidates, key=lambda item: (*item[0], item[1]))]
 
 
 def authorship_backlog(limit: int) -> list[tuple[str, dict[str, Any]]]:
@@ -1341,34 +1361,31 @@ def partition_candidates(depth: int = QUEUE_DEPTH) -> tuple[list[tuple[str, dict
     the session, because the rows detach when it closes.
     """
     now = utcnow()
+    bounded = max(0, int(depth))
     backlog: list[tuple[tuple[bool, datetime], str, dict[str, Any]]] = []
     refresh: list[tuple[tuple[bool, datetime], str, dict[str, Any]]] = []
     with db.session_scope() as s:
-        rows = list(s.execute(select(CanonicalToolCache).order_by(CanonicalToolCache.tool_name)).scalars())
-        states = {
-            row.tool_name: row
-            for row in s.execute(
-                select(RepositoryAnalysisState).where(
-                    RepositoryAnalysisState.tool_name.in_([row.tool_name for row in rows])
-                )
-            ).scalars()
-        }
-        for row in rows:
+        statement = (
+            select(CanonicalToolCache, RepositoryAnalysisState)
+            .outerjoin(RepositoryAnalysisState, RepositoryAnalysisState.tool_name == CanonicalToolCache.tool_name)
+            .order_by(CanonicalToolCache.tool_name)
+            .execution_options(yield_per=STREAM_BATCH_SIZE)
+        )
+        for row, state in s.execute(statement):
             record = row.record if isinstance(row.record, dict) else {}
             raw_url = _raw_tool_repository(record)
             if not raw_url:
                 continue
-            state = states.get(row.tool_name)
             if _has_report(state) or _settled_no_source(state):
-                refresh.append((_scan_order(state), row.tool_name, record))
+                _retain_earliest(refresh, (_scan_order(state), row.tool_name, record), bounded)
                 continue
             if _settled_unsupported(state, raw_url) or _settled_restricted(state, repository_url(raw_url)):
                 continue
             if state is not None and state.next_attempt_at is not None and state.next_attempt_at > now:
                 continue
-            backlog.append((_scan_order(state), row.tool_name, record))
+            _retain_earliest(backlog, (_scan_order(state), row.tool_name, record), bounded)
     return tuple(
-        [(name, record) for _, name, record in sorted(bucket, key=lambda entry: (*entry[0], entry[1]))][:depth]
+        [(name, record) for _, name, record in sorted(bucket, key=lambda entry: (*entry[0], entry[1]))]
         for bucket in (backlog, refresh)
     )
 

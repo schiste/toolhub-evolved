@@ -54,6 +54,7 @@ const FINDING_GROUPS = [
 
 /** @type {Map<number, any>} */
 let reportCache = new Map();
+export const SOURCE_ANALYSIS_REPORT_CACHE_MAX = 20;
 
 export function sourceAnalysisSampleJson() {
 	return JSON.stringify(SAMPLE_FILES, null, 2);
@@ -526,14 +527,20 @@ function reportCard(report) {
 
 /** @param {any[]} reports */
 function rememberReports(reports) {
-	reportCache = new Map(reports.filter((report) => Number(report?.id)).map((report) => [Number(report.id), report]));
+	reportCache = new Map(
+		reports
+			.filter((report) => Number(report?.id))
+			.slice(0, SOURCE_ANALYSIS_REPORT_CACHE_MAX)
+			.map((report) => [Number(report.id), report])
+	);
 }
 
 /** @param {any[]} reports */
 function reportsList(reports) {
-	rememberReports(reports);
+	const visible = reports.slice(0, SOURCE_ANALYSIS_REPORT_CACHE_MAX);
+	rememberReports(visible);
 	if (reports.length === 0) return `<p class="empty">${t("sourceAnalysis.noReports", "No analyses saved yet.")}</p>`;
-	return reports.map((report) => reportCard(report)).join("");
+	return visible.map((report) => reportCard(report)).join("");
 }
 
 /** @param {string} message @param {"ok" | "err" | ""} [kind] */
