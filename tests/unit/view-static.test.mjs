@@ -67,6 +67,10 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	);
 	assert.ok(S.viewStatic("terms").html.includes("not a Wikimedia Foundation-operated service"));
 	assert.ok(S.viewStatic("terms").html.includes("Using this beta"));
+	assert.ok(S.viewStatic("about").html.includes("no attribution is required"));
+	assert.ok(S.viewStatic("about").html.includes("A link back is welcome but optional"));
+	assert.ok(S.viewStatic("terms").html.includes("dedicated to the public domain under CC0"));
+	assert.ok(S.viewStatic("terms").html.includes("no attribution is required"));
 	assert.ok(S.viewStatic("code-of-conduct").html.includes("not an official Wikimedia Foundation venue"));
 	assert.ok(S.viewStatic("code-of-conduct").html.includes("accessibility, localization, privacy"));
 	const rules = S.viewStatic("rules-of-engagement").html;

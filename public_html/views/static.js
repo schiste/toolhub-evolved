@@ -587,7 +587,7 @@ export const STATIC = {
 		<p>${tWithElements("static.about.howToolsGetHereBody", "Tools enter the catalog three ways: by registering a $1 URL that Toolhub crawls roughly hourly, through the Toolhub UI, or via the API ($2). All paths validate against the same versioned schema, so the data stays consistent.", { html: code("toolinfo.json") }, { html: code("POST /api/tools/") })}</p>
 		<h2>${t("static.about.coreVsAnnotations", "Core information vs. annotations")}</h2>
 		<p>${t("static.about.coreVsAnnotationsBody", "Each tool has authoritative core information, editable only by its owner or administrators, plus community annotations that any logged-in Wikimedian can enrich. When both are set for a field, Toolhub shows the core value, balancing maintainer control with community contribution.")}</p>
-		<p>${t("static.about.cc0", "Structured data is released under CC0; attribution via links back is\n\t\tencouraged but not required. Sign in with Toolhub — no separate Evolved account\n\t\tor password is needed.")}</p>
+		<p>${t("static.about.cc0", "Structured data is released under CC0; no attribution is required. A link back is welcome but optional. Sign in with Toolhub — no separate Evolved account\n\t\tor password is needed.")}</p>
 		<p>${tWithElements("static.about.helpBuildBody", "Want to help improve this beta or coordinate with upstream Toolhub? See $1.", { html: `<a href="/contribute">${esc(t("static.community.contributeLink", "Help maintain Toolhub Evolved"))}</a>` })}</p>
 		<blockquote>${t("static.about.prototypeNote", "This is a companion interface for Toolhub: it reads a background-synchronized local catalog, publishes official writes through Toolhub OAuth when you sign in, and keeps Evolved-only additions in its local overlay database.")}</blockquote>`
 	}),
@@ -652,7 +652,7 @@ export const STATIC = {
 			<li>${t("static.terms.officialActionsItem", "Actions that publish to official Toolhub are still subject to Toolhub permissions, audit history, validation, and Wikimedia account rules.")}</li>
 		</ul>
 		<h2>${t("static.terms.contentTitle", "Content and responsibility")}</h2>
-		<p>${tWithElements("static.terms.contributionTerms", "Structured Toolhub catalog data is made available under CC0. Evolved source code is published separately in $1. Tools listed here are owned and operated by their respective maintainers; this beta catalogs and enriches metadata but does not host or endorse the tools.", { html: ext("https://github.com/schiste/toolhub-evolved", t("static.terms.evolvedSource", "the Toolhub Evolved repository")) })}</p>
+		<p>${tWithElements("static.terms.contributionTerms", "Structured Toolhub catalog data is dedicated to the public domain under CC0; no attribution is required. Evolved source code is published separately in $1. Tools listed here are owned and operated by their respective maintainers; this beta catalogs and enriches metadata but does not host or endorse the tools.", { html: ext("https://github.com/schiste/toolhub-evolved", t("static.terms.evolvedSource", "the Toolhub Evolved repository")) })}</p>
 		<p>${tWithElements("static.terms.readFullTerms", "For authoritative Wikimedia legal terms, read the full $1.", { html: ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", t("static.terms.title", "Terms of Use")) })}</p>`
 	}),
 	"code-of-conduct": () => ({

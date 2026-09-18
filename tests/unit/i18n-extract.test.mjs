@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 import {
 	extractCatalogFromEntries,
@@ -13,6 +16,8 @@ import {
 	validateMessageShape,
 	validateReviewManifest
 } from "../../tools/i18n-extract.mjs";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 test("extractCatalogFromEntries collects stable English source messages", () => {
 	const { catalog, problems } = extractCatalogFromEntries([
@@ -80,6 +85,14 @@ test("legacy documentation stubs are replaced instead of preserved", () => {
 		{ "dataLayer.summaryTitle": "TODO: document this message." }
 	);
 	assert.equal(docs["dataLayer.summaryTitle"], "Message shown in the data layer interface for summary title.");
+});
+
+test("the checked-in translator catalog has no legacy documentation debt", () => {
+	const qqq = JSON.parse(readFileSync(path.join(ROOT, "public_html/i18n/qqq.json"), "utf8"));
+	const undocumented = Object.entries(qqq).filter(
+		([, value]) => typeof value === "string" && value.startsWith("TODO: document this message.")
+	);
+	assert.deepEqual(undocumented, []);
 });
 
 test("renderLocalesModule lists shipped catalogs in sorted order", () => {
