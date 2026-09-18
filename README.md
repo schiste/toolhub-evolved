@@ -115,6 +115,10 @@ The endpoint speaks both legacy `initialize`-handshake protocol (2025-06-18 and 
 
 ## Repository layout
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the supported local setup,
+validation and review workflow, including the boundary between Evolved work
+and canonical upstream Toolhub work.
+
 ```
 public_html/        ← the static single-page app (served by the proxy)
   index.html        ·  app shell + router mount
