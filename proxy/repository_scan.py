@@ -40,6 +40,7 @@ from backend import (
     job_runner,
     job_runs,
     outbound,
+    skill_discovery,
     source_authorship,
     source_hosts,
     tool_summaries,
@@ -660,6 +661,17 @@ def _raw_tool_repository(record: dict[str, Any]) -> str:
     return ""
 
 
+def _skill_source(record: dict[str, Any], url: str, provider: str, commit: str) -> dict[str, Any]:
+    """Build stable source evidence for the repository's discovered skills."""
+    source = record.get("source")
+    result = dict(source) if isinstance(source, dict) else {}
+    parsed = urlparse(url)
+    result.setdefault("id", f"{provider}:{parsed.netloc}{parsed.path.rstrip('/')}")
+    result.setdefault("repository", url)
+    result["commit"] = commit
+    return result
+
+
 def _scanner_user(s: Any) -> User:  # noqa: ANN401 - SQLAlchemy session
     user = s.execute(select(User).where(User.wm_sub == SCANNER_WM_SUB)).scalar_one_or_none()
     if user is None:
@@ -1003,6 +1015,18 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
                 acquired.context, url=url, provider=provider, commit_sha=head, record=record
             ),
         )
+        discovered_skills = skill_discovery.discover_catalog(
+            acquired.files,
+            _skill_source(record, url, provider, head),
+            run_id=f"{tool_name}:{head}",
+            commit=head,
+        )
+        report["evolvedSkills"] = discovered_skills.catalog
+        report["evolvedSkillsDiscovery"] = {
+            "discovered": discovered_skills.discovered,
+            "failed": discovered_skills.failed,
+            "observedFiles": discovered_skills.observed_files,
+        }
         _report_unknown_rights(tool_name, report)
         authorship = _merge_authorship(report, acquired.authorship)
         with db.session_scope() as s:
