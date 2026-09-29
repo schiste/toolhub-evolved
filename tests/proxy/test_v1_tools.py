@@ -137,6 +137,39 @@ def test_claim_options_tool_lookup_error(client, monkeypatch):
     assert resp.get_json()["error"] == "nope"
 
 
+def test_claim_options_read_rejects_a_name_that_does_not_clean(client, monkeypatch):
+    """An unusable name is rejected before the replica is consulted."""
+    uid = add_user()
+    sign_in(client, uid)
+    monkeypatch.setattr(v1_tools_api.common, "clean_name", lambda _name: None)
+    called = []
+    monkeypatch.setattr(
+        v1_tools_api.common.canonical_tools,
+        "tools_by_name",
+        lambda names: called.append(names) or {},
+    )
+    resp = client.get("/v1/tools/not-a-name/claim-options/")
+    assert resp.status_code == 400
+    assert resp.get_json() == {"error": "tool name is required"}
+    assert called == [], "the replica must not be read for an unusable name"
+
+
+def test_claim_options_read_404s_when_the_replica_has_no_record(client, monkeypatch):
+    """An absent, empty or non-dict record is a 404, not a 500."""
+    uid = add_user()
+    sign_in(client, uid)
+
+    for cached in (None, {}, {"record": {}}, {"record": "not-a-dict"}):
+        monkeypatch.setattr(
+            v1_tools_api.common.canonical_tools,
+            "tools_by_name",
+            lambda _names, cached=cached: {"ghost-tool": cached} if cached is not None else {},
+        )
+        resp = client.get("/v1/tools/ghost-tool/claim-options/")
+        assert resp.status_code == 404, cached
+        assert resp.get_json() == {"error": "canonical Toolhub tool not found"}, cached
+
+
 def test_claim_options_stored_user_missing(client, monkeypatch):
     uid = add_user()
     sign_in(client, uid)
