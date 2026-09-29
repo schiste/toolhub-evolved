@@ -81,3 +81,6 @@ output/
 # Four of them reached a commit once, by way of a merge that swept the
 # working tree, and rode all the way to production.
 .aethyme/locks/
+# Broker worktree-size cache: regenerated on every broker command and holding
+# this machine's absolute paths, so it is a local cache and never a commit.
+.aethyme/worktree-sizes.json

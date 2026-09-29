@@ -14,6 +14,12 @@ htmlcov/
 AGENTS.md
 CLAUDE.md
 .aethyme/generated/
+# Broker runtime state: machine-local caches that record this clone's absolute
+# worktree paths and change on every broker command. They are untracked by
+# design, and `prettier --check .` walks the working tree, so the pre-push hook
+# failed on them for any clone with a broker database present.
+.aethyme/broker-advisory.md
+.aethyme/worktree-sizes.json
 .codex/skills/aethyme/
 .codex/skills/repo-act/
 .codex/skills/repo-onboarding/
