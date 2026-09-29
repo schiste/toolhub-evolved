@@ -21,6 +21,7 @@ from backend import (
     authz,
     db,
     toolhub,
+    toolinfo_discovery,
 )
 from backend import v1_common as common
 from backend import v1_compat as compat
@@ -150,23 +151,22 @@ def _create_toolinfo_url(payload: dict) -> tuple[str | None, Response | None]:
 
 
 def _fetch_toolinfo_json_once(url: str) -> object:
-    """Reuse the scheduled crawler's hardened fetcher for create-time enrichment."""
-    import crawl  # noqa: PLC0415 - local import avoids backend package startup cycles.
+    """Fetch one toolinfo document for create-time enrichment.
 
-    session = toolhub.requests.Session()
-    try:
-        return crawl._fetch_json(session, url)  # noqa: SLF001 - reuse the crawler's fetch
-    finally:
-        close = getattr(session, "close", None)
-        if callable(close):
-            close()
+    Goes through ``toolinfo_discovery`` rather than the crawler's private
+    ``_fetch_json``. This used to be the only place in the backend package that
+    imported a Toolforge job script, which inverted the dependency direction:
+    every other job script imports the backend, not the other way round. It also
+    built a ``requests.Session`` per call that only the caller's ``finally``
+    closed. ``toolinfo_control.fetch_matching_item`` already used
+    ``toolinfo_discovery`` for the identical job, so this was the outlier.
+    """
+    return toolinfo_discovery.fetch_toolinfo_json_once(url)
 
 
 def _normalize_toolinfo_item(item: dict) -> dict | None:
-    """Reuse the crawler's compact toolinfo→Evolved record mapping."""
-    import crawl  # noqa: PLC0415 - local import avoids backend package startup cycles.
-
-    return crawl.normalize_record(item)
+    """Map a toolinfo item to the compact Evolved record shape."""
+    return toolinfo_discovery.normalize_record(item)
 
 
 def _matching_toolinfo_item(data: object, name: str) -> dict | None:

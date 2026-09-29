@@ -201,7 +201,7 @@ def v1_tool_claim_options(name: str) -> Response:
     uid = current_user_id()
     assert uid is not None  # noqa: S101 - login_required guarantees this
     user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    tool, error = common.claim_tool_or_error(name)
+    tool, error = common.claim_tool_for_read_or_error(name)
     if error is not None:
         return error
     assert tool is not None  # noqa: S101 - helper returned no error

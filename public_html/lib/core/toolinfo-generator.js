@@ -4,8 +4,6 @@ import { TOOLINFO_SCHEMA_VERSION, TOOLINFO_TOOL_TYPES } from "./toolinfo-docs.js
 
 /** @typedef {{ name: string, wiki_username?: string, developer_username?: string, email?: string, url?: string }} ToolinfoAuthor */
 
-export const TOOLINFO_FILENAME = "toolinfo.json";
-
 export const CORE_TOOLINFO_FIELDS = [
 	"_schema",
 	"_language",

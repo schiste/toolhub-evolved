@@ -24,6 +24,7 @@ from backend import (
     activity_privacy,
     api_cache,
     authz,
+    canonical_tools,
     db,
     maintainer_index,
     people_index,
@@ -865,7 +866,11 @@ def emit_structured_activity(  # noqa: PLR0913 - activity rows need explicit que
 
 
 def claim_tool_or_error(name: str) -> tuple[dict | None, Response | None]:
-    """Load one canonical Toolhub record for a claim operation."""
+    """Load one canonical Toolhub record for a claim operation, from upstream.
+
+    Deliberately a live fetch, and only for callers that are about to act on
+    the record: see ``claim_tool_for_read_or_error`` for the read path.
+    """
     cleaned = clean_name(name)
     if cleaned is None:
         return None, bad("tool name is required")
@@ -874,6 +879,32 @@ def claim_tool_or_error(name: str) -> tuple[dict | None, Response | None]:
     except (toolhub.ToolhubAPIError, toolhub.requests.RequestException) as exc:
         return None, deny(HTTP_BAD_GATEWAY, clean_error(str(exc)) or "official Toolhub is unavailable")
     if tool is None or clean_name(tool.get("name")) != cleaned:
+        return None, deny(HTTP_NOT_FOUND, "canonical Toolhub tool not found")
+    return tool, None
+
+
+def claim_tool_for_read_or_error(name: str) -> tuple[dict | None, Response | None]:
+    """Load one canonical tool record for display, from the local replica.
+
+    The claim-options view only reads ``name``, ``title`` and the author and
+    repository fields the proof methods are derived from, all of which the
+    synchronized ``CanonicalToolCache`` already carries. Going to
+    toolhub.wikimedia.org for it meant a GET handler performed network I/O and
+    two DB writes, which is the thing ``proxy/app.py`` documents public web
+    requests as never doing; it also let a signed-in session drive unbounded
+    upstream requests by varying ``<name>``, because the route carried no read
+    rate limit. The replica is what every other read path in this package
+    already uses.
+    """
+    cleaned = clean_name(name)
+    if cleaned is None:
+        return None, bad("tool name is required")
+    cached = canonical_tools.tools_by_name([cleaned]).get(cleaned)
+    # tools_by_name returns a freshness wrapper, not the bare toolinfo; the
+    # proof methods below read the Toolhub record itself, so unwrap it the way
+    # recent_owners._fetch_owner does.
+    tool = cached.get("record") if cached else None
+    if not isinstance(tool, dict) or not tool:
         return None, deny(HTTP_NOT_FOUND, "canonical Toolhub tool not found")
     return tool, None
 

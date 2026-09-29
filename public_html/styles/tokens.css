@@ -74,7 +74,7 @@
 	--color-progressive-subtle: #e7f0fa; /* derived light blue (AA with progressive text) */
 	--color-interactive-subtle: #dbe7ff; /* derived hover/focus wash */
 	--color-hero-tint: #f5f9ff; /* derived hero gradient midpoint */
-	--color-favorite: #b8860b; /* derived saved/favorite state */
+	--color-favorite: #8a6400; /* derived saved/favorite state (5.38:1 on white, AA) */
 
 	/* Status — Creative light bg + AAA/derived text */
 	--color-success: var(--wmf-green-aaa);

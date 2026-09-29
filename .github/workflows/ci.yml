@@ -92,7 +92,14 @@ jobs:
             - name: Types (tsc --checkJs)
               run: npx tsc -p jsconfig.json
             - name: Dead code (knip)
-              run: npx knip --production
+              # Not `--production`. That mode sets isProduction and drops
+              # devDependencies, which makes knip reclassify exports it cannot
+              # attribute to production code, so all 35 unused exports on this
+              # tree vanished and the gate reported nothing while the code was
+              # demonstrably full of it. Verified by planting a dead export in
+              # a normally-imported module: plain `knip` fails on it,
+              # `knip --production` does not.
+              run: npx knip
             - name: Duplication (jscpd)
               run: npx jscpd --config .jscpd.json
             # Separate config so JavaScript keeps its strict zero while Python

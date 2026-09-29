@@ -281,11 +281,12 @@ const EVOLVED_SUMMARY_IDLE_FALLBACK_MS = 700;
    calculation popover; the tool page additionally needs the maintainer record,
    which is the bulk of the payload. Entries record which shape they hold so a
    card-view hit can never satisfy the detail page. */
-export const SUMMARY_VIEW_CARD = "card";
+const SUMMARY_VIEW_CARD = "card";
 export const SUMMARY_VIEW_FULL = "full";
+/** @lintignore exported for tests/unit/signals-summary-hydration.test.mjs, which reaches this module through a dynamic import with a computed specifier that knip cannot resolve. */
 export const EVOLVED_SUMMARY_CACHE_MAX = 250;
-export const EVOLVED_SUMMARY_MISSING_MAX = 500;
-export const EVOLVED_SUMMARY_PENDING_MAX = 500;
+const EVOLVED_SUMMARY_MISSING_MAX = 500;
+const EVOLVED_SUMMARY_PENDING_MAX = 500;
 /** @type {Map<string, { summary: any, ts: number, view: string }>} */
 const evolvedSummaryCache = new Map();
 /* Names the backend has no materialized summary for yet, with the time we last

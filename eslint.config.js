@@ -48,7 +48,11 @@ const STORAGE_CORE = [
 	"public_html/lib/core/session.js",
 	"public_html/lib/core/theme.js",
 	"public_html/lib/core/i18n.js",
-	"public_html/lib/core/signals.js"
+	"public_html/lib/core/signals.js",
+	// Owns the three "what's new" preference keys. It was reaching storage
+	// through `globalThis.localStorage`, which the boundary rule did not match,
+	// so it persisted state while sitting outside this list.
+	"public_html/lib/core/release-notices.js"
 ];
 // Atomic-Design layering: a layer may import equal/lower, never higher.
 const LAYER_ZONES = [
@@ -275,7 +279,18 @@ export default [
 					]
 				}
 			],
-			"no-restricted-globals": ["error", ...NETWORK_GLOBALS, ...STORAGE_GLOBALS]
+			"no-restricted-globals": ["error", ...NETWORK_GLOBALS, ...STORAGE_GLOBALS],
+			// Same reasoning as the STORAGE_CORE block below: the global form
+			// has to be restricted too, or `globalThis.localStorage` is a
+			// one-token way around the whole boundary.
+			"no-restricted-properties": [
+				"error",
+				...[...NETWORK_GLOBALS, ...STORAGE_GLOBALS].map((global) => ({
+					object: "globalThis",
+					property: global.name,
+					message: global.message
+				}))
+			]
 		}
 	},
 	// core + atoms must be DOM-free.
@@ -291,7 +306,21 @@ export default [
 	// Core storage modules may use persistent storage (network still banned).
 	{
 		files: STORAGE_CORE,
-		rules: { "no-restricted-globals": ["error", ...NETWORK_GLOBALS] }
+		rules: {
+			"no-restricted-globals": ["error", ...NETWORK_GLOBALS],
+			// `no-restricted-globals` only matches the bare identifier, so
+			// `globalThis.localStorage` slipped straight past the boundary
+			// above. This mirrors the list, so a storage module is allowed
+			// storage through either spelling and still cannot reach `fetch`.
+			"no-restricted-properties": [
+				"error",
+				...NETWORK_GLOBALS.map((global) => ({
+					object: "globalThis",
+					property: global.name,
+					message: global.message
+				}))
+			]
+		}
 	},
 	// Tooling, tests, and config run in Node.
 	{

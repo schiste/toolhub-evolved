@@ -64,7 +64,7 @@ export function skeletonBlock(className = "") {
 /**
  * @returns {string}
  */
-export function toolCardSkeleton() {
+function toolCardSkeleton() {
 	return `<article class="tcard skeleton-card skeleton-card--tool">
 		<div class="tcard__topline">
 			${skeletonLine("skeleton--w-md")}
@@ -91,7 +91,7 @@ export function toolCardSkeleton() {
 /**
  * @returns {string}
  */
-export function listCardSkeleton() {
+function listCardSkeleton() {
 	return `<div class="lcard skeleton-card skeleton-card--list">
 		${skeletonBlock("skeleton--avatar")}
 		<div class="lcard__body skeleton-card__heading">

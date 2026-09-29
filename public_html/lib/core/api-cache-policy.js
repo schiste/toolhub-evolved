@@ -6,13 +6,13 @@
  * and invalidation all consult the same small set of pure rules.
  */
 export const API_BASE = "/v1/catalog";
-export const API_RECENT_TTL_MS = 5 * 60 * 1000;
-export const API_SEARCH_TTL_MS = 30 * 60 * 1000;
-export const API_DETAIL_TTL_MS = 6 * 60 * 60 * 1000;
-export const API_CRAWLER_TTL_MS = 6 * 60 * 60 * 1000;
-export const API_CONFIG_TTL_MS = 24 * 60 * 60 * 1000;
-export const API_DEFAULT_TTL_MS = 15 * 60 * 1000;
-export const API_STALE_IF_ERROR_MS = 24 * 60 * 60 * 1000;
+const API_RECENT_TTL_MS = 5 * 60 * 1000;
+const API_SEARCH_TTL_MS = 30 * 60 * 1000;
+const API_DETAIL_TTL_MS = 6 * 60 * 60 * 1000;
+const API_CRAWLER_TTL_MS = 6 * 60 * 60 * 1000;
+const API_CONFIG_TTL_MS = 24 * 60 * 60 * 1000;
+const API_DEFAULT_TTL_MS = 15 * 60 * 1000;
+const API_STALE_IF_ERROR_MS = 24 * 60 * 60 * 1000;
 export const API_STORAGE_MAX_ENTRIES = 48;
 export const API_STORAGE_MAX_CHARS = 240000;
 export const API_STORAGE_TOTAL_MAX_CHARS = 1200000;
@@ -24,20 +24,20 @@ export const SERVER_CACHE_HEADER = "X-Toolhub-Evolved-Cache";
 export const SERVER_STALE_CACHE = "stale";
 export const SERVER_STALE_FOLLOWUP_MS = 1200;
 
-export const BACKEND_SEARCH_TTL_MS = 5 * 1000;
-export const BACKEND_GRAPH_TTL_MS = 5 * 60 * 1000;
-export const BACKEND_HOME_TTL_MS = 5 * 60 * 1000;
+const BACKEND_SEARCH_TTL_MS = 5 * 1000;
+const BACKEND_GRAPH_TTL_MS = 5 * 60 * 1000;
+const BACKEND_HOME_TTL_MS = 5 * 60 * 1000;
 
-export const DETAIL_COLLECTIONS = new Set(["tools", "lists"]);
-export const TOOL_AGGREGATE_PATHS = new Set([
+const DETAIL_COLLECTIONS = new Set(["tools", "lists"]);
+const TOOL_AGGREGATE_PATHS = new Set([
 	"/v1/catalog/search/tools/",
 	"/v1/catalog/search/facets/",
 	"/v1/catalog/ui/home/"
 ]);
 export const LIST_COLLECTION_PATH = "/v1/catalog/lists/";
 export const RECENT_COLLECTION_PATH = "/v1/catalog/recent/";
-export const CRAWLER_RUNS_PATH = "/v1/catalog/crawler/runs/";
-export const CONFIG_PATHS = new Set([
+const CRAWLER_RUNS_PATH = "/v1/catalog/crawler/runs/";
+const CONFIG_PATHS = new Set([
 	"/v1/catalog/",
 	"/v1/catalog/schema/",
 	"/v1/catalog/audiences/",
@@ -57,7 +57,7 @@ export function apiPath(url) {
 }
 
 /** @param {string} url */
-export function apiPathParts(url) {
+function apiPathParts(url) {
 	return apiPath(url)
 		.split("/")
 		.filter(Boolean)
@@ -65,14 +65,14 @@ export function apiPathParts(url) {
 }
 
 /** @param {string} url */
-export function apiResourceParts(url) {
+function apiResourceParts(url) {
 	const parts = apiPathParts(url);
 	if (parts[0] === "v1" && parts[1] === "catalog") return parts.slice(2);
 	return parts[0] === "api" ? parts.slice(1) : parts;
 }
 
 /** @param {string} path */
-export function isDetailPath(path) {
+function isDetailPath(path) {
 	const parts = apiResourceParts(path);
 	return parts.length === 2 && DETAIL_COLLECTIONS.has(parts[0]) && Boolean(parts[1]);
 }

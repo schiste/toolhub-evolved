@@ -228,7 +228,7 @@ export function setSignInFallback(fn) {
  * @param {string} [lead]
  * @returns {View}
  */
-export function authLoadingPage(title, lead) {
+function authLoadingPage(title, lead) {
 	return {
 		title: `${title} - Toolhub`,
 		html: `<div class="container page route-loading route-loading--skeleton" role="status" aria-live="polite" aria-atomic="true">
@@ -253,6 +253,7 @@ export function requireSignIn(viewFn, title, lead) {
 }
 setSignInFallback(staticSignInPage);
 
+/** @lintignore consumed by tests/unit/view-router.test.mjs through a namespace import, which knip resolves too leniently to attribute the use. */
 export const ROUTES = {
 	"featured-tools": () => loadHome().then((m) => m.viewFeaturedTools()),
 	lists: () => loadLists().then((m) => m.viewLists()),

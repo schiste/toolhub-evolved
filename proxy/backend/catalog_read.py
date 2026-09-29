@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 STATE_KEY = "official_catalog"
 MAX_PAGE_SIZE = paging.MAX_PAGE_SIZE
+MAX_PAGE_NUMBER = paging.MAX_PAGE_NUMBER
 DEFAULT_PAGE_SIZE = 20
 FACET_FIELDS = catalog_facets.FACET_FIELDS
 
@@ -148,7 +149,9 @@ def _facets_for(session: Any, filtered: Any, params: Any) -> dict[str, Any]:  # 
 
 def search_payload(params: Any) -> dict[str, Any]:  # noqa: ANN401 - Flask MultiDict or mapping
     """Return a Toolhub-compatible, filtered and paginated local search page."""
-    page = _int(params.get("page"), 1, maximum=100_000)
+    # Bounded because this is a SQL OFFSET over the ordered canonical table, so
+    # the cost tracks the page number rather than the page size.
+    page = _int(params.get("page"), 1, maximum=MAX_PAGE_NUMBER)
     page_size = _int(params.get("page_size"), DEFAULT_PAGE_SIZE)
     filtered = _filtered_statement(params)
     ordering = str(params.get("ordering") or "")
@@ -262,7 +265,7 @@ def collection_payload(path: str, params: Any, *, include_replica: bool = True) 
         # page of thirty must hold thirty rows a reader can tell apart, not
         # thirty revisions of one list that read as the same line repeated.
         rows = list_revisions.group_list_activity(rows)
-    page = _int(params.get("page"), 1, maximum=100_000)
+    page = _int(params.get("page"), 1, maximum=MAX_PAGE_NUMBER)
     page_size = _int(params.get("page_size"), DEFAULT_PAGE_SIZE)
     offset = (page - 1) * page_size
     selected = rows[offset : offset + page_size]

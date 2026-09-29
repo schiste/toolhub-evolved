@@ -295,7 +295,7 @@ function forceGraphExample() {
 	return `<div class="sg-force-graph-frame">
 		<div class="graph graph--sg">
 			<div id="sg-force-graph" class="graph__canvas"></div>
-			<div class="graph__legend" aria-label="${esc(t("styleguide.exampleGraphLegendLabel", "Example graph legend"))}">
+			<div class="graph__legend" role="group" aria-label="${esc(t("styleguide.exampleGraphLegendLabel", "Example graph legend"))}">
 				${legend}
 				<span class="graph__legend-item"><span class="graph__swatch graph__swatch--halo"></span><span class="graph__legend-text">${t("styleguide.fitChip", "Fits you")}</span></span>
 			</div>

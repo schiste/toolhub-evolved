@@ -810,13 +810,6 @@ BROWSER_PERMISSION_BREADTH_FLOOR = -15
 #: tool whose capabilities are otherwise ordinary.
 BROWSER_PERMISSION_EVERY_SITE_PENALTY = 15
 
-#: How much of the composite this dimension carries. Below permission clarity
-#: and security review, which share 1.15 between two assessments built on
-#: years of catalogued evidence, and above frontend accessibility at 0.6: what
-#: a tool asks the reader's browser for is a safety fact, but this detector is
-#: new and its tiers are reasoned rather than measured.
-BROWSER_PERMISSION_DIMENSION_WEIGHT = 0.7
-
 #: The dimensions that are simply absent for a tool they do not apply to,
 #: rather than scoring zero. A command-line script has no frontend to make
 #: accessible and asks the browser for nothing, and grading it down for either

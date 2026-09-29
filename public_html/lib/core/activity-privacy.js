@@ -34,7 +34,7 @@ function activityKey(value) {
 }
 
 /** @param {any} row */
-export function isPrivatePreferenceActivity(row) {
+function isPrivatePreferenceActivity(row) {
 	if (!row || typeof row !== "object") return false;
 	const objectKeys = [row.content_type, row.object_type, row.target?.type].map((value) => activityKey(value));
 	if (
@@ -65,7 +65,7 @@ export function isPrivatePreferenceActivity(row) {
  *
  * @param {any} row
  */
-export function isPrivateListActivity(row) {
+function isPrivateListActivity(row) {
 	if (!row || typeof row !== "object") return false;
 	const objectKeys = [row.content_type, row.object_type, row.target?.type].map((value) => activityKey(value));
 	if (!objectKeys.some((key) => LIST_OBJECT_KEYS.has(key))) return false;
@@ -75,7 +75,7 @@ export function isPrivateListActivity(row) {
 }
 
 /** @param {any} row */
-export function isPrivateActivity(row) {
+function isPrivateActivity(row) {
 	return isPrivatePreferenceActivity(row) || isPrivateListActivity(row);
 }
 

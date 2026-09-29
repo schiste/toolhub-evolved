@@ -5,9 +5,5 @@
 	"coverageAnalysis": "perTest",
 	"mutate": ["public_html/**/*.js"],
 	"reporters": ["clear-text", "progress"],
-	"_thresholds_note": "No break here on purpose. `break` is one number for the whole app, and the app is not one number: measured per shard the score runs from the low single digits to about 70%, so any value that passed the best shard would wave the worst ones through, and 100 -- which this said for a long time, and which the app has never met -- failed every shard on every run until the failure meant nothing. Enforcement is per shard instead: each entry in the matrix of .github/workflows/mutation.yml carries a `floor` it may not drop below, seeded from what it measured and raised by hand when someone writes tests. high/low only tint the report. Genuine equivalent mutants carry documented // Stryker disable comments (see EQUIVALENTS.md). Runs weekly via that workflow.",
-	"thresholds": {
-		"high": 100,
-		"low": 100
-	}
+	"_thresholds_note": "No break here on purpose. `break` is one number for the whole app, and the app is not one number: measured per shard the score runs from the low single digits to about 70%, so any value that passed the best shard would wave the worst ones through, and 100 -- which this said for a long time, and which the app has never met -- failed every shard on every run until the failure meant nothing. Enforcement is per shard instead: each entry in the matrix of .github/workflows/mutation.yml carries a `floor` it may not drop below, seeded from what it measured and raised by hand when someone writes tests. Genuine equivalent mutants carry documented // Stryker disable comments (see EQUIVALENTS.md). Runs weekly via that workflow. There is deliberately no `thresholds` block either: with high and low both at 100 every surviving mutant was classified high, so the report was a single colour and the bands it exists to draw never appeared."
 }

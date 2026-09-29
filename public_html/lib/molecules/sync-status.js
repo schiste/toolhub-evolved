@@ -152,7 +152,7 @@ export function fieldProvenance(fieldLabel, meta = {}) {
  * @param {unknown} errors
  * @returns {string}
  */
-export function validationErrorList(errors) {
+function validationErrorList(errors) {
 	const rows = validationErrorMessages(errors);
 	if (rows.length === 0) return "";
 	return `<ul class="sync-errors">${rows.map((msg) => `<li>${esc(msg)}</li>`).join("")}</ul>`;

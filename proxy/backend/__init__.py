@@ -50,6 +50,14 @@ SESSION_DAYS = 30
 DEV_ENV = "TOOLHUB_INSECURE_COOKIES"
 TRUSTED_HOSTS_ENV = "TOOLHUB_TRUSTED_HOSTS"
 DEFAULT_TRUSTED_HOSTS = ("toolhub-evolved.toolforge.org",)
+# IPv6 loopback is listed for intent, not because it works. Werkzeug's
+# host_is_trusted splits a Host header into ("[::1]", "8000") and then compares
+# each entry after ref.partition(":")[0], which collapses every spelling of an
+# IPv6 reference - "[::1]", "::1", ".::1" - to an empty string. No entry can
+# match a bracketed IPv6 host, so such a request is refused with 400 before
+# oauth._loopback_request() runs. Recorded here so the limitation is visible
+# where someone enabling IPv6 will look; the parsing itself is covered by
+# test_loopback_request_recognises_every_local_host_form.
 LOCAL_TRUSTED_HOSTS = ("localhost", "127.0.0.1", "[::1]")
 
 

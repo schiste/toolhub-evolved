@@ -500,6 +500,13 @@ environment before identity reconciliation. The probe requires a readable
 `posixAccount` carrying `wikimediaGlobalAccountId`; failure aborts the deploy
 before the serving process is restarted.
 
+Admins run `proxy/scoped_enrichment.py` by hand, inside a Toolforge webservice
+environment, to enrich exactly one maintainer and one tool. It takes
+`--username`, `--tool-name` and `--toolforge-name`, and writes a JSON summary to
+stdout. It is deliberately unscheduled: the scheduled `repository-enrichment`,
+`graph-enrichment` and `inference-enrichment` jobs cover the catalog-wide case,
+and this entrypoint exists for the single-record follow-up they do not handle.
+
 Admins use `GET /v1/moderation/people-conflicts/` to inspect pending identity
 ambiguities and `PUT /v1/moderation/people-conflicts/<id>/` to mark one pending,
 resolved, or dismissed with review notes. They use

@@ -11,10 +11,6 @@ export function listHref(id) {
 export function authorHref(name) {
 	return `/by/${encodeURIComponent(name)}`;
 }
-/** A catalog author label, explicitly not asserted to be an account handle. @param {string} name */
-export function authorAttributionHref(name) {
-	return `${authorHref(name)}?context=attribution`;
-}
 /** @param {string|{id?: string, slug?: string}} personOrId @param {string} [publicSlug] */
 export function personHref(personOrId, publicSlug = "") {
 	const person = typeof personOrId === "object" && personOrId !== null ? personOrId : null;

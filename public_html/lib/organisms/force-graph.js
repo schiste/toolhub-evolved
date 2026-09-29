@@ -592,6 +592,19 @@ export function forceGraph(container, data, opts = {}) {
 		}
 	}
 
+	/* The observer below is the last-resort detach detector: the rAF loop only
+	   checks containment while it is still animating, and a settled graph has no
+	   loop left. views/graph.js now also stops the handle explicitly on route
+	   change, so navigation no longer depends on a mutation batch arriving — but
+	   the observer stays, because a canvas can also be removed without a route
+	   change and the auto-stop test asserts that case. Named so stop() reads
+	   clearly and the two detach paths are easy to find. */
+	function releaseDetachWatch() {
+		// Stryker disable next-line ConditionalExpression: detachObserver is non-null whenever window.MutationObserver exists (always, in browsers and happy-dom) and null otherwise; forcing either branch matches reality or disconnects an already-disconnected observer — equivalent.
+		if (detachObserver) detachObserver.disconnect();
+		detachObserver = null;
+	}
+
 	function stop() {
 		stopped = true;
 		layoutRequest++;
@@ -599,9 +612,7 @@ export function forceGraph(container, data, opts = {}) {
 		layoutWorker = null;
 		if (raf) cancelAnimationFrame(raf);
 		raf = 0;
-		// Stryker disable next-line ConditionalExpression: detachObserver is non-null whenever window.MutationObserver exists (always, in browsers and happy-dom) and null otherwise; forcing the guard true/false either matches reality or fails to disconnect a one-shot observer whose only action is the (idempotent) stop — no observable effect — equivalent.
-		if (detachObserver) detachObserver.disconnect();
-		detachObserver = null;
+		releaseDetachWatch();
 		// Stryker disable next-line StringLiteral: removing the resize listener is redundant — start() (the only thing onResize calls) bails on its `if (stopped) return`, so a stale resize listener has no observable effect after stop() — equivalent.
 		window.removeEventListener("resize", onResize);
 		window.removeEventListener("mouseup", onMouseUp);

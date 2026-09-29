@@ -128,7 +128,9 @@ def test_claim_options_tool_lookup_error(client, monkeypatch):
     uid = add_user()
     sign_in(client, uid)
     monkeypatch.setattr(
-        v1_tools_api.common, "claim_tool_or_error", lambda name: (None, v1_tools_api.common.bad("nope"))
+        v1_tools_api.common,
+        "claim_tool_for_read_or_error",
+        lambda name: (None, v1_tools_api.common.bad("nope")),
     )
     resp = client.get("/v1/tools/missing-tool/claim-options/")
     assert resp.status_code == 400
@@ -139,7 +141,7 @@ def test_claim_options_stored_user_missing(client, monkeypatch):
     uid = add_user()
     sign_in(client, uid)
     tool = {"name": "ghost-tool", "title": "Ghost Tool"}
-    monkeypatch.setattr(v1_tools_api.common, "claim_tool_or_error", lambda name: (tool, None))
+    monkeypatch.setattr(v1_tools_api.common, "claim_tool_for_read_or_error", lambda name: (tool, None))
     monkeypatch.setattr(v1_tools_api.common, "require_policy_or_abort", lambda *a, **k: ghost_user())
     resp = client.get("/v1/tools/ghost-tool/claim-options/")
     assert resp.status_code == 401

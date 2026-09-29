@@ -84,5 +84,3 @@ export function syncSubmitButton() {
 	if (!b) return;
 	b.remove();
 }
-
-globalThis.renderAccount = renderAccount;

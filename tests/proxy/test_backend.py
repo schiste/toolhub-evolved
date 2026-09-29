@@ -10,7 +10,7 @@ import sys
 from base64 import b64encode
 from collections import deque
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from json import dumps
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -3816,6 +3816,20 @@ def test_unified_claim_api_preserves_history_and_withdraws_revoked_evidence(clie
         "url": "https://example.org/ada-tool",
     }
     monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: canonical)
+    # claim-options is a read path and now answers from the synchronized
+    # CanonicalToolCache rather than fetching Toolhub, so the display half of
+    # this test needs a seeded replica. The POST below still takes the live
+    # official record, so the public_api_get patch stays in force for it.
+    now = datetime.now(UTC)
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="ada-tool",
+                record=canonical,
+                expires_at=now + timedelta(hours=1),
+                stale_until=now + timedelta(hours=2),
+            )
+        )
 
     options = client.get("/v1/tools/ada-tool/claim-options/")
     assert options.status_code == 200
@@ -6412,13 +6426,83 @@ def test_write_lifecycle_validation_helpers_normalize_toolhub_errors():
     assert merged["repository"] == "https://manual.example/repo"
 
 
-def test_create_toolinfo_fetch_helpers_reuse_crawler_module(monkeypatch):
-    import crawl
+def test_create_toolinfo_fetch_helpers_use_the_backend_toolinfo_module(monkeypatch):
+    """The backend must reach toolinfo fetching through the backend package.
 
-    monkeypatch.setattr(crawl, "_fetch_json", lambda _session, url: {"url": url})
+    This used to import the Toolforge job script `crawl` and call its private
+    `_fetch_json`, which was the only place a backend module depended on a job
+    script - the inverse of how every job script depends on the backend. The
+    fetch now goes through `toolinfo_discovery`, the same module
+    `toolinfo_control` already used for the identical job.
+    """
+    monkeypatch.setattr(
+        v1_write_api.toolinfo_discovery,
+        "fetch_toolinfo_json_once",
+        lambda url: {"url": url},
+    )
     assert v1_write_api._fetch_toolinfo_json_once("https://toolinfo.example/toolinfo.json") == {
         "url": "https://toolinfo.example/toolinfo.json"
     }
+
+
+def test_backend_package_does_not_import_job_scripts():
+    """No module in `backend/` may import a top-level Toolforge job script.
+
+    Job scripts import the backend package; the reverse edge inverts the
+    layering and drags a job's module-level setup into a request path.
+    """
+    import ast
+    import pathlib
+
+    package = pathlib.Path(v1_write_api.__file__).parent
+    offenders = []
+    for module_path in sorted(package.glob("*.py")):
+        tree = ast.parse(module_path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                names = [node.module]
+            for name in names:
+                # A top-level script is a bare module name that is not part of
+                # the `backend` package itself.
+                if name.split(".")[0] not in {"backend"} and name in _JOB_SCRIPTS:
+                    offenders.append(f"{module_path.name}:{node.lineno} imports {name}")
+    assert offenders == []
+
+
+_JOB_SCRIPTS = frozenset(
+    {
+        "account_sync",
+        "analyze_source",
+        "cache_invalidation",
+        "cache_prewarm",
+        "catalog_sync",
+        "crawl",
+        "digest_audit",
+        "digest_deliver",
+        "digest_liftwing_preflight",
+        "digest_publish",
+        "digest_regenerate",
+        "gadget_census",
+        "job_watchdog",
+        "list_revision_sync",
+        "maintainer_backfill",
+        "migrate",
+        "people_reconcile",
+        "phabricator_realname_sync",
+        "projection_refresh",
+        "repository_enrichment",
+        "repository_scan",
+        "scoped_enrichment",
+        "source_attestations",
+        "statistics_refresh",
+        "toolforge_account_sync",
+        "userscript_sweep",
+        "wiki_registry_refresh",
+    }
+)
 
 
 def test_create_toolinfo_enrichment_handles_invalid_matching_item(monkeypatch):
@@ -7491,15 +7575,51 @@ def test_dev_login_accepts_loopback_hosts_and_updates_existing_user(client, monk
         assert user.username == "New Dev"
         assert s.query(ToolhubToken).count() == 0
 
-    resp = client.get(
-        "/oauth/dev-login?username=Ipv6%20Dev&user_id=ipv6-dev",
-        base_url="http://[::1]:8000",
-    )
+    # IPv6 loopback used to be asserted here over HTTP. It cannot be:
+    # Werkzeug's trusted-hosts matcher cannot express a bracketed IPv6 host at
+    # all. host_is_trusted() splits the header into ("[::1]", "8000") and then
+    # compares each trusted entry after ref.partition(":")[0], which turns
+    # every possible spelling - "[::1]", "::1", ".::1" - into an empty string.
+    # The request is refused with 400 "Host '[::1]:8000' is not trusted" before
+    # oauth._loopback_request() ever runs. That function's own IPv6 handling is
+    # therefore covered directly, in
+    # test_loopback_request_recognises_every_local_host_form, and the HTTP-level
+    # security intent (a non-loopback Host gets no dev login) stays in
+    # test_dev_login_is_hidden_unless_explicitly_local.
+    assert client.get("/oauth/dev-login", base_url="http://[::1]:8000").status_code == 400
 
-    assert resp.status_code == 302
-    with db.session_scope() as s:
-        user = s.execute(select(User).where(User.wm_sub == "ipv6-dev")).scalar_one()
-        assert user.username == "Ipv6 Dev"
+
+def test_loopback_request_recognises_every_local_host_form(app):
+    """The app's own loopback check must handle bracketed IPv6, ports and case."""
+    from backend import oauth
+
+    # Werkzeug's trusted-hosts gate rejects the bracketed forms before a
+    # request context is even built (see the note on the test above), and this
+    # test is about oauth's own parsing rather than about that gate. Turning it
+    # off here is what makes the IPv6 cases reachable at all.
+    saved = app.config.get("TRUSTED_HOSTS")
+    app.config["TRUSTED_HOSTS"] = None
+    try:
+        for host in (
+            "127.0.0.1",
+            "127.0.0.1:8000",
+            "localhost",
+            "localhost:8000",
+            "[::1]",
+            "[::1]:8000",
+            "LOCALHOST:5000",
+        ):
+            with app.test_request_context("/", base_url=f"http://{host}"):
+                assert oauth._loopback_request() is True, host
+        for host in (
+            "toolhub-evolved.toolforge.org",
+            "toolhub-evolved.toolforge.org:443",
+            "evil.localhost.attacker.example",
+        ):
+            with app.test_request_context("/", base_url=f"http://{host}"):
+                assert oauth._loopback_request() is False, host
+    finally:
+        app.config["TRUSTED_HOSTS"] = saved
 
 
 def test_dev_login_is_hidden_unless_explicitly_local(client, monkeypatch):

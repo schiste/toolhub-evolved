@@ -2,7 +2,7 @@
 import { translationMetrics } from "./i18n.js";
 
 const PREFIX = "toolhub-evolved";
-export const APP_BOOT_START = `${PREFIX}:app-boot-start`;
+const APP_BOOT_START = `${PREFIX}:app-boot-start`;
 /** @typedef {{ name: string, mark?: string, measure?: string, at: number, detail: Record<string, any> }} FrontendTiming */
 /** @type {FrontendTiming[]} */
 export const FRONTEND_TIMINGS = [];

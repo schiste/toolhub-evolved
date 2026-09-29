@@ -51,6 +51,35 @@ def fetch_toolinfo_json_once(url: str, session: requests.Session | None = None) 
         return json.loads(_fetch_body(active_session, url, accept="application/json").decode("utf-8"))
 
 
+def normalize_record(item: dict) -> dict | None:
+    """Map a toolinfo item to the SPA's compact record shape (None when invalid).
+
+    Lives here rather than in ``crawl.py`` so the backend package does not have
+    to import a Toolforge job script to use it. ``crawl.py`` already imports the
+    backend package, so this keeps every dependency pointing one way; see
+    ``v1_write._fetch_toolinfo_json_once``, which used to reach into the crawler.
+    """
+    if not all(isinstance(item.get(f), str) and item[f] for f in ("name", "title", "description", "url")):
+        return None
+    keywords = item.get("keywords", [])
+    if isinstance(keywords, str):
+        keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+    return {
+        "title": item["title"],
+        "description": item["description"],
+        "url": item["url"],
+        "repository": item.get("repository") or None,
+        "license": item.get("license") or None,
+        "toolType": item.get("tool_type") or None,
+        "keywords": keywords,
+        "forWikis": item.get("for_wikis", []),
+        "uiLanguages": item.get("available_ui_languages", []),
+        "deprecated": bool(item.get("deprecated")),
+        "experimental": bool(item.get("experimental")),
+        "origin": "crawler",
+    }
+
+
 def fetch_sitemap_xml_once(url: str, session: requests.Session | None = None) -> str:
     """Fetch one candidate sitemap XML document."""
     with outbound.managed_session(session) as active_session:

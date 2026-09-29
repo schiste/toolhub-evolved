@@ -113,7 +113,7 @@ function showCollapsedWhatsNew() {
 	$("[data-whats-new-open]", element)?.setAttribute("aria-expanded", "false");
 }
 
-export function openWhatsNew() {
+function openWhatsNew() {
 	const element = root();
 	if (!element) return;
 	whatsNewLastFocus = /** @type {HTMLElement | null} */ (document.activeElement);

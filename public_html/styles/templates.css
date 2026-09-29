@@ -427,35 +427,65 @@
 	}
 }
 
-/* Respect users who ask for less motion. Keep this last so it wins. */
+/* Respect users who ask for less motion. Keep this last so it wins.
+   The declarations below are `!important` on purpose, and the list is explicit
+   rather than universal because this project bans universal selectors
+   (selector-max-universal: 0). It was previously a `:where(...)` group, but
+   `:where()` contributes zero specificity, so every rule it named (`.tcard`,
+   `.favbtn`, ...) kept winning no matter how late this sheet loaded. Measured
+   in a real browser: `.tcard` still transitioned at 0.15s with the OS set to
+   reduce, so the whole block was inert and every user who asked for reduced
+   motion still got all of it. `!important` on a duration reset is what lets
+   the neutralization outrank compound selectors like `.favbtn.is-on` and
+   `body.issue-drawer-open .footer` without each component opting in. */
 @media (prefers-reduced-motion: reduce) {
+	/* stylelint-disable declaration-no-important -- must outrank compound component selectors; see note above */
+	.btn,
+	.sort select,
+	.skip,
+	.digest-cadences__link,
+	.digest-list__entry,
+	.acct__btn,
+	.at__rm,
+	.favbtn,
+	.lang__btn,
+	.le__result,
+	.linkcard,
+	.pager__btn,
+	.persona,
+	.savemenu__new,
+	.skeleton::after,
+	.command-trigger,
+	.icon-btn,
+	.intent__go,
+	.intent__word,
+	.issue-drawer,
+	.issue-report-fab,
+	.lcard,
+	.qv__x,
+	.recent,
+	.home-results,
+	.spinner,
+	.tcard,
+	.tcard__authors-summary::after,
+	.theme-toggle__opt,
+	body.issue-drawer-open .footer,
+	.statistics-histogram__note-bubble,
+	.workers-card {
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+	}
+	/* stylelint-enable declaration-no-important */
+
 	html {
 		scroll-behavior: auto;
 	}
 
-	:where(
-		.btn,
-		.favbtn,
-		.le__result,
-		.persona,
-		.pager__btn,
-		.icon-btn,
-		.acct__btn,
-		.at__rm,
-		.intent__word,
-		.intent__go,
-		.qv__x,
-		.tcard,
-		.lcard,
-		.linkcard,
-		.home-results,
-		.recent,
-		.spinner
-	) {
-		transition: none;
-		animation: none;
-	}
-
+	/* Hover/focus transforms are a visual state change, not motion, so the
+	   duration reset above is enough to keep them; these drop the effect for
+	   the cards where the movement is large enough to read as motion. These
+	   carry real specificity, which the previous `:where()` versions did not. */
 	.tcard:hover,
 	.tcard:focus-visible,
 	.lcard:hover,

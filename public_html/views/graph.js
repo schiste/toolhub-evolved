@@ -141,7 +141,7 @@ function graphFilters(nodes) {
 	const languageOptions = graphFacetValues(nodes, "languages")
 		.map((value) => `<option value="${esc(value)}">${esc(value)}</option>`)
 		.join("");
-	return `<div class="graph__filters" data-graph-filters aria-label="${esc(t("graph.filters", "Map filters"))}">
+	return `<div class="graph__filters" data-graph-filters role="group" aria-label="${esc(t("graph.filters", "Map filters"))}">
 		<label class="graph__filter" for="graph-project-filter"><span>${esc(projectLabel)}</span><select id="graph-project-filter" class="graph__select" data-graph-filter="projects">
 			<option value="">${esc(t("graph.allProjects", "All projects"))}</option>${projectOptions}
 		</select></label>
@@ -180,7 +180,7 @@ export function viewGraph() {
 			<div id="graph-canvas" class="graph__canvas">${graphLoading()}</div>
 			<p class="empty" data-graph-empty hidden>${t("graph.mapEmpty", "No richly documented tools are available for the map right now.")}</p>
 			<p class="empty graph__filter-empty" data-graph-filter-empty hidden>${t("graph.filterEmpty", "No tools match these filters.")}</p>
-			<div class="graph__legend" data-graph-legend aria-label="${t("graph.mapLegend", "Map legend")}" hidden></div>
+			<div class="graph__legend" data-graph-legend role="group" aria-label="${t("graph.mapLegend", "Map legend")}" hidden></div>
 			<p class="graph__note" data-graph-note hidden></p>
 		</div>
 	</div>`;
@@ -286,6 +286,15 @@ export function viewGraph() {
 				filterControls.querySelector('[data-graph-filter="languages"]')
 			)?.value;
 			currentHandle?.setFilters({ projects: projects || "", languages: languages || "" });
+		});
+		// Tear the graph down on navigation rather than leaving the canvas to be
+		// discovered as detached. The rAF loop only checks containment while it is
+		// still animating, so a settled graph used to rely entirely on
+		// force-graph's document-wide observer to notice the view being replaced.
+		// This is the same teardown hook the issue drawer and command palette use.
+		document.addEventListener("toolhub:route-render-start", () => {
+			currentHandle?.stop();
+			currentHandle = null;
 		});
 		void load(state, false);
 	}

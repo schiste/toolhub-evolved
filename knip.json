@@ -1,28 +1,8 @@
 {
-	"entry": [
-		"public_html/main.js",
-		"tools/smoke-server.mjs",
-		"tests/e2e/*.spec.mjs",
-		"playwright.config.mjs",
-		"eslint.config.js",
-		"stylelint.config.mjs",
-		"commitlint.config.js",
-		"vitest.config.mjs"
-	],
+	"entry": ["public_html/main.js", "tools/smoke-server.mjs", "tests/e2e/*.spec.mjs"],
 	"project": ["public_html/**/*.js", "tools/**/*.mjs", "tests/**/*.mjs", "*.js", "*.mjs"],
-	"ignoreDependencies": [
-		"@axe-core/playwright",
-		"@playwright/test",
-		"eslint",
-		"prettier",
-		"stylelint",
-		"jscpd",
-		"knip",
-		"@commitlint/config-conventional",
-		"eslint-plugin-headers",
-		"lint-staged",
-		"@stryker-mutator/core",
-		"typescript",
-		"ts-api-utils"
-	]
+	"ignore": ["tools/chau7-marketing-provider.mjs"],
+	"ignoreBinaries": ["coverage", "gitleaks"],
+	"ignoreDependencies": ["@commitlint/config-conventional", "lint-staged", "ts-api-utils"],
+	"tags": ["-lintignore"]
 }

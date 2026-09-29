@@ -21,6 +21,7 @@ from backend import db, job_runner, outbound
 from backend.author_claims import SignedToolinfoProvider
 from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, User, utcnow
 from backend.sync import REVIEW_APPROVED, SOURCE_LOCAL, SYNC_ERROR, SYNC_EVOLVED_REAL
+from backend.toolinfo_discovery import normalize_record
 
 UPSTREAM_TOOL = "https://toolhub.wikimedia.org/api/tools/"
 UA = "toolhub-evolved-crawler/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
@@ -104,29 +105,6 @@ def classify_upstream(state: str, name: str) -> tuple[str, str] | None:
     if state == UPSTREAM_PRESENT:
         return BUCKET_SKIPPED, f"{name}: exists upstream on Toolhub — skipped (live API is source of truth)"
     return BUCKET_SKIPPED, f"{name}: upstream check unavailable — skipped (never shadow an upstream record)"
-
-
-def normalize_record(item: dict) -> dict | None:
-    """Map a toolinfo item to the SPA's compact record shape (None when invalid)."""
-    if not all(isinstance(item.get(f), str) and item[f] for f in ("name", "title", "description", "url")):
-        return None
-    keywords = item.get("keywords", [])
-    if isinstance(keywords, str):
-        keywords = [k.strip() for k in keywords.split(",") if k.strip()]
-    return {
-        "title": item["title"],
-        "description": item["description"],
-        "url": item["url"],
-        "repository": item.get("repository") or None,
-        "license": item.get("license") or None,
-        "toolType": item.get("tool_type") or None,
-        "keywords": keywords,
-        "forWikis": item.get("for_wikis", []),
-        "uiLanguages": item.get("available_ui_languages", []),
-        "deprecated": bool(item.get("deprecated")),
-        "experimental": bool(item.get("experimental")),
-        "origin": "crawler",
-    }
 
 
 def _ingest_items(  # noqa: PLR0913, PLR0917 - signed-toolinfo evidence needs the source URL plus crawl state.

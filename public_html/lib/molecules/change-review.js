@@ -142,7 +142,7 @@ export function changeSignature(changes) {
  * @param {{ title?: string, intro?: string, confirmLabel?: string, editLabel?: string }} [options]
  * @returns {string}
  */
-export function changeReviewRegion(options = {}) {
+function changeReviewRegion(options = {}) {
 	const title = options.title || t("changeReview.title", "Review changes before saving");
 	const intro =
 		options.intro ||

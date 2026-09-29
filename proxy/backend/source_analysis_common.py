@@ -364,6 +364,15 @@ SOURCE_CLASS_WEIGHTS = {
 # unsupported, not a calibrated threshold, and it errs toward withholding.
 HEALTH_MIN_SCORING_CONFIDENCE = 0.6
 
+#: How much of the composite the browser-permissions dimension carries. Below
+#: permission clarity and security review, which share 1.15 between two
+#: assessments built on years of catalogued evidence, and above frontend
+#: accessibility at 0.6: what a tool asks the reader's browser for is a safety
+#: fact, but this detector is new and its tiers are reasoned rather than
+#: measured. Lives beside HEALTH_DIMENSIONS, which consumes it, so the tuning
+#: note and the value it documents cannot drift apart.
+BROWSER_PERMISSION_DIMENSION_WEIGHT = 0.7
+
 HEALTH_DIMENSIONS = (
     (
         "tool-health",
@@ -411,7 +420,7 @@ HEALTH_DIMENSIONS = (
         "browser-permissions",
         "Browser permissions",
         ("browser-permissions",),
-        0.7,
+        BROWSER_PERMISSION_DIMENSION_WEIGHT,
         "What the source asks the reader's own browser for.",
     ),
 )

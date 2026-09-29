@@ -860,6 +860,12 @@
 	color: var(--color-text-muted);
 	cursor: pointer;
 	list-style: none;
+
+	/* The card title link and this author disclosure are both tappable, and
+	   the flex column left them 22.8px apart centre-to-centre - under the 24px
+	   WCAG 2.5.8 target-size minimum, so a finger aiming between them could
+	   miss both. Measured after the fix: 27.9px. */
+	margin-block-start: var(--space-2);
 }
 .tcard__authors-summary::-webkit-details-marker {
 	display: none;

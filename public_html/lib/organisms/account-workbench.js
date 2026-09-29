@@ -23,7 +23,7 @@ function accountName() {
 }
 
 /** @param {string} active */
-export function accountWorkbenchNav(active) {
+function accountWorkbenchNav(active) {
 	return tabBar({
 		active,
 		ariaLabel: t("accountWorkbench.navLabel", "Account pages"),
