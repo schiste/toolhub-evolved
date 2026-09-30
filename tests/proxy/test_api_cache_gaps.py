@@ -45,6 +45,17 @@ def test_mark_failure_records_the_bounded_diagnostic():
         assert row.last_error == "x" * 2000
 
 
+def test_purging_expired_rows_fails_closed_when_storage_is_unavailable(monkeypatch):
+    @contextmanager
+    def broken_session():
+        raise SQLAlchemyError("database unavailable")
+        yield
+
+    monkeypatch.setattr(db, "session_scope", broken_session)
+
+    assert api_cache.purge_expired() == 0
+
+
 def test_expiring_the_derived_graph_fails_closed_when_storage_is_unavailable(monkeypatch):
     @contextmanager
     def broken_session():

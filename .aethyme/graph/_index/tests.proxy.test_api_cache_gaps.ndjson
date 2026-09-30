@@ -7,6 +7,7 @@
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"api_cache.get_local","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:gc4amkdc4wpdkdxm6ckiib73ae","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"api_cache.invalidate_graph","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:n36ldjmsd3iftxhfthgypytl64","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"api_cache.mark_failure","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:nvsfsdpzt34lvku23wcv4iua4e","file":"tests/proxy/test_api_cache_gaps.py"}
+{"module":"tests.proxy.test_api_cache_gaps","symbol":"api_cache.purge_expired","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vyqy6j2rnghzbrwf7ccemklmie","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"api_cache.put_success","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zj4lfhmuq44kugeqkru6swjx24","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"api_cache.responses_for_path","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qd6dhvd2yc6pnfgqkwq5e2suoy","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"contextmanager","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:d4fit6scv5jld5h2gzcqxxh33y","file":"tests/proxy/test_api_cache_gaps.py"}
@@ -16,6 +17,7 @@
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"db.init_schema","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:klio7pyfcdm3kgm4p5fmcwayvy","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"db.session_scope","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wc2hp75p6gl5jpwjrpfsiipsdm","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4edxmzxsrla7hoyrr5k72bt75i","file":"tests/proxy/test_api_cache_gaps.py"}
+{"module":"tests.proxy.test_api_cache_gaps","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vujcnwdgn5ynrrgdcdfxbkj7hm","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xgxi6xgmimsouwgi2rxv2gilua","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"pytest","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bx62hvtbxrx2qol7gnkajw4bum","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"select","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bk637rmcmrpo5ikuiaqu5gsmju","file":"tests/proxy/test_api_cache_gaps.py"}
@@ -25,3 +27,4 @@
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"test_expiring_the_derived_graph_fails_closed_when_storage_is_unavailable","kind":"function","node_id":"function:toolhub-evolved:kbgbon5ol5hlejb4mh4qauyhcm","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"test_local_cache_reads_fail_closed_when_storage_is_unavailable","kind":"function","node_id":"function:toolhub-evolved:yopvvk6mres2omn6a6g2nxui3u","file":"tests/proxy/test_api_cache_gaps.py"}
 {"module":"tests.proxy.test_api_cache_gaps","symbol":"test_mark_failure_records_the_bounded_diagnostic","kind":"function","node_id":"function:toolhub-evolved:lqr3hzo7nkzpsivalzddwzqpla","file":"tests/proxy/test_api_cache_gaps.py"}
+{"module":"tests.proxy.test_api_cache_gaps","symbol":"test_purging_expired_rows_fails_closed_when_storage_is_unavailable","kind":"function","node_id":"function:toolhub-evolved:ixzj4negwtmhqhz5xobp3s3xjm","file":"tests/proxy/test_api_cache_gaps.py"}

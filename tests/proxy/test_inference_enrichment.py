@@ -951,6 +951,30 @@ def test_liftwing_caller_exposes_cleanup_for_worker_owned_sessions(_liftwing):
     assert session.closed is True
 
 
+def test_sweep_cleans_up_when_a_worker_session_has_no_callable_close(_liftwing, monkeypatch):
+    store("User:Anomie/linkclassifier.js")
+    monkeypatch.setattr(_FakeSession, "close", None)
+
+    ask = enrichment.liftwing_caller()
+    cleanup_calls = []
+    close_sessions = ask.close
+
+    def cleanup():
+        cleanup_calls.append(True)
+        close_sessions()
+
+    ask.close = cleanup
+    monkeypatch.setattr(enrichment, "liftwing_caller", lambda: ask)
+    monkeypatch.setattr(catalog_projection, "refresh_tool_names", lambda _names: {})
+
+    result = enrichment.sweep(limit=1)
+
+    assert result["counts"]["asked"] == 1
+    assert cleanup_calls == [True]
+    assert len(_FakeSession.opened) == 1
+    assert _FakeSession.opened[0].response.closed is True
+
+
 def test_each_worker_thread_gets_a_connection_of_its_own(_liftwing):
     ask = enrichment.liftwing_caller()
     started = threading.Barrier(2, timeout=10)

@@ -495,6 +495,34 @@ def test_tools_that_declare_no_icon_are_settled_outside_the_fetch_limit(monkeypa
     assert tool_assets.refresh_candidates(limit=1)["settlements"] == 0
 
 
+def test_the_settlement_buffer_is_capped_without_losing_the_candidate_count(monkeypatch):
+    monkeypatch.setattr(tool_assets, "MAX_SETTLEMENTS", 1)
+    with db.session_scope() as session:
+        for name in ("a_bare", "b_bare"):
+            session.add(
+                CatalogToolProjection(
+                    tool_name=name,
+                    effective_record={"name": name},
+                    provenance={"icon": []},
+                )
+            )
+
+    buffered = []
+
+    def capture(settlements):
+        buffered.extend(settlements)
+        return len(settlements)
+
+    monkeypatch.setattr(tool_assets, "_settle_missing", capture)
+
+    result = tool_assets.refresh_candidates(limit=1)
+
+    assert result["candidates"] == 2
+    assert result["settlements"] == 2
+    assert result["settled"] == 1
+    assert [name for name, _source in buffered] == ["a_bare"]
+
+
 def test_the_budget_stops_downloads_but_never_the_settlements(monkeypatch):
     """Settlements cost no request, so a deadline sized for downloads must not bound them.
 
