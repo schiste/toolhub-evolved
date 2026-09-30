@@ -155,9 +155,10 @@ class WikimediaClient:
                 headers=self._headers(),
                 timeout=REQUEST_TIMEOUT_SECONDS,
             )
-            if len(response.content) > MAX_RESPONSE_BYTES:
-                raise self._failure(ERROR_RESPONSE_TOO_LARGE, "Wikimedia API response exceeded safety limit")
-            payload = response.json()
+            if response is not None:
+                if len(response.content) > MAX_RESPONSE_BYTES:
+                    raise self._failure(ERROR_RESPONSE_TOO_LARGE, "Wikimedia API response exceeded safety limit")
+                payload = response.json()
         except WikimediaAPIError:
             raise
         except (OSError, ValueError, requests.RequestException) as exc:
@@ -165,6 +166,8 @@ class WikimediaClient:
         finally:
             if response is not None:
                 outbound.close_response(response)
+        if response is None:
+            raise self._failure(ERROR_TRANSPORT, "Wikimedia API returned no response")
         if response.status_code >= HTTP_BAD_REQUEST or not isinstance(payload, dict) or "error" in payload:
             raise self._error(payload, response.status_code)
         return payload

@@ -538,6 +538,17 @@ def test_a_row_that_has_never_been_scheduled_sorts_first():
     assert lane._due_order(RepositoryHostMetadata(url_hash="x", repository_url="y")) == 0.0
 
 
+def test_a_scheduled_row_sorts_by_next_attempt_timestamp():
+    next_attempt = datetime(2026, 9, 30, 12, tzinfo=UTC)
+    row = RepositoryHostMetadata(
+        url_hash="x",
+        repository_url="y",
+        next_attempt_at=next_attempt,
+    )
+
+    assert lane._due_order(row) == next_attempt.timestamp()
+
+
 def test_the_batch_is_capped():
     for index in range(5):
         _state(f"https://github.com/x/r{index}", f"tool-{index}")
