@@ -11,6 +11,7 @@
 {"module":"tests.proxy.test_outbound","symbol":"FakeProbeSession","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:iwh3wgz2mntfkwsog3yw5ttq3m","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"FakeProbeSession","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:khqp7ecsdv4m6m5r2zyg2crtdq","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"FakeProbeSession","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pzgsbzomm2a2mzvkryqfmztvka","file":"tests/proxy/test_outbound.py"}
+{"module":"tests.proxy.test_outbound","symbol":"FakeSession","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:couaglos3drjcjhxhbftk5mbbe","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"PRIVATE","kind":"global_variable","node_id":"global_variable:toolhub-evolved:2glkvbkirufg6pw3dkzajcdmq4","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"PUBLIC","kind":"global_variable","node_id":"global_variable:toolhub-evolved:tuoan3j2kqmu64vuu4f3rws6bm","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"Path","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:oeri72nus5zvle5xyhxb7gsypy","file":"tests/proxy/test_outbound.py"}
@@ -36,10 +37,12 @@
 {"module":"tests.proxy.test_outbound","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3dneh77tq53w3nky5x3xbbmwwy","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4jxqw6xo4d5gthyqvgr7sbkwzi","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cjcz265csjcx7ceustchrnkpxm","file":"tests/proxy/test_outbound.py"}
+{"module":"tests.proxy.test_outbound","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rljg2hqm2n4ql4xyo5afhis2mm","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"monkeypatch.setattr","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:x22ud6pqi7rlmbo4tfhg2xku7i","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"outbound","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zxwqjj476xnmtaihnpmjhschm4","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"outbound.is_split_horizon_public_host","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2mjo4v3nkxitfezf5v5qmj73qa","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"outbound.is_split_horizon_public_host","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:djiz7o5l2a7zdotp3x47pqvj74","file":"tests/proxy/test_outbound.py"}
+{"module":"tests.proxy.test_outbound","symbol":"outbound.managed_session","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6vkafspwlm45ttc3qzh7mewolq","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"outbound.probe_reachable","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:257zhd63gg3hqoy5x33bvwld2e","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"outbound.probe_reachable","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:3jbjl7vyinkxxdzxvtakm4qo2a","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"outbound.probe_reachable","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:43plxjznjdy6i5w6gbvzejls2y","file":"tests/proxy/test_outbound.py"}
@@ -60,6 +63,7 @@
 {"module":"tests.proxy.test_outbound","symbol":"sys","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:eef42rdn6i7mqwg56stf3rbrxi","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"test_internal_wikimedia_cloud_domain_is_never_exempt","kind":"function","node_id":"function:toolhub-evolved:uibgk3amfq6edja5gc4a44673m","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"test_lookalike_domains_do_not_satisfy_the_suffix_check","kind":"function","node_id":"function:toolhub-evolved:7umgrqrvdxen2dybawdtd44m6u","file":"tests/proxy/test_outbound.py"}
+{"module":"tests.proxy.test_outbound","symbol":"test_managed_session_closes_only_sessions_it_owns","kind":"function","node_id":"function:toolhub-evolved:36kwwxe2ibq7hphvs4j2bhlk3e","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"test_probe_reachable_follows_a_redirect_to_its_final_url","kind":"function","node_id":"function:toolhub-evolved:vtgzuyo7ppcsdhxesil2etkb3u","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"test_probe_reachable_gives_up_after_too_many_redirects","kind":"function","node_id":"function:toolhub-evolved:ue6gmogejannmw5i7qgfx6qu4u","file":"tests/proxy/test_outbound.py"}
 {"module":"tests.proxy.test_outbound","symbol":"test_probe_reachable_propagates_a_non_redirect_http_error","kind":"function","node_id":"function:toolhub-evolved:2hmgtzyoet2jsp33fb77pwefjy","file":"tests/proxy/test_outbound.py"}

@@ -37,8 +37,6 @@
 {"module":"proxy.repository_scan","symbol":"RepositoryAnalysisState","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:25uvmepc6rhn3oqcrmjdpjurcq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"RepositoryAnalysisState","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4knp5diw7avdcqud2gbhyyhami","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"RepositoryAnalysisState.llm_checked_at.is_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:udrekixsebsoyrlpmbbhnesrh4","file":"proxy/repository_scan.py"}
-{"module":"proxy.repository_scan","symbol":"RepositoryAnalysisState.tool_name.in_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:56yhy52qje6srnq7skkbocwcoa","file":"proxy/repository_scan.py"}
-{"module":"proxy.repository_scan","symbol":"RepositoryAnalysisState.tool_name.in_","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ecy356umutdq3msdyrzv3bbavu","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"RepositoryHostMetadata","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lgvtutmus775n4lre27u5houbq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"RepositoryScanError","kind":"class","node_id":"class:toolhub-evolved:vlv7akhecgh3n2yqq4k7an7vaq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"RepositoryScanError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bnurujjipdrfejvsg4vlw5h6y4","file":"proxy/repository_scan.py"}
@@ -56,6 +54,7 @@
 {"module":"proxy.repository_scan","symbol":"SOURCE_MAP_ANNOTATION.search","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yurxb7vbd5blvydekwcflzylvu","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"SOURCE_REPOSITORY_SCAN","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:2jv55p34hkoq624fgk6mllxuke","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"SQLAlchemyError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:jiildh6gkjy2rwwfpiyaems67q","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"STREAM_BATCH_SIZE","kind":"global_variable","node_id":"global_variable:toolhub-evolved:blrgqb3l2skkbzyl7qln7k4idq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"SUPPORTED_PROVIDERS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:wglifi2lneuswpoj75eai5xx4y","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"SYNC_ERROR","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ibkl4wh77lwlyb45oufmwecdzq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"SYNC_EVOLVED_REAL","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:gnyxhm45j6nknoh5jhawjkr72m","file":"proxy/repository_scan.py"}
@@ -152,6 +151,9 @@
 {"module":"proxy.repository_scan","symbol":"_report_unknown_rights","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:t2fzt3jarlftd77zs7ubzkx35y","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"_repository_size","kind":"function","node_id":"function:toolhub-evolved:ycybmi63zeucrycobomdjtnjuy","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"_repository_size","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5dl7ltnztx3znvq762djxlbjne","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"_retain_earliest","kind":"function","node_id":"function:toolhub-evolved:as3epe7lloppuigebzcg32boiu","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"_retain_earliest","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:23glp3yn4r6xmzs45gmpnqavsy","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"_retain_earliest","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ifaph73dlds2wewbr6kxw62jfa","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"_save_failure","kind":"function","node_id":"function:toolhub-evolved:ac3nlrnnkpswvgupu22klcvi2e","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"_save_failure","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cognludexb4jkkfvfpvqerb374","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"_save_no_source","kind":"function","node_id":"function:toolhub-evolved:63kd2ugfro3kzwgxj5gfcc7yuy","file":"proxy/repository_scan.py"}
@@ -211,10 +213,11 @@
 {"module":"proxy.repository_scan","symbol":"args.tool_name.strip","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:r4s5x57kbzjywtcbnjdonjqfbi","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"authorship_backlog","kind":"function","node_id":"function:toolhub-evolved:vn5mb7eemrtvp5ecuykqlgnnae","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"authorship_backlog","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kwdrdgh3abw6afq4llthngh4zq","file":"proxy/repository_scan.py"}
-{"module":"proxy.repository_scan","symbol":"backlog.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cetx4uovxu4dcydiiibyvnnonm","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"baseline.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qw34n7gemh7su5eej4tgy2vble","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"blobs.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5b3ct3kahnw3ofl277s4xmmwy4","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"bool","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cicfiv5wc2l72buydpvbuna6n4","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"bucket.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rsesy4abyrnlys2lk6wutp5svm","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"bucket.pop","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qsmqv4rwjmawxf5j2jy2x6qqxy","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"build_local_tool_summary","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:72x4xpyw723kgc6ufiuvm5ooxa","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"candidate_tools","kind":"function","node_id":"function:toolhub-evolved:alxwcht3ijiflaryav25fbw2ya","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"candidate_tools","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xfejnfc4vhjimd6br5lqx7kqh4","file":"proxy/repository_scan.py"}
@@ -261,7 +264,9 @@
 {"module":"proxy.repository_scan","symbol":"graph_enrichment.refresh_tool_names","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4tpqrjj5m53tffaufs77blvfqi","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"host.endswith","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:73daw3wmu7unsr2fyafznsenom","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"host.endswith","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:axgurmtyfezs5cborer7hdg2ai","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5feeqsgntoahykhndi7muzipea","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wbh3rtznnpbzs3yznxejrj3hgi","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:x244hybtn7cdhp63o2ayfigr5y","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"int","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yrlznyzfabhlg2qtnkv774qctu","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"is_supported_source_path","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5hiju7nz2zoal7lyicqjmy7ize","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"is_supported_source_path","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:fr3sxcpmjtg3z2bbgxadcudihu","file":"proxy/repository_scan.py"}
@@ -292,17 +297,18 @@
 {"module":"proxy.repository_scan","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:k2goai6xvcthbglhrg56pvujpa","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:sinihflchedb4ya75befw2qphu","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:t2uijzgobpjmrr5vttwg4nhv2y","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tthhu2uq44vfmmh5fkvgntroiq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"line.split","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wmccib2h6yuh46grnyc3rg6lia","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"list","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:aprok3kctio4pi4lw5g6ng4kcm","file":"proxy/repository_scan.py"}
-{"module":"proxy.repository_scan","symbol":"list","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:kwjm6eiytoysoagrap3uqgh5ny","file":"proxy/repository_scan.py"}
-{"module":"proxy.repository_scan","symbol":"list","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:thsbaisdsg757cyou6y6q7elmi","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"listing.split","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5midoky3wwlf6xn2d4awza6lj4","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"listing.split","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ybbzslewcc47hzu2rmudovmneq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"main","kind":"function","node_id":"function:toolhub-evolved:rab2sbtokkodepxakykynkga3y","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4izr3de6urrrs2d2ec2bfswd6q","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6uu5msahqecxwcergdove5vqte","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ictvq37k7jx46sexn7fcyyw7gu","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qkvlfsjw6gzxuqjc27nlguslqy","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rhbjt2lnor45deqrtezzvar6je","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:spzeqpbbjfwqwbwh5niyzck5s4","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:sy2gfidj2bajcvh4s2qn4sywjm","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"meta.split","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:wyz2rrngxqfpavmla22zlogqbq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"min","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:etp4akaptsiu3ocj7fsywtlmku","file":"proxy/repository_scan.py"}
@@ -333,6 +339,7 @@
 {"module":"proxy.repository_scan","symbol":"provider_for","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ixpwafydanwjnihjc3veb25vuu","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"provider_for","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:omtdoro45422maga2qc66nywjq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"provider_for","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:opvmi26jbi5lh2bu5azggyqb4q","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"range","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vk5d47y455e7rn5245xc3axw3a","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"range","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zenlszetvhrmsnz7zab37ianla","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"raw.decode","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bw3olp46xn6yoibrzxdv564r7q","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"re","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:cfrfytz6jiz2pfqyzrmyhq57aq","file":"proxy/repository_scan.py"}
@@ -342,7 +349,6 @@
 {"module":"proxy.repository_scan","symbol":"record.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rstwzrnro7i4ekurtcq7m2oj4m","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"record.partition","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:js4kcxojrit7ji2btbxifoyxue","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"record.strip","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hu763bx7sdvwnnhgbklnxa6kzy","file":"proxy/repository_scan.py"}
-{"module":"proxy.repository_scan","symbol":"refresh.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:b5piqojmtrdxgd4fzb3qai4dtq","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"report.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:m55o2r2jlrdiditihl2nmzboui","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"report.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zujxb2xpe724shtjflur3ciz6u","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"repository.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:625h6stff7w4gxsjrjuj53ncae","file":"proxy/repository_scan.py"}
@@ -407,8 +413,7 @@
 {"module":"proxy.repository_scan","symbol":"source_hosts.clone_url","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:klovv4ln2s6ptz3egifge3bnay","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"source_hosts.names_no_project","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rzbx7xu5ykszcjuemwpsvdrnky","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"source_hosts.project_ref","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:qfug3fdofyy7sckyyw7u3izyym","file":"proxy/repository_scan.py"}
-{"module":"proxy.repository_scan","symbol":"states.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:l4vhl25yybjdlffuvmeqoofpie","file":"proxy/repository_scan.py"}
-{"module":"proxy.repository_scan","symbol":"states.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tlys5mvy3zc3sc2mjampz2drj4","file":"proxy/repository_scan.py"}
+{"module":"proxy.repository_scan","symbol":"statement.where","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5sftn65rmasvx445tejvhqcw3y","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"stop","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bdxixqtv7ahzx2bus7bweadgtm","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"str","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:42ycm2nn27hck6t63yz7usmhhe","file":"proxy/repository_scan.py"}
 {"module":"proxy.repository_scan","symbol":"str","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ow4bnwt7p4gakodndp5zgwlcwm","file":"proxy/repository_scan.py"}

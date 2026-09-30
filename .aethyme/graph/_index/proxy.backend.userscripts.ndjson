@@ -13,6 +13,7 @@
 {"module":"proxy.backend.userscripts","symbol":"NamedTuple","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:6gbvhjaxcz55hvpoc6mj2zte7u","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"ParseResult","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rmaps6qv3h4aimqwantno2ooce","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"Prefixes","kind":"global_variable","node_id":"global_variable:toolhub-evolved:mee3pxlhyqy5qx5sb5ahzhrhtu","file":"proxy/backend/userscripts.py"}
+{"module":"proxy.backend.userscripts","symbol":"REGEX_CACHE_MAXSIZE","kind":"global_variable","node_id":"global_variable:toolhub-evolved:vnbyrlyclof6uwq43og37ehuxm","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"ROLE_EMPTY","kind":"global_variable","node_id":"global_variable:toolhub-evolved:rthof54qsnehqqtaalmc6cmwuu","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"ROLE_SCRIPT","kind":"global_variable","node_id":"global_variable:toolhub-evolved:watp43n34mav45po3p7gpheoke","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"ROLE_SHIM","kind":"global_variable","node_id":"global_variable:toolhub-evolved:ggdpy6votmggc4435q5yvhwek4","file":"proxy/backend/userscripts.py"}
@@ -76,7 +77,6 @@
 {"module":"proxy.backend.userscripts","symbol":"base64","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:t7p3g6balafzwmmwlquqpicdbm","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"base64.b64decode","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:lknxnv2ax2cbkfs4z4wsopisga","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"base64.b64encode","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vr2busgiwkwriifqv24jgmyuzm","file":"proxy/backend/userscripts.py"}
-{"module":"proxy.backend.userscripts","symbol":"cache","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yfylzkodex7ohtqtm5xbf236jq","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"call.search","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:e5nrfkgafnjtycvaimmp6ochgu","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"canonical_title","kind":"function","node_id":"function:toolhub-evolved:qkv2e5qutkenv2jm4inhmumy5m","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"canonical_title","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:37racmd7hqolwq7frie37kbaby","file":"proxy/backend/userscripts.py"}
@@ -101,6 +101,7 @@
 {"module":"proxy.backend.userscripts","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:sti2m4he4cd27k2jglsmmz5smy","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:tak5nxdc3ow4esdk4wgzzkgy7m","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"len","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:zyc6xcdj6iyfr4fycsoqtxbd4e","file":"proxy/backend/userscripts.py"}
+{"module":"proxy.backend.userscripts","symbol":"lru_cache","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5no54jgiv47izbuurci7yqfvwe","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"match.group","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:d2kxe6nsllpjts3yva7gohymly","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"match.group","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:krzpjzdjsg2aouhgdbcxpiwwwi","file":"proxy/backend/userscripts.py"}
 {"module":"proxy.backend.userscripts","symbol":"max","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:yhfe6u3nkc2yoppncjf33cv6cu","file":"proxy/backend/userscripts.py"}

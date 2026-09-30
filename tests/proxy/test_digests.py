@@ -1708,6 +1708,23 @@ def test_wikimedia_client_normalizes_transport_auth_and_api_failures(monkeypatch
     assert transport.value.code == "transport"
 
 
+def test_wikimedia_client_wraps_transport_failure_before_response(monkeypatch):
+    client = WikimediaClient(access_token="token")
+    closed = []
+
+    def fail_before_response(*_args, **_kwargs):
+        raise wikimedia_delivery.requests.Timeout("network failure")
+
+    monkeypatch.setattr(wikimedia_delivery.requests, "request", fail_before_response)
+    monkeypatch.setattr(wikimedia_delivery.outbound, "close_response", closed.append)
+
+    with pytest.raises(WikimediaAPIError) as transport:
+        client.request("meta.wikimedia.org", "GET", {})
+
+    assert transport.value.code == "transport"
+    assert closed == []
+
+
 def test_wikimedia_client_covers_tokens_reads_identity_and_writes(monkeypatch):
     monkeypatch.setenv("WIKIMEDIA_ACCOUNT_NAME", "DigestBot")
     client = WikimediaClient(access_token="token")

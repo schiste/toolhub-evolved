@@ -13,10 +13,12 @@
 {"module":"proxy.cache_invalidation","symbol":"job_runner","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:slwbzjl4pzjzzowq6wfy7f5ggm","file":"proxy/cache_invalidation.py"}
 {"module":"proxy.cache_invalidation","symbol":"job_runner.run_job","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:4kylynjbxtmbq42gity6tnf7ai","file":"proxy/cache_invalidation.py"}
 {"module":"proxy.cache_invalidation","symbol":"main","kind":"function","node_id":"function:toolhub-evolved:rzhia4hbdecv25mel24mm4xyse","file":"proxy/cache_invalidation.py"}
+{"module":"proxy.cache_invalidation","symbol":"outbound","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:7vklfzwfvn5y5f2ovna3bque4a","file":"proxy/cache_invalidation.py"}
+{"module":"proxy.cache_invalidation","symbol":"outbound.close_response","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:gizttgxtnh655eh4hbkbdc5euq","file":"proxy/cache_invalidation.py"}
+{"module":"proxy.cache_invalidation","symbol":"outbound.managed_session","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:rw4er4d5dwcpwih3guwq4jdgzq","file":"proxy/cache_invalidation.py"}
 {"module":"proxy.cache_invalidation","symbol":"payload.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:5eyrl3qkwuq5365xivqklxv5aa","file":"proxy/cache_invalidation.py"}
 {"module":"proxy.cache_invalidation","symbol":"recent_owners","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hfbtu3zrogxawskouesi5by7wm","file":"proxy/cache_invalidation.py"}
 {"module":"proxy.cache_invalidation","symbol":"requests","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ot5eklhy52dawuxrwfsun4s7si","file":"proxy/cache_invalidation.py"}
-{"module":"proxy.cache_invalidation","symbol":"requests.Session","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ig2ivhvpxwovmawz56zhhpv6e4","file":"proxy/cache_invalidation.py"}
 {"module":"proxy.cache_invalidation","symbol":"run_once","kind":"function","node_id":"function:toolhub-evolved:hgetw5aty5z2s6x37vk5oqtl2q","file":"proxy/cache_invalidation.py"}
 {"module":"proxy.cache_invalidation","symbol":"sys","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:pkrpbytu6v54746lghzc65tdsq","file":"proxy/cache_invalidation.py"}
 {"module":"proxy.cache_invalidation","symbol":"upstream.json","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xgsxvmc6gknxlkcxxtx2mmemfq","file":"proxy/cache_invalidation.py"}

@@ -3,8 +3,8 @@
 {"module":"proxy.backend.skill_discovery","symbol":"DiscoveryFailure","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:vna6zrh47nyswhoffn2xfnzwai","file":"proxy/backend/skill_discovery.py"}
 {"module":"proxy.backend.skill_discovery","symbol":"DiscoveryResult","kind":"class","node_id":"class:toolhub-evolved:sxcqwqsg6iib352f62xhyai4qq","file":"proxy/backend/skill_discovery.py"}
 {"module":"proxy.backend.skill_discovery","symbol":"DiscoveryResult","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ccif732cxvkg7if5zfusxyfo7i","file":"proxy/backend/skill_discovery.py"}
-{"module":"proxy.backend.skill_discovery","symbol":"EVOLVED_CATALOG_TYPE","kind":"global_variable","node_id":"global_variable:toolhub-evolved:g2qblq7vqtutvsxfct5xhfq4sm","file":"proxy/backend/skill_discovery.py"}
-{"module":"proxy.backend.skill_discovery","symbol":"EVOLVED_TOOLINFO_SCHEMA","kind":"global_variable","node_id":"global_variable:toolhub-evolved:luggk3gldl2bf53x4lezmedsuu","file":"proxy/backend/skill_discovery.py"}
+{"module":"proxy.backend.skill_discovery","symbol":"EVOLVED_CATALOG_TYPE","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:bieyvnjiomwnvzzuocdn4cokai","file":"proxy/backend/skill_discovery.py"}
+{"module":"proxy.backend.skill_discovery","symbol":"EVOLVED_TOOLINFO_SCHEMA","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ens6gxeenonwj3vyqngzlupfta","file":"proxy/backend/skill_discovery.py"}
 {"module":"proxy.backend.skill_discovery","symbol":"KEY_RE","kind":"global_variable","node_id":"global_variable:toolhub-evolved:vkdhhc22kcl4t7dmjc7mv5gucq","file":"proxy/backend/skill_discovery.py"}
 {"module":"proxy.backend.skill_discovery","symbol":"KEY_RE.fullmatch","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:drq2lpfxucgmudl7lq6ybzntjy","file":"proxy/backend/skill_discovery.py"}
 {"module":"proxy.backend.skill_discovery","symbol":"MAX_ERROR_CHARS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:syugxt6c56iujajktkr64hatri","file":"proxy/backend/skill_discovery.py"}
