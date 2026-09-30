@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: skills-stability-accessibility -->
 <!-- Release title: Skills, Stability, and Accessibility -->
-<!-- Source range: 2cfddf01..e99c9f2f (9 commits) -->
+<!-- Source range: 2cfddf01..7b49b394 (10 commits) -->
 
 # Technical and Marketing Notes
 
@@ -12,4 +12,5 @@
 - Improved catalog accessibility and lifecycle handling with better contrast and accessible labels, graph observer teardown, backend cache locks, and request rate limits.
 - Added English static-page translation checks and refreshed contributor, internationalization, and runbook guidance alongside wider API, proxy, and unit coverage.
 - Updated fast-uri to 3.1.8 and added read-only authorization regression coverage; Git and Prettier now ignore the local broker worktree-size cache.
-- Refreshed the checked-in Aethyme graph, normalized missing Wikimedia responses as transport errors, added coverage for the no-response and repository due-order paths, and updated brace-expansion to 5.0.12 to clear npm audit findings.
+- Refreshed the checked-in Aethyme graph, normalized missing Wikimedia responses as transport errors, and updated brace-expansion to 5.0.12 to clear npm audit findings.
+- Added regression coverage for cache-storage failures, model-session cleanup, repository scheduling order, and bounded icon settlements.
