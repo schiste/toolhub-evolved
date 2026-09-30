@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: skills-stability-accessibility -->
 <!-- Release title: Skills, Stability, and Accessibility -->
-<!-- Source range: 2cfddf01..d9a47aaf (7 commits) -->
+<!-- Source range: 2cfddf01..a23e41d1 (8 commits) -->
 
 # Technical and Marketing Notes
 
@@ -12,3 +12,4 @@
 - Improved catalog accessibility and lifecycle handling with better contrast and accessible labels, graph observer teardown, backend cache locks, and request rate limits.
 - Added English static-page translation checks and refreshed contributor, internationalization, and runbook guidance alongside wider API, proxy, and unit coverage.
 - Updated fast-uri to 3.1.8 and added read-only authorization regression coverage; Git and Prettier now ignore the local broker worktree-size cache.
+- Refreshed the checked-in Aethyme graph to match the latest source and added coverage for transport failures before a Wikimedia response object exists.
