@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: skills-stability-accessibility -->
 <!-- Release title: Skills, Stability, and Accessibility -->
-<!-- Source range: 2cfddf01..a23e41d1 (8 commits) -->
+<!-- Source range: 2cfddf01..e99c9f2f (9 commits) -->
 
 # What's New for Users
 
@@ -10,4 +10,4 @@
 - Catalog views keep tool and skill details consistent after refreshes, and the site bounds cached catalog and diagnostic data so long visits do not keep growing memory use.
 - The relationship graph and catalog controls have improved keyboard and screen-reader support, and the graph releases its observers when you leave it.
 - Updated contributor guidance and translation checks make the English static pages and contribution setup easier to keep current.
-- Improved background reliability checks for digest delivery by covering network failures that occur before Wikimedia responds.
+- Improved digest delivery reliability for Wikimedia network failures, including cases where a response never arrives.
