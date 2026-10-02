@@ -75,11 +75,53 @@ def p95_from_buckets(buckets: dict[str, float], count: float) -> float | None:
     return next((bound for bound, cumulative in bounds if count and cumulative >= target), None)
 
 
-def summarize_metrics(samples: list[Sample]) -> dict[str, float | int | None]:
+def _route_error_counts(entries: object) -> dict[tuple[str, str], int] | None:
+    """Index a valid route-error breakdown, or return None for malformed state."""
+    if not isinstance(entries, list):
+        return None
+    counts = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return None
+        method, route, count = entry.get("method"), entry.get("route"), entry.get("count")
+        if (
+            not isinstance(method, str)
+            or not method
+            or not isinstance(route, str)
+            or not route
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+        ):
+            return None
+        key = (method, route)
+        if key in counts:
+            return None
+        counts[key] = count
+    return counts
+
+
+def _format_route_errors(counts: dict[tuple[str, str], int]) -> list[dict[str, Any]]:
+    """Render deterministic route-error rows, largest count first."""
+    return [
+        {"method": method, "route": route, "count": count}
+        for (method, route), count in sorted(counts.items(), key=lambda item: (-item[1], item[0][0], item[0][1]))
+        if count > 0
+    ]
+
+
+def summarize_metrics(samples: list[Sample]) -> dict[str, Any]:
     """Reduce one worker scrape to the SLO signals used by alert rules."""
     route_samples = [sample for sample in samples if sample.name == "toolhub_http_requests_total"]
     request_total = int(sum(sample.value for sample in route_samples))
     server_errors = int(sum(sample.value for sample in route_samples if sample.labels.get("status_class") == "5xx"))
+    route_error_counts: dict[tuple[str, str], int] = {}
+    for sample in route_samples:
+        if sample.labels.get("status_class") != "5xx" or sample.value <= 0:
+            continue
+        key = (sample.labels.get("method", "UNKNOWN"), sample.labels.get("route", "<unknown>"))
+        route_error_counts[key] = route_error_counts.get(key, 0) + int(sample.value)
+    server_errors_by_route = _format_route_errors(route_error_counts)
     count = next(
         (sample.value for sample in samples if sample.name == "toolhub_http_request_duration_seconds_count"),
         0.0,
@@ -106,6 +148,8 @@ def summarize_metrics(samples: list[Sample]) -> dict[str, float | int | None]:
     return {
         "requestTotal": request_total,
         "serverErrorTotal": server_errors,
+        "serverErrorsByRoute": server_errors_by_route,
+        "serverErrorsByRouteSource": "lifetime",
         "serverErrorShare": server_errors / request_total if request_total else 0.0,
         "p95UpperBoundSeconds": p95,
         "processUptimeSeconds": uptime,
@@ -135,6 +179,7 @@ def save_window_state(path: Path, metrics: dict[str, Any], baselines: dict[str, 
     updated = {key: value for key, value in baselines.items() if key != worker}
     remembered = ("requestTotal", "serverErrorTotal", "processUptimeSeconds", "latencyBuckets", "durationCount")
     updated[worker] = {key: metrics[key] for key in remembered}
+    updated[worker]["serverErrorsByRoute"] = metrics.get("serverErrorsByRoute", [])
     kept = dict(list(updated.items())[-MAX_TRACKED_WORKERS:])
     path.write_text(json.dumps({"workers": kept}) + "\n", encoding="utf-8")
 
@@ -171,10 +216,12 @@ def apply_window(metrics: dict[str, Any], baselines: dict[str, Any]) -> dict[str
     """
     requests = metrics["requestTotal"]
     errors = metrics["serverErrorTotal"]
+    server_errors_by_route = metrics.get("serverErrorsByRoute", [])
     buckets = metrics.get("latencyBuckets") or {}
     samples = metrics.get("durationCount") or 0.0
     previous = baselines.get(metrics.get("workerId"))
     source = "lifetime"
+    route_source = "lifetime"
     if isinstance(previous, dict):
         prior_requests = previous.get("requestTotal") or 0
         prior_errors = previous.get("serverErrorTotal") or 0
@@ -186,6 +233,20 @@ def apply_window(metrics: dict[str, Any], baselines: dict[str, Any]) -> dict[str
             or (uptime is not None and prior_uptime is not None and uptime < prior_uptime)
         )
         source = "restart" if restarted else "interval"
+        current_route_errors = _route_error_counts(server_errors_by_route)
+        if current_route_errors is not None:
+            if restarted:
+                route_source = "restart"
+            else:
+                previous_route_errors = _route_error_counts(previous.get("serverErrorsByRoute"))
+                if previous_route_errors is not None:
+                    route_source = "interval"
+                    route_delta = {
+                        key: count - previous_route_errors.get(key, 0)
+                        for key, count in current_route_errors.items()
+                        if count > previous_route_errors.get(key, 0)
+                    }
+                    server_errors_by_route = _format_route_errors(route_delta)
         if not restarted:
             requests -= prior_requests
             errors -= prior_errors
@@ -194,6 +255,8 @@ def apply_window(metrics: dict[str, Any], baselines: dict[str, Any]) -> dict[str
             samples -= previous.get("durationCount") or 0.0
     return {
         **metrics,
+        "windowServerErrorsByRoute": server_errors_by_route,
+        "windowServerErrorsByRouteSource": route_source,
         "windowRequestTotal": requests,
         "windowServerErrorTotal": errors,
         "windowServerErrorShare": errors / requests if requests else 0.0,
@@ -251,6 +314,8 @@ def collect(base_url: str, *, timeout: float) -> dict[str, Any]:
         "metrics": {
             "requestTotal": 0,
             "serverErrorTotal": 0,
+            "serverErrorsByRoute": [],
+            "serverErrorsByRouteSource": "unavailable",
             "serverErrorShare": 0.0,
             "p95UpperBoundSeconds": None,
             "processUptimeSeconds": None,
