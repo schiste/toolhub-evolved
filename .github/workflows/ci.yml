@@ -7,6 +7,13 @@ on:
     push:
         branches: [main]
     pull_request:
+    workflow_dispatch:
+        inputs:
+            export_graph_artifacts:
+                description: "Temporary: upload rebuilt graph files for one-time recovery."
+                required: false
+                type: boolean
+                default: false
 
 permissions:
     contents: read
@@ -66,6 +73,18 @@ jobs:
               run: aethyme enhance verify --repo .
             - name: Rebuild graph and smoke-test Explore
               run: python3 tools/aethyme_graph.py check
+            - name: Export rebuilt graph fragments (temporary)
+              if: ${{ always() && ((github.event_name == 'workflow_dispatch' && inputs.export_graph_artifacts) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
+              uses: actions/upload-artifact@v7
+              with:
+                  name: aethyme-graph-${{ github.run_id }}
+                  path: |
+                      .aethyme/graph/_index/tests.tools.test_check_production_health.ndjson
+                      .aethyme/graph/_index/tools.check_production_health.ndjson
+                      .aethyme/graph/tests/tools/test_check_production_health.py.bin
+                      .aethyme/graph/tools/check_production_health.py.bin
+                  if-no-files-found: error
+                  retention-days: 1
 
     js:
         name: JS quality
