@@ -101,3 +101,44 @@ test("a shared package with another advisory keeps its dependent chain blocking"
 	assert.equal(result.remainingCounts.high, 4);
 	assert.deepEqual(result.waived.packages, ["braces", "fast-glob", "globby", "micromatch"]);
 });
+
+test("the exception remains active through its inclusive expiry date", () => {
+	const result = verdict(JSON.stringify(auditReport()), new Date("2026-11-05T23:59:59Z"));
+	assert.equal(result.ok, true);
+	assert.equal(result.reason, "temporarily-waived");
+	assert.equal(result.waived.expiresOn, "2026-11-05");
+});
+
+test("a braces finding with a different advisory source remains blocking", () => {
+	const result = verdict(
+		JSON.stringify(
+			auditReport({
+				mutate: (vulnerabilities) => {
+					vulnerabilities.braces.via[0].source = 9876;
+				}
+			})
+		),
+		new Date("2026-10-05T12:00:00Z")
+	);
+	assert.equal(result.ok, false);
+	assert.equal(result.reason, "vulnerable");
+	assert.equal(result.remainingCounts.high, 8);
+	assert.equal(result.waived, null);
+});
+
+test("a braces finding with a different advisory URL remains blocking", () => {
+	const result = verdict(
+		JSON.stringify(
+			auditReport({
+				mutate: (vulnerabilities) => {
+					vulnerabilities.braces.via[0].url = OTHER_ADVISORY;
+				}
+			})
+		),
+		new Date("2026-10-05T12:00:00Z")
+	);
+	assert.equal(result.ok, false);
+	assert.equal(result.reason, "vulnerable");
+	assert.equal(result.remainingCounts.high, 8);
+	assert.equal(result.waived, null);
+});
