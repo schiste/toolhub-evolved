@@ -9,7 +9,7 @@ import coverageRatchet from "./.coverage-ratchet.json" with { type: "json" };
 export default defineConfig({
 	test: {
 		environment: "happy-dom",
-		include: ["tests/unit/**/*.test.mjs"],
+		include: ["tests/unit/**/*.test.mjs", "tools/audit-js.test.mjs"],
 		setupFiles: ["./tests/unit/_storage-setup.mjs", "./tests/unit/_i18n-keys.mjs"],
 		// Unit files share happy-dom/browser globals and partial module mocks.
 		// Keep files serial so deferred view mounts are not affected by another
