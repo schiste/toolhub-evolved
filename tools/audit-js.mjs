@@ -19,6 +19,7 @@
 //
 // So an outage warns loudly and exits 0. A finding still fails.
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 export const AUDIT_LEVEL = "moderate";
@@ -33,19 +34,51 @@ const TEMPORARY_WAIVERS = {
 		packageName: "braces",
 		source: 1240992,
 		url: "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
-		expiresOn: "2026-11-05"
+		expiresOn: "2026-11-05",
+		allowedPackages: [
+			"braces",
+			"fast-glob",
+			"globby",
+			"micromatch",
+			"stylelint",
+			"stylelint-config-recommended",
+			"stylelint-config-standard",
+			"stylelint-declaration-strict-value"
+		]
 	}
 };
 
 function isWaivedAdvisory(reference, waiver) {
 	return (
-		reference && typeof reference === "object" && reference.source === waiver.source && reference.url === waiver.url
+		reference &&
+		typeof reference === "object" &&
+		reference.name === waiver.packageName &&
+		reference.source === waiver.source &&
+		reference.url === waiver.url
 	);
 }
 
-function collectAdvisoryChain(vulnerabilities, waiver) {
+function areAuditNodesDevelopmentOnly(vulnerabilities, packages, packageLock) {
+	const lockfilePackages = packageLock?.packages;
+	if (!lockfilePackages || typeof lockfilePackages !== "object") return false;
+	return packages.every((name) => {
+		const nodes = vulnerabilities[name]?.nodes;
+		return (
+			Array.isArray(nodes) &&
+			nodes.length > 0 &&
+			nodes.every((node) => typeof node === "string" && lockfilePackages[node]?.dev === true)
+		);
+	});
+}
+
+function collectAdvisoryChain(vulnerabilities, waiver, packageLock) {
 	const root = vulnerabilities[waiver.packageName];
-	if (!Array.isArray(root?.via) || root.via.length !== 1 || !isWaivedAdvisory(root.via[0], waiver)) {
+	if (
+		root?.isDirect !== false ||
+		!Array.isArray(root?.via) ||
+		root.via.length !== 1 ||
+		!isWaivedAdvisory(root.via[0], waiver)
+	) {
 		return [];
 	}
 
@@ -66,7 +99,17 @@ function collectAdvisoryChain(vulnerabilities, waiver) {
 			changed = true;
 		}
 	}
-	return [...affected].sort();
+
+	if (!Array.isArray(waiver.allowedPackages)) return [];
+	const packages = [...affected].sort();
+	const allowedPackages = new Set(waiver.allowedPackages);
+	if (
+		packages.some((name) => !allowedPackages.has(name)) ||
+		!areAuditNodesDevelopmentOnly(vulnerabilities, packages, packageLock)
+	) {
+		return [];
+	}
+	return packages;
 }
 
 function remainingCounts(found, vulnerabilities, waivedPackages) {
@@ -80,8 +123,8 @@ function remainingCounts(found, vulnerabilities, waivedPackages) {
 	return remaining;
 }
 
-/** Decide from one `npm audit --json` payload and an injectable evaluation date. */
-export function verdict(raw, now = new Date()) {
+/** Decide from one `npm audit --json` payload, its lockfile, and an injectable date. */
+export function verdict(raw, now = new Date(), packageLock = null) {
 	let report;
 	try {
 		report = JSON.parse(raw);
@@ -108,7 +151,7 @@ export function verdict(raw, now = new Date()) {
 		const today = now.toISOString().slice(0, 10);
 		for (const [advisory, waiver] of Object.entries(TEMPORARY_WAIVERS)) {
 			if (today > waiver.expiresOn) continue;
-			const packages = collectAdvisoryChain(vulnerabilities, waiver);
+			const packages = collectAdvisoryChain(vulnerabilities, waiver, packageLock);
 			if (packages.length === 0) continue;
 			const adjusted = remainingCounts(found, vulnerabilities, packages);
 			if (!adjusted) continue;
@@ -133,7 +176,8 @@ function main() {
 		// npm exits non-zero for findings too, and the report is still on stdout.
 		raw = error.stdout ?? "";
 	}
-	const { ok, reason, counts, remainingCounts: remaining, waived } = verdict(raw);
+	const packageLock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
+	const { ok, reason, counts, remainingCounts: remaining, waived } = verdict(raw, new Date(), packageLock);
 	if (reason === "registry-unavailable" || reason === "unreadable") {
 		process.stderr.write(
 			"audit:js: npm's audit endpoint could not be reached, so the dependency tree was NOT audited.\n" +
