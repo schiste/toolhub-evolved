@@ -35,6 +35,8 @@ def test_metrics_parser_and_alert_thresholds_are_exact() -> None:
     assert summary == {
         "requestTotal": 100,
         "serverErrorTotal": 2,
+        "serverErrorsByRoute": [{"method": "GET", "route": "/", "count": 2}],
+        "serverErrorsByRouteSource": "lifetime",
         "serverErrorShare": 0.02,
         "p95UpperBoundSeconds": 1.0,
         "processUptimeSeconds": 120.0,
@@ -50,6 +52,137 @@ def test_metrics_parser_and_alert_thresholds_are_exact() -> None:
         }
     )
     assert [alert.code for alert in alerts] == ["http-5xx", "http-p95"]
+
+
+def test_summary_reports_5xx_breakdown_by_method_and_normalized_route() -> None:
+    samples = monitor.parse_metrics(
+        """\
+toolhub_http_requests_total{method=\"GET\",route=\"/v1/catalog/<path:path>\",status_class=\"5xx\"} 3
+toolhub_http_requests_total{method=\"POST\",route=\"/v1/catalog/<path:path>\",status_class=\"5xx\"} 2
+toolhub_http_requests_total{method=\"GET\",route=\"/v1/tools/summaries/\",status_class=\"5xx\"} 1
+toolhub_http_requests_total{method=\"GET\",route=\"/v1/catalog/<path:path>\",status_class=\"2xx\"} 97
+"""
+    )
+
+    summary = monitor.summarize_metrics(samples)
+
+    assert summary["serverErrorsByRoute"] == [
+        {"method": "GET", "route": "/v1/catalog/<path:path>", "count": 3},
+        {"method": "POST", "route": "/v1/catalog/<path:path>", "count": 2},
+        {"method": "GET", "route": "/v1/tools/summaries/", "count": 1},
+    ]
+    assert summary["serverErrorsByRouteSource"] == "lifetime"
+
+
+def test_windowed_route_breakdown_uses_per_route_and_method_counter_deltas() -> None:
+    previous = {
+        **_metrics(100, 3),
+        "serverErrorsByRoute": [
+            {"method": "GET", "route": "/v1/catalog/<path:path>", "count": 2},
+            {"method": "POST", "route": "/v1/catalog/<path:path>", "count": 1},
+        ],
+    }
+    current = {
+        **_metrics(110, 7),
+        "serverErrorsByRoute": [
+            {"method": "GET", "route": "/v1/catalog/<path:path>", "count": 4},
+            {"method": "POST", "route": "/v1/catalog/<path:path>", "count": 2},
+            {"method": "GET", "route": "/v1/tools/summaries/", "count": 1},
+        ],
+    }
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+
+    assert windowed["windowServerErrorsByRoute"] == [
+        {"method": "GET", "route": "/v1/catalog/<path:path>", "count": 2},
+        {"method": "GET", "route": "/v1/tools/summaries/", "count": 1},
+        {"method": "POST", "route": "/v1/catalog/<path:path>", "count": 1},
+    ]
+    assert windowed["windowServerErrorsByRouteSource"] == "interval"
+    assert sum(item["count"] for item in windowed["windowServerErrorsByRoute"]) == windowed["windowServerErrorTotal"]
+
+
+def test_route_breakdown_uses_lifetime_counts_with_a_legacy_baseline() -> None:
+    current_routes = [{"method": "GET", "route": "/v1/catalog/<path:path>", "count": 4}]
+    previous = _metrics(100, 3)
+    current = {**_metrics(110, 7), "serverErrorsByRoute": current_routes}
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+
+    assert windowed["windowSource"] == "interval"
+    assert windowed["windowServerErrorsByRoute"] == current_routes
+    assert windowed["windowServerErrorsByRouteSource"] == "lifetime"
+
+
+def test_route_breakdown_does_not_trust_a_malformed_baseline() -> None:
+    current_routes = [{"method": "GET", "route": "/v1/catalog/<path:path>", "count": 5}]
+    previous = {**_metrics(100, 3), "serverErrorsByRoute": None}
+    current = {**_metrics(110, 5), "serverErrorsByRoute": current_routes}
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+
+    assert windowed["windowSource"] == "interval"
+    assert windowed["windowServerErrorsByRoute"] == current_routes
+    assert windowed["windowServerErrorsByRouteSource"] == "lifetime"
+
+
+def test_route_breakdown_falls_back_when_baseline_totals_disagree() -> None:
+    current_routes = [{"method": "GET", "route": "/v1/catalog/<path:path>", "count": 5}]
+    previous = {**_metrics(100, 3), "serverErrorsByRoute": []}
+    current = {**_metrics(110, 5), "serverErrorsByRoute": current_routes}
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+
+    assert windowed["windowServerErrorTotal"] == 2
+    assert windowed["windowServerErrorsByRoute"] == current_routes
+    assert windowed["windowServerErrorsByRouteSource"] == "lifetime"
+
+
+def test_route_breakdown_falls_back_when_current_route_totals_disagree() -> None:
+    previous_routes = [{"method": "GET", "route": "/v1/catalog/<path:path>", "count": 3}]
+    current_routes = [{"method": "GET", "route": "/v1/catalog/<path:path>", "count": 4}]
+    previous = {**_metrics(100, 3), "serverErrorsByRoute": previous_routes}
+    current = {**_metrics(110, 5), "serverErrorsByRoute": current_routes}
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+
+    assert windowed["windowSource"] == "interval"
+    assert windowed["windowServerErrorTotal"] == 2
+    assert windowed["windowServerErrorsByRoute"] == current_routes
+    assert windowed["windowServerErrorsByRouteSource"] == "lifetime"
+
+
+def test_route_breakdown_falls_back_when_route_counter_moves_backwards() -> None:
+    previous_routes = [{"method": "GET", "route": "/old", "count": 5}]
+    current_routes = [
+        {"method": "GET", "route": "/old", "count": 4},
+        {"method": "GET", "route": "/new", "count": 2},
+    ]
+    previous = {**_metrics(100, 5), "serverErrorsByRoute": previous_routes}
+    current = {**_metrics(110, 6), "serverErrorsByRoute": current_routes}
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+
+    assert windowed["windowServerErrorTotal"] == 1
+    assert windowed["windowServerErrorsByRoute"] == current_routes
+    assert windowed["windowServerErrorsByRouteSource"] == "lifetime"
+
+
+def test_route_breakdown_reports_current_counts_after_worker_restart() -> None:
+    previous = {
+        **_metrics(100, 5),
+        "serverErrorsByRoute": [{"method": "GET", "route": "/old", "count": 5}],
+    }
+    current = {
+        **_metrics(20, 2, uptime=5.0),
+        "serverErrorsByRoute": [{"method": "POST", "route": "/new", "count": 2}],
+    }
+
+    windowed = monitor.apply_window(current, _baselines(previous))
+
+    assert windowed["windowSource"] == "restart"
+    assert windowed["windowServerErrorsByRoute"] == current["serverErrorsByRoute"]
+    assert windowed["windowServerErrorsByRouteSource"] == "restart"
 
 
 def test_small_worker_sample_does_not_page_on_ratios() -> None:
@@ -254,7 +387,8 @@ def test_a_scheduled_run_advances_the_baseline_it_measured_against(
     state = tmp_path / "window.json"
     prior = {
         "requestTotal": 60,
-        "serverErrorTotal": 2,
+        "serverErrorTotal": 1,
+        "serverErrorsByRoute": [{"method": "GET", "route": "/", "count": 1}],
         "processUptimeSeconds": 60,
         "latencyBuckets": {"0.05": 30.0, "0.5": 56.0, "1": 60.0, "+Inf": 60.0},
         "durationCount": 60.0,
@@ -265,9 +399,12 @@ def test_a_scheduled_run_advances_the_baseline_it_measured_against(
     monitor.main(["--base-url", "https://example.test", "--output", str(output), "--state", str(state)])
 
     report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["metrics"]["serverErrorsByRoute"] == [{"method": "GET", "route": "/", "count": 2}]
     assert report["metrics"]["windowSource"] == "interval"
+    assert report["metrics"]["windowServerErrorsByRoute"] == [{"method": "GET", "route": "/", "count": 1}]
+    assert report["metrics"]["windowServerErrorsByRouteSource"] == "interval"
     assert report["metrics"]["windowRequestTotal"] == 40
-    assert report["metrics"]["windowServerErrorTotal"] == 0
+    assert report["metrics"]["windowServerErrorTotal"] == 1
     # 40 requests in the interval, 20 of them over 0.05s and 2 over 0.5s: the
     # percentile is read off that difference, not off the worker's whole history.
     assert report["metrics"]["windowSampleTotal"] == 40
@@ -279,6 +416,7 @@ def test_a_scheduled_run_advances_the_baseline_it_measured_against(
             "4101": {
                 "requestTotal": 100,
                 "serverErrorTotal": 2,
+                "serverErrorsByRoute": [{"method": "GET", "route": "/", "count": 2}],
                 "processUptimeSeconds": 120.0,
                 "latencyBuckets": {"0.05": 50.0, "0.5": 94.0, "1": 100.0, "+Inf": 100.0},
                 "durationCount": 100.0,
@@ -298,14 +436,31 @@ def test_a_failed_scrape_leaves_the_baseline_alone(tmp_path: Path, monkeypatch: 
 
     monkeypatch.setattr(monitor, "_get", fake_get)
     state = tmp_path / "window.json"
-    baseline = {
-        "workers": {"4101": {"requestTotal": 100, "serverErrorTotal": 2, "processUptimeSeconds": 120.0}}
-    }
+    baseline = {"workers": {"4101": {"requestTotal": 100, "serverErrorTotal": 2, "processUptimeSeconds": 120.0}}}
     state.write_text(json.dumps(baseline), encoding="utf-8")
 
     monitor.main(["--base-url", "https://example.test", "--state", str(state)])
 
     assert json.loads(state.read_text(encoding="utf-8")) == baseline
+
+
+def test_a_failed_metrics_scrape_has_an_empty_route_breakdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_get(_base: str, path: str, *, timeout: float) -> tuple[int, str]:
+        assert timeout == 1.0
+        if path == "/metricsz":
+            raise OSError
+        return {
+            "/livez": (200, '{"ok":true}'),
+            "/readyz": (200, '{"ok":true}'),
+            "/v1/catalog/health/": (200, '{"ageSeconds":0,"status":"ready"}'),
+        }[path]
+
+    monkeypatch.setattr(monitor, "_get", fake_get)
+
+    report = monitor.collect("https://example.test", timeout=1.0)
+
+    assert report["metrics"]["serverErrorsByRoute"] == []
+    assert report["metrics"]["serverErrorsByRouteSource"] == "unavailable"
 
 
 def test_two_workers_are_never_subtracted_from_each_other() -> None:
