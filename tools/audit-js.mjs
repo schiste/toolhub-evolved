@@ -19,34 +19,150 @@
 //
 // So an outage warns loudly and exits 0. A finding still fails.
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 export const AUDIT_LEVEL = "moderate";
 //: Severities at or above AUDIT_LEVEL, in npm's own vocabulary.
 export const BLOCKING = ["moderate", "high", "critical"];
 
-/** Decide from one `npm audit --json` payload. Returns {ok, reason, counts}. */
-export function verdict(raw) {
+// Time-boxed operator exception: the advisory has no published fix yet. It is
+// limited to the transitive Stylelint development-tooling chain and expires even
+// if upstream has not released a fixed version by then.
+const TEMPORARY_WAIVERS = {
+	"GHSA-vfj7-8cjw-p6xm": {
+		packageName: "braces",
+		source: 1240992,
+		url: "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+		expiresOn: "2026-11-05",
+		allowedPackages: [
+			"braces",
+			"fast-glob",
+			"globby",
+			"micromatch",
+			"stylelint",
+			"stylelint-config-recommended",
+			"stylelint-config-standard",
+			"stylelint-declaration-strict-value"
+		]
+	}
+};
+
+function isWaivedAdvisory(reference, waiver) {
+	return (
+		reference &&
+		typeof reference === "object" &&
+		reference.name === waiver.packageName &&
+		reference.source === waiver.source &&
+		reference.url === waiver.url
+	);
+}
+
+function areAuditNodesDevelopmentOnly(vulnerabilities, packages, packageLock) {
+	const lockfilePackages = packageLock?.packages;
+	if (!lockfilePackages || typeof lockfilePackages !== "object") return false;
+	return packages.every((name) => {
+		const nodes = vulnerabilities[name]?.nodes;
+		return (
+			Array.isArray(nodes) &&
+			nodes.length > 0 &&
+			nodes.every((node) => typeof node === "string" && lockfilePackages[node]?.dev === true)
+		);
+	});
+}
+
+function collectAdvisoryChain(vulnerabilities, waiver, packageLock) {
+	const root = vulnerabilities[waiver.packageName];
+	if (
+		root?.isDirect !== false ||
+		!Array.isArray(root?.via) ||
+		root.via.length !== 1 ||
+		!isWaivedAdvisory(root.via[0], waiver)
+	) {
+		return [];
+	}
+
+	const affected = new Set([waiver.packageName]);
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const [name, finding] of Object.entries(vulnerabilities)) {
+			if (
+				affected.has(name) ||
+				!Array.isArray(finding.via) ||
+				finding.via.length === 0 ||
+				!finding.via.every((dependency) => typeof dependency === "string" && affected.has(dependency))
+			) {
+				continue;
+			}
+			affected.add(name);
+			changed = true;
+		}
+	}
+
+	if (!Array.isArray(waiver.allowedPackages)) return [];
+	const packages = [...affected].sort();
+	const allowedPackages = new Set(waiver.allowedPackages);
+	if (
+		packages.some((name) => !allowedPackages.has(name)) ||
+		!areAuditNodesDevelopmentOnly(vulnerabilities, packages, packageLock)
+	) {
+		return [];
+	}
+	return packages;
+}
+
+function remainingCounts(found, vulnerabilities, waivedPackages) {
+	const remaining = Object.fromEntries(BLOCKING.map((level) => [level, found[level] ?? 0]));
+	for (const name of waivedPackages) {
+		const severity = vulnerabilities[name]?.severity;
+		if (!BLOCKING.includes(severity)) continue;
+		if (!Number.isSafeInteger(remaining[severity]) || remaining[severity] < 1) return null;
+		remaining[severity] -= 1;
+	}
+	return remaining;
+}
+
+/** Decide from one `npm audit --json` payload, its lockfile, and an injectable date. */
+export function verdict(raw, now = new Date(), packageLock = null) {
 	let report;
 	try {
 		report = JSON.parse(raw);
 	} catch {
 		// Not JSON at all: npm failed before it produced a report. Treat it the
 		// same as an explicit endpoint error rather than guessing at the cause.
-		return { ok: true, reason: "unreadable", counts: null };
+		return { ok: true, reason: "unreadable", counts: null, remainingCounts: null, waived: null };
 	}
 	if (report.error) {
-		return { ok: true, reason: "registry-unavailable", counts: null };
+		return { ok: true, reason: "registry-unavailable", counts: null, remainingCounts: null, waived: null };
 	}
 	const found = report.metadata?.vulnerabilities;
 	if (!found) {
 		// A report with no vulnerability metadata is a shape this does not
 		// understand; refusing to interpret it is safer than inventing a pass or
 		// a fail from it, and it is reported rather than swallowed.
-		return { ok: true, reason: "unrecognized-report", counts: null };
+		return { ok: true, reason: "unrecognized-report", counts: null, remainingCounts: null, waived: null };
 	}
-	const blocking = BLOCKING.reduce((total, level) => total + (found[level] ?? 0), 0);
-	return { ok: blocking === 0, reason: blocking === 0 ? "clean" : "vulnerable", counts: found };
+
+	let remaining = Object.fromEntries(BLOCKING.map((level) => [level, found[level] ?? 0]));
+	let waived = null;
+	const vulnerabilities = report.vulnerabilities;
+	if (vulnerabilities && typeof vulnerabilities === "object") {
+		const today = now.toISOString().slice(0, 10);
+		for (const [advisory, waiver] of Object.entries(TEMPORARY_WAIVERS)) {
+			if (today > waiver.expiresOn) continue;
+			const packages = collectAdvisoryChain(vulnerabilities, waiver, packageLock);
+			if (packages.length === 0) continue;
+			const adjusted = remainingCounts(found, vulnerabilities, packages);
+			if (!adjusted) continue;
+			remaining = adjusted;
+			waived = { advisory, expiresOn: waiver.expiresOn, packages };
+		}
+	}
+
+	const blocking = BLOCKING.reduce((total, level) => total + remaining[level], 0);
+	const reason = blocking > 0 ? "vulnerable" : waived ? "temporarily-waived" : "clean";
+	return { ok: blocking === 0, reason, counts: found, remainingCounts: remaining, waived };
 }
 
 function main() {
@@ -60,7 +176,8 @@ function main() {
 		// npm exits non-zero for findings too, and the report is still on stdout.
 		raw = error.stdout ?? "";
 	}
-	const { ok, reason, counts } = verdict(raw);
+	const packageLock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
+	const { ok, reason, counts, remainingCounts: remaining, waived } = verdict(raw, new Date(), packageLock);
 	if (reason === "registry-unavailable" || reason === "unreadable") {
 		process.stderr.write(
 			"audit:js: npm's audit endpoint could not be reached, so the dependency tree was NOT audited.\n" +
@@ -72,10 +189,26 @@ function main() {
 		process.stderr.write("audit:js: npm returned a report shape this does not understand; NOT audited.\n");
 		return 0;
 	}
+	if (waived) {
+		process.stderr.write(
+			`audit:js: temporary exception ${waived.advisory} is active through ${waived.expiresOn}; affected package findings: ${waived.packages.join(", ")}.\n`
+		);
+		process.stderr.write(
+			"audit:js: these packages remain vulnerable; this is a time-boxed risk acceptance, not a fix.\n"
+		);
+	}
 	if (!ok) {
-		process.stderr.write(`audit:js: vulnerabilities at ${AUDIT_LEVEL} or above: ${JSON.stringify(counts)}\n`);
+		process.stderr.write(
+			`audit:js: remaining vulnerabilities at ${AUDIT_LEVEL} or above outside the exception: ${JSON.stringify(remaining)}; npm reported ${JSON.stringify(counts)}\n`
+		);
 		process.stderr.write("audit:js: run `npm audit` for detail.\n");
 		return 1;
+	}
+	if (waived) {
+		process.stdout.write(
+			`audit:js: no findings remain outside the temporary exception at ${AUDIT_LEVEL} or above.\n`
+		);
+		return 0;
 	}
 	process.stdout.write("audit:js: no vulnerabilities at moderate or above.\n");
 	return 0;
