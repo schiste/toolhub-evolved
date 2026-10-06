@@ -109,36 +109,25 @@ test("the exception remains active through its inclusive expiry date", () => {
 	assert.equal(result.waived.expiresOn, "2026-11-05");
 });
 
-test("a braces finding with a different advisory source remains blocking", () => {
+function assertBracesAdvisoryMismatchIsBlocking(mutate) {
 	const result = verdict(
-		JSON.stringify(
-			auditReport({
-				mutate: (vulnerabilities) => {
-					vulnerabilities.braces.via[0].source = 9876;
-				}
-			})
-		),
+		JSON.stringify(auditReport({ mutate })),
 		new Date("2026-10-05T12:00:00Z")
 	);
 	assert.equal(result.ok, false);
 	assert.equal(result.reason, "vulnerable");
 	assert.equal(result.remainingCounts.high, 8);
 	assert.equal(result.waived, null);
+}
+
+test("a braces finding with a different advisory source remains blocking", () => {
+	assertBracesAdvisoryMismatchIsBlocking((vulnerabilities) => {
+		vulnerabilities.braces.via[0].source = 9876;
+	});
 });
 
 test("a braces finding with a different advisory URL remains blocking", () => {
-	const result = verdict(
-		JSON.stringify(
-			auditReport({
-				mutate: (vulnerabilities) => {
-					vulnerabilities.braces.via[0].url = OTHER_ADVISORY;
-				}
-			})
-		),
-		new Date("2026-10-05T12:00:00Z")
-	);
-	assert.equal(result.ok, false);
-	assert.equal(result.reason, "vulnerable");
-	assert.equal(result.remainingCounts.high, 8);
-	assert.equal(result.waived, null);
+	assertBracesAdvisoryMismatchIsBlocking((vulnerabilities) => {
+		vulnerabilities.braces.via[0].url = OTHER_ADVISORY;
+	});
 });
