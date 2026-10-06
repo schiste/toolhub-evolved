@@ -108,9 +108,17 @@ def _server_discover(_params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_READ_ONLY_TOOL_ANNOTATIONS: dict[str, bool] = {
+    "readOnlyHint": True,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+
+
 _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "name": "search_tools",
+        "annotations": dict(_READ_ONLY_TOOL_ANNOTATIONS),
         "description": (
             "Relevance-ranked word search over every Wikimedia tool in the Toolhub "
             "catalog -- including the gadgets and user scripts Toolhub Evolved "
@@ -136,6 +144,7 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
     },
     {
         "name": "facet_tools",
+        "annotations": dict(_READ_ONLY_TOOL_ANNOTATIONS),
         "description": (
             "Find tools by verified technical signals extracted from their source code: "
             "dependency (package name, optionally ecosystem-prefixed like 'pypi:pywikibot'), "
@@ -178,6 +187,7 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
     },
     {
         "name": "list_facet_values",
+        "annotations": dict(_READ_ONLY_TOOL_ANNOTATIONS),
         "description": (
             "List the distinct values of one facet type ranked by how many tools carry "
             "each — the ecosystem's actual adoption ranking. Call before facet_tools to "
@@ -196,6 +206,7 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
     },
     {
         "name": "get_tool",
+        "annotations": dict(_READ_ONLY_TOOL_ANNOTATIONS),
         "description": "Fetch one tool's full canonical Toolhub record by exact tool name.",
         "inputSchema": {
             "type": "object",

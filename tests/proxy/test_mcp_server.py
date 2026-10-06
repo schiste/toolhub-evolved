@@ -273,6 +273,18 @@ def test_tools_list_shapes(client):
         assert tool["inputSchema"]["type"] == "object"
 
 
+def test_tools_list_marks_every_catalog_tool_read_only_and_idempotent(client):
+    tools = _rpc(client, "tools/list").get_json()["result"]["tools"]
+    expected_annotations = {
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+
+    for tool in tools:
+        assert tool["annotations"] == expected_annotations
+
+
 def test_skill_capabilities_are_additive(client):
     initialized = _rpc(client, "initialize", {"protocolVersion": "2025-06-18"}).get_json()["result"]
     assert initialized["capabilities"]["resources"] == {"subscribe": False, "listChanged": False}
