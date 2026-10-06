@@ -110,10 +110,7 @@ test("the exception remains active through its inclusive expiry date", () => {
 });
 
 function assertBracesAdvisoryMismatchIsBlocking(mutate) {
-	const result = verdict(
-		JSON.stringify(auditReport({ mutate })),
-		new Date("2026-10-05T12:00:00Z")
-	);
+	const result = verdict(JSON.stringify(auditReport({ mutate })), new Date("2026-10-05T12:00:00Z"));
 	assert.equal(result.ok, false);
 	assert.equal(result.reason, "vulnerable");
 	assert.equal(result.remainingCounts.high, 8);
