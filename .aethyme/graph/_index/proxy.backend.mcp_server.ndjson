@@ -27,6 +27,7 @@
 {"module":"proxy.backend.mcp_server","symbol":"_ParamError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:hax5wzus373iibdodcip3icjtu","file":"proxy/backend/mcp_server.py"}
 {"module":"proxy.backend.mcp_server","symbol":"_ParamError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:i7ox3dt44rzno23ic4zkec4jky","file":"proxy/backend/mcp_server.py"}
 {"module":"proxy.backend.mcp_server","symbol":"_ParamError","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:xggr2fc6rsnqmymmmgtlwwxdqa","file":"proxy/backend/mcp_server.py"}
+{"module":"proxy.backend.mcp_server","symbol":"_READ_ONLY_TOOL_ANNOTATIONS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:uedpbedlxmz42nauynhxpofhde","file":"proxy/backend/mcp_server.py"}
 {"module":"proxy.backend.mcp_server","symbol":"_TOOL_DEFINITIONS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:wzakqqh5dothmvp5iyqm4ds3yy","file":"proxy/backend/mcp_server.py"}
 {"module":"proxy.backend.mcp_server","symbol":"_TOOL_HANDLERS","kind":"global_variable","node_id":"global_variable:toolhub-evolved:3xhss5wgaux4zghzkq7ckqe4bm","file":"proxy/backend/mcp_server.py"}
 {"module":"proxy.backend.mcp_server","symbol":"_TOOL_HANDLERS.get","kind":"unresolved_symbol","node_id":"unresolved_symbol:toolhub-evolved:ockdq4on3lmtenhfrx7kyjem6e","file":"proxy/backend/mcp_server.py"}
