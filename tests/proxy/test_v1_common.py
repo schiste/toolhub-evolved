@@ -303,9 +303,21 @@ def test_health_target_payload_and_thanks_payload():
 def test_moderation_item_all_kinds():
     now = utcnow()
     curation = SimpleNamespace(
-        id=1, tool_name="a", patch={"x": 1}, rationale="why",
-        review_status=REVIEW_PENDING, created_by_user_id=1,
-        created_at=now, modified_at=now,
+        id=1,
+        tool_name="a",
+        patch={"x": 1},
+        rationale="why",
+        review_status=REVIEW_PENDING,
+        created_by_user_id=1,
+        reviewed_by_user_id=None,
+        reviewed_at=None,
+        review_notes="",
+        edit_kind="community",
+        owner_proof=None,
+        base_values=None,
+        base_source_values=None,
+        created_at=now,
+        modified_at=now,
     )
     out = v1c.moderation_item("catalog-curations", curation)
     assert out["kind"] == "catalog-curations"

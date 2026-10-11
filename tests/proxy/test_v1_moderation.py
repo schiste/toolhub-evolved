@@ -16,13 +16,16 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import authz, db, people_reconcile, security  # noqa: E402
+from backend import authz, db, people_reconcile, security, sync  # noqa: E402
 from backend.models import (  # noqa: E402
+    CanonicalToolCache,
+    CatalogCuration,
     Person,
     PersonReconciliationConflict,
     PersonReconciliationMapping,
     PersonReconciliationRun,
     User,
+    utcnow,
 )
 
 
@@ -280,3 +283,55 @@ def test_people_conflict_update_back_to_pending_clears_the_reviewer(client):
 
 def test_person_reconciliation_error_is_the_documented_exception_type():
     assert issubclass(people_reconcile.PersonReconciliationError, ValueError)
+
+
+def test_owner_curation_approval_rejects_a_changed_census_value(client):
+    make_admin(client)
+    name = "wiki-script-owner-conflict"
+    source_url = "https://en.wikipedia.org/wiki/User:Alice/tool.js"
+    now = utcnow()
+    with db.session_scope() as s:
+        owner = User(wm_sub="wiki-owner", username="Alice")
+        s.add(owner)
+        s.flush()
+        s.add(
+            CanonicalToolCache(
+                tool_name=name,
+                record={"name": name, "title": "Changed census title", "url": source_url},
+                source=sync.SOURCE_WIKI_USERSCRIPT,
+                source_url=source_url,
+                fetched_at=now,
+                expires_at=now,
+                stale_until=now,
+            )
+        )
+        row = CatalogCuration(
+            tool_name=name,
+            created_by_user_id=owner.id,
+            patch={"title": "Owner title"},
+            edit_kind=sync.CURATION_KIND_WIKI_USERSCRIPT_OWNER,
+            owner_proof={"sourceUrl": source_url, "username": "Alice"},
+            base_source_values={"title": "Original census title"},
+            rationale="Correct the listing title.",
+            review_status=sync.REVIEW_PENDING,
+        )
+        s.add(row)
+        s.flush()
+        curation_id = row.id
+
+    queue = client.get("/v1/moderation/public-data/")
+    queued_item = next(
+        item for item in queue.get_json()["results"] if item["id"] == curation_id
+    )
+    assert queued_item["data"]["conflictFields"] == ["title"]
+
+    response = client.put(
+        f"/v1/moderation/public-data/catalog-curations/{curation_id}/",
+        json={"reviewStatus": sync.REVIEW_APPROVED},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["conflictFields"] == ["title"]
+    with db.session_scope() as s:
+        assert s.get(CatalogCuration, curation_id).review_status == sync.REVIEW_PENDING

@@ -44,13 +44,21 @@ from backend.models import (
     WikiGadget,
     utcnow,
 )
-from backend.sync import REVIEW_APPROVED, SOURCE_WIKI_GADGET, SOURCE_WIKI_USERSCRIPT
+from backend.sync import (
+    CURATION_KIND_WIKI_USERSCRIPT_OWNER,
+    REVIEW_APPROVED,
+    SOURCE_WIKI_GADGET,
+    SOURCE_WIKI_USERSCRIPT,
+    public_owner_proof,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 _log = logging.getLogger(__name__)
 
+# 9: Verified owner edits are projected as their own source with revision
+# provenance. Existing rows must be rebuilt so the owner overlay reaches reads.
 # 8: The projection now carries the complete public metadata vocabulary needed
 # by the detail page, including annotation fallbacks and localized URL values.
 # Existing rows must re-project so the new evidence and effective values reach
@@ -71,7 +79,7 @@ _log = logging.getLogger(__name__)
 # 4: purpose annotations (tasks, audiences) are lifted out of `annotations`.
 # Version 3 was already used for Wikimedia user-script maintainership, so
 # existing version-3 rows must all re-project.
-PROJECTION_VERSION = 8
+PROJECTION_VERSION = 9
 # Measured 2026-08-27: this sweep costs 0.046s a tool and was capped at 500,
 # so it finished in 23 seconds of its hour against a catalogue of 53,178. The cap is
 # a safety rail against a runaway loop, not a throughput setting; sized here so
@@ -104,6 +112,7 @@ SOURCE_DISCOVERY = "self_hosted_toolinfo"
 SOURCE_REPOSITORY = "repository_analysis"
 SOURCE_WIKIMEDIA_USER_SCRIPT = "wikimedia_user_script"
 SOURCE_CURATION = "evolved_curation"
+SOURCE_OWNER_CURATION = "verified_wiki_user_script_owner"
 SOURCE_GADGET = "wiki_gadget_definition"
 SOURCE_INFERENCE = "llm_inference"
 SOURCE_WIKI_TALK = "wiki_talk_page"
@@ -237,6 +246,7 @@ URL_FIELDS = frozenset(
     }
     | MULTILINGUAL_URL_FIELDS
 )
+MAX_URL_LENGTH = 2000
 # The background probe stores one checked value per field. Localized fields can
 # contain several URLs, so they receive syntax validation in the projection but
 # are not sent through the single-value reachability cursor.
@@ -249,6 +259,7 @@ SOURCE_CONFIDENCE = {
     SOURCE_REPOSITORY: 75,
     SOURCE_WIKIMEDIA_USER_SCRIPT: 95,
     SOURCE_CURATION: 100,
+    SOURCE_OWNER_CURATION: 100,
     # A wiki is authoritative about what it deploys, so this outranks a
     # toolinfo.json found by guessing at an origin or inferred from a
     # repository. It stays under anything a person wrote about the tool: a
@@ -352,7 +363,7 @@ def _url_validation(value: Any) -> dict[str, Any]:  # noqa: ANN401 - public meta
     return {"valid": True, "state": "syntax_valid"}
 
 
-def _field_validation(field: str, value: Any) -> dict[str, Any]:  # noqa: ANN401 - public metadata
+def field_validation(field: str, value: Any) -> dict[str, Any]:  # noqa: ANN401 - public metadata
     """Validate direct and localized URL claims without flattening their shape."""
     if field not in URL_FIELDS:
         return {"valid": True, "state": "accepted"}
@@ -405,7 +416,7 @@ def validate_curation_patch(value: Any) -> tuple[dict[str, Any], list[dict[str, 
             if not result["valid"]:
                 errors.append({"field": field, "message": str(result.get("reason") or "invalid URL")})
                 continue
-            clean_value = clean_value[:2000]
+            clean_value = clean_value[:MAX_URL_LENGTH]
         patch[field] = clean_value
     if not patch and not errors:
         errors.append({"field": "patch", "message": "patch must contain at least one supported field"})
@@ -626,12 +637,49 @@ def _derived_wiki_sources(record: dict[str, Any], row_source: str, observed: dat
     return derived
 
 
+def _source_value_fingerprint(value: Any) -> str | tuple[str, ...]:  # noqa: ANN401 - canonical cache JSON
+    """Compare census lists without treating a harmless list reordering as a conflict."""
+    if isinstance(value, list):
+        return tuple(
+            sorted(json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) for item in value)
+        )
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def owner_curation_conflicts(canonical: CanonicalToolCache | None, row: CatalogCuration) -> list[str]:
+    """Find owner-edited fields whose source page or census baseline has changed."""
+    patch = row.patch if isinstance(row.patch, dict) else {}
+    fields = sorted(patch)
+    record = canonical.record if canonical is not None and isinstance(canonical.record, dict) else None
+    proof = row.owner_proof if isinstance(row.owner_proof, dict) else {}
+    if (
+        not fields
+        or canonical is None
+        or canonical.source != SOURCE_WIKI_USERSCRIPT
+        or record is None
+        or not proof.get("sourceUrl")
+        or proof.get("sourceUrl") != canonical.source_url
+    ):
+        return fields
+
+    baseline = row.base_source_values if isinstance(row.base_source_values, dict) else {}
+    return [
+        field
+        for field in fields
+        if field not in baseline
+        or _source_value_fingerprint(baseline[field]) != _source_value_fingerprint(record.get(field))
+    ]
+
+
 def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
     s: Session, names: list[str], reports: dict[str, SourceAnalysisReport] | None = None
 ) -> dict[str, list[dict[str, Any]]]:
     sources: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    canonical = s.execute(select(CanonicalToolCache).where(CanonicalToolCache.tool_name.in_(names))).scalars()
-    for row in canonical:
+    canonical_rows = list(
+        s.execute(select(CanonicalToolCache).where(CanonicalToolCache.tool_name.in_(names))).scalars()
+    )
+    canonical_by_name = {row.tool_name: row for row in canonical_rows}
+    for row in canonical_rows:
         if isinstance(row.record, dict):
             source = PROJECTION_SOURCE_BY_ROW.get(row.source, SOURCE_CANONICAL)
             sources[row.tool_name].append(
@@ -700,7 +748,7 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
         .order_by(CatalogCuration.modified_at, CatalogCuration.id)
     ).scalars()
     for row in curations:
-        if isinstance(row.patch, dict):
+        if isinstance(row.patch, dict) and row.edit_kind != CURATION_KIND_WIKI_USERSCRIPT_OWNER:
             sources[row.tool_name].append(
                 {
                     "payload": row.patch,
@@ -710,8 +758,51 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
                 }
             )
 
+    _append_owner_curation_sources(s, names, canonical_by_name, sources)
     _add_inference_sources(s, names, sources)
     return sources
+
+
+def _append_owner_curation_sources(
+    s: Session,
+    names: list[str],
+    canonical_by_name: dict[str, CanonicalToolCache],
+    sources: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Append approved owner revisions only while their wiki source is current."""
+    owner_curations = s.execute(
+        select(CatalogCuration)
+        .where(
+            CatalogCuration.tool_name.in_(names),
+            CatalogCuration.review_status == REVIEW_APPROVED,
+            CatalogCuration.deleted_at.is_(None),
+            CatalogCuration.edit_kind == CURATION_KIND_WIKI_USERSCRIPT_OWNER,
+        )
+        .order_by(CatalogCuration.created_at, CatalogCuration.id)
+    ).scalars()
+    for row in owner_curations:
+        canonical_row = canonical_by_name.get(row.tool_name)
+        if (
+            not isinstance(row.patch, dict)
+            or canonical_row is None
+            or canonical_row.source != SOURCE_WIKI_USERSCRIPT
+            or not isinstance(canonical_row.record, dict)
+        ):
+            continue
+        base_source_values = row.base_source_values if isinstance(row.base_source_values, dict) else {}
+        sources[row.tool_name].append(
+            {
+                "payload": row.patch,
+                "source": SOURCE_OWNER_CURATION,
+                "url": f"/v1/catalog/curations/{row.id}/",
+                "observed": row.reviewed_at or row.modified_at,
+                "revisionId": row.id,
+                "ownerProof": public_owner_proof(row.owner_proof),
+                "baseSourceValues": base_source_values,
+                "currentSourceValues": {field: canonical_row.record.get(field) for field in row.patch},
+                "conflictFields": owner_curation_conflicts(canonical_row, row),
+            }
+        )
 
 
 def _lift_annotations(payload: dict[str, Any]) -> dict[str, Any]:
@@ -758,15 +849,61 @@ def _field_evidence(
             "observedAt": observed,
             "confidence": SOURCE_CONFIDENCE[source],
             "effective": False,
-            **_field_validation(field, value),
+            **field_validation(field, value),
         }
         # Absent unless a source declares one, so every row written before this
         # existed keeps the shape it had and no reader has to tell "no lane"
         # from "the old default".
         if lane := source_row.get("lane"):
             entry["lane"] = lane
+        if source == SOURCE_OWNER_CURATION:
+            entry.update(
+                {
+                    "revisionId": source_row.get("revisionId"),
+                    "ownerProof": source_row.get("ownerProof") or {},
+                    "conflict": field in source_row.get("conflictFields", ()),
+                    "baseSourceValue": source_row.get("baseSourceValues", {}).get(field),
+                    "currentSourceValue": source_row.get("currentSourceValues", {}).get(field),
+                }
+            )
         entries.append(entry)
     return entries
+
+
+def _apply_curation_overlay(
+    effective: dict[str, Any],
+    evidence: dict[str, list[dict[str, Any]]],
+    curations: dict[str, Any],
+    source: str,
+) -> None:
+    """Apply validated local corrections without changing their evidence."""
+    for field, value in curations.items():
+        field_evidence = [item for item in evidence[field] if item["source"] == source]
+        if field not in URL_FIELDS or any(item.get("valid") for item in field_evidence):
+            effective[field] = value
+
+
+def _owner_clear_evidence(
+    field: str, payload: dict[str, Any], source_row: dict[str, Any], observed: str
+) -> dict[str, Any]:
+    """Record an approved owner revision that intentionally clears one field."""
+    entry = _field_evidence(field, [payload[field]], source_row, SOURCE_OWNER_CURATION, observed)[0]
+    entry.update({"cleared": True, "valid": True, "state": "cleared"})
+    entry.pop("reason", None)
+    return entry
+
+
+def _record_curation_overlay(
+    field: str,
+    payload: dict[str, Any],
+    source: str,
+    source_row: dict[str, Any],
+    curation_overlays: dict[str, dict[str, Any]],
+) -> None:
+    """Record the local overlay allowed to replace one field."""
+    target = curation_overlays.get(source)
+    if target is not None and not (source == SOURCE_OWNER_CURATION and field in source_row.get("conflictFields", ())):
+        target[field] = payload.get(field)
 
 
 def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in one ordered pass.
@@ -776,6 +913,8 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
     evidence: dict[str, list[dict[str, Any]]] = defaultdict(list)
     source_timestamps: dict[str, str] = {}
     curations: dict[str, Any] = {}
+    owner_curations: dict[str, Any] = {}
+    curation_overlays = {SOURCE_CURATION: curations, SOURCE_OWNER_CURATION: owner_curations}
 
     # Every asserting source is read before any fill-only one. `effective` keeps
     # the first writer of a scalar, so a fill-only source read early would win a
@@ -795,12 +934,14 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
             if field == "for_wikis" and dbnames:
                 field_values = _canonical_wikis(field_values, dbnames)
             if not field_values:
+                if source == SOURCE_OWNER_CURATION and field in payload:
+                    evidence[field].append(_owner_clear_evidence(field, payload, source_row, observed))
+                    _record_curation_overlay(field, payload, source, source_row, curation_overlays)
                 continue
             field_entries = _field_evidence(field, field_values, source_row, source, observed)
             evidence[field].extend(field_entries)
             valid_values = [entry["value"] for entry in field_entries if entry.get("valid")]
-            if source == SOURCE_CURATION:
-                curations[field] = payload.get(field)
+            _record_curation_overlay(field, payload, source, source_row, curation_overlays)
             if not valid_values:
                 continue
             if fill_only and _values(effective.get(field)):
@@ -825,16 +966,21 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
 
     # Approved local corrections are the only source allowed to replace an
     # existing canonical scalar. Invalid corrections remain evidence only.
-    for field, value in curations.items():
-        field_evidence = [item for item in evidence[field] if item["source"] == SOURCE_CURATION]
-        if field not in URL_FIELDS or any(item.get("valid") for item in field_evidence):
-            effective[field] = value
+    _apply_curation_overlay(effective, evidence, curations, SOURCE_CURATION)
+
+    # Verified owner revisions are a distinct Evolved overlay. They replace
+    # generated values without changing the canonical row or official Toolhub.
+    _apply_curation_overlay(effective, evidence, owner_curations, SOURCE_OWNER_CURATION)
 
     validation: dict[str, dict[str, Any]] = {}
     for field, rows in evidence.items():
         current_values = {_value_key(item) for item in _values(effective.get(field))}
         for item in rows:
-            item["effective"] = item.get("valid", True) and _value_key(item["value"]) in current_values
+            item["effective"] = (
+                item.get("valid", True)
+                and not item.get("conflict", False)
+                and ((item.get("cleared", False) and not current_values) or _value_key(item["value"]) in current_values)
+            )
         effective_rows = [item for item in rows if item["effective"]]
         invalid_rows = [item for item in rows if not item.get("valid", True)]
         validation[field] = {

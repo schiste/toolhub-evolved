@@ -97,6 +97,401 @@ def post_curation(client, name, **kwargs):
     )
 
 
+def add_user_script(name="enwiki-alaexis-ai-source-verification", owner="Alice"):
+    source_url = f"https://en.wikipedia.org/wiki/User:{owner}/verification.js"
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name=name,
+                record={
+                    "name": name,
+                    "title": "Original listing",
+                    "description": "Census description",
+                    "url": source_url,
+                    "license": "MIT",
+                    "keywords": ["verification"],
+                },
+                source=sync.SOURCE_WIKI_USERSCRIPT,
+                source_url=source_url,
+                fetched_at=now,
+                expires_at=now,
+                stale_until=now,
+            )
+        )
+    return source_url
+
+
+def add_verified_wikimedia_binding(uid, global_user_id):
+    from backend.models import Person, PersonAccountBinding
+
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+        user.wikimedia_global_user_id = global_user_id
+        person = Person(canonical_key=f"toolhub:{user.wm_sub}", display_name=user.username)
+        s.add(person)
+        s.flush()
+        for provider, external_id in (("toolhub", user.wm_sub), ("wikimedia", global_user_id)):
+            s.add(
+                PersonAccountBinding(
+                    provider=provider,
+                    external_id=external_id,
+                    person_id=person.id,
+                    status="verified",
+                    proof_method="operator_approved",
+                    confidence=100,
+                )
+            )
+
+
+def test_verified_wiki_script_owner_can_submit_a_metadata_revision(client, monkeypatch):
+    from backend.wikimedia_delivery import WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    source_url = add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    add_verified_wikimedia_binding(uid, "global-9001")
+    sign_in(client, uid)
+    calls = []
+
+    def identity_matches(_self, domain, username, global_user_id=""):
+        calls.append((domain, username, global_user_id))
+        return True
+
+    monkeypatch.setattr(WikimediaClient, "user_identity_matches", identity_matches)
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={
+            "patch": {
+                "title": "Owner-corrected title",
+                "description": "Owner-curated description",
+                "license": "GPL-3.0-or-later",
+                "keywords": ["verification", "accessibility"],
+            },
+            "rationale": "The listing should reflect the current script documentation.",
+        },
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 201
+    item = response.get_json()["item"]["data"]
+    assert item["reviewStatus"] == sync.REVIEW_PENDING
+    assert item["patch"]["title"] == "Owner-corrected title"
+    assert item["ownerProof"]["wiki"] == "en.wikipedia.org"
+    assert item["ownerProof"]["username"] == "Alice"
+    assert calls == [("en.wikipedia.org", "Alice", "global-9001")]
+    with db.session_scope() as s:
+        row = s.get(CatalogCuration, item["id"])
+        assert row.created_by_user_id == uid
+        assert row.base_values["title"] == "Original listing"
+        assert row.owner_proof["sourceUrl"] == source_url
+
+
+def test_verified_wiki_owner_can_submit_a_documentation_link(client, monkeypatch):
+    from backend.wikimedia_delivery import WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    add_verified_wikimedia_binding(uid, "global-9001")
+    sign_in(client, uid)
+    monkeypatch.setattr(WikimediaClient, "user_identity_matches", lambda *_args: True)
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={
+            "patch": {"user_docs_url": [{"language": "en", "url": "https://docs.example/script"}]},
+            "rationale": "The listing should link to the maintained user documentation.",
+        },
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["item"]["data"]["patch"]["user_docs_url"] == [
+        {"language": "en", "url": "https://docs.example/script"}
+    ]
+
+
+@pytest.mark.parametrize(("protected_field", "value"), [("name", "spoofed-name"), ("url", "https://other.example/script.js")])
+def test_owner_edit_rejects_protected_identity_fields_without_creating_revision(client, monkeypatch, protected_field, value):
+    from backend.wikimedia_delivery import WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    add_verified_wikimedia_binding(uid, "global-9001")
+    sign_in(client, uid)
+    monkeypatch.setattr(WikimediaClient, "user_identity_matches", lambda *_args: True)
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={
+            "patch": {"title": "Safe title", protected_field: value},
+            "rationale": "Generated identity and source fields are protected.",
+        },
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 400
+    errors = response.get_json()["validationErrors"]
+    assert {item["field"] for item in errors} == {protected_field}
+    with db.session_scope() as s:
+        assert s.query(CatalogCuration).filter_by(tool_name=name).count() == 0
+
+
+def test_owner_edit_rejects_unsafe_localized_documentation_url(client, monkeypatch):
+    from backend.wikimedia_delivery import WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    add_verified_wikimedia_binding(uid, "global-9001")
+    sign_in(client, uid)
+    monkeypatch.setattr(WikimediaClient, "user_identity_matches", lambda *_args: True)
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={
+            "patch": {"user_docs_url": [{"url": "javascript:alert(1)", "language": "en"}]},
+            "rationale": "Documentation links must use safe web URLs.",
+        },
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 400
+    assert {item["field"] for item in response.get_json()["validationErrors"]} == {"user_docs_url"}
+    with db.session_scope() as s:
+        assert s.query(CatalogCuration).filter_by(tool_name=name).count() == 0
+
+
+def test_owner_edit_rejects_blank_required_title_without_creating_revision(client, monkeypatch):
+    from backend.wikimedia_delivery import WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    add_verified_wikimedia_binding(uid, "global-9001")
+    sign_in(client, uid)
+    monkeypatch.setattr(WikimediaClient, "user_identity_matches", lambda *_args: True)
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={"patch": {"title": ""}, "rationale": "A required title cannot be cleared."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 400
+    assert {item["field"] for item in response.get_json()["validationErrors"]} == {"title"}
+    with db.session_scope() as s:
+        assert s.query(CatalogCuration).filter_by(tool_name=name).count() == 0
+
+
+def test_owner_edit_history_is_scoped_and_surfaces_census_conflicts(client, monkeypatch):
+    from backend.wikimedia_delivery import WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    source_url = add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    add_verified_wikimedia_binding(uid, "global-9001")
+    sign_in(client, uid)
+    monkeypatch.setattr(WikimediaClient, "user_identity_matches", lambda *_args: True)
+    now = utcnow()
+    with db.session_scope() as s:
+        canonical = s.get(CanonicalToolCache, name)
+        canonical.record = {**canonical.record, "title": "New census title"}
+        own = CatalogCuration(
+            tool_name=name,
+            created_by_user_id=uid,
+            patch={"title": "Owner title"},
+            edit_kind=sync.CURATION_KIND_WIKI_USERSCRIPT_OWNER,
+            owner_proof={"sourceUrl": source_url, "username": "Alice"},
+            base_values={"title": "Original listing"},
+            base_source_values={"title": "Original listing"},
+            rationale="Clarify the title.",
+            review_status=sync.REVIEW_APPROVED,
+            created_at=now,
+            modified_at=now,
+        )
+        other = User(wm_sub="other-owner", username="Other")
+        s.add_all([own, other])
+        s.flush()
+        s.add(
+            CatalogCuration(
+                tool_name=name,
+                created_by_user_id=other.id,
+                patch={"title": "Other title"},
+                edit_kind=sync.CURATION_KIND_WIKI_USERSCRIPT_OWNER,
+                owner_proof={"sourceUrl": source_url, "username": "Alice"},
+                base_values={"title": "Original listing"},
+                base_source_values={"title": "Original listing"},
+                rationale="Other person's revision.",
+                review_status=sync.REVIEW_PENDING,
+                created_at=now,
+                modified_at=now,
+            )
+        )
+
+    response = client.get(f"/v1/catalog/tools/{name}/owner-edits/")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert len(body["items"]) == 1
+    data = body["items"][0]["data"]
+    assert data["reviewStatus"] == sync.REVIEW_APPROVED
+    assert data["baseSourceValues"]["title"] == "Original listing"
+    assert data["conflictFields"] == ["title"]
+    assert "globalUserId" not in data["ownerProof"]
+
+
+def test_owner_edit_history_remains_available_when_wikimedia_check_is_unavailable(client, monkeypatch):
+    from backend.wikimedia_delivery import WikimediaAPIError, WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    source_url = add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    add_verified_wikimedia_binding(uid, "global-9001")
+    sign_in(client, uid)
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add(
+            CatalogCuration(
+                tool_name=name,
+                created_by_user_id=uid,
+                patch={"title": "Pending owner title"},
+                edit_kind=sync.CURATION_KIND_WIKI_USERSCRIPT_OWNER,
+                owner_proof={"sourceUrl": source_url, "username": "Alice"},
+                base_values={"title": "Original listing"},
+                base_source_values={"title": "Original listing"},
+                rationale="Clarify the title.",
+                review_status=sync.REVIEW_PENDING,
+                created_at=now,
+                modified_at=now,
+            )
+        )
+
+    def unavailable(*_args):
+        raise WikimediaAPIError("transport", "Wikimedia is unavailable")
+
+    monkeypatch.setattr(WikimediaClient, "user_identity_matches", unavailable)
+
+    response = client.get(f"/v1/catalog/tools/{name}/owner-edits/")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["canEdit"] is False
+    assert body["reason"] == "wikimedia_identity_unavailable"
+    assert len(body["items"]) == 1
+    assert body["items"][0]["data"]["reviewStatus"] == sync.REVIEW_PENDING
+    assert body["items"][0]["data"]["patch"]["title"] == "Pending owner title"
+
+
+def test_display_name_without_verified_wikimedia_binding_cannot_submit_owner_edit(client, monkeypatch):
+    from backend.wikimedia_delivery import WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name, owner="Alice")
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    sign_in(client, uid)
+    calls = []
+    monkeypatch.setattr(
+        WikimediaClient,
+        "user_identity_matches",
+        lambda _self, *args: calls.append(args) or True,
+    )
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={"patch": {"title": "Unverified title"}, "rationale": "Display name is not identity."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 403
+    assert calls == []
+
+
+def test_verified_toolhub_and_wikimedia_bindings_must_share_one_person(client, monkeypatch):
+    from backend.identity_graph import PROVIDER_TOOLHUB, PROVIDER_WIKIMEDIA
+    from backend.models import Person, PersonAccountBinding
+    from backend.wikimedia_delivery import WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+        user.wikimedia_global_user_id = "global-9001"
+        toolhub_person = Person(canonical_key="toolhub:toolhub-42", display_name="Alice")
+        wikimedia_person = Person(canonical_key="wikimedia:global-9001", display_name="Alice")
+        s.add_all([toolhub_person, wikimedia_person])
+        s.flush()
+        s.add_all(
+            [
+                PersonAccountBinding(
+                    provider=PROVIDER_TOOLHUB,
+                    external_id="toolhub-42",
+                    person_id=toolhub_person.id,
+                    status="verified",
+                    proof_method="operator_approved",
+                    confidence=100,
+                ),
+                PersonAccountBinding(
+                    provider=PROVIDER_WIKIMEDIA,
+                    external_id="global-9001",
+                    person_id=wikimedia_person.id,
+                    status="verified",
+                    proof_method="operator_approved",
+                    confidence=100,
+                ),
+            ]
+        )
+    sign_in(client, uid)
+    calls = []
+    monkeypatch.setattr(
+        WikimediaClient,
+        "user_identity_matches",
+        lambda _self, *args: calls.append(args) or True,
+    )
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={"patch": {"title": "Split identity"}, "rationale": "Bindings must share one person."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 403
+    assert calls == []
+    with db.session_scope() as s:
+        assert s.query(CatalogCuration).filter_by(tool_name=name).count() == 0
+
+
+def test_verified_binding_for_another_wiki_identity_cannot_submit_owner_edit(client, monkeypatch):
+    from backend.wikimedia_delivery import WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    add_verified_wikimedia_binding(uid, "global-9001")
+    sign_in(client, uid)
+    calls = []
+
+    def identity_matches(_self, domain, username, global_user_id=""):
+        calls.append((domain, username, global_user_id))
+        return False
+
+    monkeypatch.setattr(WikimediaClient, "user_identity_matches", identity_matches)
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={"patch": {"title": "Impersonated title"}, "rationale": "Testing the owner boundary."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 403
+    assert calls == [("en.wikipedia.org", "Alice", "global-9001")]
+    with db.session_scope() as s:
+        assert s.query(CatalogCuration).filter_by(tool_name=name).count() == 0
+
+
 def test_catalog_health_is_a_local_cacheable_response(client, monkeypatch):
     monkeypatch.setattr(catalog_read, "replica_status", lambda: {"status": "idle"})
 

@@ -153,6 +153,111 @@ def link_person(uid, *, tool_name="alpha-tool", uncached_tool_name=None):
 
 
 # ---------------------------------------------------------------------------
+# v1_me_wiki_user_scripts
+
+
+def test_me_wiki_user_scripts_lists_username_candidates_without_claiming_verification(client):
+    from backend import catalog_projection
+    from backend.models import CatalogToolProjection, UserScriptDirectoryEntry
+    from backend.sync import SOURCE_WIKI_USERSCRIPT
+    from backend.userscript_toolinfo import tool_name
+
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    sign_in(client, uid)
+    alice_name = tool_name("enwiki", "Alice", "verification.js")
+    bob_name = tool_name("enwiki", "Bob", "other.js")
+    official_name = "official-alice-tool"
+    alice_url = "https://en.wikipedia.org/wiki/User:Alice/verification.js"
+    now = utcnow()
+
+    def cached_tool(name, record, source, source_url):
+        return CanonicalToolCache(
+            tool_name=name,
+            record=record,
+            source=source,
+            source_url=source_url,
+            expires_at=now + timedelta(days=1),
+            stale_until=now + timedelta(days=2),
+        )
+
+    with db.session_scope() as session:
+        session.add_all(
+            [
+                UserScriptDirectoryEntry(
+                    wiki="enwiki", title="User:Alice/verification.js", owner="Alice", basename="verification.js", tier="active"
+                ),
+                UserScriptDirectoryEntry(
+                    wiki="enwiki", title="User:Bob/other.js", owner="Bob", basename="other.js", tier="active"
+                ),
+                UserScriptDirectoryEntry(
+                    wiki="enwiki", title="User:Alice/official.js", owner="Alice", basename="official.js", tier="active"
+                ),
+                cached_tool(
+                    alice_name,
+                    {
+                        "name": alice_name,
+                        "title": "Verification helper",
+                        "description": "Census description",
+                        "license": "GPL-3.0-or-later",
+                        "keywords": ["verification"],
+                        "url": alice_url,
+                    },
+                    SOURCE_WIKI_USERSCRIPT,
+                    alice_url,
+                ),
+                cached_tool(
+                    bob_name,
+                    {"name": bob_name, "title": "Bob's helper", "url": "https://en.wikipedia.org/wiki/User:Bob/other.js"},
+                    SOURCE_WIKI_USERSCRIPT,
+                    "https://en.wikipedia.org/wiki/User:Bob/other.js",
+                ),
+                cached_tool(
+                    official_name,
+                    {"name": official_name, "title": "Official record", "url": "https://tools.example/official"},
+                    "official",
+                    "https://tools.example/official",
+                ),
+                CatalogToolProjection(
+                    tool_name=alice_name,
+                    effective_record={
+                        "name": alice_name,
+                        "title": "Evolved-curated title",
+                        "description": "Approved local description",
+                        "license": "GPL-3.0-or-later",
+                        "keywords": ["verification", "evolved"],
+                        "url": alice_url,
+                    },
+                    provenance={
+                        "title": [
+                            {
+                                "source": catalog_projection.SOURCE_OWNER_CURATION,
+                                "value": "Evolved-curated title",
+                                "effective": True,
+                            }
+                        ]
+                    },
+                    projection_version=catalog_projection.PROJECTION_VERSION,
+                ),
+            ]
+        )
+
+    response = client.get("/v1/me/wiki-user-scripts/")
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "private, no-store"
+    body = response.get_json()
+    assert len(body["entries"]) == 1
+    entry = body["entries"][0]
+    assert entry["toolName"] == alice_name
+    assert entry["owner"] == "Alice"
+    assert entry["sourceUrl"] == alice_url
+    assert entry["sourceMetadata"]["title"] == "Verification helper"
+    assert entry["currentMetadata"]["title"] == "Evolved-curated title"
+    assert entry["currentMetadata"]["license"] == "GPL-3.0-or-later"
+    assert entry["verificationRequired"] is True
+
+
+# ---------------------------------------------------------------------------
 # v1_me_tools / _canonical_account_tools
 
 

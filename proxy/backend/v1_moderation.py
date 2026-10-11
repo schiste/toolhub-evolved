@@ -19,6 +19,7 @@ from backend import (
 )
 from backend import v1_common as common
 from backend.models import (
+    CanonicalToolCache,
     CatalogCuration,
     Person,
     PersonReconciliationConflict,
@@ -31,6 +32,7 @@ from backend.models import (
 )
 from backend.security import login_required, write_guard
 from backend.sync import (
+    CURATION_KIND_WIKI_USERSCRIPT_OWNER,
     REVIEW_APPROVED,
     REVIEW_PENDING,
     SOURCE_LOCAL,
@@ -238,6 +240,25 @@ def _moderation_row(s: Any, kind: str, item_id: int) -> object | None:  # noqa: 
     return s.get(MODERATION_MODELS[kind], item_id)
 
 
+def _apply_public_review_status(row: Any, reviewer_id: int, review_status: str) -> None:  # noqa: ANN401 - mixed moderation row models
+    row.review_status = review_status
+    if isinstance(row, CatalogCuration):
+        row.reviewed_by_user_id = reviewer_id
+        row.reviewed_at = utcnow()
+        row.source = SOURCE_LOCAL
+        row.sync_status = SYNC_EVOLVED_REAL
+    elif isinstance(row, ToolRecord):
+        row.source = SOURCE_LOCAL
+        row.sync_status = SYNC_EVOLVED_REAL
+        if review_status == REVIEW_APPROVED:
+            row.visibility = common.VISIBILITY_PUBLIC
+    elif isinstance(row, ToolHealthTarget):
+        row.source = SOURCE_LOCAL
+        row.sync_status = SYNC_EVOLVED_REAL
+    else:
+        row.sync_status = SYNC_EVOLVED_REAL
+
+
 def _moderation_row_visible(kind: str, row: object | None) -> bool:
     if row is None:
         return False
@@ -248,6 +269,35 @@ def _moderation_row_visible(kind: str, row: object | None) -> bool:
     return True
 
 
+def _public_moderation_item(session: Any, kind: str, row: object) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy session API
+    item = common.moderation_item(kind, row)
+    if isinstance(row, CatalogCuration) and row.edit_kind == CURATION_KIND_WIKI_USERSCRIPT_OWNER:
+        canonical = session.get(CanonicalToolCache, row.tool_name)
+        item["data"]["conflictFields"] = catalog_projection.owner_curation_conflicts(canonical, row)
+    return item
+
+
+def _owner_curation_conflict_response(session: Any, row: object, review_status: str) -> Response | None:  # noqa: ANN401 - SQLAlchemy session API
+    if (
+        not isinstance(row, CatalogCuration)
+        or row.edit_kind != CURATION_KIND_WIKI_USERSCRIPT_OWNER
+        or review_status != REVIEW_APPROVED
+    ):
+        return None
+    canonical = session.get(CanonicalToolCache, row.tool_name)
+    conflict_fields = catalog_projection.owner_curation_conflicts(canonical, row)
+    if not conflict_fields:
+        return None
+    response = jsonify(
+        {
+            "error": "owner edit conflicts with current wiki census values; submit a fresh revision",
+            "conflictFields": conflict_fields,
+        }
+    )
+    response.status_code = common.HTTP_CONFLICT
+    return response
+
+
 @v1_moderation_bp.route("/v1/moderation/public-data/")
 @login_required
 def v1_moderation_public_data() -> Response:
@@ -256,7 +306,7 @@ def v1_moderation_public_data() -> Response:
     with db.session_scope() as s:
         items = [
             *[
-                common.moderation_item("catalog-curations", row)
+                _public_moderation_item(s, "catalog-curations", row)
                 for row in s.execute(
                     select(CatalogCuration)
                     .where(CatalogCuration.deleted_at.is_(None), CatalogCuration.review_status == REVIEW_PENDING)
@@ -334,22 +384,9 @@ def v1_moderation_public_data_update(kind: str, item_id: int) -> Response:
         if not _moderation_row_visible(kind, row):
             return common.deny(common.HTTP_NOT_FOUND, "moderation record not found")
         assert row is not None  # noqa: S101 - visible check excludes None
-        row.review_status = str(review_status)
-        if isinstance(row, CatalogCuration):
-            row.reviewed_by_user_id = user.id
-            row.reviewed_at = utcnow()
-            row.source = SOURCE_LOCAL
-            row.sync_status = SYNC_EVOLVED_REAL
-        elif isinstance(row, ToolRecord):
-            row.source = SOURCE_LOCAL
-            row.sync_status = SYNC_EVOLVED_REAL
-            if review_status == REVIEW_APPROVED:
-                row.visibility = common.VISIBILITY_PUBLIC
-        elif isinstance(row, ToolHealthTarget):
-            row.source = SOURCE_LOCAL
-            row.sync_status = SYNC_EVOLVED_REAL
-        else:
-            row.sync_status = SYNC_EVOLVED_REAL
+        if conflict_response := _owner_curation_conflict_response(s, row, str(review_status)):
+            return conflict_response
+        _apply_public_review_status(row, user.id, str(review_status))
         s.flush()
         item = common.moderation_item(kind, row)
         common.emit_structured_activity(
