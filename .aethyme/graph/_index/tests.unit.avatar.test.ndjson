@@ -1,0 +1,12 @@
+{"module":"tests.unit.avatar.test","symbol":"AVATAR_COLORS","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:wypsu5c2yy2aqazw76j2n7clfu","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"COLORS","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:a2jxhzdtzkjonectgts6tjavzq","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"ICON_META_CACHE_MAX","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:w4yijigdoccumtl6heiubmxzoe","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"RESIDUE_INPUT","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:c6zjl3f5yqamstzfodhalbsbl4","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"assert","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:pfrv2bvlzmhgdwsz5efuipnrom","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"avatar","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:w7udimsbbh3fb3byp4lgicuwga","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"commonsThumb","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:unyo63hhcsixgqotdan3vdhtja","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"iconImg","kind":"function","node_id":"function:schiste/toolhub-evolved:jcdesglyomeg4veupz2c7imo2a","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"iconMeta","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:wxzjrzkqypvmuhosfomdr6767i","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"initIconFallbacks","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:qbox5supj7tvhuslhajqsz7cce","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:khnp7eiskqi2degbdv3y7fe2ze","file":"tests/unit/avatar.test.mjs"}
+{"module":"tests.unit.avatar.test","symbol":"toolIcon","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:aw5fygdgnhgoee7ndt7lzyvnj4","file":"tests/unit/avatar.test.mjs"}

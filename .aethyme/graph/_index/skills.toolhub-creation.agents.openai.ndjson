@@ -1,0 +1,4 @@
+{"module":"skills.toolhub-creation.agents.openai","symbol":"interface.default_prompt","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:t6pq3i5efa7xpkkdbjxwpjlu4u","file":"skills/toolhub-creation/agents/openai.yaml"}
+{"module":"skills.toolhub-creation.agents.openai","symbol":"interface.display_name","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:eqcbocs3avcmjsmoyixj2icm2y","file":"skills/toolhub-creation/agents/openai.yaml"}
+{"module":"skills.toolhub-creation.agents.openai","symbol":"interface.short_description","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:j5cmldoeyg7qyreuhaapm3dlxa","file":"skills/toolhub-creation/agents/openai.yaml"}
+{"module":"skills.toolhub-creation.agents.openai","symbol":"policy.allow_implicit_invocation","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:pijiudldf5ekbseca2wwuadnha","file":"skills/toolhub-creation/agents/openai.yaml"}

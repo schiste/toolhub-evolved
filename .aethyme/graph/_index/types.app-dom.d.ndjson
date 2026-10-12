@@ -1,2 +1,2 @@
-{"module":"types.app-dom.d","symbol":"Element","kind":"interface","node_id":"interface:toolhub-evolved:n4wfgmdehph636is4yto7jzyti","file":"types/app-dom.d.ts"}
-{"module":"types.app-dom.d","symbol":"EventTarget","kind":"interface","node_id":"interface:toolhub-evolved:xfajbwpekdotlyxffombwabcfq","file":"types/app-dom.d.ts"}
+{"module":"types.app-dom.d","symbol":"Element","kind":"interface","node_id":"interface:schiste/toolhub-evolved:pakzw4maebj7xlbf2hupfp7rfu","file":"types/app-dom.d.ts"}
+{"module":"types.app-dom.d","symbol":"EventTarget","kind":"interface","node_id":"interface:schiste/toolhub-evolved:qmo4nnothoyw3twiwfjehchcwi","file":"types/app-dom.d.ts"}

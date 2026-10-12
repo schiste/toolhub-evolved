@@ -1,0 +1,10 @@
+{"module":"tests.unit.savemenu.test","symbol":"LISTS_KEY","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:5icva2llp5tbsuv22i7tplwrcy","file":"tests/unit/savemenu.test.mjs"}
+{"module":"tests.unit.savemenu.test","symbol":"afterEach","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:dquolliieos3pzrgp5ulyv6vqy","file":"tests/unit/savemenu.test.mjs"}
+{"module":"tests.unit.savemenu.test","symbol":"assert","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:qtppuys7lemr22kwjuvttoaecu","file":"tests/unit/savemenu.test.mjs"}
+{"module":"tests.unit.savemenu.test","symbol":"beforeEach","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:zdbmss364zaqshk5oqx5hwgnkm","file":"tests/unit/savemenu.test.mjs"}
+{"module":"tests.unit.savemenu.test","symbol":"icon","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:437t6jxgj27m7hwxwbmudtuxb4","file":"tests/unit/savemenu.test.mjs"}
+{"module":"tests.unit.savemenu.test","symbol":"installStorage","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:3qkoxfjx6h2mhs6cehfz57zraq","file":"tests/unit/savemenu.test.mjs"}
+{"module":"tests.unit.savemenu.test","symbol":"saveToListControl","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:tlxyrstpnkhiedvjqxgrtgt66y","file":"tests/unit/savemenu.test.mjs"}
+{"module":"tests.unit.savemenu.test","symbol":"store","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:glfhk4vkhm2a3f2womnez7l5ea","file":"tests/unit/savemenu.test.mjs"}
+{"module":"tests.unit.savemenu.test","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:7xol47impg3pvwsce4m4rfr7yu","file":"tests/unit/savemenu.test.mjs"}
+{"module":"tests.unit.savemenu.test","symbol":"wrap","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:p7kzybo5xbbil43gxyxa4uzphm","file":"tests/unit/savemenu.test.mjs"}

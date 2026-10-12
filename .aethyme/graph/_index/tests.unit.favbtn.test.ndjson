@@ -1,0 +1,11 @@
+{"module":"tests.unit.favbtn.test","symbol":"FAV_KEY","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:cnuc6lirfasqjr53asu3ujyhfe","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"afterEach","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:f6bhbfikjfrlr6u2ornsyj6tg4","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"assert","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:cgzof4otxul2t6r7667qfjfszm","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"beforeEach","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:u4euzmdyu3l5tehmkkxludg3ei","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"favBtn","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:sohlxfm5cwsjptiazta7ik7oiy","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"icon","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ugaog4xtitybjf6ortogxqunwa","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"installStorage","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:djclnmv3agouaazpyt23bomvdm","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"norm","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:lhyggusjbiuhwagr5fupbpjlo4","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"store","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:d2ynwztjsircj7jo4yzh7cdcbi","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"syncFavButtons","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:sjthgl2gi25r7svoafzfdmad7q","file":"tests/unit/favbtn.test.mjs"}
+{"module":"tests.unit.favbtn.test","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:btstsx4whvq3gnwwdrwgzz766q","file":"tests/unit/favbtn.test.mjs"}

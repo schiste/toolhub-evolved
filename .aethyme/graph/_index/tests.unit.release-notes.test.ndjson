@@ -1,0 +1,11 @@
+{"module":"tests.unit.release-notes.test","symbol":"assert","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:gkqxrhfl5z55ieejqk7nijmwr4","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"h","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:lsfs6z3cdnbxcqc6fwqspkdf6q","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"localStorage.clear","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:7c4bra7fxngstkzo22ksyqux7m","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"mountWhatsNew","kind":"function","node_id":"function:schiste/toolhub-evolved:5akvmyn6m422w7oca3bcuwsdei","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"releaseNoteItems","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:elttlnspzhdwpcrfs3q7l5im5q","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"releaseNotesHTML","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:vds35zyppcbznh6wtoeeqwuewi","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:r4gtmb3unacum2fgpe5x5cjdum","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"vi","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:egyvwjeejkjotubniyd42yq35u","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"viewChangelog","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:kccb7akwbhddj5r7uypblghiea","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"whatsNew","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:d7gqba76lko7zjcuxxdwnywzgu","file":"tests/unit/release-notes.test.mjs"}
+{"module":"tests.unit.release-notes.test","symbol":"whatsNew.resetWhatsNewForTests","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:iudwhqvadkh43u3qqggwgrsp2e","file":"tests/unit/release-notes.test.mjs"}

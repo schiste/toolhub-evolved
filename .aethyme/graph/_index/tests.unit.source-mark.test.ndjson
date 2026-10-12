@@ -1,0 +1,6 @@
+{"module":"tests.unit.source-mark.test","symbol":"MIXED_KEYWORDS","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:mlnubcqtsb24fjotprxmg3gqfe","file":"tests/unit/source-mark.test.mjs"}
+{"module":"tests.unit.source-mark.test","symbol":"assert","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:7iordbpepuevyichsn3l2mbw7m","file":"tests/unit/source-mark.test.mjs"}
+{"module":"tests.unit.source-mark.test","symbol":"projectionFor","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:pmlphqaqy7wjkoknmuc5uxi47e","file":"tests/unit/source-mark.test.mjs"}
+{"module":"tests.unit.source-mark.test","symbol":"sourceMark","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:gpifx7tmun4zpx3uxcvwrg4cki","file":"tests/unit/source-mark.test.mjs"}
+{"module":"tests.unit.source-mark.test","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:qzwpijsitaek7nqz2jzlt7ltrq","file":"tests/unit/source-mark.test.mjs"}
+{"module":"tests.unit.source-mark.test","symbol":"valueMark","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:vz4fmvtc3vbzjb7elo42pee7zu","file":"tests/unit/source-mark.test.mjs"}

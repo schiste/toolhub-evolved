@@ -1,0 +1,18 @@
+{"module":"docs.RUNBOOK","symbol":"Backups & restore","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:7ljb5v4kdq236ijdyg5t7fgvde","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Configuration (env vars)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:vgkihegw4vundm3kygsivwxthe","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Database (ToolsDB)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:2xjlwmmf75iud24t2y3nco6lti","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Deploy / rollback","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:jwncfyyfgdcwe5usx27775hpn4","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Evolved-Owned Backend Data","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:arxadf7mav6wmiw5hd67h75lti","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Evolved-local roles and permissions","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:7mkb27prmekybqmpdb647pvuky","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Frontend provenance contract","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:m254dv5lbnjqpocdxwt46r547y","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"GitHub issue hygiene","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:hv34fan5nibsqte44o7gochrtq","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Incidents","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:txqcskji4gsovmfr4lyzuvot6i","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Logs","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:rl3m6zm767bxkzimn32caflwti","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Monitoring","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:agfxlf4v6oar6xdpgok4vwmzv4","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Public-data moderation","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:vlf4txajolhcb2fc2w2vklw57m","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Rebuild the Aethyme graph","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:ysznpyhsiiw36np5hnfbd3sjgq","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Runbook — operating Toolhub Evolved in production","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:prhxkzcvwsll5uq52hxu3zuvdu","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Scheduled jobs","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:cv4pkzl6ahgdvwythnhpnzkm3m","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Service-level objectives","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:o7ffkessdshj6jzzg5xgdydbua","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Stored Toolhub grants (encryption at rest)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:uw5l7igh5o3hmw7embvodfpnmu","file":"docs/RUNBOOK.md"}
+{"module":"docs.RUNBOOK","symbol":"Toolhub OAuth application (one-time)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:htid6fctfzmsjctlwfxqzztvle","file":"docs/RUNBOOK.md"}

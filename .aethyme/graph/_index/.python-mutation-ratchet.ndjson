@@ -1,1 +1,9 @@
-{"module":".python-mutation-ratchet","symbol":"env:\"authentication\"","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:tueasons3awdtotvrcwkner2xi","file":".python-mutation-ratchet.json"}
+{"module":".python-mutation-ratchet","symbol":"areaMinimumScores.authentication","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:tmgp2w4mp4cl24db6licyzzhqe","file":".python-mutation-ratchet.json"}
+{"module":".python-mutation-ratchet","symbol":"areaMinimumScores.dataIntegrity","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:rpjr5q5d5bjgk2cjtec4r7wnby","file":".python-mutation-ratchet.json"}
+{"module":".python-mutation-ratchet","symbol":"areaMinimumScores.outboundIo","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:dif6eeiw2uxx7qexdurzwmv6bu","file":".python-mutation-ratchet.json"}
+{"module":".python-mutation-ratchet","symbol":"env:\"authentication\"","kind":"credential_operation","node_id":"credential_operation:schiste/toolhub-evolved:d4tfrayoxe5wku26wrk5qyxotu","file":".python-mutation-ratchet.json"}
+{"module":".python-mutation-ratchet","symbol":"maximumInterrupted","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:36apob7mi2bpclj7ff5lhfussq","file":".python-mutation-ratchet.json"}
+{"module":".python-mutation-ratchet","symbol":"maximumNoTests","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:iv5sxgta3mancrvt5kixc6pqxm","file":".python-mutation-ratchet.json"}
+{"module":".python-mutation-ratchet","symbol":"maximumSegfault","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:eiykmifububsiupfrrvyu34x7u","file":".python-mutation-ratchet.json"}
+{"module":".python-mutation-ratchet","symbol":"maximumSuspicious","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:ygik72y2iabi5eseltpejorz54","file":".python-mutation-ratchet.json"}
+{"module":".python-mutation-ratchet","symbol":"minimumScore","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:ow52a4z55k3gd7eta5lzwohumq","file":".python-mutation-ratchet.json"}

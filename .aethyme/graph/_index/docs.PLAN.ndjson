@@ -1,0 +1,20 @@
+{"module":"docs.PLAN","symbol":"0. North star and the two lanes","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:vzx4g2rrccjiwk4ju75q2gkjna","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"1. Baseline — what is already true today","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:vpg7fd4t7oywn4hrt4fh6625x4","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"2. Lane A — Shipping interface (live Toolhub data, no feature flag)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:bkpfmcnzl4voqpm67xvbfjrgyu","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"2.1 Correctness — DONE (baseline quality bar)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:si6wplxcog6nnw3sis6u6jn4se","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"2.2 Internationalization","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:uxy5yam2ik4y64pzkhuqggg25i","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"2.3 Accessibility","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:xmcut2mzm2j4kxhvubikcbdvuy","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"2.4 Polish & performance","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:c5veaqpcggrcaynoirlxw36cbm","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"3. Lane B — Hybrid Evolved Layer (default-on, labeled local data)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:5pkbg2l5td2gnlvqqjh4s6dr2y","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"3.1 The mechanism — live Toolhub base + Evolved backend overlays","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:rosf7kqslnh2cxz4fabl4ultpy","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"3.2 Features","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:ngp6lgdbvoiy7dlzgd7t4rhchm","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"3.3 Route & chrome behavior","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:i4nuhs2z437ejxjtn46ars3pna","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"3.4 The site notice + \"Rules of Engagement\" page","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:6fj54m4jpjlfn3fz4qzbtg6i5a","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"4. Frontend/backend code shape","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:gvxispc5433q6aib5s4n2gfbju","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"5. Foundation Status","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:7zri27ulh54qq2flfrwmu2coi4","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"6. Risks","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:drgfp2k7glmhkq3ozyc4dlz47a","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"7. Out of scope / Deferred","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:miivycdaku4kzgh6yztqen6dxu","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"8. Decisions — Current","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:rfjhqhexvmo5y2eaxfcqotsh6m","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"Appendix A — Toolhub endpoint/field reference (the contract Lane B imitates)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:6ycwvwztmsyq5ftrb4uuhg3sni","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"Appendix B — i18n / a11y detail","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:6yytcan4kuidk54dikuw7gcvya","file":"docs/PLAN.md"}
+{"module":"docs.PLAN","symbol":"Toolhub Evolved — Comprehensive Plan","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:ekaxkaamvyjrd6ghdxws7v7hfi","file":"docs/PLAN.md"}

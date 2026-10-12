@@ -1,1 +1,2 @@
-{"module":"stylelint.config","symbol":"issue:// Properties that must reference a design token (var(--…)) rather than a raw","kind":"credential_operation","node_id":"credential_operation:toolhub-evolved:5x6xxmvzu43jcgr52cqy3y4cne","file":"stylelint.config.mjs"}
+{"module":"stylelint.config","symbol":"issue:// Properties that must reference a design token (var(--…)) rather than a raw","kind":"credential_operation","node_id":"credential_operation:schiste/toolhub-evolved:pey7fika3qews65oczehrftxka","file":"stylelint.config.mjs"}
+{"module":"stylelint.config","symbol":"tokenizedProperties","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:7ztvjkul55eladr6k4ntznghre","file":"stylelint.config.mjs"}

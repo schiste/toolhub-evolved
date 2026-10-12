@@ -1,0 +1,8 @@
+{"module":"stryker.conf","symbol":"$schema","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:mm4i3iwnybz7af5mcshqqm4ane","file":"stryker.conf.json"}
+{"module":"stryker.conf","symbol":"_comment","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:icclouvaj2o45ypnryeqyyiu7u","file":"stryker.conf.json"}
+{"module":"stryker.conf","symbol":"_thresholds_note","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:opdhncyewpalm3buoggifgxidi","file":"stryker.conf.json"}
+{"module":"stryker.conf","symbol":"coverageAnalysis","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:lq5ismw5xdput3dcnjkyajnpve","file":"stryker.conf.json"}
+{"module":"stryker.conf","symbol":"mutate.[0]","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:ggo3kvm3omlapxnzntcthfoovu","file":"stryker.conf.json"}
+{"module":"stryker.conf","symbol":"reporters.[0]","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:kdurjyg5x5cbzwqkxi64dwteri","file":"stryker.conf.json"}
+{"module":"stryker.conf","symbol":"reporters.[1]","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:n7jkgmefvjqiqvocvrguzdbad4","file":"stryker.conf.json"}
+{"module":"stryker.conf","symbol":"testRunner","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:alcfwi4uprauoxc7lzqvxytfuq","file":"stryker.conf.json"}

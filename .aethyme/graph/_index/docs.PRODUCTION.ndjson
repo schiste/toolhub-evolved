@@ -1,0 +1,18 @@
+{"module":"docs.PRODUCTION","symbol":"0. The decision this plan implements","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:l3kvxptwop372v4gdlkeo2lnia","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"1. Product architecture — \"local replica + local overlay + official bridge\"","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:app3kj2ssbrilqz5aem4kap3py","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"2. What changes in the frontend","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:pn7aecapbknai5tcawwyonjh2m","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"3. Phases","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:g3s4v7qoveh4pmjs52czzqn6ey","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"4. Toolforge specifics & quotas","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:ycspvfcg5syj5hns5bbr6ej3na","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"5. Risks","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:6xdbyc3qjenjcyk5wpe7j2fbue","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"6. Explicit non-goals","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:ipp3pcpr5dqrufbofq7bvssxxa","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"Components","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:wb4kndrfkrri5fmy27tpxpooia","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"Implementation status (2026-07-27)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:2l6j3ooiuwnvkt7pwp2tm5tamq","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"P0 — Launch blockers: finish Lane A i18n & a11y (~2 weeks) — BLOCKS EVERYTHING USER-FACING","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:l3mnwqeifuzbob5sfqxdfz2lae","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"P1 — Backend foundation (~2 weeks; can start in parallel with P0)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:47vi5pjfmoqcepkrhwqhlpeuji","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"P2 — First real features: favorites + lists (~1.5 weeks)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:q6indemfovukpwymw5y4vvo7zy","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"P3 — Tool submit / edit / annotations (~2 weeks)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:k4floqq5pkleomhivq6ise2era","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"P4 — Crawler (~1.5 weeks)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:iqcmqwu7ph5tk3gp22g2tfcbd4","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"P5 — Search that includes our tools (~1–2 weeks)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:fpfn2owkfng52f2lvncywd2ktq","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"P6 — Production hardening & launch (~1–2 weeks)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:df5uziba4yxo6lx3q3mhbi6y3y","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"Production Plan — Toolhub Evolved beside Toolhub","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:2vs6sgalvu5hg5imfewog6w74a","file":"docs/PRODUCTION.md"}
+{"module":"docs.PRODUCTION","symbol":"The two-catalog question (biggest product risk — decided up front)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:ob6iapsb7tgs2whqurrphwdnoa","file":"docs/PRODUCTION.md"}

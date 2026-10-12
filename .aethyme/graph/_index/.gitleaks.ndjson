@@ -1,1 +1,5 @@
-{"module":".gitleaks","symbol":"proxy:# Extends the upstream default ruleset (the standard, maintained set of","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:amorib7kgsxyhoxfwx2ykpk4sy","file":".gitleaks.toml"}
+{"module":".gitleaks","symbol":"allowlists.condition","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:vcco7lnpjfmrmgtm42cc5e6inu","file":".gitleaks.toml"}
+{"module":".gitleaks","symbol":"allowlists.description","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:rql6ar7tu76bvvl3oehf7it53i","file":".gitleaks.toml"}
+{"module":".gitleaks","symbol":"extend.useDefault","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:vezyrrrrrzrpine5jfpgbufwke","file":".gitleaks.toml"}
+{"module":".gitleaks","symbol":"proxy:# Extends the upstream default ruleset (the standard, maintained set of","kind":"proxy_surface","node_id":"proxy_surface:schiste/toolhub-evolved:hj7fe2aqzeqxymbzuhrohdbfey","file":".gitleaks.toml"}
+{"module":".gitleaks","symbol":"title","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:52deafoaa4oyffhfzw3zvxdc2q","file":".gitleaks.toml"}

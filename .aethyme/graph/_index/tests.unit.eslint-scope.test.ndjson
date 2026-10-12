@@ -1,0 +1,8 @@
+{"module":"tests.unit.eslint-scope.test","symbol":"ESLint","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:jdrghubvdsw3umrfkye7slnr4m","file":"tests/unit/eslint-scope.test.mjs"}
+{"module":"tests.unit.eslint-scope.test","symbol":"ROOT","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:eadfwgi5cybg7hltdy5jsyliom","file":"tests/unit/eslint-scope.test.mjs"}
+{"module":"tests.unit.eslint-scope.test","symbol":"assert","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:rt23xnmldezl6iq2ngprlrn5du","file":"tests/unit/eslint-scope.test.mjs"}
+{"module":"tests.unit.eslint-scope.test","symbol":"eslint","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:ehnsu54uhpjwv5s7qdcjzyazoy","file":"tests/unit/eslint-scope.test.mjs"}
+{"module":"tests.unit.eslint-scope.test","symbol":"execFileSync","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:djtllobyukfjwbjqxc2fsavm4i","file":"tests/unit/eslint-scope.test.mjs"}
+{"module":"tests.unit.eslint-scope.test","symbol":"fileURLToPath","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:d255s3eriimlneqnzixd6iwnji","file":"tests/unit/eslint-scope.test.mjs"}
+{"module":"tests.unit.eslint-scope.test","symbol":"path","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:73neol42czxuvzev7loy4sn6n4","file":"tests/unit/eslint-scope.test.mjs"}
+{"module":"tests.unit.eslint-scope.test","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:p5i2tm7a4r2vxwy5smpn3jecey","file":"tests/unit/eslint-scope.test.mjs"}

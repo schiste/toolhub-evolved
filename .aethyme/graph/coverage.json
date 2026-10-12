@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "available": true,
+  "source_revision": "45aae4f3182340b84529fb44bab6d069a5787686",
+  "indexed_revision": "45aae4f3182340b84529fb44bab6d069a5787686",
+  "source_tree_sha256": "2acaef5975a9a4ecb208cb9035eee2cb0f71c4a48e3d1d5b9a7369464382b8ae",
+  "indexed_tree_sha256": "2acaef5975a9a4ecb208cb9035eee2cb0f71c4a48e3d1d5b9a7369464382b8ae",
+  "engine_version": "0.8.26",
+  "coverage_mode": "partial",
+  "safe_to_use": false,
+  "gaps": [
+    "excluded_files",
+    "unsupported_languages"
+  ],
+  "files": {
+    "discovered": 684,
+    "eligible": 672,
+    "parsed": 555,
+    "partial": 0,
+    "unsupported": 7,
+    "non_code": 110,
+    "excluded": 12
+  },
+  "bytes": {
+    "discovered": 10839796,
+    "eligible": 10665191,
+    "parsed": 8461050,
+    "partial": 0,
+    "unsupported": 39196,
+    "non_code": 2164945,
+    "excluded": 174605,
+    "source_read": 10361029
+  },
+  "by_language": {
+    "javascript": {
+      "files": 224,
+      "bytes": 2760265,
+      "parsed": 224,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 0,
+      "excluded": 0
+    },
+    "json": {
+      "files": 23,
+      "bytes": 873236,
+      "parsed": 0,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 23,
+      "excluded": 0
+    },
+    "markdown": {
+      "files": 51,
+      "bytes": 925605,
+      "parsed": 0,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 51,
+      "excluded": 0
+    },
+    "other": {
+      "files": 23,
+      "bytes": 279312,
+      "parsed": 0,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 23,
+      "excluded": 0
+    },
+    "plain": {
+      "files": 3,
+      "bytes": 1397,
+      "parsed": 0,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 3,
+      "excluded": 0
+    },
+    "python": {
+      "files": 329,
+      "bytes": 5692695,
+      "parsed": 329,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 0,
+      "excluded": 0
+    },
+    "shell": {
+      "files": 7,
+      "bytes": 39196,
+      "parsed": 0,
+      "partial": 0,
+      "unsupported": 7,
+      "non_code": 0,
+      "excluded": 0
+    },
+    "toml": {
+      "files": 2,
+      "bytes": 4863,
+      "parsed": 0,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 2,
+      "excluded": 0
+    },
+    "typescript": {
+      "files": 2,
+      "bytes": 8090,
+      "parsed": 2,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 0,
+      "excluded": 0
+    },
+    "yaml": {
+      "files": 8,
+      "bytes": 80532,
+      "parsed": 0,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 8,
+      "excluded": 0
+    }
+  },
+  "by_parser": {
+    "none": {
+      "files": 110,
+      "bytes": 2164945,
+      "parsed": 0,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 110,
+      "excluded": 0
+    },
+    "oxc_parser": {
+      "files": 226,
+      "bytes": 2768355,
+      "parsed": 226,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 0,
+      "excluded": 0
+    },
+    "ruff_python_parser": {
+      "files": 329,
+      "bytes": 5692695,
+      "parsed": 329,
+      "partial": 0,
+      "unsupported": 0,
+      "non_code": 0,
+      "excluded": 0
+    },
+    "unavailable": {
+      "files": 7,
+      "bytes": 39196,
+      "parsed": 0,
+      "partial": 0,
+      "unsupported": 7,
+      "non_code": 0,
+      "excluded": 0
+    }
+  },
+  "exclusion_reasons": {
+    "unrecognized_extension": 12,
+    "parser_unavailable": 7
+  },
+  "node_counts_by_kind": {
+    "behavior_test_surface": 4166,
+    "class": 307,
+    "config_value": 1698,
+    "credential_operation": 462,
+    "doc_section": 720,
+    "file": 562,
+    "function": 7837,
+    "global_variable": 2762,
+    "interface": 15,
+    "method": 356,
+    "non_code_file": 110,
+    "proxy_surface": 159,
+    "route_surface": 3,
+    "type_alias": 1,
+    "unresolved_symbol": 40720
+  },
+  "node_counts_by_category": {
+    "callable": 8193,
+    "container": 672,
+    "non_code": 2418,
+    "partial_knowledge": 40720,
+    "sub_symbol": 2762,
+    "surface_flow_node": 4790,
+    "type_defining": 323
+  },
+  "edge_counts_by_kind": {
+    "authorizes": 13,
+    "calls": 34334,
+    "contains": 13340,
+    "defines": 356,
+    "documents": 354,
+    "exposes": 3,
+    "forwards_to": 159,
+    "imports": 6386,
+    "issues_credential": 53,
+    "stores_credential": 22,
+    "tested_by": 4166,
+    "tests": 2905,
+    "uses_credential": 347,
+    "validates_credential": 4193
+  },
+  "edge_counts_by_category": {
+    "behavioral": 34334,
+    "documentation": 354,
+    "structural": 20082,
+    "surface_flow_edge": 8956,
+    "test": 2905
+  },
+  "unit_count": 16117
+}
