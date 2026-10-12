@@ -22,6 +22,7 @@ jobs:
         env:
             AETHYME_VERSION: "0.4.2"
             AETHYME_SHA256: "99d07b113df7fd888c28857170e683adbfde60aeac08809d92b7a993cd011b39"
+            AETHYME_GRAPH_INDEX_REV: "d3af42260b1de174c286b7fe749f9f7f597ad429"
         steps:
             - uses: actions/checkout@v7
             # Homebrew is not present on the Ubuntu runner image, so the pair
@@ -43,16 +44,27 @@ jobs:
                   aethyme --version
                   aethyme-engine-cli --version
             # v0.4.2 contains the fragment indexer source, but its release
-            # archive accidentally packages only the router and engine. Build
-            # the omitted binary from the exact release commit and Cargo.lock.
+            # archive accidentally packages only the router and engine. Cache
+            # Cargo artifacts by OS, architecture, compiler and pinned source
+            # revision; `--locked` below still verifies the committed lockfile.
+            - name: Identify Rust compiler for cache key
+              id: rust-toolchain
+              run: echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+            - name: Cache pinned Aethyme graph indexer build
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      ${{ runner.temp }}/aethyme-graph-target
+                  key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.version }}-${{ env.AETHYME_GRAPH_INDEX_REV }}
             - name: Install pinned Aethyme graph indexer
-              env:
-                  AETHYME_GRAPH_INDEX_REV: "d3af42260b1de174c286b7fe749f9f7f597ad429"
               run: |
                   cargo install --locked \
                     --git https://github.com/schiste/Aethyme.git \
                     --rev "$AETHYME_GRAPH_INDEX_REV" \
                     --root "$RUNNER_TEMP/aethyme-graph-index" \
+                    --target-dir "$RUNNER_TEMP/aethyme-graph-target" \
                     --bin aethyme-graph-index \
                     aethyme-graph-indexer
                   echo "$RUNNER_TEMP/aethyme-graph-index/bin" >> "$GITHUB_PATH"
@@ -128,6 +140,11 @@ jobs:
             # workflows/mutation.yml) on a schedule + manual dispatch: a full-scope
             # run is ~60 min on the 2-core runner, too slow for a per-push gate.
             # Per-push protection is the unit suite + the coverage threshold gate.
+            - name: Cache Playwright browsers
+              uses: actions/cache@v4
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
             - name: Install Playwright browser
               run: npx playwright install --with-deps chromium
             - name: E2E (smoke + a11y)
@@ -141,6 +158,10 @@ jobs:
             - uses: actions/setup-python@v7
               with:
                   python-version: "3.11"
+                  cache: pip
+                  cache-dependency-path: |
+                      proxy/requirements.txt
+                      tools/python-quality-requirements.txt
             - run: pip install -r tools/python-quality-requirements.txt
             - name: Ruff lint
               run: ruff check proxy
@@ -153,7 +174,7 @@ jobs:
             - name: Proxy tests + whole-tree coverage ratchet
               run: |
                   pip install -r proxy/requirements.txt
-                  PYTHONPATH=proxy pytest tests/proxy -q --cov --cov-report=term-missing
+                  PYTHONPATH=proxy pytest tests/proxy -q --cov --cov-report=term-missing --durations=25
             # tests/tools was written and then run by nothing: this job named
             # tests/proxy only, and .aethyme/gates.toml triggered on the same path.
             # Six files, 39 tests, 3.6s -- guards for the deploy helpers, the
@@ -161,7 +182,7 @@ jobs:
             # would have failed a build.
             - name: Deploy-tooling tests
               if: always()
-              run: PYTHONPATH=proxy pytest tests/tools -q
+              run: PYTHONPATH=proxy pytest tests/tools -q --durations=10
             # Reported from the run above, so this costs no extra test time. The
             # reverse proxy and the static-file traversal guard stay at 100%
             # even though the tree as a whole is on a ratchet.

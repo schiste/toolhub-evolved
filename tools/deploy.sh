@@ -1,11 +1,37 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Toolforge update helper for the Python webservice (Flask app in proxy/).
-# Run as the tool account:  become <toolname> && sh ~/repo/tools/deploy.sh
-# (First-time setup of the venv is in docs/deploy-toolforge.md.)
+# Every invocation requires an exact SHA; tools/release.py also gates CI and approval.
+# Direct invocation alone is not a supported release path.
 set -eu
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+expected_deploy_sha="${TOOLHUB_DEPLOY_EXPECTED_SHA:-}"
+if [ -z "$expected_deploy_sha" ]; then
+	echo "Refusing deploy: TOOLHUB_DEPLOY_EXPECTED_SHA is required; use tools/release.py." >&2
+	exit 1
+fi
+case "$expected_deploy_sha" in
+	*[!0123456789abcdef]*)
+		echo "Refusing deploy: TOOLHUB_DEPLOY_EXPECTED_SHA must be a 40-character lowercase Git SHA." >&2
+		exit 1
+		;;
+esac
+if [ "${#expected_deploy_sha}" -ne 40 ]; then
+	echo "Refusing deploy: TOOLHUB_DEPLOY_EXPECTED_SHA must be a 40-character lowercase Git SHA." >&2
+	exit 1
+fi
+
+deploy_branch="$(git -C "$REPO_DIR" branch --show-current)"
+if [ "$deploy_branch" != "main" ]; then
+	echo "Refusing deploy: expected Toolforge checkout on main, found '$deploy_branch'." >&2
+	exit 1
+fi
+if [ -n "$(git -C "$REPO_DIR" status --porcelain)" ]; then
+	echo "Refusing deploy: Toolforge checkout is dirty." >&2
+	exit 1
+fi
 
 echo "Updating $REPO_DIR ..."
 # The re-exec below runs after the pull, so the second process would recompute
@@ -15,10 +41,15 @@ echo "Updating $REPO_DIR ..."
 deploy_head_before="${TOOLHUB_DEPLOY_HEAD_BEFORE:-$(git -C "$REPO_DIR" rev-parse HEAD)}"
 git -C "$REPO_DIR" pull --ff-only
 deploy_head_after="$(git -C "$REPO_DIR" rev-parse HEAD)"
+if [ "$deploy_head_after" != "$expected_deploy_sha" ]; then
+	echo "Refusing deploy: expected $expected_deploy_sha but Toolforge main resolved to $deploy_head_after; no migration, build, or restart was run." >&2
+	exit 1
+fi
 deploy_id="$deploy_head_after"
 if [ "$deploy_head_before" != "$deploy_head_after" ] && [ "${TOOLHUB_DEPLOY_REEXECUTED:-0}" != "1" ]; then
 	echo "Restarting deploy with the updated script ..."
-	exec env TOOLHUB_DEPLOY_REEXECUTED=1 TOOLHUB_DEPLOY_HEAD_BEFORE="$deploy_head_before" sh "$REPO_DIR/tools/deploy.sh"
+	exec env TOOLHUB_DEPLOY_REEXECUTED=1 TOOLHUB_DEPLOY_HEAD_BEFORE="$deploy_head_before" \
+		TOOLHUB_DEPLOY_EXPECTED_SHA="$expected_deploy_sha" sh "$REPO_DIR/tools/deploy.sh"
 fi
 
 deploy_short="$(printf '%s' "$deploy_id" | cut -c1-12)"

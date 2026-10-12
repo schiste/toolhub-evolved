@@ -85,18 +85,6 @@ maintainer review the promoted commit before publishing it.
 
 ## Deployment boundary
 
-Only an authorized maintainer publishes to the default branch or deploys the
-Toolforge service. Before release, verify the exact source commit, production
-manifest, and build. The Toolforge helper performs the pull, production build,
-webservice restart, and post-deploy contract checks:
+Only an authorized maintainer publishes to the default branch or deploys the Toolforge service. For routine releases, use the [SHA-locked local release path](docs/deploy-toolforge.md#sha-locked-local-release): it verifies the exact source commit and required CI and CodeQL checks, requires approval for that same SHA, then invokes the Toolforge helper and verifies the public manifest and smoke checks. Do not call `tools/deploy.sh` directly for a routine release.
 
-```sh
-become toolhub-evolved
-cd ~/repo
-sh tools/deploy.sh
-```
-
-After deployment, verify `/healthz`, `/v1/catalog/health/`, `/v1/config/`, and
-the anonymous write guard. The detailed Toolforge procedure, rollback rules,
-and operational health checks live in `docs/deploy-toolforge.md` and
-`docs/RUNBOOK.md`.
+After deployment, verify `/healthz`, `/v1/catalog/health/`, `/v1/config/`, and the anonymous write guard. The detailed Toolforge procedure, rollback rules, and operational health checks live in `docs/deploy-toolforge.md` and `docs/RUNBOOK.md`.

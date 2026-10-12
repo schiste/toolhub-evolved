@@ -717,20 +717,20 @@ changes a committed fragment or the engine-version marker.
 
 ## Deploy / rollback
 
-```sh
-become <toolname>
-sh ~/repo/tools/deploy.sh          # pull → stage release → build → restart → smoke-check → promote history
-```
+Routine deployments use the [SHA-locked local release procedure](deploy-toolforge.md#sha-locked-local-release). It waits for successful CI and CodeQL runs for the exact `main` SHA, requires explicit approval of that SHA, checks the Toolforge checkout, and invokes `tools/deploy.sh` only after those guards. Do not run a separate `become`/`git pull`/deploy sequence for normal releases.
 
-Rollback = `git -C ~/repo revert <sha>` (or `git reset --hard <good-sha>`)
-followed by `sh ~/repo/tools/deploy.sh` again. The deploy script fails loudly
-if the webservice doesn't come back healthy.
+For a planned rollback, create and review a revert commit on `main`, let its required checks pass, then release that exact commit through the same procedure. Do not reset the Toolforge checkout to an arbitrary historical SHA as a routine rollback.
+
+If a deployment fails after restart, `tools/deploy.sh` reports the pre-deploy SHA as a recovery reference. The release coordinator does not perform automatic rollback. For a planned rollback, use a reviewed revert commit on `main` and the same SHA-locked procedure; a direct helper invocation does not verify CI or approval and is not a substitute.
 
 The deployment is rejected before release-history promotion when any of these
 non-mutating production contracts fail: database-backed `/healthz`, a non-empty
 local catalog generation, `/v1/config/` capability consistency, or anonymous
-write rejection on `/v1/write/tools/`. The script prints the exact pre-deploy
-commit as the rollback target. Restore that commit, restart, and run
+write rejection on `/v1/write/tools/`. The printed pre-deploy commit is a recovery
+reference, not an instruction to reset the Toolforge checkout. Emergency
+restoration is outside this release workflow and requires a separately approved
+operator procedure; this change does not define one. Any such action must use an
+exact SHA and run
 `python ~/repo/tools/post_deploy_smoke.py --base-url https://<toolname>.toolforge.org`
 before reopening traffic. A stale catalog alone is observable but not a rollback
 condition; an unavailable/failed or empty generation is.
