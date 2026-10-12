@@ -48,8 +48,7 @@ fi
 deploy_id="$deploy_head_after"
 if [ "$deploy_head_before" != "$deploy_head_after" ] && [ "${TOOLHUB_DEPLOY_REEXECUTED:-0}" != "1" ]; then
 	echo "Restarting deploy with the updated script ..."
-	exec env TOOLHUB_DEPLOY_REEXECUTED=1 TOOLHUB_DEPLOY_HEAD_BEFORE="$deploy_head_before" \
-		TOOLHUB_DEPLOY_EXPECTED_SHA="$expected_deploy_sha" sh "$REPO_DIR/tools/deploy.sh"
+	exec env TOOLHUB_DEPLOY_REEXECUTED=1 TOOLHUB_DEPLOY_HEAD_BEFORE="$deploy_head_before" sh "$REPO_DIR/tools/deploy.sh"
 fi
 
 deploy_short="$(printf '%s' "$deploy_id" | cut -c1-12)"
