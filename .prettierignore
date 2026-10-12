@@ -28,3 +28,6 @@ reports/
 pyproject.toml
 proxy/requirements.txt
 .playwright-mcp/
+# Generated Aethyme graph metadata uses producer-owned JSON formatting.
+.aethyme/graph/coverage.json
+.aethyme/graph/manifest.json
