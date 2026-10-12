@@ -149,3 +149,28 @@ def test_expected_sha_requires_clean_checkout_before_pull(tmp_path: Path) -> Non
     assert result.returncode == 1
     assert "checkout is dirty" in result.stderr
     assert (tmp_path / "head").read_text() == BEFORE_SHA, "dirty checkout reached git pull"
+
+
+def test_failed_deploy_guidance_treats_predeploy_sha_as_reference_only() -> None:
+    source = DEPLOY.read_text()
+    marker = "report_emergency_recovery_guidance() {"
+    assert marker in source, "post-restart failures need one shared recovery instruction"
+    start = source.index(marker)
+    end = source.index("\n}", start) + 2
+    guidance = source[start:end]
+    result = subprocess.run(
+        ["sh", "-c", f"deploy_head_before={BEFORE_SHA}\n{guidance}\nreport_emergency_recovery_guidance"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "recovery reference only" in result.stderr
+    assert f"Pre-deploy SHA (recovery reference only): {BEFORE_SHA}" in result.stderr
+    assert "Do not restore it directly" in result.stderr
+    assert "Stop and escalate to the responsible operator" in result.stderr
+    assert "this helper does not define an emergency restoration procedure" in result.stderr
+    assert "Restore $deploy_head_before" not in source
+    assert source.count("report_emergency_recovery_guidance") == 3, "both post-restart failure paths must use it"

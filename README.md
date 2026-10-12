@@ -258,16 +258,16 @@ coordinates them, and two pieces of it are committed: the policy in
 the commit when one fails. The shim resolves `aethyme` from `PATH`, so
 contributors without it installed are skipped entirely — nothing to opt out of.
 
-The agent-facing half is deliberately **not** committed. `aethyme enhance deploy`
-bakes an absolute path to your local Aethyme checkout into `AGENTS.md`,
-`CLAUDE.md`, and the `.claude/`/`.codex/` skills, and `aethyme enhance verify`
-rejects hand-edits to them, so they cannot be made portable. They are gitignored;
-generate your own instead:
+The agent-facing files are generated from this repository's Aethyme policy and
+onboarding overrides and are committed here. Do not edit generated files
+directly. After changing an override, use the version pinned in
+`.aethyme/engine-version` to regenerate and verify the repository policy and
+generated outputs:
 
 ```sh
-aethyme init                      # idempotent: writes/validates broker policy
-aethyme enhance deploy --repo .   # generates AGENTS.md + the agent skills
-aethyme certify                   # read-only: reports whether setup is intact
+aethyme deploy --repo .
+aethyme deploy verify --repo .
+aethyme deploy verify --repo . --generated-only
 ```
 
 Agents then take an isolated worktree with
