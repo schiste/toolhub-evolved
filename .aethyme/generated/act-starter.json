@@ -21,8 +21,8 @@
     ]
   },
   "commands": {
-    "fast_test": "npm run test:unit",
-    "full_test": "npm run test:e2e",
+    "fast_test": "python -m pytest",
+    "full_test": null,
     "lint": "npm run lint",
     "build": null,
     "dev": null
@@ -33,7 +33,8 @@
       "kind": "directory",
       "role": "test",
       "reason": "conventional test root",
-      "confidence": "medium"
+      "confidence": "medium",
+      "relevance": "supporting"
     }
   ],
   "primary_entrypoints": {
@@ -42,7 +43,8 @@
       "kind": "directory",
       "role": "test",
       "reason": "conventional test root",
-      "confidence": "medium"
+      "confidence": "medium",
+      "relevance": "supporting"
     }
   },
   "caution_zones": [],

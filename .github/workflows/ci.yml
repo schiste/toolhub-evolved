@@ -20,54 +20,26 @@ jobs:
         name: Aethyme deployment
         runs-on: ubuntu-latest
         env:
-            AETHYME_VERSION: "0.4.2"
-            AETHYME_SHA256: "99d07b113df7fd888c28857170e683adbfde60aeac08809d92b7a993cd011b39"
-            AETHYME_GRAPH_INDEX_REV: "d3af42260b1de174c286b7fe749f9f7f597ad429"
+            AETHYME_VERSION: "0.8.26"
+            AETHYME_SHA256: "e81c760fdedbfdae5f74af7a0fd15fb9ce37807de5807da6a84ede44548f4026"
         steps:
             - uses: actions/checkout@v7
-            # Homebrew is not present on the Ubuntu runner image, so the pair
-            # is fetched from the same release the tap formula points at and
-            # verified against the formula's own checksum before it runs. It
-            # unpacks under $RUNNER_TEMP and joins $GITHUB_PATH rather than
-            # installing into /usr/local/bin: the runner cleans $RUNNER_TEMP
-            # between jobs, so nothing is left behind on a self-hosted runner.
+            # Pin the latest published Aethyme release. Its archive contains
+            # both the router and engine; verify the release digest before
+            # running either binary. Keep both under RUNNER_TEMP.
             - name: Install Aethyme binary pair
               run: |
                   asset="aethyme-v${AETHYME_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
                   curl -sSfL "https://github.com/schiste/Aethyme/releases/download/v${AETHYME_VERSION}/${asset}" -o "$RUNNER_TEMP/$asset"
-                  echo "${AETHYME_SHA256}  $RUNNER_TEMP/$asset" | sha256sum -c -
+                  printf '%s  %s\n' "$AETHYME_SHA256" "$RUNNER_TEMP/$asset" | sha256sum -c -
                   mkdir -p "$RUNNER_TEMP/aethyme/bin"
                   tar -xzf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP/aethyme/bin"
                   echo "$RUNNER_TEMP/aethyme/bin" >> "$GITHUB_PATH"
             - name: Verify paired binaries
               run: |
+                  test "$(tr -d '\r\n' < .aethyme/engine-version)" = "$AETHYME_VERSION"
                   aethyme --version
                   aethyme-engine-cli --version
-            # v0.4.2 contains the fragment indexer source, but its release
-            # archive accidentally packages only the router and engine. Cache
-            # Cargo artifacts by OS, architecture, compiler and pinned source
-            # revision; `--locked` below still verifies the committed lockfile.
-            - name: Identify Rust compiler for cache key
-              id: rust-toolchain
-              run: echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
-            - name: Cache pinned Aethyme graph indexer build
-              uses: actions/cache@v4
-              with:
-                  path: |
-                      ~/.cargo/registry
-                      ~/.cargo/git
-                      ${{ runner.temp }}/aethyme-graph-target
-                  key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-toolchain.outputs.version }}-${{ env.AETHYME_GRAPH_INDEX_REV }}
-            - name: Install pinned Aethyme graph indexer
-              run: |
-                  cargo install --locked \
-                    --git https://github.com/schiste/Aethyme.git \
-                    --rev "$AETHYME_GRAPH_INDEX_REV" \
-                    --root "$RUNNER_TEMP/aethyme-graph-index" \
-                    --target-dir "$RUNNER_TEMP/aethyme-graph-target" \
-                    --bin aethyme-graph-index \
-                    aethyme-graph-indexer
-                  echo "$RUNNER_TEMP/aethyme-graph-index/bin" >> "$GITHUB_PATH"
             # Two different contracts: `deploy verify` checks the repository
             # policy, `enhance verify` checks that the generated root files and
             # agent skills are present and fully substituted. A hand-edit to a
@@ -75,8 +47,8 @@ jobs:
             - name: Verify repository policy
               run: aethyme deploy verify --repo .
             - name: Verify repository enhancement
-              run: aethyme enhance verify --repo .
-            - name: Rebuild graph and smoke-test Explore
+              run: aethyme deploy verify --generated-only --repo .
+            - name: Verify committed graph and smoke-test Explore
               run: python3 tools/aethyme_graph.py check
 
     js:

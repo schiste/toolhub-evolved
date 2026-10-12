@@ -2,10 +2,9 @@
 # Native Rust thin client for `aethyme explore` — the canonical hot path.
 #
 # This wrapper is the convenience entry point for in-repo skill consumers.
-# The `aethyme` binary detects an engine daemon and routes to the native
-# Rust `aethyme-engine-cli explore` for sub-second warm latency. If no
-# daemon is running, it falls back to the Python daemon / subprocess
-# transparently.
+# The aethyme binary routes to the native engine daemon for sub-second warm
+# latency. If no daemon is running, it starts the Rust daemon and retries;
+# the first map build can take a minute on large repos.
 #
 # Replaced the soft-retired Python `python -m src.cli explore` wrapper
 # on 2026-05-08 (task #59 — Python explore hard-deleted).

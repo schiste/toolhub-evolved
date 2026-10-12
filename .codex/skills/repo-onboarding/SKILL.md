@@ -15,24 +15,31 @@ description: Use when starting work in an unfamiliar repository, when the task a
 ## Repo Identity
 
 - Kind: `repository`
-- Languages: `python, javascript`
-- Package manager: `npm`
+- Languages: `python, typescript`
+- Package manager: `python`
 - Key manifests: `package.json, pyproject.toml`
+
+## Workspaces
+
+- `.` (primary; python; manifest `pyproject.toml`; high confidence)
+- `.` (supporting; npm; manifest `package.json`; high confidence)
 
 ## Start Here
 
-- `install`: `npm install`
-- `fast_test`: `npm run test:unit`
-- `full_test`: `npm run test:e2e`
+- `install`: `python -m pip install -e .`
+- `fast_test`: `python -m pytest`
 - `lint`: `npm run lint`
 
 ## Supporting Commands
 
-- `npm install` (install; high confidence from `package.json`)
 - `python -m pip install -e .` (install; medium confidence from `pyproject.toml`)
-- `npm run test:unit` (fast_test; high confidence from `package.json:scripts.test:unit`)
+  Workspace: `.`
 - `pytest` (fast_test; medium confidence from `pyproject.toml`)
-- `npm run test:e2e` (full_test; high confidence from `package.json:scripts.test:e2e`)
+- `python -m pytest` (fast_test; medium confidence from `pyproject.toml`)
+  Workspace: `.`
+- `npm run lint` (lint; high confidence from `package.json`)
+  Workspace: `.`
+- `ruff check .` (lint; medium confidence from `pyproject.toml`)
 
 ## Entrypoints
 
@@ -58,9 +65,15 @@ description: Use when starting work in an unfamiliar repository, when the task a
 - `aethyme graph callers "$PWD" "<symbol-or-file>" --json-output`
   Purpose: Trace likely impact before editing
 
+## Generated and Dangerous Paths
+
+- Generated/vendor `.aethyme/generated`: tracked generated or vendored surface; verify ownership before editing
+- Sensitive `.aethyme/gates.toml`: repository validation policy; changes affect every broker submission
+- Sensitive `.github/workflows`: repository automation; changes can affect publication or shared CI
+
 ## Freshness
 
-- Source digest: `a14ad462b8ff4aed2d03047d38fbd3f40e8873f20b2a2c2ea87ff913b8038c6a`
-- Tracked source files: `588`
+- Source digest: `cb6347b81a825f9b3fb84bc7fb885c6025b16d1991c9bacda882d5c55dd4b95b`
+- Tracked source files: `1747`
 - Overrides applied: `False`
-- Sections generated: `repo, commands, areas, entrypoints, caution_zones, navigation_recipes, summon, freshness`
+- Sections generated: `repo, workspaces, primary_workspace, commands, areas, entrypoints, caution_zones, generated_paths, dangerous_paths, navigation_recipes, summon, freshness`

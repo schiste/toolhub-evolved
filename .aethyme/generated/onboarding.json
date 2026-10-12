@@ -1,37 +1,173 @@
 {
-  "schema_version": "aethyme-onboarding-v1",
+  "schema_version": "aethyme-onboarding-v2",
   "repo": {
     "name": "toolhub-evolved",
     "root": ".",
     "kind": "repository",
     "languages": [
       "python",
-      "javascript"
+      "typescript"
     ],
-    "package_manager": "npm",
+    "primary_language": "python",
+    "package_manager": "python",
     "manifests": [
       "package.json",
       "pyproject.toml"
     ]
   },
-  "commands": [
+  "workspaces": [
     {
-      "kind": "install",
-      "command": "npm install",
-      "source": "package.json",
-      "confidence": "high"
+      "root": ".",
+      "manifest": {
+        "path": "pyproject.toml",
+        "kind": "python"
+      },
+      "package_manager": "python",
+      "languages": [
+        "python"
+      ],
+      "members": [],
+      "lockfiles": [],
+      "candidate_commands": [
+        {
+          "kind": "fast_test",
+          "command": "python -m pytest",
+          "source": "pyproject.toml",
+          "confidence": "medium"
+        },
+        {
+          "kind": "install",
+          "command": "python -m pip install -e .",
+          "source": "pyproject.toml",
+          "confidence": "medium"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "tracked_manifest",
+          "detail": "pyproject.toml",
+          "confidence": "high"
+        },
+        {
+          "kind": "root_manifest",
+          "detail": "manifest is at repository root",
+          "confidence": "high"
+        }
+      ],
+      "confidence": "high",
+      "primary": true,
+      "ranking": {
+        "root_manifest": true,
+        "declares_workspace": false,
+        "member_count": 0,
+        "ci_mentions": 0,
+        "executable_entrypoints": 1,
+        "source_files": 436
+      }
     },
+    {
+      "root": ".",
+      "manifest": {
+        "path": "package.json",
+        "kind": "node"
+      },
+      "package_manager": "npm",
+      "languages": [
+        "typescript"
+      ],
+      "members": [],
+      "lockfiles": [
+        "package-lock.json"
+      ],
+      "candidate_commands": [
+        {
+          "kind": "lint",
+          "command": "npm run lint",
+          "source": "package.json",
+          "confidence": "high"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "tracked_manifest",
+          "detail": "package.json",
+          "confidence": "high"
+        },
+        {
+          "kind": "root_manifest",
+          "detail": "manifest is at repository root",
+          "confidence": "high"
+        }
+      ],
+      "confidence": "high",
+      "primary": false,
+      "ranking": {
+        "root_manifest": true,
+        "declares_workspace": false,
+        "member_count": 0,
+        "ci_mentions": 0,
+        "executable_entrypoints": 1,
+        "source_files": 436
+      }
+    }
+  ],
+  "primary_workspace": {
+    "root": ".",
+    "manifest": {
+      "path": "pyproject.toml",
+      "kind": "python"
+    },
+    "package_manager": "python",
+    "languages": [
+      "python"
+    ],
+    "members": [],
+    "lockfiles": [],
+    "candidate_commands": [
+      {
+        "kind": "fast_test",
+        "command": "python -m pytest",
+        "source": "pyproject.toml",
+        "confidence": "medium"
+      },
+      {
+        "kind": "install",
+        "command": "python -m pip install -e .",
+        "source": "pyproject.toml",
+        "confidence": "medium"
+      }
+    ],
+    "evidence": [
+      {
+        "kind": "tracked_manifest",
+        "detail": "pyproject.toml",
+        "confidence": "high"
+      },
+      {
+        "kind": "root_manifest",
+        "detail": "manifest is at repository root",
+        "confidence": "high"
+      }
+    ],
+    "confidence": "high",
+    "primary": true,
+    "ranking": {
+      "root_manifest": true,
+      "declares_workspace": false,
+      "member_count": 0,
+      "ci_mentions": 0,
+      "executable_entrypoints": 1,
+      "source_files": 436
+    }
+  },
+  "commands": [
     {
       "kind": "install",
       "command": "python -m pip install -e .",
       "source": "pyproject.toml",
-      "confidence": "medium"
-    },
-    {
-      "kind": "fast_test",
-      "command": "npm run test:unit",
-      "source": "package.json:scripts.test:unit",
-      "confidence": "high"
+      "confidence": "medium",
+      "workspace_root": ".",
+      "provenance": "derived from tracked workspace manifest"
     },
     {
       "kind": "fast_test",
@@ -40,16 +176,20 @@
       "confidence": "medium"
     },
     {
-      "kind": "full_test",
-      "command": "npm run test:e2e",
-      "source": "package.json:scripts.test:e2e",
-      "confidence": "high"
+      "kind": "fast_test",
+      "command": "python -m pytest",
+      "source": "pyproject.toml",
+      "confidence": "medium",
+      "workspace_root": ".",
+      "provenance": "derived from tracked workspace manifest"
     },
     {
       "kind": "lint",
       "command": "npm run lint",
-      "source": "package.json:scripts.lint",
-      "confidence": "high"
+      "source": "package.json",
+      "confidence": "high",
+      "workspace_root": ".",
+      "provenance": "derived from tracked workspace manifest"
     },
     {
       "kind": "lint",
@@ -59,9 +199,8 @@
     }
   ],
   "primary_commands": {
-    "install": "npm install",
-    "fast_test": "npm run test:unit",
-    "full_test": "npm run test:e2e",
+    "install": "python -m pip install -e .",
+    "fast_test": "python -m pytest",
     "lint": "npm run lint"
   },
   "areas": [
@@ -96,7 +235,8 @@
       "kind": "directory",
       "role": "test",
       "reason": "conventional test root",
-      "confidence": "medium"
+      "confidence": "medium",
+      "relevance": "supporting"
     }
   ],
   "primary_entrypoints": {
@@ -105,10 +245,30 @@
       "kind": "directory",
       "role": "test",
       "reason": "conventional test root",
-      "confidence": "medium"
+      "confidence": "medium",
+      "relevance": "supporting"
     }
   },
   "caution_zones": [],
+  "generated_paths": [
+    {
+      "path": ".aethyme/generated",
+      "reason": "tracked generated or vendored surface; verify ownership before editing",
+      "provenance": "tracked path classification"
+    }
+  ],
+  "dangerous_paths": [
+    {
+      "path": ".aethyme/gates.toml",
+      "reason": "repository validation policy; changes affect every broker submission",
+      "provenance": "tracked path classification"
+    },
+    {
+      "path": ".github/workflows",
+      "reason": "repository automation; changes can affect publication or shared CI",
+      "provenance": "tracked path classification"
+    }
+  ],
   "navigation_recipes": [
     {
       "purpose": "Broad repository orientation for a user request",
@@ -145,27 +305,34 @@
     ]
   },
   "freshness": {
-    "source_digest": "a14ad462b8ff4aed2d03047d38fbd3f40e8873f20b2a2c2ea87ff913b8038c6a",
+    "source_digest": "cb6347b81a825f9b3fb84bc7fb885c6025b16d1991c9bacda882d5c55dd4b95b",
     "source_commit": null,
-    "source_file_count": 588,
+    "source_file_count": 1747,
     "generator": "deterministic"
   },
   "telemetry": {
     "sections": [
       "repo",
+      "workspaces",
+      "primary_workspace",
       "commands",
       "areas",
       "entrypoints",
       "caution_zones",
+      "generated_paths",
+      "dangerous_paths",
       "navigation_recipes",
       "summon",
       "freshness"
     ],
     "counts": {
-      "commands": 7,
+      "workspaces": 2,
+      "commands": 5,
       "areas": 4,
       "entrypoints": 1,
       "caution_zones": 0,
+      "generated_paths": 1,
+      "dangerous_paths": 2,
       "navigation_recipes": 3,
       "notes": 0
     },

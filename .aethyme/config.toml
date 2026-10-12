@@ -21,3 +21,7 @@ mode = "auto"
 
 [delivery]
 push_session_branches = true
+
+[graph]
+authority = "committed_fragments"
+repository = "schiste/toolhub-evolved"

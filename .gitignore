@@ -58,15 +58,21 @@ output/
 # aethyme-broker:begin (managed block — do not edit inside)
 .aethyme/broker.db*
 .aethyme/logs/
+.aethyme/locks/
 .aethyme/reports/
 .aethyme/run/
 .aethyme/worktrees/
-.aethyme/graph_store.redb
 .aethyme/broker-action-required.md
 .aethyme/broker-advisory.md
+.aethyme/graph_store.redb
+.aethyme/graph_store.redb.indexing
 .aethyme/generated/experience-status.json
 .aethyme/generated/experience-status.md
 .aethyme/generated/experience-telemetry.jsonl
+.aethyme/reviews/
+.aethyme/worktree-sizes.json
+.aethyme/gc-journal.json
+.aethyme/gc.lock
 # aethyme-broker:end
 
 # Aethyme deployment telemetry and reports are machine-local runtime state.
