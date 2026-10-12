@@ -842,3 +842,133 @@ def test_curation_create_success(client):
         row = s.get(CatalogCuration, item["id"])
         assert row is not None
         assert row.created_by_user_id == uid
+
+
+def vanish_user_after(monkeypatch, uid, after_calls):
+    """Let selected User lookups through, then simulate deletion mid-request."""
+    from sqlalchemy.orm import Session as OrmSession
+
+    original_get = OrmSession.get
+    calls = {"count": 0}
+
+    def fake_get(self, entity, ident=None, *args, **kwargs):
+        if entity is User and ident == uid:
+            calls["count"] += 1
+            if calls["count"] > after_calls:
+                return None
+        return original_get(self, entity, ident, *args, **kwargs)
+
+    monkeypatch.setattr(OrmSession, "get", fake_get)
+
+
+@pytest.mark.parametrize(
+    ("path", "status", "error"),
+    [
+        ("/v1/catalog/tools/%20%20/owner-edits/", 400, "tool name is required"),
+        ("/v1/catalog/tools/missing-owner-tool/owner-edits/", 404, "canonical tool not found"),
+    ],
+)
+def test_owner_edit_history_rejects_blank_name_and_missing_canonical(client, path, status, error):
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    sign_in(client, uid)
+
+    response = client.get(path)
+
+    assert response.status_code == status
+    assert response.get_json()["error"] == error
+
+
+def test_owner_edit_history_returns_unauthorized_when_user_disappears_after_login(client, monkeypatch):
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    sign_in(client, uid)
+    vanish_user_after(monkeypatch, uid, after_calls=1)
+
+    response = client.get(f"/v1/catalog/tools/{name}/owner-edits/")
+
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "sign in required"
+
+
+@pytest.mark.parametrize(
+    ("name", "payload", "error"),
+    [
+        (
+            "%20%20",
+            {"patch": {"title": "Updated title"}, "rationale": "Clarify the listing."},
+            "tool name is required",
+        ),
+        ("alpha", [], "owner edit body must be a JSON object"),
+        ("alpha", {"patch": {"title": "Updated title"}, "rationale": "  "}, "rationale is required"),
+    ],
+)
+def test_owner_edit_submission_rejects_invalid_request_shapes(client, name, payload, error):
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    sign_in(client, uid)
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json=payload,
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == error
+
+
+def test_owner_edit_submission_returns_not_found_when_canonical_tool_is_missing(client):
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    sign_in(client, uid)
+
+    response = client.post(
+        "/v1/catalog/tools/missing-owner-tool/owner-edits/",
+        json={"patch": {"title": "Updated title"}, "rationale": "Clarify the listing."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "canonical tool not found"
+
+
+def test_owner_edit_submission_returns_unauthorized_when_user_disappears_after_policy_check(client, monkeypatch):
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    sign_in(client, uid)
+    vanish_user_after(monkeypatch, uid, after_calls=2)
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={"patch": {"title": "Updated title"}, "rationale": "Clarify the listing."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "sign in required"
+
+
+def test_owner_edit_submission_returns_gateway_error_when_wikimedia_identity_is_unavailable(client, monkeypatch):
+    from backend.wikimedia_delivery import WikimediaAPIError, WikimediaClient
+
+    name = "enwiki-alaexis-ai-source-verification"
+    add_user_script(name)
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    add_verified_wikimedia_binding(uid, "global-9001")
+    sign_in(client, uid)
+
+    def unavailable(*_args):
+        raise WikimediaAPIError("transport", "Wikimedia is unavailable")
+
+    monkeypatch.setattr(WikimediaClient, "user_identity_matches", unavailable)
+
+    response = client.post(
+        f"/v1/catalog/tools/{name}/owner-edits/",
+        json={"patch": {"title": "Updated title"}, "rationale": "Clarify the listing."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 502
+    assert response.get_json()["error"] == "Wikimedia identity verification is unavailable"
+    with db.session_scope() as s:
+        assert s.query(CatalogCuration).filter_by(tool_name=name).count() == 0

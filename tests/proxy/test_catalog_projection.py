@@ -2315,3 +2315,37 @@ def test_structured_metadata_text_and_curation_validation_cover_all_shapes():
     )
     assert patch == {}
     assert errors == [{"field": "privacy_policy_url", "message": "localized URL fields are not locally curatable"}]
+
+
+def test_owner_curation_conflicts_fails_closed_when_the_canonical_row_is_missing():
+    row = CatalogCuration(tool_name="missing-tool", patch={"title": "Owner title"}, owner_proof={})
+
+    assert catalog_projection.owner_curation_conflicts(None, row) == ["title"]
+
+
+def test_owner_curation_is_not_projected_for_a_non_wiki_canonical_source():
+    now = utcnow()
+    name = "non-wiki-owner-curation"
+    source_url = "https://en.wikipedia.org/wiki/User:Alice/tool.js"
+    with db.session_scope() as session:
+        canonical = _canonical(name, title="Canonical title", url=source_url)
+        canonical.source = catalog_projection.SOURCE_CANONICAL
+        canonical.source_url = source_url
+        session.add(canonical)
+        _approved_owner_curation(
+            session,
+            name,
+            source_url,
+            now,
+            {"title": "Owner title"},
+            {"title": "Canonical title"},
+        )
+
+    catalog_projection.refresh_tool_names([name])
+
+    projection = catalog_projection.projection_payload(name)
+    assert projection["record"]["title"] == "Canonical title"
+    assert not any(
+        item["source"] == catalog_projection.SOURCE_OWNER_CURATION
+        for item in projection["provenance"]["title"]
+    )

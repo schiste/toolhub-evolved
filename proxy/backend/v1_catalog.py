@@ -197,45 +197,42 @@ def v1_catalog_owner_edits_context(name: str) -> Response:
         return common.bad("tool name is required")
     user_id = common.current_user_id()
     wiki_client = WikimediaClient()
-    try:
-        with db.session_scope() as s:
-            user = s.get(User, user_id)
-            canonical = s.get(CanonicalToolCache, clean_name)
-            if user is None:
-                return common.deny(common.HTTP_UNAUTHORIZED, "sign in required")
-            if canonical is None:
-                return common.deny(common.HTTP_NOT_FOUND, "canonical tool not found")
-            try:
-                context = wiki_user_script_edits.owner_edit_context(
-                    s, user, canonical, identity_matches=wiki_client.user_identity_matches
-                )
-            except WikimediaAPIError:
-                context = {
-                    "supported": True,
-                    "canEdit": False,
-                    "reason": "wikimedia_identity_unavailable",
-                    "ownerProof": {},
-                }
-            rows = list(
-                s.execute(
-                    select(CatalogCuration)
-                    .where(
-                        CatalogCuration.tool_name == clean_name,
-                        CatalogCuration.created_by_user_id == user.id,
-                        CatalogCuration.edit_kind == wiki_user_script_edits.OWNER_EDIT_KIND,
-                        CatalogCuration.deleted_at.is_(None),
-                    )
-                    .order_by(CatalogCuration.created_at.desc(), CatalogCuration.id.desc())
-                    .limit(50)
-                ).scalars()
+    with db.session_scope() as s:
+        user = s.get(User, user_id)
+        canonical = s.get(CanonicalToolCache, clean_name)
+        if user is None:
+            return common.deny(common.HTTP_UNAUTHORIZED, "sign in required")
+        if canonical is None:
+            return common.deny(common.HTTP_NOT_FOUND, "canonical tool not found")
+        try:
+            context = wiki_user_script_edits.owner_edit_context(
+                s, user, canonical, identity_matches=wiki_client.user_identity_matches
             )
-            items = []
-            for row in rows:
-                item = common.moderation_item("catalog-curations", row)
-                item["data"]["conflictFields"] = catalog_projection.owner_curation_conflicts(canonical, row)
-                items.append(item)
-    except WikimediaAPIError:
-        return common.deny(common.HTTP_BAD_GATEWAY, "Wikimedia identity verification is unavailable")
+        except WikimediaAPIError:
+            context = {
+                "supported": True,
+                "canEdit": False,
+                "reason": "wikimedia_identity_unavailable",
+                "ownerProof": {},
+            }
+        rows = list(
+            s.execute(
+                select(CatalogCuration)
+                .where(
+                    CatalogCuration.tool_name == clean_name,
+                    CatalogCuration.created_by_user_id == user.id,
+                    CatalogCuration.edit_kind == wiki_user_script_edits.OWNER_EDIT_KIND,
+                    CatalogCuration.deleted_at.is_(None),
+                )
+                .order_by(CatalogCuration.created_at.desc(), CatalogCuration.id.desc())
+                .limit(50)
+            ).scalars()
+        )
+        items = []
+        for row in rows:
+            item = common.moderation_item("catalog-curations", row)
+            item["data"]["conflictFields"] = catalog_projection.owner_curation_conflicts(canonical, row)
+            items.append(item)
     response = jsonify(
         {
             "ok": True,

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { beforeEach, test, vi } from "vitest";
+import { scanBalance } from "../../tools/checks.mjs";
 
 const h = vi.hoisted(() => ({
 	backendGetJson: vi.fn(),
@@ -20,6 +22,11 @@ const { wikiUserScriptOwnerEditsWorkspace } =
 	await import("../../public_html/lib/organisms/wiki-user-script-owner-edits.js");
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const TOOL = "enwiki-alaexis-ai-source-verification";
+
+test("owner editor template literals pass HTML balance checks", () => {
+	const path = "public_html/lib/organisms/wiki-user-script-owner-edits.js";
+	assert.deepEqual(scanBalance(readFileSync(path, "utf8"), path), []);
+});
 
 function scriptEntry(overrides = {}) {
 	return {

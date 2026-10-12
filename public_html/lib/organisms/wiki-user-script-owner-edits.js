@@ -104,14 +104,20 @@ function renderEditorField(name, value, toolName) {
 					)
 				: "";
 	const describedBy = hint ? ` aria-describedby="${id}-hint"` : "";
-	const labelHtml = `<label class="le__label" for="${id}">${esc(label)}${field.required ? ' <span class="le__req">*</span>' : ""}${hint ? `<span class="le__hint" id="${id}-hint">${esc(hint)}</span>` : ""}`;
+	const labelContent = `${esc(label)}${field.required ? ' <span class="le__req">*</span>' : ""}${hint ? `<span class="le__hint" id="${id}-hint">${esc(hint)}</span>` : ""}`;
+	/** @param {string} controlHtml */
+	const wrapControl = (controlHtml) => `<label class="le__label" for="${id}">${labelContent}${controlHtml}</label>`;
 	const valueText = fieldText(field, value);
 	if (field.kind === "textarea" || field.kind === "lines" || field.kind === "json") {
 		const rows = field.kind === "textarea" ? 5 : field.kind === "lines" ? 3 : 5;
 		const max = field.kind === "json" ? 50000 : 4000;
-		return `${labelHtml}<textarea class="le__input" id="${id}" data-owner-edit-field="${name}" rows="${rows}" maxlength="${max}"${describedBy}${field.required ? " required" : ""}>${esc(valueText)}</textarea></label>`;
+		return wrapControl(
+			`<textarea class="le__input" id="${id}" data-owner-edit-field="${name}" rows="${rows}" maxlength="${max}"${describedBy}${field.required ? " required" : ""}>${esc(valueText)}</textarea>`
+		);
 	}
-	return `${labelHtml}<input class="le__input" id="${id}" data-owner-edit-field="${name}" type="text" maxlength="4000" value="${esc(valueText)}"${describedBy}${field.required ? " required" : ""} /></label>`;
+	return wrapControl(
+		`<input class="le__input" id="${id}" data-owner-edit-field="${name}" type="text" maxlength="4000" value="${esc(valueText)}"${describedBy}${field.required ? " required" : ""} />`
+	);
 }
 
 /** @param {string} name @param {string} text */

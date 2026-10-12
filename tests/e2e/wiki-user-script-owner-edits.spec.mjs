@@ -5,6 +5,19 @@ import { useSmokeServer } from "./harness.mjs";
 const TOOL_NAME = "userscript-enwiki-alice-verification.js";
 const SOURCE_URL = "https://en.wikipedia.org/wiki/User:Alice/verification.js";
 
+function isWikimediaRequest(requestUrl) {
+	const hostname = new URL(requestUrl).hostname;
+	return ["wikipedia.org", "wikimedia.org"].some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+}
+
+test("checks the host before counting Wikimedia requests", () => {
+	expect(isWikimediaRequest("https://en.wikipedia.org/w/api.php")).toBe(true);
+	expect(isWikimediaRequest("https://meta.wikimedia.org/w/api.php")).toBe(true);
+	expect(isWikimediaRequest("https://attacker.example/?next=https://wikipedia.org")).toBe(false);
+	expect(isWikimediaRequest("https://wikipedia.org.attacker.example/w/api.php")).toBe(false);
+	expect(isWikimediaRequest("https://notwikipedia.org/w/api.php")).toBe(false);
+});
+
 function revision(id, reviewStatus, title) {
 	return {
 		kind: "catalog-curations",
@@ -115,7 +128,7 @@ test.describe("Wiki user-script owner metadata", () => {
 		let submittedPayload;
 		const wikiWrites = [];
 		page.on("request", (request) => {
-			if (request.url().includes("wikipedia.org") && request.method() !== "GET") {
+			if (isWikimediaRequest(request.url()) && request.method() !== "GET") {
 				wikiWrites.push(request.method());
 			}
 		});

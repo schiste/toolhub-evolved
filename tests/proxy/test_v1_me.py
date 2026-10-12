@@ -257,6 +257,53 @@ def test_me_wiki_user_scripts_lists_username_candidates_without_claiming_verific
     assert entry["verificationRequired"] is True
 
 
+def test_me_wiki_user_scripts_ignores_invalid_source_pages_and_directory_owner_mismatches(client):
+    from backend.models import UserScriptDirectoryEntry
+    from backend.sync import SOURCE_WIKI_USERSCRIPT
+    from backend.userscript_toolinfo import tool_name
+
+    uid = add_user(username="Alice", wm_sub="toolhub-42")
+    sign_in(client, uid)
+    now = utcnow()
+    candidates = [
+        ("invalid.js", "https://example.org/not-a-userscript-page"),
+        ("mismatch.js", "https://en.wikipedia.org/wiki/User:Bob/mismatch.js"),
+    ]
+    with db.session_scope() as session:
+        for basename, source_url in candidates:
+            name = tool_name("enwiki", "Alice", basename)
+            session.add(
+                UserScriptDirectoryEntry(
+                    wiki="enwiki",
+                    title=f"User:Alice/{basename}",
+                    owner="Alice",
+                    basename=basename,
+                    tier="active",
+                )
+            )
+            session.add(
+                CanonicalToolCache(
+                    tool_name=name,
+                    record={"name": name, "title": basename, "url": source_url},
+                    source=SOURCE_WIKI_USERSCRIPT,
+                    source_url=source_url,
+                    expires_at=now + timedelta(days=1),
+                    stale_until=now + timedelta(days=2),
+                )
+            )
+
+    response = client.get("/v1/me/wiki-user-scripts/")
+
+    assert response.status_code == 200
+    assert response.get_json()["entries"] == []
+
+
+def test_mediawiki_username_spellings_returns_no_spellings_for_an_empty_name():
+    from backend.v1_me import _mediawiki_username_spellings
+
+    assert _mediawiki_username_spellings("") == set()
+
+
 # ---------------------------------------------------------------------------
 # v1_me_tools / _canonical_account_tools
 
