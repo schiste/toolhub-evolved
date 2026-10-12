@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import catalog_projection, catalog_validation, db, graph_enrichment, outbound  # noqa: E402
+from backend import catalog_projection, catalog_validation, db, graph_enrichment, outbound, userscript_toolinfo  # noqa: E402
 from backend.catalog_projection import STATUS_ERROR, STATUS_READY  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
@@ -26,6 +26,8 @@ from backend.models import (  # noqa: E402
     ToolinfoSource,
     ToolinfoSourceItem,
     User,
+    UserScriptDirectoryEntry,
+    UserScriptPage,
     WikiProject,
     utcnow,
 )
@@ -89,9 +91,7 @@ def test_projection_records_wikimedia_user_javascript_as_source_code_without_ove
         s.add(_canonical("wiki-script-with-repository", url=wiki_source, repository=declared_repository))
         s.add(_canonical("untrusted-script", url="https://example.org/wiki/User:Enterprisey/tool.js"))
 
-    summary = catalog_projection.refresh_tool_names(
-        ["wiki-script", "wiki-script-with-repository", "untrusted-script"]
-    )
+    summary = catalog_projection.refresh_tool_names(["wiki-script", "wiki-script-with-repository", "untrusted-script"])
 
     assert summary == {"requested": 3, "refreshed": 3, "changed": 3, "errors": 0}
     inferred = catalog_projection.projection_payload("wiki-script")
@@ -144,6 +144,211 @@ def test_approved_curation_is_only_source_that_replaces_valid_canonical_scalar()
     evidence = payload["provenance"]["url"]
     assert [item["source"] for item in evidence] == ["official_toolhub", "evolved_curation"]
     assert [item["effective"] for item in evidence] == [False, True]
+
+
+def _approved_owner_curation(session, name, source_url, now, patch, base_source_values):
+    user = User(wm_sub=f"owner-{name}", username="Alice")
+    session.add(user)
+    session.flush()
+    row = CatalogCuration(
+        tool_name=name,
+        created_by_user_id=user.id,
+        reviewed_by_user_id=user.id,
+        patch=patch,
+        edit_kind="wiki_userscript_owner",
+        owner_proof={
+            "wiki": "en.wikipedia.org",
+            "username": "Alice",
+            "sourceUrl": source_url,
+            "proofMethod": "verified_person_binding_and_centralauth_id",
+            "verifiedAt": now.isoformat() + "Z",
+        },
+        base_values=dict(base_source_values),
+        base_source_values=dict(base_source_values),
+        rationale="Owner verified the listing metadata.",
+        review_status=REVIEW_APPROVED,
+        created_at=now,
+        modified_at=now,
+        reviewed_at=now,
+    )
+    session.add(row)
+    session.flush()
+    return row.id
+
+
+def test_approved_owner_overlay_survives_census_refresh_with_verified_provenance():
+    now = utcnow()
+    name = "wiki-script"
+    source_url = "https://en.wikipedia.org/wiki/User:Alice/tool.js"
+    with db.session_scope() as s:
+        canonical = _canonical(
+            name,
+            title="Census title",
+            description="Census description",
+            url=source_url,
+            keywords=["census"],
+        )
+        canonical.source = SOURCE_WIKI_USERSCRIPT
+        canonical.source_url = source_url
+        s.add(canonical)
+        curation_id = _approved_owner_curation(
+            s,
+            name,
+            source_url,
+            now,
+            {"title": "Owner title", "keywords": ["owner keyword"]},
+            {"title": "Census title", "keywords": ["census"]},
+        )
+
+    catalog_projection.refresh_tool_names([name])
+
+    initial = catalog_projection.projection_payload(name)
+    assert initial["record"]["title"] == "Owner title"
+    owner_evidence = next(
+        item for item in initial["provenance"]["title"] if item["source"] == "verified_wiki_user_script_owner"
+    )
+    assert owner_evidence["revisionId"] == curation_id
+    assert owner_evidence["ownerProof"]["username"] == "Alice"
+    assert owner_evidence["ownerProof"]["sourceUrl"] == source_url
+
+    with db.session_scope() as s:
+        canonical = s.get(CanonicalToolCache, name)
+        canonical.record = {**canonical.record, "description": "Refreshed census description"}
+
+    catalog_projection.refresh_tool_names([name])
+
+    refreshed = catalog_projection.projection_payload(name)
+    assert refreshed["record"]["title"] == "Owner title"
+    assert refreshed["record"]["description"] == "Refreshed census description"
+    with db.session_scope() as s:
+        canonical = s.get(CanonicalToolCache, name)
+        assert canonical.record["title"] == "Census title"
+        assert canonical.record["description"] == "Refreshed census description"
+
+
+@pytest.mark.parametrize(
+    ("field", "source_value", "clear_value"),
+    [
+        ("description", "Census description", ""),
+        ("keywords", ["census keyword"], []),
+        ("user_docs_url", [{"url": "https://example.org/docs", "language": "en"}], []),
+    ],
+)
+def test_approved_owner_curation_can_clear_optional_metadata(field, source_value, clear_value):
+    now = utcnow()
+    name = "wiki-script-clear"
+    source_url = "https://en.wikipedia.org/wiki/User:Alice/tool.js"
+    with db.session_scope() as s:
+        canonical = _canonical(name, url=source_url, **{field: source_value})
+        canonical.source = SOURCE_WIKI_USERSCRIPT
+        canonical.source_url = source_url
+        s.add(canonical)
+        _approved_owner_curation(s, name, source_url, now, {field: clear_value}, {field: source_value})
+
+    catalog_projection.refresh_tool_names([name])
+
+    projection = catalog_projection.projection_payload(name)
+    assert projection["record"][field] == clear_value
+    owner_evidence = next(
+        item for item in projection["provenance"][field] if item["source"] == catalog_projection.SOURCE_OWNER_CURATION
+    )
+    assert owner_evidence["cleared"] is True
+    assert owner_evidence["effective"] is True
+
+
+def test_approved_owner_overlay_survives_userscript_directory_synchronization():
+    wiki = "en.wikipedia.org"
+    owner = "Alice"
+    basename = "tool.js"
+    title = f"User:{owner}/{basename}"
+    name = userscript_toolinfo.tool_name(wiki, owner, basename)
+    with db.session_scope() as s:
+        s.add(
+            UserScriptPage(
+                wiki=wiki,
+                title=title,
+                owner=owner,
+                basename=basename,
+                content_model="javascript",
+                docs_title="",
+            )
+        )
+        s.add(
+            UserScriptDirectoryEntry(
+                wiki=wiki,
+                title=title,
+                owner=owner,
+                basename=basename,
+                tier="active",
+                demand=1,
+                position=1,
+            )
+        )
+
+    initial_sync = userscript_toolinfo.synchronize(wiki)
+    assert initial_sync["written"] == 1
+    with db.session_scope() as s:
+        canonical = s.get(CanonicalToolCache, name)
+        source_title = canonical.record["title"]
+        source_url = canonical.source_url
+        curation_id = _approved_owner_curation(
+            s,
+            name,
+            source_url,
+            utcnow(),
+            {"title": "Owner title"},
+            {"title": source_title},
+        )
+
+    catalog_projection.refresh_tool_names([name])
+    assert catalog_projection.projection_payload(name)["record"]["title"] == "Owner title"
+
+    with db.session_scope() as s:
+        page = s.execute(
+            select(UserScriptPage).where(UserScriptPage.wiki == wiki, UserScriptPage.title == title)
+        ).scalar_one()
+        page.docs_title = "User:Alice/tool-documentation"
+
+    refreshed_sync = userscript_toolinfo.synchronize(wiki)
+    assert refreshed_sync["written"] == 1
+    refreshed = catalog_projection.projection_payload(name)
+    assert refreshed["record"]["title"] == "Owner title"
+    assert refreshed["record"]["user_docs_url"] == ["https://en.wikipedia.org/wiki/User:Alice/tool-documentation"]
+    evidence = next(
+        item for item in refreshed["provenance"]["title"] if item["source"] == catalog_projection.SOURCE_OWNER_CURATION
+    )
+    assert evidence["revisionId"] == curation_id
+    assert evidence["effective"] is True
+    with db.session_scope() as s:
+        canonical = s.get(CanonicalToolCache, name)
+        assert canonical.record["title"] == source_title
+        assert canonical.record["user_docs_url"] == "https://en.wikipedia.org/wiki/User:Alice/tool-documentation"
+
+
+def test_owner_overlay_source_change_surfaces_conflict_without_overriding_census():
+    now = utcnow()
+    name = "wiki-script"
+    source_url = "https://en.wikipedia.org/wiki/User:Alice/tool.js"
+    with db.session_scope() as s:
+        canonical = _canonical(name, title="Census title", url=source_url)
+        canonical.source = SOURCE_WIKI_USERSCRIPT
+        canonical.source_url = source_url
+        s.add(canonical)
+        _approved_owner_curation(s, name, source_url, now, {"title": "Owner title"}, {"title": "Census title"})
+
+    with db.session_scope() as s:
+        canonical = s.get(CanonicalToolCache, name)
+        canonical.record = {**canonical.record, "title": "Changed by census"}
+
+    catalog_projection.refresh_tool_names([name])
+
+    payload = catalog_projection.projection_payload(name)
+    assert payload["record"]["title"] == "Changed by census"
+    owner_evidence = next(
+        item for item in payload["provenance"]["title"] if item["source"] == "verified_wiki_user_script_owner"
+    )
+    assert owner_evidence["conflict"] is True
+    assert owner_evidence["effective"] is False
 
 
 def test_discovered_toolinfo_must_match_the_declared_tool_origin():
@@ -274,8 +479,10 @@ def test_analyzer_facets_dependency_row_emitted_with_preserved_label():
     catalog_projection.refresh_tool_names(["beta"])
 
     with db.session_scope() as s:
-        facets = {(row.field, row.value, row.label, row.confidence_basis_points)
-                  for row in s.query(CatalogFacetValue).filter_by(tool_name="beta").all()}
+        facets = {
+            (row.field, row.value, row.label, row.confidence_basis_points)
+            for row in s.query(CatalogFacetValue).filter_by(tool_name="beta").all()
+        }
     assert ("dependency", "pypi:pywikibot", "PyWikiBot", 9500) in facets
 
 
@@ -311,8 +518,10 @@ def test_analyzer_facets_wikimedia_api_row_emitted():
     catalog_projection.refresh_tool_names(["gamma"])
 
     with db.session_scope() as s:
-        facets = {(row.field, row.value, row.label, row.confidence_basis_points)
-                  for row in s.query(CatalogFacetValue).filter_by(tool_name="gamma").all()}
+        facets = {
+            (row.field, row.value, row.label, row.confidence_basis_points)
+            for row in s.query(CatalogFacetValue).filter_by(tool_name="gamma").all()
+        }
     assert ("wikimedia_api", "wikidata-query-service", "Wikidata Query Service", 8500) in facets
 
 
@@ -348,8 +557,9 @@ def test_analyzer_facets_detected_technology_casefolded():
     catalog_projection.refresh_tool_names(["delta"])
 
     with db.session_scope() as s:
-        facets = {(row.field, row.value, row.label)
-                  for row in s.query(CatalogFacetValue).filter_by(tool_name="delta").all()}
+        facets = {
+            (row.field, row.value, row.label) for row in s.query(CatalogFacetValue).filter_by(tool_name="delta").all()
+        }
     assert ("detected_technology", "python", "Python") in facets
 
 
@@ -488,8 +698,10 @@ def test_analyzer_facets_reprojecting_twice_is_idempotent():
     first_facets = []
     with db.session_scope() as s:
         first_facets = sorted(
-            [(row.field, row.value, row.label, row.confidence_basis_points)
-             for row in s.query(CatalogFacetValue).filter_by(tool_name="kappa").all()]
+            [
+                (row.field, row.value, row.label, row.confidence_basis_points)
+                for row in s.query(CatalogFacetValue).filter_by(tool_name="kappa").all()
+            ]
         )
 
     # Verify first run produced expected content
@@ -500,8 +712,10 @@ def test_analyzer_facets_reprojecting_twice_is_idempotent():
     second_facets = []
     with db.session_scope() as s:
         second_facets = sorted(
-            [(row.field, row.value, row.label, row.confidence_basis_points)
-             for row in s.query(CatalogFacetValue).filter_by(tool_name="kappa").all()]
+            [
+                (row.field, row.value, row.label, row.confidence_basis_points)
+                for row in s.query(CatalogFacetValue).filter_by(tool_name="kappa").all()
+            ]
         )
 
     # Second run should produce identical result
@@ -534,7 +748,7 @@ def test_analyzer_facets_malformed_report_does_not_error():
                     "apis": ["not-a-dict"],  # List with non-dict entry
                     "technology": [
                         {"value": "", "label": "Empty"},  # Empty value
-                        {"value": "Rust", "confidence": float('nan')},  # NaN confidence
+                        {"value": "Rust", "confidence": float("nan")},  # NaN confidence
                     ],
                 },
                 review_status=REVIEW_APPROVED,
@@ -629,12 +843,8 @@ def test_graph_enrichment_refresh_produces_analyzer_facets():
                 tool_name="omega",
                 source_label="https://code.example/omega",
                 report={
-                    "dependencies": [
-                        {"value": "npm:lodash", "label": "Lodash", "confidence": 0.87}
-                    ],
-                    "technology": [
-                        {"value": "JavaScript", "label": "JavaScript", "confidence": 0.95}
-                    ],
+                    "dependencies": [{"value": "npm:lodash", "label": "Lodash", "confidence": 0.87}],
+                    "technology": [{"value": "JavaScript", "label": "JavaScript", "confidence": 0.95}],
                 },
                 review_status=REVIEW_APPROVED,
                 reviewed_at=now,
@@ -677,11 +887,7 @@ def test_analyzer_facets_containment_preserves_healthy_tool_in_batch(monkeypatch
                 user_id=user,
                 tool_name="healthy",
                 source_label="https://code.example/healthy",
-                report={
-                    "dependencies": [
-                        {"value": "pypi:requests", "label": "requests", "confidence": 0.90}
-                    ]
-                },
+                report={"dependencies": [{"value": "pypi:requests", "label": "requests", "confidence": 0.90}]},
                 review_status=REVIEW_APPROVED,
                 reviewed_at=now,
             )
@@ -737,7 +943,9 @@ def test_analyzer_facets_containment_preserves_healthy_tool_in_batch(monkeypatch
         # Healthy tool must keep its declared facets, status, and analyzer facets
         healthy_proj = s.get(CatalogToolProjection, "healthy")
         assert healthy_proj.status == STATUS_READY
-        healthy_facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="healthy").all()}
+        healthy_facets = {
+            (row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="healthy").all()
+        }
         assert ("technology", "python") in healthy_facets
         # Healthy tool should have analyzer facets from its good report
         assert ("dependency", "pypi:requests") in healthy_facets
@@ -746,7 +954,9 @@ def test_analyzer_facets_containment_preserves_healthy_tool_in_batch(monkeypatch
         # (the savepoint rolled back the analyzer emission, keeping only declared facets)
         poison_proj = s.get(CatalogToolProjection, "poison")
         assert poison_proj.status == STATUS_READY
-        poison_facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="poison").all()}
+        poison_facets = {
+            (row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="poison").all()
+        }
         # Check: no analyzer facets for poison (the savepoint caught the error)
         analyzer_facets = {f for f in poison_facets if f[0] in {"dependency", "wikimedia_api", "detected_technology"}}
         assert not analyzer_facets, f"Expected no analyzer facets, got {analyzer_facets}"
@@ -905,7 +1115,9 @@ def test_refresh_candidates_uses_max_report_timestamp_with_multiple_reports():
 
     # Verify the new analyzer facet was projected (from the newest report)
     with db.session_scope() as s:
-        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="multiversion").all()}
+        facets = {
+            (row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="multiversion").all()
+        }
     assert ("dependency", "npm:lodash") in facets, "Analyzer facet from newest report should be present"
 
 
@@ -1084,7 +1296,10 @@ def test_analyzer_facets_non_numeric_confidence_dropped():
     catalog_projection.refresh_tool_names(["badconf"])
 
     with db.session_scope() as s:
-        facets = {(row.field, row.value, row.confidence_basis_points) for row in s.query(CatalogFacetValue).filter_by(tool_name="badconf").all()}
+        facets = {
+            (row.field, row.value, row.confidence_basis_points)
+            for row in s.query(CatalogFacetValue).filter_by(tool_name="badconf").all()
+        }
     # Good facet should be present with correct confidence
     assert ("dependency", "pypi:good", 9500) in facets
     # Findings without a usable confidence never become facet rows
@@ -1131,7 +1346,7 @@ def test_latest_report_times_respects_review_approved_filter():
 
     with db.session_scope() as s:
         times = catalog_projection._latest_report_times(s)
-    
+
     # Should include only the approved report, not the newer pending one
     assert "filtered" in times
     # The timestamp should be from the approved report
@@ -1200,12 +1415,8 @@ def test_projection_version_bump_forces_refresh_and_analyzer_facets():
                 tool_name="versiontest",
                 source_label="https://code.example/versiontest",
                 report={
-                    "dependencies": [
-                        {"value": "pypi:requests", "label": "requests", "confidence": 0.92}
-                    ],
-                    "technology": [
-                        {"value": "Python", "label": "Python", "confidence": 0.99}
-                    ],
+                    "dependencies": [{"value": "pypi:requests", "label": "requests", "confidence": 0.92}],
+                    "technology": [{"value": "Python", "label": "Python", "confidence": 0.99}],
                 },
                 review_status=REVIEW_APPROVED,
                 reviewed_at=now,
@@ -1218,7 +1429,9 @@ def test_projection_version_bump_forces_refresh_and_analyzer_facets():
     with db.session_scope() as s:
         proj = s.get(CatalogToolProjection, "versiontest")
         # Verify initial projection has analyzer facets
-        facets_before = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="versiontest").all()}
+        facets_before = {
+            (row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="versiontest").all()
+        }
         assert ("dependency", "pypi:requests") in facets_before
         assert ("detected_technology", "python") in facets_before
         # Manually downgrade the projection version to simulate old schema
@@ -1233,7 +1446,9 @@ def test_projection_version_bump_forces_refresh_and_analyzer_facets():
     with db.session_scope() as s:
         proj = s.get(CatalogToolProjection, "versiontest")
         assert proj.projection_version == catalog_projection.PROJECTION_VERSION
-        facets_after = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="versiontest").all()}
+        facets_after = {
+            (row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="versiontest").all()
+        }
         # Critical: analyzer facets must persist through version bump
         assert ("dependency", "pypi:requests") in facets_after
         assert ("detected_technology", "python") in facets_after
@@ -1259,9 +1474,7 @@ def test_url_validation_flags_empty_and_credentialed_urls():
     assert empty_patch == {"url": ""}
     assert empty_errors == []
 
-    creds_patch, creds_errors = catalog_projection.validate_curation_patch(
-        {"url": "https://user:pass@host.example/"}
-    )
+    creds_patch, creds_errors = catalog_projection.validate_curation_patch({"url": "https://user:pass@host.example/"})
     assert creds_patch == {}
     assert creds_errors == [{"field": "url", "message": "Credentials are not allowed in public URLs."}]
 
@@ -2092,13 +2305,47 @@ def test_structured_metadata_text_and_curation_validation_cover_all_shapes():
         "https://example.org label"
     )
 
-    assert catalog_projection._field_validation("title", "Title") == {  # noqa: SLF001
+    assert catalog_projection.field_validation("title", "Title") == {
         "valid": True,
         "state": "accepted",
     }
-    assert catalog_projection._field_validation("privacy_policy_url", {})["valid"] is False  # noqa: SLF001
+    assert catalog_projection.field_validation("privacy_policy_url", {})["valid"] is False
     patch, errors = catalog_projection.validate_curation_patch(  # noqa: SLF001
         {"privacy_policy_url": [{"language": "fr", "url": "https://example.org/privacy"}]}
     )
     assert patch == {}
     assert errors == [{"field": "privacy_policy_url", "message": "localized URL fields are not locally curatable"}]
+
+
+def test_owner_curation_conflicts_fails_closed_when_the_canonical_row_is_missing():
+    row = CatalogCuration(tool_name="missing-tool", patch={"title": "Owner title"}, owner_proof={})
+
+    assert catalog_projection.owner_curation_conflicts(None, row) == ["title"]
+
+
+def test_owner_curation_is_not_projected_for_a_non_wiki_canonical_source():
+    now = utcnow()
+    name = "non-wiki-owner-curation"
+    source_url = "https://en.wikipedia.org/wiki/User:Alice/tool.js"
+    with db.session_scope() as session:
+        canonical = _canonical(name, title="Canonical title", url=source_url)
+        canonical.source = catalog_projection.SOURCE_CANONICAL
+        canonical.source_url = source_url
+        session.add(canonical)
+        _approved_owner_curation(
+            session,
+            name,
+            source_url,
+            now,
+            {"title": "Owner title"},
+            {"title": "Canonical title"},
+        )
+
+    catalog_projection.refresh_tool_names([name])
+
+    projection = catalog_projection.projection_payload(name)
+    assert projection["record"]["title"] == "Canonical title"
+    assert not any(
+        item["source"] == catalog_projection.SOURCE_OWNER_CURATION
+        for item in projection["provenance"]["title"]
+    )

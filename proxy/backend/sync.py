@@ -15,6 +15,15 @@ SOURCE_WIKI_GADGET = "wiki_gadget"
 # script is inferred from a corpus -- and because a catalog operator has to be
 # able to prune or trust one without the other.
 SOURCE_WIKI_USERSCRIPT = "wiki_userscript"
+CURATION_KIND_WIKI_USERSCRIPT_OWNER = "wiki_userscript_owner"
+OWNER_PROOF_PUBLIC_FIELDS = ("wiki", "username", "sourceUrl", "proofMethod", "verifiedAt")
+
+
+def public_owner_proof(value: Any) -> dict[str, str]:  # noqa: ANN401 - JSON proof payload
+    """Expose owner provenance without disclosing a stable Wikimedia id."""
+    proof = value if isinstance(value, dict) else {}
+    return {key: str(proof.get(key) or "") for key in OWNER_PROOF_PUBLIC_FIELDS if proof.get(key)}
+
 
 SYNC_OFFICIAL = "official"
 SYNC_LOCAL_DRAFT = "local_draft"

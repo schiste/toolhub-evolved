@@ -9,10 +9,24 @@ from urllib.parse import urlparse
 from flask import Blueprint, Response, jsonify, request
 from sqlalchemy import select
 
-from backend import authz, canonical_tools, db, people_index, tool_summaries, toolinfo_discovery, toolinfo_sources
+from backend import (
+    authz,
+    canonical_tools,
+    catalog_projection,
+    db,
+    people_index,
+    tool_summaries,
+    toolinfo_discovery,
+    toolinfo_sources,
+    userscript_toolinfo,
+    wiki_user_script_edits,
+    wikimedia_urls,
+)
 from backend import v1_common as common
 from backend.models import (
     CanonicalToolCache,
+    CatalogCuration,
+    CatalogToolProjection,
     PersonAccountBinding,
     PersonProfile,
     ToolAuthorClaim,
@@ -20,12 +34,19 @@ from backend.models import (
     ToolforgeMembershipProjection,
     ToolPersonRelationship,
     User,
+    UserScriptDirectoryEntry,
     utcnow,
 )
 from backend.security import current_user_id, login_required, write_guard
-from backend.sync import AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME, AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
+from backend.sync import (
+    AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+    AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+    SOURCE_WIKI_USERSCRIPT,
+)
 
 v1_me_bp = Blueprint("v1_me", __name__)
+
+MAX_ME_WIKI_USER_SCRIPTS = 200
 
 
 @v1_me_bp.route("/v1/me/claims/")
@@ -219,6 +240,148 @@ def v1_me_tools() -> Response:
     user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     payload = _canonical_account_tools(user)
     response = jsonify({**payload, "cache": {"status": "canonical"}, "summaries": _tool_summaries(payload)})
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+def _mediawiki_username_spellings(value: str) -> set[str]:
+    """Keep MediaWiki's first-letter casing rule without folding real account names together."""
+    username = wikimedia_urls.canonical_username(value)
+    if not username:
+        return set()
+    return {
+        spelling.replace(" ", separator)
+        for first in (username[0].lower(), username[0].upper())
+        for spelling in (first + username[1:],)
+        for separator in (" ", "_")
+    }
+
+
+@v1_me_bp.route("/v1/me/wiki-user-scripts/")
+@login_required
+def v1_me_wiki_user_scripts() -> Response:
+    """List public script candidates and this account's own edit-history tools."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 - login_required guarantees a session
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    usernames = _mediawiki_username_spellings(user.username)
+
+    with db.session_scope() as session:
+        directory_rows = list(
+            session.execute(
+                select(UserScriptDirectoryEntry)
+                .where(UserScriptDirectoryEntry.owner.in_(usernames or {""}))
+                .order_by(UserScriptDirectoryEntry.wiki, UserScriptDirectoryEntry.title)
+                .limit(MAX_ME_WIKI_USER_SCRIPTS + 1)
+            ).scalars()
+        )
+        directory_truncated = len(directory_rows) > MAX_ME_WIKI_USER_SCRIPTS
+        directory_rows = directory_rows[:MAX_ME_WIKI_USER_SCRIPTS]
+        candidate_entries = {
+            name: entry
+            for entry in directory_rows
+            if (name := userscript_toolinfo.tool_name(entry.wiki, entry.owner, entry.basename))
+        }
+        history_names = list(
+            session.execute(
+                select(CatalogCuration.tool_name)
+                .where(
+                    CatalogCuration.created_by_user_id == user.id,
+                    CatalogCuration.edit_kind == wiki_user_script_edits.OWNER_EDIT_KIND,
+                )
+                .distinct()
+                .order_by(CatalogCuration.tool_name)
+                .limit(MAX_ME_WIKI_USER_SCRIPTS + 1)
+            ).scalars()
+        )
+        history_truncated = len(history_names) > MAX_ME_WIKI_USER_SCRIPTS
+        history_names = history_names[:MAX_ME_WIKI_USER_SCRIPTS]
+        names = sorted(set(candidate_entries) | set(history_names))
+        truncated = directory_truncated or history_truncated or len(names) > MAX_ME_WIKI_USER_SCRIPTS
+        names = names[:MAX_ME_WIKI_USER_SCRIPTS]
+        canonical_by_name = {
+            row.tool_name: row
+            for row in session.execute(
+                select(CanonicalToolCache).where(
+                    CanonicalToolCache.tool_name.in_(names or {""}),
+                    CanonicalToolCache.source == SOURCE_WIKI_USERSCRIPT,
+                )
+            ).scalars()
+        }
+        projection_by_name = {
+            row.tool_name: row
+            for row in session.execute(
+                select(CatalogToolProjection).where(CatalogToolProjection.tool_name.in_(names or {""}))
+            ).scalars()
+        }
+        entries: list[dict[str, Any]] = []
+        for name in names:
+            canonical = canonical_by_name.get(name)
+            if canonical is None or not isinstance(canonical.record, dict):
+                continue
+            page = wikimedia_urls.user_space_javascript_page(canonical.source_url)
+            if page is None:
+                continue
+            directory_entry = candidate_entries.get(name)
+            if directory_entry is not None and wikimedia_urls.canonical_username(
+                page.username
+            ) != wikimedia_urls.canonical_username(directory_entry.owner):
+                continue
+            projection_row = projection_by_name.get(name)
+            projection_record = (
+                projection_row.effective_record
+                if projection_row is not None
+                and projection_row.projection_version == catalog_projection.PROJECTION_VERSION
+                and isinstance(projection_row.effective_record, dict)
+                else None
+            )
+            projection_available = projection_record is not None
+            current_record = projection_record if projection_record is not None else canonical.record
+            provenance = (
+                projection_row.provenance
+                if projection_record is not None
+                and projection_row is not None
+                and isinstance(projection_row.provenance, dict)
+                else {}
+            )
+            owner_curated_fields = sorted(
+                field
+                for field, evidence in provenance.items()
+                if isinstance(evidence, list)
+                and any(
+                    isinstance(item, dict)
+                    and item.get("source") == catalog_projection.SOURCE_OWNER_CURATION
+                    and item.get("effective")
+                    for item in evidence
+                )
+            )
+            entries.append(
+                {
+                    "toolName": name,
+                    "title": str(
+                        current_record.get("title") or (directory_entry.basename if directory_entry else name)
+                    ),
+                    "wiki": page.domain,
+                    "owner": page.username,
+                    "sourceUrl": canonical.source_url,
+                    "sourceMetadata": {
+                        field: canonical.record[field]
+                        for field in sorted(wiki_user_script_edits.OWNER_EDIT_FIELDS)
+                        if field in canonical.record
+                    },
+                    "currentMetadata": {
+                        field: current_record[field]
+                        for field in sorted(wiki_user_script_edits.OWNER_EDIT_FIELDS)
+                        if field in current_record
+                    },
+                    "projectionAvailable": projection_available,
+                    "ownerCuratedFields": owner_curated_fields,
+                    "historyOnly": directory_entry is None,
+                    "verificationRequired": True,
+                }
+            )
+
+    response = jsonify({"entries": entries, "truncated": truncated})
     response.headers["Cache-Control"] = "private, no-store"
     return response
 

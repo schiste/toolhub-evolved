@@ -450,6 +450,12 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # asked the same questions twice.
             "asked_signature": "VARCHAR(255) NOT NULL DEFAULT ''",
         },
+        "catalog_curations": {
+            "edit_kind": "VARCHAR(32) NOT NULL DEFAULT 'community'",
+            "owner_proof": f"{json_col} NULL",
+            "base_values": f"{json_col} NULL",
+            "base_source_values": f"{json_col} NULL",
+        },
         "catalog_tool_projection": {
             # Empty means "a standalone tool", which is what every row stored
             # before this column was implicitly claiming, so the default states

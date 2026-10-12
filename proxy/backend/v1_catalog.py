@@ -8,6 +8,7 @@ reloading backend.v1 keeps working.
 """
 
 from flask import Blueprint, Response, jsonify, request
+from sqlalchemy import select
 
 from backend import (
     activity_privacy,
@@ -16,19 +17,24 @@ from backend import (
     catalog_read,
     db,
     tool_assets,
+    wiki_user_script_edits,
 )
 from backend import v1_common as common
 from backend.models import (
     CanonicalToolCache,
     CatalogCuration,
+    User,
+    utcnow,
 )
-from backend.security import write_guard
+from backend.security import login_required, write_guard
 from backend.sync import (
     REVIEW_APPROVED,
     REVIEW_PENDING,
     SOURCE_LOCAL,
     SYNC_EVOLVED_REAL,
+    public_owner_proof,
 )
+from backend.wikimedia_delivery import WikimediaAPIError, WikimediaClient
 
 v1_catalog_bp = Blueprint("v1_catalog", __name__)
 UPSTREAM = "https://toolhub.wikimedia.org"
@@ -177,6 +183,134 @@ def v1_catalog_curation_create(name: str) -> Response:
             official_status=SYNC_EVOLVED_REAL,
             payload=item,
         )
+    response = jsonify({"ok": True, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL, "item": item})
+    response.status_code = 201
+    return response
+
+
+@v1_catalog_bp.route("/v1/catalog/tools/<name>/owner-edits/")
+@login_required
+def v1_catalog_owner_edits_context(name: str) -> Response:
+    """Show owner-edit eligibility and only the signed-in user's revisions."""
+    clean_name = common.clean_name(name)
+    if clean_name is None:
+        return common.bad("tool name is required")
+    user_id = common.current_user_id()
+    wiki_client = WikimediaClient()
+    with db.session_scope() as s:
+        user = s.get(User, user_id)
+        canonical = s.get(CanonicalToolCache, clean_name)
+        if user is None:
+            return common.deny(common.HTTP_UNAUTHORIZED, "sign in required")
+        if canonical is None:
+            return common.deny(common.HTTP_NOT_FOUND, "canonical tool not found")
+        try:
+            context = wiki_user_script_edits.owner_edit_context(
+                s, user, canonical, identity_matches=wiki_client.user_identity_matches
+            )
+        except WikimediaAPIError:
+            context = {
+                "supported": True,
+                "canEdit": False,
+                "reason": "wikimedia_identity_unavailable",
+                "ownerProof": {},
+            }
+        rows = list(
+            s.execute(
+                select(CatalogCuration)
+                .where(
+                    CatalogCuration.tool_name == clean_name,
+                    CatalogCuration.created_by_user_id == user.id,
+                    CatalogCuration.edit_kind == wiki_user_script_edits.OWNER_EDIT_KIND,
+                    CatalogCuration.deleted_at.is_(None),
+                )
+                .order_by(CatalogCuration.created_at.desc(), CatalogCuration.id.desc())
+                .limit(50)
+            ).scalars()
+        )
+        items = []
+        for row in rows:
+            item = common.moderation_item("catalog-curations", row)
+            item["data"]["conflictFields"] = catalog_projection.owner_curation_conflicts(canonical, row)
+            items.append(item)
+    response = jsonify(
+        {
+            "ok": True,
+            "toolName": clean_name,
+            "supported": context["supported"],
+            "canEdit": context["canEdit"],
+            "reason": context["reason"],
+            "ownerProof": public_owner_proof(context.get("ownerProof")),
+            "items": items,
+        }
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@v1_catalog_bp.route("/v1/catalog/tools/<name>/owner-edits/", methods=["POST"])
+@write_guard
+def v1_catalog_owner_edit_create(name: str) -> Response:  # noqa: PLR0911 - fail-closed request guards exit before writes.
+    """Persist one verified owner's metadata revision for moderator review."""
+    clean_name = common.clean_name(name)
+    if clean_name is None:
+        return common.bad("tool name is required")
+    value = request.get_json(silent=True)
+    if not isinstance(value, dict):
+        return common.bad("owner edit body must be a JSON object")
+    patch, errors = wiki_user_script_edits.validate_owner_patch(value.get("patch"))
+    if errors:
+        return common.bad("owner edit validation failed", errors)
+    rationale = " ".join(str(value.get("rationale") or "").split()).strip()[:2000]
+    if not rationale:
+        return common.bad("rationale is required", [{"field": "rationale", "message": "Explain the correction."}])
+    user = common.require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
+    wiki_client = WikimediaClient()
+    try:
+        with db.session_scope() as s:
+            signed_user = s.get(User, user.id)
+            canonical = s.get(CanonicalToolCache, clean_name)
+            if signed_user is None:
+                return common.deny(common.HTTP_UNAUTHORIZED, "sign in required")
+            if canonical is None:
+                return common.deny(common.HTTP_NOT_FOUND, "canonical tool not found")
+            context = wiki_user_script_edits.owner_edit_context(
+                s, signed_user, canonical, identity_matches=wiki_client.user_identity_matches
+            )
+            if not context["canEdit"]:
+                return common.deny(common.HTTP_FORBIDDEN, "verified Wikimedia ownership of this script is required")
+            now = utcnow()
+            owner_proof = dict(context["ownerProof"])
+            owner_proof["verifiedAt"] = now.isoformat(timespec="seconds") + "Z"
+            record = canonical.record if isinstance(canonical.record, dict) else {}
+            base_values = {field: record.get(field) for field in patch}
+            row = CatalogCuration(
+                tool_name=clean_name,
+                created_by_user_id=signed_user.id,
+                patch=patch,
+                edit_kind=wiki_user_script_edits.OWNER_EDIT_KIND,
+                owner_proof=owner_proof,
+                base_values=base_values,
+                base_source_values=dict(base_values),
+                rationale=rationale,
+                review_status=REVIEW_PENDING,
+                created_at=now,
+                modified_at=now,
+            )
+            s.add(row)
+            s.flush()
+            item = common.moderation_item("catalog-curations", row)
+            common.emit_structured_activity(
+                s,
+                signed_user,
+                action="wiki-userscript-owner-metadata-proposed",
+                object_type="catalog-curations",
+                object_key=str(row.id),
+                official_status=SYNC_EVOLVED_REAL,
+                payload=item,
+            )
+    except WikimediaAPIError:
+        return common.deny(common.HTTP_BAD_GATEWAY, "Wikimedia identity verification is unavailable")
     response = jsonify({"ok": True, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL, "item": item})
     response.status_code = 201
     return response

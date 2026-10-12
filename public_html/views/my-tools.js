@@ -8,6 +8,7 @@ import { USER } from "../lib/core/session.js";
 import { invalidUrlNotice } from "../lib/atoms/labels.js";
 import { accountEmptyState, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
 import { sourceAnalysisWorkspace } from "../lib/organisms/source-analysis.js";
+import { wikiUserScriptOwnerEditsWorkspace } from "../lib/organisms/wiki-user-script-owner-edits.js";
 import { buildToolinfoGeneratorEntries, toolinfoGeneratorWorkspace } from "../lib/organisms/toolinfo-generator.js";
 import { toolRegistrationWorkspace } from "./toolforms.js";
 
@@ -299,6 +300,7 @@ export async function viewMyTools() {
 	}
 	const registration = toolRegistrationWorkspace();
 	const sourceAnalysis = sourceAnalysisWorkspace();
+	const wikiUserScripts = wikiUserScriptOwnerEditsWorkspace();
 	const generatorEntries = buildToolinfoGeneratorEntries(tools, payload);
 	const generator = toolinfoGeneratorWorkspace(generatorEntries, {
 		displayName: payload?.person?.displayName || USER.name,
@@ -320,7 +322,7 @@ export async function viewMyTools() {
 			USER.name
 		),
 		className: "account-records account-tools at",
-		body: `${content}${generator.html}${registration.html}${sourceAnalysis.html}`
+		body: `${content}${wikiUserScripts.html}${generator.html}${registration.html}${sourceAnalysis.html}`
 	});
 	return {
 		title: t("accountTools.docTitle", "My tools - Toolhub"),
@@ -329,6 +331,7 @@ export async function viewMyTools() {
 			generator.mount();
 			registration.mount();
 			sourceAnalysis.mount();
+			wikiUserScripts.mount();
 		},
 		styles: [STYLESHEET]
 	};

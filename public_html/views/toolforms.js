@@ -244,6 +244,7 @@ function withCatalogFieldProvenance(html, label, writeMeta, projection, field) {
 		repository_analysis: t("toolforms.sourceRepositoryAnalysis", "repository analysis"),
 		wikimedia_user_script: t("toolforms.sourceWikimediaUserScript", "wikimedia user script page"),
 		evolved_curation: t("toolforms.sourceEvolvedCuration", "reviewed Evolved correction"),
+		verified_wiki_user_script_owner: t("toolforms.sourceOwnerCuration", "verified user-script owner curation"),
 		wiki_gadget_definition: t("toolforms.sourceGadgetDefinition", "wiki gadget definition"),
 		llm_inference: t("toolforms.sourceInference", "inferred from source code"),
 		wiki_talk_page: t("toolforms.sourceWikiTalk", "the talk page beside the wiki page")

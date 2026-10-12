@@ -18,6 +18,7 @@ from backend.sync import (
     SYNC_LOCAL_FALLBACK,
     SYNC_OFFICIAL,
     clean_review_status,
+    public_owner_proof,
 )
 from backend.v1_contracts import VISIBILITY_PRIVATE, VISIBILITY_PUBLIC
 
@@ -182,9 +183,14 @@ def moderation_item(kind: str, row: object) -> dict:
             "patch": item.patch,
             "rationale": item.rationale,
             "reviewStatus": item.review_status,
+            "editKind": item.edit_kind or "community",
+            "ownerProof": public_owner_proof(item.owner_proof),
+            "baseValues": item.base_values if isinstance(item.base_values, dict) else {},
+            "baseSourceValues": item.base_source_values if isinstance(item.base_source_values, dict) else {},
             "createdByUserId": item.created_by_user_id,
             "createdAt": iso(item.created_at),
             "modifiedAt": iso(item.modified_at),
+            "reviewedAt": iso(item.reviewed_at),
         },
         "tool-records": tool_record_payload,
         "health-targets": health_target_payload,
