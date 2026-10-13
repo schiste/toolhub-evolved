@@ -3,8 +3,8 @@
   "available": true,
   "source_revision": "45aae4f3182340b84529fb44bab6d069a5787686",
   "indexed_revision": "45aae4f3182340b84529fb44bab6d069a5787686",
-  "source_tree_sha256": "2acaef5975a9a4ecb208cb9035eee2cb0f71c4a48e3d1d5b9a7369464382b8ae",
-  "indexed_tree_sha256": "2acaef5975a9a4ecb208cb9035eee2cb0f71c4a48e3d1d5b9a7369464382b8ae",
+  "source_tree_sha256": "5e860f838b1094d99e76f2738cbdf1894f9bb2125499f221be9ffe8633b3e6e8",
+  "indexed_tree_sha256": "5e860f838b1094d99e76f2738cbdf1894f9bb2125499f221be9ffe8633b3e6e8",
   "engine_version": "0.8.26",
   "coverage_mode": "partial",
   "safe_to_use": false,
@@ -22,13 +22,13 @@
     "excluded": 12
   },
   "bytes": {
-    "discovered": 10839796,
+    "discovered": 10839926,
     "eligible": 10665191,
     "parsed": 8461050,
     "partial": 0,
     "unsupported": 39196,
     "non_code": 2164945,
-    "excluded": 174605,
+    "excluded": 174735,
     "source_read": 10361029
   },
   "by_language": {
