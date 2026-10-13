@@ -28,7 +28,11 @@ if [ "$deploy_branch" != "main" ]; then
 	echo "Refusing deploy: expected Toolforge checkout on main, found '$deploy_branch'." >&2
 	exit 1
 fi
-if [ -n "$(git -C "$REPO_DIR" status --porcelain)" ]; then
+if ! deploy_status="$(git -C "$REPO_DIR" status --porcelain)"; then
+	echo "Refusing deploy: could not verify Toolforge checkout status." >&2
+	exit 1
+fi
+if [ -n "$deploy_status" ]; then
 	echo "Refusing deploy: Toolforge checkout is dirty." >&2
 	exit 1
 fi

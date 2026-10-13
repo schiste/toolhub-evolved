@@ -27,7 +27,8 @@ description: Use after repo-onboarding or Explore when moving from orientation i
 
 ## Useful Commands
 
-- `fast_test`: `python -m pytest`
+- `fast_test`: `npm run test:unit`
+- `full_test`: `npm run test:unit && npm run test:e2e`
 - `lint`: `npm run lint`
 
 ## Primary Entrypoints

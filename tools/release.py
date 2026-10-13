@@ -278,7 +278,8 @@ class ReleaseCoordinator:
         return (
             'set -eu; cd "$HOME/repo"; '
             'if [ "$(git branch --show-current)" != "main" ]; then printf "guard=wrong-branch\\n"; exit 2; fi; '
-            'if git status --porcelain | grep -q .; then printf "guard=dirty\\n"; git status --short; exit 3; fi; '
+            'if ! toolforge_status=$(git status --porcelain); then printf "guard=status-failed\\n" >&2; exit 4; fi; '
+            'if [ -n "$toolforge_status" ]; then printf "guard=dirty\\n"; git status --short; exit 3; fi; '
             'printf "guard=ok\\nbranch=%s\\nhead=%s\\n" "$(git branch --show-current)" "$(git rev-parse HEAD)"'
         )
 

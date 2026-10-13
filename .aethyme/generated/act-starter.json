@@ -21,8 +21,8 @@
     ]
   },
   "commands": {
-    "fast_test": "python -m pytest",
-    "full_test": null,
+    "fast_test": "npm run test:unit",
+    "full_test": "npm run test:unit && npm run test:e2e",
     "lint": "npm run lint",
     "build": null,
     "dev": null

@@ -40,13 +40,9 @@ jobs:
                   test "$(tr -d '\r\n' < .aethyme/engine-version)" = "$AETHYME_VERSION"
                   aethyme --version
                   aethyme-engine-cli --version
-            # Full verification checks generated outputs and repository policy;
-            # --generated-only isolates generated-output checks without policy
-            # certification. Both validate generated files.
+            # Full verification checks generated outputs and repository policy.
             - name: Verify repository policy
               run: aethyme deploy verify --repo .
-            - name: Verify repository enhancement
-              run: aethyme deploy verify --generated-only --repo .
             - name: Verify committed graph and smoke-test Explore
               run: python3 tools/aethyme_graph.py check
 

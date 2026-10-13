@@ -362,3 +362,35 @@ def test_pending_workflows_are_watched_once_each_then_read_back() -> None:
 
     assert watched == [101, 102]
     assert {name: row["runId"] for name, row in checks.items()} == {"CI": 101, "CodeQL": 102}
+
+
+def test_toolforge_preflight_fails_closed_when_git_status_fails(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git = bin_dir / "git"
+    git.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        '  branch) printf "main\\n" ;;\n'
+        '  status) exit 128 ;;\n'
+        f'  rev-parse) printf "{OTHER_SHA}\\n" ;;\n'
+        '  *) exit 2 ;;\n'
+        'esac\n'
+    )
+    git.chmod(0o755)
+    environment = {"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path)}
+
+    result = subprocess.run(
+        ["sh", "-c", release_cli.ReleaseCoordinator._preflight_script()],
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=10,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "guard=ok" not in result.stdout
+    assert "guard=status-failed" in result.stderr

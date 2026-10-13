@@ -163,44 +163,33 @@
   "commands": [
     {
       "kind": "install",
-      "command": "python -m pip install -e .",
-      "source": "pyproject.toml",
-      "confidence": "medium",
-      "workspace_root": ".",
-      "provenance": "derived from tracked workspace manifest"
+      "command": "npm ci",
+      "source": "manual-override",
+      "confidence": "high"
     },
     {
       "kind": "fast_test",
-      "command": "pytest",
-      "source": "pyproject.toml",
-      "confidence": "medium"
+      "command": "npm run test:unit",
+      "source": "manual-override",
+      "confidence": "high"
     },
     {
-      "kind": "fast_test",
-      "command": "python -m pytest",
-      "source": "pyproject.toml",
-      "confidence": "medium",
-      "workspace_root": ".",
-      "provenance": "derived from tracked workspace manifest"
+      "kind": "full_test",
+      "command": "npm run test:unit && npm run test:e2e",
+      "source": "manual-override",
+      "confidence": "high"
     },
     {
       "kind": "lint",
       "command": "npm run lint",
-      "source": "package.json",
-      "confidence": "high",
-      "workspace_root": ".",
-      "provenance": "derived from tracked workspace manifest"
-    },
-    {
-      "kind": "lint",
-      "command": "ruff check .",
-      "source": "pyproject.toml",
-      "confidence": "medium"
+      "source": "manual-override",
+      "confidence": "high"
     }
   ],
   "primary_commands": {
-    "install": "python -m pip install -e .",
-    "fast_test": "python -m pytest",
+    "install": "npm ci",
+    "fast_test": "npm run test:unit",
+    "full_test": "npm run test:unit && npm run test:e2e",
     "lint": "npm run lint"
   },
   "areas": [
@@ -305,11 +294,15 @@
     ]
   },
   "freshness": {
-    "source_digest": "cb6347b81a825f9b3fb84bc7fb885c6025b16d1991c9bacda882d5c55dd4b95b",
+    "source_digest": "23ee22758a1797e21149a9c44385d57f8b984abf6da4740acb44a2f4c30852b3",
     "source_commit": null,
-    "source_file_count": 1747,
+    "source_file_count": 1975,
     "generator": "deterministic"
   },
+  "notes": [
+    "JavaScript unit tests run with `npm run test:unit`; full JavaScript validation runs unit tests and browser E2E with `npm run test:unit && npm run test:e2e`.",
+    "The separate Python proxy suite is `uv run --no-project --with-requirements proxy/requirements.txt --with pytest --python 3.11 env PYTHONPATH=proxy pytest tests/proxy -q`."
+  ],
   "telemetry": {
     "sections": [
       "repo",
@@ -327,17 +320,17 @@
     ],
     "counts": {
       "workspaces": 2,
-      "commands": 5,
+      "commands": 4,
       "areas": 4,
       "entrypoints": 1,
       "caution_zones": 0,
       "generated_paths": 1,
       "dangerous_paths": 2,
       "navigation_recipes": 3,
-      "notes": 0
+      "notes": 2
     },
-    "overrides_applied": false,
-    "override_source": null,
+    "overrides_applied": true,
+    "override_source": ".aethyme/overrides/onboarding.json",
     "override_invalid": false
   }
 }

@@ -54,7 +54,10 @@ def _stub_git(tmp_path: Path) -> Path:
         'case "$1" in\n'
         f'  pull) printf %s "{AFTER_SHA}" > "$head_file" ;;\n'
         '  branch) printf "%s\\n" "${DEPLOY_TEST_BRANCH:-main}" ;;\n'
-        '  status) [ "${DEPLOY_TEST_DIRTY:-0}" = "1" ] && printf "%s\\n" " M tracked" ;;\n'
+        '  status)\n'
+        '    if [ "${DEPLOY_TEST_STATUS_FAIL:-0}" = "1" ]; then exit 128; fi\n'
+        '    if [ "${DEPLOY_TEST_DIRTY:-0}" = "1" ]; then printf "%s\\n" " M tracked"; fi\n'
+        '    exit 0 ;;\n'
         '  rev-parse) cat "$head_file" ;;\n'
         "esac\n"
     )
@@ -149,6 +152,14 @@ def test_expected_sha_requires_clean_checkout_before_pull(tmp_path: Path) -> Non
     assert result.returncode == 1
     assert "checkout is dirty" in result.stderr
     assert (tmp_path / "head").read_text() == BEFORE_SHA, "dirty checkout reached git pull"
+
+
+def test_git_status_failure_fails_closed_before_pull(tmp_path: Path) -> None:
+    result = _run_with_expected_sha(tmp_path, AFTER_SHA, DEPLOY_TEST_STATUS_FAIL="1")
+
+    assert result.returncode != 0
+    assert "could not verify Toolforge checkout status" in result.stderr
+    assert (tmp_path / "head").read_text() == BEFORE_SHA, "status failure reached git pull"
 
 
 def test_failed_deploy_guidance_treats_predeploy_sha_as_reference_only() -> None:

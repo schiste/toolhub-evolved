@@ -26,20 +26,17 @@ description: Use when starting work in an unfamiliar repository, when the task a
 
 ## Start Here
 
-- `install`: `python -m pip install -e .`
-- `fast_test`: `python -m pytest`
+- `install`: `npm ci`
+- `fast_test`: `npm run test:unit`
+- `full_test`: `npm run test:unit && npm run test:e2e`
 - `lint`: `npm run lint`
 
 ## Supporting Commands
 
-- `python -m pip install -e .` (install; medium confidence from `pyproject.toml`)
-  Workspace: `.`
-- `pytest` (fast_test; medium confidence from `pyproject.toml`)
-- `python -m pytest` (fast_test; medium confidence from `pyproject.toml`)
-  Workspace: `.`
-- `npm run lint` (lint; high confidence from `package.json`)
-  Workspace: `.`
-- `ruff check .` (lint; medium confidence from `pyproject.toml`)
+- `npm ci` (install; high confidence from `manual-override`)
+- `npm run test:unit` (fast_test; high confidence from `manual-override`)
+- `npm run test:unit && npm run test:e2e` (full_test; high confidence from `manual-override`)
+- `npm run lint` (lint; high confidence from `manual-override`)
 
 ## Entrypoints
 
@@ -71,9 +68,14 @@ description: Use when starting work in an unfamiliar repository, when the task a
 - Sensitive `.aethyme/gates.toml`: repository validation policy; changes affect every broker submission
 - Sensitive `.github/workflows`: repository automation; changes can affect publication or shared CI
 
+## Maintainer Notes
+
+- JavaScript unit tests run with `npm run test:unit`; full JavaScript validation runs unit tests and browser E2E with `npm run test:unit && npm run test:e2e`.
+- The separate Python proxy suite is `uv run --no-project --with-requirements proxy/requirements.txt --with pytest --python 3.11 env PYTHONPATH=proxy pytest tests/proxy -q`.
+
 ## Freshness
 
-- Source digest: `cb6347b81a825f9b3fb84bc7fb885c6025b16d1991c9bacda882d5c55dd4b95b`
-- Tracked source files: `1747`
-- Overrides applied: `False`
+- Source digest: `23ee22758a1797e21149a9c44385d57f8b984abf6da4740acb44a2f4c30852b3`
+- Tracked source files: `1975`
+- Overrides applied: `True`
 - Sections generated: `repo, workspaces, primary_workspace, commands, areas, entrypoints, caution_zones, generated_paths, dangerous_paths, navigation_recipes, summon, freshness`

@@ -6,6 +6,7 @@
 #   [promote] branch  integration branch name
 #   [leases]  ignore  paths never leased (trailing / = directory prefix)
 #   [delivery] push_session_branches  opt in to publishing session branches
+#   [graph]   authority/repository  committed graph source and repository identity
 # Unknown keys are ignored at runtime; `aethyme certify` warns on them.
 
 schema = 1
