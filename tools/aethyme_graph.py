@@ -171,11 +171,51 @@ def check_graph(repo: Path = REPO_ROOT) -> None:
             "review `python3 tools/aethyme_graph.py plan` before applying a digest"
         )
     _run([router, "graph", "materialize", "--repo", str(repo)], cwd=repo)
-    explore_smoke(repo)
+    _verify_materialized_graph(repo, router)
+    explore_smoke(repo, allow_unknown_freshness=True)
 
 
-def explore_smoke(repo: Path = REPO_ROOT) -> None:
-    """Prove the rebuilt store is fresh and returns bounded navigation evidence."""
+def _nonempty_string_list(value: Any) -> bool:
+    """Accept only non-empty lists of non-empty strings."""
+    return isinstance(value, list) and bool(value) and all(isinstance(item, str) and item.strip() for item in value)
+
+
+def _verify_materialized_graph(repo: Path, router: str) -> None:
+    """Require current fragments and a queryable, current derived graph store."""
+    status = _read_json([router, "graph", "status", "--repo", str(repo), "--json"], cwd=repo)
+    source = status.get("source")
+    fragments = status.get("fragments")
+    store = status.get("derived_store")
+    if status.get("healthy") is not True or status.get("compatibility") != "compatible":
+        _die(f"Aethyme graph status is unhealthy or incompatible: {status.get('diagnosis')}")
+    source_sha = source.get("head_sha") if isinstance(source, dict) else None
+    if not isinstance(source_sha, str) or re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", source_sha) is None:
+        _die("Aethyme graph status is missing a valid full Git revision SHA")
+    changed_file_count = fragments.get("changed_file_count") if isinstance(fragments, dict) else None
+    if (
+        not isinstance(fragments, dict)
+        or fragments.get("status") != "passed"
+        or isinstance(changed_file_count, bool)
+        or not isinstance(changed_file_count, int)
+        or changed_file_count != 0
+        or fragments.get("working_tree_matches_proposal") is not True
+    ):
+        _die(f"Aethyme graph fragments are not current: {fragments}")
+    if (
+        not isinstance(store, dict)
+        or store.get("status") != "current"
+        or store.get("indexed_commit") != source["head_sha"]
+    ):
+        _die(f"Aethyme derived graph store is not current: {store}")
+    overview = _read_json([router, "graph", "overview", str(repo), "--json-output"], cwd=repo)
+    code_areas = overview.get("code_areas")
+    representative_code_files = overview.get("representative_code_files")
+    if not _nonempty_string_list(code_areas) or not _nonempty_string_list(representative_code_files):
+        _die("Aethyme graph overview returned no repository navigation evidence")
+
+
+def explore_smoke(repo: Path = REPO_ROOT, *, allow_unknown_freshness: bool = False) -> None:
+    """Require answer-safe navigation, rejecting stale or unverified freshness."""
     router = _resolve_binary("AETHYME_BIN", "aethyme")
     with tempfile.NamedTemporaryFile(mode="w+", suffix=".json") as output:
         _run(
@@ -200,10 +240,17 @@ def explore_smoke(repo: Path = REPO_ROOT) -> None:
     readiness = payload.get("observability", {}).get("readiness", {})
     if payload.get("status") != "complete":
         _die(f"Explore smoke did not complete: status={payload.get('status')!r}")
-    if not payload.get("safe_to_use_as_navigation") or not payload.get("answer"):
+    if payload.get("safe_to_use_as_navigation") is not True or not payload.get("answer"):
         _die("Explore smoke returned no answer-safe navigation evidence")
-    if readiness.get("fresh_enough") is not True or readiness.get("graph_freshness_status") != "fresh":
-        _die(f"Explore smoke used a stale graph: {readiness}")
+    freshness_is_unknown_but_verified = (
+        allow_unknown_freshness
+        and readiness.get("fresh_enough") is False
+        and readiness.get("graph_freshness_status") == "unknown"
+    )
+    if not freshness_is_unknown_but_verified and (
+        readiness.get("fresh_enough") is not True or readiness.get("graph_freshness_status") != "fresh"
+    ):
+        _die(f"Explore smoke freshness is unverified: {readiness}")
 
 
 def main() -> int:
