@@ -1,0 +1,3 @@
+{"module":".claude.settings.local","symbol":"hooks.SessionStart.[0].hooks.[0].command","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:6pomolbmh3qqa33qmx2ujiafkq","file":".claude/settings.local.json"}
+{"module":".claude.settings.local","symbol":"hooks.SessionStart.[0].hooks.[0].type","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:vsjfbtmuoqujyag4txc4q7lycy","file":".claude/settings.local.json"}
+{"module":".claude.settings.local","symbol":"hooks.SessionStart.[0].matcher","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:rmleactnmakcqeougfyxwkqkta","file":".claude/settings.local.json"}

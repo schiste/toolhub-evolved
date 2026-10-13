@@ -15,24 +15,28 @@ description: Use when starting work in an unfamiliar repository, when the task a
 ## Repo Identity
 
 - Kind: `repository`
-- Languages: `python, javascript`
-- Package manager: `npm`
+- Languages: `python, typescript`
+- Package manager: `python`
 - Key manifests: `package.json, pyproject.toml`
+
+## Workspaces
+
+- `.` (primary; python; manifest `pyproject.toml`; high confidence)
+- `.` (supporting; npm; manifest `package.json`; high confidence)
 
 ## Start Here
 
-- `install`: `npm install`
+- `install`: `npm ci`
 - `fast_test`: `npm run test:unit`
-- `full_test`: `npm run test:e2e`
+- `full_test`: `npm run test:unit && npm run test:e2e`
 - `lint`: `npm run lint`
 
 ## Supporting Commands
 
-- `npm install` (install; high confidence from `package.json`)
-- `python -m pip install -e .` (install; medium confidence from `pyproject.toml`)
-- `npm run test:unit` (fast_test; high confidence from `package.json:scripts.test:unit`)
-- `pytest` (fast_test; medium confidence from `pyproject.toml`)
-- `npm run test:e2e` (full_test; high confidence from `package.json:scripts.test:e2e`)
+- `npm ci` (install; high confidence from `manual-override`)
+- `npm run test:unit` (fast_test; high confidence from `manual-override`)
+- `npm run test:unit && npm run test:e2e` (full_test; high confidence from `manual-override`)
+- `npm run lint` (lint; high confidence from `manual-override`)
 
 ## Entrypoints
 
@@ -58,9 +62,20 @@ description: Use when starting work in an unfamiliar repository, when the task a
 - `aethyme graph callers "$PWD" "<symbol-or-file>" --json-output`
   Purpose: Trace likely impact before editing
 
+## Generated and Dangerous Paths
+
+- Generated/vendor `.aethyme/generated`: tracked generated or vendored surface; verify ownership before editing
+- Sensitive `.aethyme/gates.toml`: repository validation policy; changes affect every broker submission
+- Sensitive `.github/workflows`: repository automation; changes can affect publication or shared CI
+
+## Maintainer Notes
+
+- JavaScript unit tests run with `npm run test:unit`; full JavaScript validation runs unit tests and browser E2E with `npm run test:unit && npm run test:e2e`.
+- The separate Python proxy suite is `uv run --no-project --with-requirements proxy/requirements.txt --with pytest --python 3.11 env PYTHONPATH=proxy pytest tests/proxy -q`.
+
 ## Freshness
 
-- Source digest: `a14ad462b8ff4aed2d03047d38fbd3f40e8873f20b2a2c2ea87ff913b8038c6a`
-- Tracked source files: `588`
-- Overrides applied: `False`
-- Sections generated: `repo, commands, areas, entrypoints, caution_zones, navigation_recipes, summon, freshness`
+- Source digest: `23ee22758a1797e21149a9c44385d57f8b984abf6da4740acb44a2f4c30852b3`
+- Tracked source files: `1975`
+- Overrides applied: `True`
+- Sections generated: `repo, workspaces, primary_workspace, commands, areas, entrypoints, caution_zones, generated_paths, dangerous_paths, navigation_recipes, summon, freshness`

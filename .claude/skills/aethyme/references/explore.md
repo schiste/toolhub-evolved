@@ -13,8 +13,25 @@ Explore depth or intent to use.
 
 ## Default Flow
 
-Start with one bounded call. Save the full JSON to a temp file, then print a
-compact projection for agent-facing inspection:
+Explore ranks candidates; it does not decide. Treat every result as a
+navigation aid and verify it against source before relying on it. Explore
+earns its keep on "where is X" questions. It is not a mandatory first step,
+and a direct read or a tiny grep is the better tool when it already answers.
+
+For most questions, one call is enough. `--format brief` prints the compact
+projection (trust, readiness, subsystems, verification steps) and the top 2
+verified source spans, at most 80 lines each. It reads the same answer document
+as the JSON format, starts on `--depth 0`, and `--repo` defaults to the current
+directory:
+
+```bash
+"$AETHYME_BIN" explore --request "<user request>" --format brief
+```
+
+When you need the machine-readable document (audit, a later `--detail full`
+comparison, or more than two spans), make one bounded JSON call instead. Save
+the full JSON to a temp file, then print a compact projection for agent-facing
+inspection:
 
 ```bash
 AETHYME_JSON="$(mktemp -t aethyme-explore.XXXXXX.json)"

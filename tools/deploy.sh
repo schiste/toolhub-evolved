@@ -1,11 +1,41 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Toolforge update helper for the Python webservice (Flask app in proxy/).
-# Run as the tool account:  become <toolname> && sh ~/repo/tools/deploy.sh
-# (First-time setup of the venv is in docs/deploy-toolforge.md.)
+# Every invocation requires an exact SHA; tools/release.py also gates CI and approval.
+# Direct invocation alone is not a supported release path.
 set -eu
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+expected_deploy_sha="${TOOLHUB_DEPLOY_EXPECTED_SHA:-}"
+if [ -z "$expected_deploy_sha" ]; then
+	echo "Refusing deploy: TOOLHUB_DEPLOY_EXPECTED_SHA is required; use tools/release.py." >&2
+	exit 1
+fi
+case "$expected_deploy_sha" in
+	*[!0123456789abcdef]*)
+		echo "Refusing deploy: TOOLHUB_DEPLOY_EXPECTED_SHA must be a 40-character lowercase Git SHA." >&2
+		exit 1
+		;;
+esac
+if [ "${#expected_deploy_sha}" -ne 40 ]; then
+	echo "Refusing deploy: TOOLHUB_DEPLOY_EXPECTED_SHA must be a 40-character lowercase Git SHA." >&2
+	exit 1
+fi
+
+deploy_branch="$(git -C "$REPO_DIR" branch --show-current)"
+if [ "$deploy_branch" != "main" ]; then
+	echo "Refusing deploy: expected Toolforge checkout on main, found '$deploy_branch'." >&2
+	exit 1
+fi
+if ! deploy_status="$(git -C "$REPO_DIR" status --porcelain)"; then
+	echo "Refusing deploy: could not verify Toolforge checkout status." >&2
+	exit 1
+fi
+if [ -n "$deploy_status" ]; then
+	echo "Refusing deploy: Toolforge checkout is dirty." >&2
+	exit 1
+fi
 
 echo "Updating $REPO_DIR ..."
 # The re-exec below runs after the pull, so the second process would recompute
@@ -15,6 +45,10 @@ echo "Updating $REPO_DIR ..."
 deploy_head_before="${TOOLHUB_DEPLOY_HEAD_BEFORE:-$(git -C "$REPO_DIR" rev-parse HEAD)}"
 git -C "$REPO_DIR" pull --ff-only
 deploy_head_after="$(git -C "$REPO_DIR" rev-parse HEAD)"
+if [ "$deploy_head_after" != "$expected_deploy_sha" ]; then
+	echo "Refusing deploy: expected $expected_deploy_sha but Toolforge main resolved to $deploy_head_after; no migration, build, or restart was run." >&2
+	exit 1
+fi
 deploy_id="$deploy_head_after"
 if [ "$deploy_head_before" != "$deploy_head_after" ] && [ "${TOOLHUB_DEPLOY_REEXECUTED:-0}" != "1" ]; then
 	echo "Restarting deploy with the updated script ..."
@@ -210,11 +244,16 @@ while [ "$attempt" -le 30 ]; do
 	attempt=$((attempt + 1))
 done
 
+report_emergency_recovery_guidance() {
+	echo "Pre-deploy SHA (recovery reference only): $deploy_head_before" >&2
+	echo "Do not restore it directly. Stop and escalate to the responsible operator; this helper does not define an emergency restoration procedure." >&2
+}
+
 if [ "$ready" -ne 1 ]; then
 	echo "Webservice did not become healthy after restart; current status:" >&2
 	webservice status >&2 || true
 	echo "Rollback criterion met: the app shell or a required bundle is unavailable." >&2
-	echo "Restore $deploy_head_before, restart the webservice, and rerun the smoke check." >&2
+	report_emergency_recovery_guidance
 	exit 1
 fi
 
@@ -222,7 +261,8 @@ echo "Verifying production API contracts ..."
 failure_phase="smoke"
 if ! "$TOOL_PY" "$REPO_DIR/tools/post_deploy_smoke.py" --base-url "$BASE_URL"; then
 	echo "Rollback criterion met: readiness, catalog, capability, or write-guard smoke failed." >&2
-	echo "Restore $deploy_head_before, restart the webservice, and inspect $deployment_diagnostics." >&2
+	echo "Deployment diagnostics: $deployment_diagnostics" >&2
+	report_emergency_recovery_guidance
 	exit 1
 fi
 restart_finished="$(date +%s.%N)"

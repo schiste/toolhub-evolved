@@ -1,0 +1,17 @@
+{"module":"public_html.views.changelog","symbol":"Array.isArray","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:3xprgx7zhajo2x44doenfcs6pm","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"Date","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:au22l4rdct74rb65peyff4m7ly","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"Intl.DateTimeFormat","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:tdbpdpnrkznzx5425l3j6mjide","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"Number.isNaN","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:jvnxrlzaiku3bbpq4jyhim6uv4","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"STYLESHEET","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:wyydoka5racqegcowunjxm6xhm","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"backendGetJson","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:6fdgvs2pafnugiw6amj2cpbyu4","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"backendGetJson","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:bugqj2earrybrd72s3itutcboa","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"date.getTime","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:3hupqpzuop2skt22qmaolr5xcq","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"dateLabel","kind":"function","node_id":"function:schiste/toolhub-evolved:lrsraspijgs2k2vaoijwvhv324","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"deployments.map","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:xmrjur5qxvyxr3mizezqchifby","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"esc","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:42fbiobrnycq7seiyduxwffroa","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"esc","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:i62nszrtxmljtxi3lcbj4hobt4","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"releaseNotesHTML","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:yarqgfncac53jrfpmhk7oinbcu","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"t","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:6zihkkya7zkgj45qrzaihrmlta","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"t","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ie5brd4s6sge4prpkd42q7fuvm","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"t","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:lxy2cobksizpkx2w5aapmaevt4","file":"public_html/views/changelog.js"}
+{"module":"public_html.views.changelog","symbol":"viewChangelog","kind":"function","node_id":"function:schiste/toolhub-evolved:ocmzx6o2ulvscaegfa6utxom3i","file":"public_html/views/changelog.js"}

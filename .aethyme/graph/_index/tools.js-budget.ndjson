@@ -1,0 +1,7 @@
+{"module":"tools.js-budget","symbol":"EXCLUDED_ROUTE_DOCS","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:bckcfns6nw4ypdchx2mbs3nz4i","file":"tools/js-budget.mjs"}
+{"module":"tools.js-budget","symbol":"LIMIT","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:bl52zxph2adj4koxabnt5jrxdy","file":"tools/js-budget.mjs"}
+{"module":"tools.js-budget","symbol":"execFileSync","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ao63gdo4hzfv4m4xqf4vvqrsli","file":"tools/js-budget.mjs"}
+{"module":"tools.js-budget","symbol":"files","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:w5spxqt6mws7smn5e3nwdrjlqm","file":"tools/js-budget.mjs"}
+{"module":"tools.js-budget","symbol":"kb","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:ilcpolaakolombqxiag7zowdpu","file":"tools/js-budget.mjs"}
+{"module":"tools.js-budget","symbol":"readFileSync","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:eryc72fg7vwwjauajdg5njucwu","file":"tools/js-budget.mjs"}
+{"module":"tools.js-budget","symbol":"total","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:kcdaz2ttsc2g4l454dcyclccx4","file":"tools/js-budget.mjs"}

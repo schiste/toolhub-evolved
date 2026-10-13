@@ -5,7 +5,7 @@
 # in-repo agent instructions even when the harness skips the standard
 # CWD-CLAUDE.md auto-load.
 #
-# This script is deployed by `aethyme enhance deploy --repo <path>` and
+# This script is deployed by `aethyme deploy --repo <path>` and
 # wired into the project's .claude/settings.local.json under
 # hooks.SessionStart.
 #
@@ -61,6 +61,18 @@ if [[ -n "$aethyme_bin" ]] && [[ -d "$cwd" ]]; then
         --wrapper aethyme-sessionstart-hook \
         --detail source=claude-hook \
         >/dev/null 2>&1 || true
+fi
+
+# Interactive Claude Code sessions auto-load the project's CLAUDE.md and
+# AGENTS.md themselves, so emitting the same bytes here bills the whole
+# policy a second time -- and because it lands in the cached prefix, that
+# duplicate is re-read on every turn, not once per session. Only a headless
+# harness that skips the standard CWD auto-load needs this injection, and
+# the eval runner is what creates that case; it marks every arm with
+# AETHYME_EVAL_ARM. The telemetry above stays unconditional so a session
+# start is still observable on both paths.
+if [[ -z "${AETHYME_EVAL_ARM:-}" ]]; then
+    exit 0
 fi
 
 # Emit the JSON envelope via the native router (python-retirement Phase

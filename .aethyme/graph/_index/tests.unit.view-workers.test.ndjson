@@ -1,0 +1,13 @@
+{"module":"tests.unit.view-workers.test","symbol":"Promise","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:jfarc7pgu57tv7y4a6pc3gluli","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"assert","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:7x2kdw2ac6ks4jkahw5oags4ra","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"beforeEach","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:nq6kwhrck4l7yqxtbxb42lo4uu","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"h","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:bpuk7xbcpnvuig2ljgikhjfil4","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"h.backendGetJson.mockResolvedValue","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:usytn56myeeguot73yvwxi57dq","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"payload","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:lyhvxau2mnmd4ovrvmlglccare","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"render","kind":"function","node_id":"function:schiste/toolhub-evolved:ddvmzkncliud72sbqoyguz6cou","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:wxriwqd3kl53jfyucfv7u3tp6m","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"vi","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:3aoesws33inakwmrrmznrazt6m","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"view.mount","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:mq5kr4peh23gkgfxb66fdfz6dy","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"viewWorkers","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:adw7lxxjmehripnoukvjtaxrqy","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"viewWorkers","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:yw6rrjvntkbc72augdcuhioniy","file":"tests/unit/view-workers.test.mjs"}
+{"module":"tests.unit.view-workers.test","symbol":"worker","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:krbpvnumoxe575osemn6ngvh7q","file":"tests/unit/view-workers.test.mjs"}

@@ -1,0 +1,14 @@
+{"module":"tests.unit.badges.test","symbol":"afterEach","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:s42eq3yenxkqrymtj2vu2sbsgq","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"assert","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:za5mfh3wah4bfvnxprtowof2le","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"beforeEach","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:tily2rg7skb3cizdslmlcdamdm","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"completenessList","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:uzxct6sjzraqx44pebdhsva6g4","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"completenessMeter","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:gcs6tcz5dcsjmiqixagoi3ia7e","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"endorsementChip","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:g6z66mbowdsauehu7vqj34viki","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"endorsementOf","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:wkx43y43dlhsrszohm3iesl6wa","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"fitChip","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:fd5nil77mr5pwkg3lz5psbexdu","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"freshnessNote","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:pdestgfnfxb45wmyvxpjfjjpum","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"icon","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:uy6yldgq4h5lx23lwzimgtrzy4","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"installStorage","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:s6mpkzaiwcmhi3r6t2a33veyqe","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"statusBadge","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:wh6yutzjzmhgv6bdlf7hatggya","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"store","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:puyd7v2alt7ijt3td2pvqsre54","file":"tests/unit/badges.test.mjs"}
+{"module":"tests.unit.badges.test","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:imxcfext3eaa5s53rtbhxs25gy","file":"tests/unit/badges.test.mjs"}

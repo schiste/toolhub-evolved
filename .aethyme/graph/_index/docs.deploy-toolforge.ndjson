@@ -1,0 +1,9 @@
+{"module":"docs.deploy-toolforge","symbol":"Configuring ProxyFix for rate limiting","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:4g5kpn2mixs25yrftx6mpj7kaq","file":"docs/deploy-toolforge.md"}
+{"module":"docs.deploy-toolforge","symbol":"Deploying to Wikimedia Toolforge","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:v5t2uixk6winxise437a5r7z6m","file":"docs/deploy-toolforge.md"}
+{"module":"docs.deploy-toolforge","symbol":"First-time deploy","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:6offytn765keksf742op7mmycu","file":"docs/deploy-toolforge.md"}
+{"module":"docs.deploy-toolforge","symbol":"MCP server","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:5rewjcqmuwycvo3xodegwygkdu","file":"docs/deploy-toolforge.md"}
+{"module":"docs.deploy-toolforge","symbol":"Notes","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:otuodaj7felg4tw6r7sn5dqj3u","file":"docs/deploy-toolforge.md"}
+{"module":"docs.deploy-toolforge","symbol":"Prerequisites","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:rehdx4xnsc3kvqji3wxmefctge","file":"docs/deploy-toolforge.md"}
+{"module":"docs.deploy-toolforge","symbol":"Production backend (database, sign-in, crawler)","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:h2pflzs5sj7xh5ogtz4sowahqi","file":"docs/deploy-toolforge.md"}
+{"module":"docs.deploy-toolforge","symbol":"SHA-locked local release","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:sdz7a4xnqmhpbutmqg7m34mnha","file":"docs/deploy-toolforge.md"}
+{"module":"docs.deploy-toolforge","symbol":"Updating after a change","kind":"doc_section","node_id":"doc_section:schiste/toolhub-evolved:yobobtjce3wx5dmlavknrm3qd4","file":"docs/deploy-toolforge.md"}

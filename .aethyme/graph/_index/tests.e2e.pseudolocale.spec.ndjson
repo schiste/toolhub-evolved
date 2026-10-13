@@ -1,0 +1,13 @@
+{"module":"tests.e2e.pseudolocale.spec","symbol":"URL","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:c4aqaxj56idbf6ewa7qgdfs2xm","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"expect","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:5bflmzyt4xrcp4ew7llbtgcubq","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"expect","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:fw5mykswn6nzvvmzkfzu7qs7jq","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"expect","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:rjgzc6z44kvxry2xf4qf7j276u","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"expectNoDocumentOverflow","kind":"function","node_id":"function:schiste/toolhub-evolved:et5in3dvaamq2uj5ga6ml3nrza","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"openPseudo","kind":"function","node_id":"function:schiste/toolhub-evolved:dcdypfxjq76epesk6vv2sd7cmq","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"page.addInitScript","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:nwewuwrw423kbxlsqhwyhbwuhi","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"page.evaluate","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:adc3eqgfipbzxgxlrszns7suia","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"page.goto","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:pmwt7kqojwhcaob3zd2bihurra","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"page.locator","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:rx45ktx3l3wbvzk2nzugtosmj4","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"page.setViewportSize","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:sm3fxaia32snnyw5ikgi2va2ie","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:axtscwaqh6ord7ptdhlcins5vu","file":"tests/e2e/pseudolocale.spec.mjs"}
+{"module":"tests.e2e.pseudolocale.spec","symbol":"useSmokeServer","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:zq6vbmgxsfoiamcjbvxruxu3ma","file":"tests/e2e/pseudolocale.spec.mjs"}

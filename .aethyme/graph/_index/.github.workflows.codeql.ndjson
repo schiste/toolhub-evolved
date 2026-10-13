@@ -1,0 +1,13 @@
+{"module":".github.workflows.codeql","symbol":"concurrency.cancel-in-progress","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:gwlnzoswlzpxoaom63ligangg4","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"concurrency.group","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:hvc6whdy3auchrvd67a23gjtam","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"jobs.analyze.name","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:c6pjo56kh3v73iplg72abltmkm","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"jobs.analyze.runs-on","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:2sefadi2s6t43tuf7w53cfk7ji","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"jobs.analyze.steps.uses","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:fasmgxcdnmzjnlqfdjfds2z7b4","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"jobs.analyze.steps.with.category","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:3dvs7izj3wfnymkzc3p765amgi","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"jobs.analyze.steps.with.languages","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:vbhlejhtt7ekwylbvfxg76xe7a","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"jobs.analyze.steps.with.queries","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:gduv5c74m7z2v5pq7bxyrynaay","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"jobs.analyze.strategy.fail-fast","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:retfw76uk4c7pgyz524cslkebm","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"jobs.analyze.timeout-minutes","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:3l7zoglemw74kj7y4ubvdk6rbm","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"name","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:wxq2dch5wv6sl2b6danie3ti34","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"permissions.contents","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:jrudmnqsehf6oqnjepuj7es3vi","file":".github/workflows/codeql.yml"}
+{"module":".github.workflows.codeql","symbol":"permissions.security-events","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:p36hurdierjf536b7v45dswnlq","file":".github/workflows/codeql.yml"}

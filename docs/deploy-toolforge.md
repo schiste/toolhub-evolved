@@ -169,13 +169,31 @@ npx @modelcontextprotocol/inspector --cli --transport http \
 After deploy, re-run these commands against `https://toolhub-evolved.toolforge.org/mcp`
 to verify it is live.
 
-## Updating after a change
+## SHA-locked local release
+
+Run the release coordinator from a local checkout after the candidate commit is on `main`. It uses the operator's existing `gh` login and SSH/Toolforge `become` access; it does not store a Toolforge credential in GitHub Actions.
+
+Start with the read-only preflight:
 
 ```sh
-become toolhub-evolved
-cd ~/repo && git pull
-webservice restart            # or: sh ~/repo/tools/deploy.sh
+python3 tools/release.py --sha <full-main-commit-sha> --dry-run
 ```
+
+It requires the full lowercase SHA, confirms GitHub `main` still points to it, waits for successful `CI` and `CodeQL` push runs on `main` for that exact SHA, checks that the Toolforge checkout is clean and on `main`, reads the public deployment manifest, and runs the documented non-mutating production smoke probes. It does not call `tools/deploy.sh`.
+
+After reviewing that output, the explicit deployment command is:
+
+```sh
+python3 tools/release.py --sha <same-full-sha> --approve-sha <same-full-sha>
+```
+
+The approval value must exactly equal the requested SHA. The coordinator rechecks `main`, invokes the existing deploy script over SSH as `toolhub-evolved`, and passes `TOOLHUB_DEPLOY_EXPECTED_SHA`. The deploy script refuses a missing or invalid SHA, rechecks that the Toolforge checkout is clean and on `main`, then refuses a pulled `HEAD` that differs from the approved SHA before migrations, build, or restart. The coordinator then waits for the public manifest to report the exact SHA and reruns readiness, catalog, capabilities, and anonymous write-guard smoke checks. If that SHA is already served, the command is idempotent: it verifies that the manifest and Toolforge checkout agree, then runs smoke checks without redeploying.
+
+The command fails closed if required checks are missing or unsuccessful, `main` moves, the Toolforge checkout is dirty/off-branch, SSH/`become` fails, or production cannot be verified. Fix the condition and select a fresh candidate SHA that is currently on `main`; wait for successful CI and CodeQL runs for that exact SHA and obtain approval for it. Never reuse an SHA that is no longer on `main` or checks/approval from a different SHA. The helper's SHA check does not prove that CI passed or that a human approved deployment; do not invoke it directly as a substitute for the coordinator. The workflow does not merge or push commits.
+
+## Updating after a change
+
+Use the [SHA-locked local release](#sha-locked-local-release) above for normal updates. Do not combine a manual `git pull` with a separate webservice restart: `tools/deploy.sh` is a low-level helper that requires the exact SHA but does not check GitHub CI or approval; the release coordinator is the supported normal path.
 
 (Only re-run step 3 when `proxy/requirements.txt` changes.)
 

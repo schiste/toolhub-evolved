@@ -688,49 +688,50 @@ surface.
 ## Rebuild the Aethyme graph
 
 The committed `.aethyme/graph/` fragments are generated evidence, not a local
-cache. Rebuild them whenever repository changes alter Aethyme's indexable
-source. The local `.aethyme/graph_store.redb` engine database is intentionally
-ignored and is recreated from those fragments.
+cache. This repository opts into committed-fragment authority for
+`schiste/toolhub-evolved` and pins Aethyme 0.8.26 in `.aethyme/engine-version`.
+The local `.aethyme/graph_store.redb` is ignored and is materialized from the
+committed fragments.
 
-Aethyme 0.4.2 contains the fragment indexer source but its release archive does
-not include that binary. Install it from the exact release commit before
-rebuilding:
+Use the official digest-bound refresh wrapper after a source change that affects
+the graph. Planning is read-only; never regenerate committed fragments merely
+by running CI or an automatic check:
 
 ```sh
-cargo install --locked \
-  --git https://github.com/schiste/Aethyme.git \
-  --rev d3af42260b1de174c286b7fe749f9f7f597ad429 \
-  --root /tmp/aethyme-graph-index \
-  --bin aethyme-graph-index \
-  aethyme-graph-indexer
-AETHYME_GRAPH_INDEX_BIN=/tmp/aethyme-graph-index/bin/aethyme-graph-index \
-  python3 tools/aethyme_graph.py rebuild
+python3 tools/aethyme_graph.py plan
+# Review the full hash-only write set and the plan SHA-256 printed above.
+python3 tools/aethyme_graph.py apply --confirm <reviewed-plan-sha256>
+# Review and commit the generated .aethyme/graph/ changes with their source.
+python3 tools/aethyme_graph.py check
 ```
 
-The wrapper excludes ignored runtime and quality outputs such as `.chau7/`,
-`coverage/`, `.quality/`, test reports, local databases, and broker state; those
-artifacts depend on which commands happened to run before generation. It
-restores the previous fragments when either indexing phase fails, rebuilds the
-engine store, and finishes with a bounded Explore smoke test. CI runs
-`python3 tools/aethyme_graph.py check`, which also fails when regeneration
-changes a committed fragment or the engine-version marker.
+`plan` obtains Aethyme's JSON and hash-only diff views and fails if their full
+plan digests differ. It never applies a plan. `apply` requires the digest you
+reviewed, fetches the current plan again, and refuses if it changed or is
+blocked; Aethyme then revalidates the same digest under its transaction lock.
+After fragment changes are committed, `check` verifies the committed fragments
+are current, materializes only the ignored local graph store, and smoke-tests
+Explore. CI uses `check`: stale fragments fail closed instead of being
+regenerated or silently approved. The Aethyme 0.8.26 release archive supplies
+both router and engine, so no separate Rust indexer build or Cargo install is
+required.
 
 ## Deploy / rollback
 
-```sh
-become <toolname>
-sh ~/repo/tools/deploy.sh          # pull → stage release → build → restart → smoke-check → promote history
-```
+Routine deployments use the [SHA-locked local release procedure](deploy-toolforge.md#sha-locked-local-release). It waits for successful CI and CodeQL runs for the exact `main` SHA, requires explicit approval of that SHA, checks the Toolforge checkout, and invokes `tools/deploy.sh` only after those guards. Do not run a separate `become`/`git pull`/deploy sequence for normal releases.
 
-Rollback = `git -C ~/repo revert <sha>` (or `git reset --hard <good-sha>`)
-followed by `sh ~/repo/tools/deploy.sh` again. The deploy script fails loudly
-if the webservice doesn't come back healthy.
+For a planned rollback, create and review a revert commit on `main`, let its required checks pass, then release that exact commit through the same procedure. Do not reset the Toolforge checkout to an arbitrary historical SHA as a routine rollback.
+
+If a deployment fails after restart, `tools/deploy.sh` reports the pre-deploy SHA as a recovery reference. The release coordinator does not perform automatic rollback. For a planned rollback, use a reviewed revert commit on `main` and the same SHA-locked procedure; a direct helper invocation does not verify CI or approval and is not a substitute.
 
 The deployment is rejected before release-history promotion when any of these
 non-mutating production contracts fail: database-backed `/healthz`, a non-empty
 local catalog generation, `/v1/config/` capability consistency, or anonymous
-write rejection on `/v1/write/tools/`. The script prints the exact pre-deploy
-commit as the rollback target. Restore that commit, restart, and run
+write rejection on `/v1/write/tools/`. The printed pre-deploy commit is a recovery
+reference, not an instruction to reset the Toolforge checkout. Emergency
+restoration is outside this release workflow and requires a separately approved
+operator procedure; this change does not define one. Any such action must use an
+exact SHA and run
 `python ~/repo/tools/post_deploy_smoke.py --base-url https://<toolname>.toolforge.org`
 before reopening traffic. A stale catalog alone is observable but not a rollback
 condition; an unavailable/failed or empty generation is.

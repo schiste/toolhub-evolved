@@ -1,0 +1,32 @@
+{
+	"commands": [
+		{
+			"kind": "install",
+			"command": "npm ci",
+			"source": "manual-override",
+			"confidence": "high"
+		},
+		{
+			"kind": "fast_test",
+			"command": "npm run test:unit",
+			"source": "manual-override",
+			"confidence": "high"
+		},
+		{
+			"kind": "full_test",
+			"command": "npm run test:unit && npm run test:e2e",
+			"source": "manual-override",
+			"confidence": "high"
+		},
+		{
+			"kind": "lint",
+			"command": "npm run lint",
+			"source": "manual-override",
+			"confidence": "high"
+		}
+	],
+	"notes": [
+		"JavaScript unit tests run with `npm run test:unit`; full JavaScript validation runs unit tests and browser E2E with `npm run test:unit && npm run test:e2e`.",
+		"The separate Python proxy suite is `uv run --no-project --with-requirements proxy/requirements.txt --with pytest --python 3.11 env PYTHONPATH=proxy pytest tests/proxy -q`."
+	]
+}

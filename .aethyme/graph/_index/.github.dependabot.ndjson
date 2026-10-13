@@ -1,1 +1,7 @@
-{"module":".github.dependabot","symbol":"/proxy","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:vjbuqercemlbpduazcau37qxwa","file":".github/dependabot.yml"}
+{"module":".github.dependabot","symbol":"/proxy","kind":"proxy_surface","node_id":"proxy_surface:schiste/toolhub-evolved:llh7tuunrxjizbikh7kkg37tn4","file":".github/dependabot.yml"}
+{"module":".github.dependabot","symbol":"updates.directory","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:2lij2reuegxwtjln75fmwftgmm","file":".github/dependabot.yml"}
+{"module":".github.dependabot","symbol":"updates.groups.npm-development.dependency-type","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:qlcbfxzacq475ots37qe52nm4e","file":".github/dependabot.yml"}
+{"module":".github.dependabot","symbol":"updates.open-pull-requests-limit","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:udixesbikdsdonj7wswir3xjza","file":".github/dependabot.yml"}
+{"module":".github.dependabot","symbol":"updates.schedule.day","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:yv7r265x5qhozizqkqx4z4ppqu","file":".github/dependabot.yml"}
+{"module":".github.dependabot","symbol":"updates.schedule.interval","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:shvt2r6ugw6shfhmv6doyemzra","file":".github/dependabot.yml"}
+{"module":".github.dependabot","symbol":"version","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:wz5brgq2suezxzfitw6ixooeqi","file":".github/dependabot.yml"}

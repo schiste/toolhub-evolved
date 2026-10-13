@@ -1,0 +1,10 @@
+{"module":"tests.unit.store-sync.test","symbol":"DEMO_KEYS","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:wcoxch3fh4wjm2luzdooixzwey","file":"tests/unit/store-sync.test.mjs"}
+{"module":"tests.unit.store-sync.test","symbol":"afterEach","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:3qk7fncufjkzcubskwckucbwsy","file":"tests/unit/store-sync.test.mjs"}
+{"module":"tests.unit.store-sync.test","symbol":"assert","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:m3sejehr57wgzvatyljvyjtv5q","file":"tests/unit/store-sync.test.mjs"}
+{"module":"tests.unit.store-sync.test","symbol":"beforeEach","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:mvimyigf6o76vp74e37ljp4cni","file":"tests/unit/store-sync.test.mjs"}
+{"module":"tests.unit.store-sync.test","symbol":"demoStore","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:2f7pmj2kvs6jwjea5uq5wie3bq","file":"tests/unit/store-sync.test.mjs"}
+{"module":"tests.unit.store-sync.test","symbol":"setStoreSync","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:tsmsdyspoeu4co3zrdee732nji","file":"tests/unit/store-sync.test.mjs"}
+{"module":"tests.unit.store-sync.test","symbol":"test","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:qefygxzh2mgjilcnhhbbmlakzq","file":"tests/unit/store-sync.test.mjs"}
+{"module":"tests.unit.store-sync.test","symbol":"toggleFav","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:wzqxfdzdnbjfiq7moztllda33y","file":"tests/unit/store-sync.test.mjs"}
+{"module":"tests.unit.store-sync.test","symbol":"withDemoFixture","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ym57b2fistrdvfhbusgwzc6hfu","file":"tests/unit/store-sync.test.mjs"}
+{"module":"tests.unit.store-sync.test","symbol":"withSyncMuted","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:rnlkrkj5rkg57ki7focov4z5ga","file":"tests/unit/store-sync.test.mjs"}

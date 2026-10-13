@@ -1,0 +1,3 @@
+{"module":"public_html.views.static-routes","symbol":"STATIC_SLUGS","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:67qearfgduocamil2jwvaug6dm","file":"public_html/views/static-routes.js"}
+{"module":"public_html.views.static-routes","symbol":"STATIC_SLUGS.includes","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:zicxoahtvoryvp4shc3v2jfvgy","file":"public_html/views/static-routes.js"}
+{"module":"public_html.views.static-routes","symbol":"isStaticSlug","kind":"function","node_id":"function:schiste/toolhub-evolved:rb7utpgg4xbeedpweicbr7v5ti","file":"public_html/views/static-routes.js"}

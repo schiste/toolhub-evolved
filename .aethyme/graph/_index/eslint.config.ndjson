@@ -1,0 +1,14 @@
+{"module":"eslint.config","symbol":"DOM_INJECTION_SYNTAX","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:xjcfh34hvjrfgw4ni6pxqbjuhm","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"LAYER_ZONES","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:aznpy4tiue6pa4awcod5yias4a","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"LICENSE_HEADER","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:rmag2kpk4az7narhpfvmjpdmba","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"NETWORK_GLOBALS","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:32efwnm7meyxilzwecgahyed2e","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"STORAGE_CORE","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:mgnyoxp5pkljlmteaptwcfx5ci","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"STORAGE_GLOBALS","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:homyd6kyoyxx327fy7jiies6ei","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"globals","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:4sruzmp4vnkb44hloodjdsyqsq","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"headers","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:5zadhjgs4vby3fcrud427szlsi","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"importPlugin","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:njhieda55p6c3ja2dza2p7rmxq","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"importRules","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:sjmj2i2iaoea6qzukimjskzafe","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"js","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:zgxfg5ikhczycybbqba63fe554","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"sharedRules","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:ozps5jzxwfjv22mno64yrol2yi","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"sonarjs","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:c7bhqqhe6uhsauzeoumkqwpm5a","file":"eslint.config.js"}
+{"module":"eslint.config","symbol":"unicorn","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:cnsewjeisyl66ckeebrrj3uvly","file":"eslint.config.js"}

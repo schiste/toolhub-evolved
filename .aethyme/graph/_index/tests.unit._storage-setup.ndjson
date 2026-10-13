@@ -1,0 +1,17 @@
+{"module":"tests.unit._storage-setup","symbol":"MemStorage","kind":"class","node_id":"class:schiste/toolhub-evolved:tvjepcxlk4yaszd735q5lwx7tm","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"MemStorage","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:6wwqn3asdc2ns4kqm32des7j74","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"Object.defineProperty","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:4udnmfjwenthyyitxakrynhdn4","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"Object.keys","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:3im4muk6ehraoinmmvswnbgsbu","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"Object.keys","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:qcdlbglvvpfwqgtu4jp2jhnd64","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"Object.keys","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:sqlg5vkwnlcayiasbadzisn5su","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"Object.prototype.hasOwnProperty.call","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ci6ojl5ibv7cpz32tatl7cujsy","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"String","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:4zpa4ad2hcbis6wg74rpmj42se","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"String","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ix4xpkisxbifew653rg34wbjsm","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"String","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:t2chblks3iutq4hfjwiggvoxly","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"clear","kind":"method","node_id":"method:schiste/toolhub-evolved:rcf26dw36d6rffvydomfjj5aje","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"getItem","kind":"method","node_id":"method:schiste/toolhub-evolved:hnwkxzgg2767l3db32dfmz7rra","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"installStorage","kind":"function","node_id":"function:schiste/toolhub-evolved:mammqdp2bvf6mckezdulmuhbvi","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"key","kind":"method","node_id":"method:schiste/toolhub-evolved:jwvhdb4xazhj3tmyf7h2ta6wmy","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"length","kind":"method","node_id":"method:schiste/toolhub-evolved:omo5rfv72wu4m4bgq6riy4yurq","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"removeItem","kind":"method","node_id":"method:schiste/toolhub-evolved:orwqq3ol7btbjcl2hs6w2ohdsq","file":"tests/unit/_storage-setup.mjs"}
+{"module":"tests.unit._storage-setup","symbol":"setItem","kind":"method","node_id":"method:schiste/toolhub-evolved:yml6og4o4pav33uxu22rhwucwi","file":"tests/unit/_storage-setup.mjs"}

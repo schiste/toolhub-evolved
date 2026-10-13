@@ -1,1 +1,6 @@
-{"module":".coverage-ratchet","symbol":"target","kind":"proxy_surface","node_id":"proxy_surface:toolhub-evolved:oxt2impuywhpky3m23khiiar4m","file":".coverage-ratchet.json"}
+{"module":".coverage-ratchet","symbol":"minimum.branches","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:dkct7xvou6hxikw2lwzqj5ocie","file":".coverage-ratchet.json"}
+{"module":".coverage-ratchet","symbol":"minimum.functions","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:zynu42cewjix6k7uhipcogohfy","file":".coverage-ratchet.json"}
+{"module":".coverage-ratchet","symbol":"minimum.lines","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:rlzhn426puiayhxo6jc3j247jy","file":".coverage-ratchet.json"}
+{"module":".coverage-ratchet","symbol":"minimum.statements","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:s7odm53tuer2oi4kd6fvmc6f44","file":".coverage-ratchet.json"}
+{"module":".coverage-ratchet","symbol":"target","kind":"config_value","node_id":"config_value:schiste/toolhub-evolved:avmribcqdhbs36n4jff3zyirca","file":".coverage-ratchet.json"}
+{"module":".coverage-ratchet","symbol":"target","kind":"proxy_surface","node_id":"proxy_surface:schiste/toolhub-evolved:ovh7cbb3m3iz2iy7bicdjon7em","file":".coverage-ratchet.json"}

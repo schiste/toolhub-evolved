@@ -1,0 +1,17 @@
+{"module":"tools.preflight","symbol":"Promise","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ftkfabz42kn2unvmty5gtma254","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"access","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:qj25d7sqcrihrtw4ufmbhxkh7q","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"access","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:xd27woeryh3ortbdzdexj6mjuq","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"checks","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:r4ky3qwglvyt5knzsk5zoiwcb4","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"constants","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:eqjo3afbuzcnmpwctsnaky5rqu","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"dirname","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:24xqkmlib5xglmlqh7fyrxoyzq","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"executable","kind":"function","node_id":"function:schiste/toolhub-evolved:7xex73wg4a3xlxpzaln6w3sayu","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"failed","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:simipe3jcvyyxus6oy6qxz3gra","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"fileURLToPath","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:fzavypgjwvd5vhwnz5cqbbkdsy","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"npm","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:nwchsprcyfs6edpbscydcxjy5m","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"resolve","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:e7juz7dmzniabsfsiupzy5zgxe","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"resolve","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:vvsgb2ormgjce353syc3rkfsqm","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"results","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:3h2sllvllorf5ias7aghf6ejjq","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"root","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:z2kszj4rhqq6khob73re7g2auy","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"run","kind":"function","node_id":"function:schiste/toolhub-evolved:i3sfdfnnoakum6yif3ghdjhma4","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"spawn","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:2hgflakjp6khp65cgnys42xddi","file":"tools/preflight.mjs"}
+{"module":"tools.preflight","symbol":"started","kind":"global_variable","node_id":"global_variable:schiste/toolhub-evolved:66dcn6w33k5yqb4wizx2ececei","file":"tools/preflight.mjs"}
