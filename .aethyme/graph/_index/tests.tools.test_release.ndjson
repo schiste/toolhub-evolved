@@ -36,6 +36,7 @@
 {"module":"tests.tools.test_release","symbol":"any","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:mhxjqzknktj53bdtc4lpzttqie","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"any","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:p4mlgsaw4u2dcovbnamedptbzy","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"any","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:r2f2dlol5moom3ksgi4rwfbree","file":"tests/tools/test_release.py"}
+{"module":"tests.tools.test_release","symbol":"bin_dir.mkdir","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:nm557gwbwg7czpkd7uhexbnfim","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"checks.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:24q3nbk6djy7tuzb3hgj6baqyy","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"coordinator._read_served_sha","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:4gnjlboiss4mo5ievi5shhldze","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"coordinator._wait_for_required_checks","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:q6qwfdrkbkh2txkxyt2t44xcbe","file":"tests/tools/test_release.py"}
@@ -48,6 +49,8 @@
 {"module":"tests.tools.test_release","symbol":"coordinator.release","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:qddekcblpitvhg363hwq64gl6q","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"coordinator.release","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:uhkjmptthdeqc5pzrc6yrobm24","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"coordinator.release","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:vvqmeim4dfgbbse4qhzinhwdbm","file":"tests/tools/test_release.py"}
+{"module":"tests.tools.test_release","symbol":"git.chmod","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:icnsqeuoklzc6le567floiskde","file":"tests/tools/test_release.py"}
+{"module":"tests.tools.test_release","symbol":"git.write_text","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:j6s5datsiq2pijrcipfpn7klt4","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"iter","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:yzbgmzdd23jbblloxw4nk67gye","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"json","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:aftetpwa2e2ot5dyolqj5zltxq","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"json.dumps","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:gmmnoztjacpoj4iguajhndqpki","file":"tests/tools/test_release.py"}
@@ -80,16 +83,20 @@
 {"module":"tests.tools.test_release","symbol":"release_cli.ReleaseCoordinator","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:u2o64bj7iimuughmnchzmumane","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"release_cli.ReleaseCoordinator","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:v6pylyo7qj4jkv7hykrhxpfuw4","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"release_cli.ReleaseCoordinator","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:vshnzf6a73r6gxypvzvec6ds7q","file":"tests/tools/test_release.py"}
+{"module":"tests.tools.test_release","symbol":"release_cli.ReleaseCoordinator._preflight_script","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ielydkh5m2jlixlrm4eu5bbfnu","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"release_cli.deployment_sha","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:etmbosqudbbcbsn4gs6l7k4r5i","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"release_cli.select_required_runs","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:cg2siormkuag255r5iem46p62u","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"release_cli.select_required_runs","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:w43k57y6ktx7fzm5jsiw7s7kom","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"release_cli.validate_sha","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:bj6luw5iogfptytcyb6sqvmasi","file":"tests/tools/test_release.py"}
+{"module":"tests.tools.test_release","symbol":"repo.mkdir","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:vgtdsafxwkl4ke2xiukfhm75oy","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"selected.items","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:txjhzvhb664lcmyv247xh5of24","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"smoke_calls.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:swut6l7hy22ykp5w42houpfj4y","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"smoke_calls.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:tljtk6qo5moogxgu6lsat6eb6q","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"smoke_calls.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ugq6foeh5ymjwe4w4rdum2oke4","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"smoke_calls.append","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:zemeqkd32siopn632xzrug64da","file":"tests/tools/test_release.py"}
+{"module":"tests.tools.test_release","symbol":"str","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:khr7oxkay72sfuwbgrhzs22264","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"subprocess","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:bslctaujvxyeayvopry7ygjeee","file":"tests/tools/test_release.py"}
+{"module":"tests.tools.test_release","symbol":"subprocess.run","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:sjcfyc4lood5jgergkikglmz5e","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"sys","kind":"unresolved_symbol","node_id":"unresolved_symbol:schiste/toolhub-evolved:ul7kypfzqqlx63qgmkodlrmf6i","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"test_already_deployed_sha_is_idempotent_and_still_smoke_checked","kind":"function","node_id":"function:schiste/toolhub-evolved:ue4d3nibck2bxkdp65ugtchosy","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"test_ci_failure_stops_before_toolforge_ssh","kind":"function","node_id":"function:schiste/toolhub-evolved:bxbu2edfia3waaotgeg6ddjeu4","file":"tests/tools/test_release.py"}
@@ -106,4 +113,5 @@
 {"module":"tests.tools.test_release","symbol":"test_same_display_name_with_wrong_workflow_identity_is_not_a_required_check","kind":"function","node_id":"function:schiste/toolhub-evolved:tpxonyuluimkjr3evcft4qykpi","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"test_select_required_runs_uses_only_latest_exact_main_push_runs","kind":"function","node_id":"function:schiste/toolhub-evolved:m2melh3qluhbp6i7f5wr5kpz64","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"test_stale_main_stops_before_toolforge_ssh","kind":"function","node_id":"function:schiste/toolhub-evolved:6kcf6aafvhy34p74wqpm736lni","file":"tests/tools/test_release.py"}
+{"module":"tests.tools.test_release","symbol":"test_toolforge_preflight_fails_closed_when_git_status_fails","kind":"function","node_id":"function:schiste/toolhub-evolved:drpudvvubacyk6d3d7s3h3um4q","file":"tests/tools/test_release.py"}
 {"module":"tests.tools.test_release","symbol":"test_validate_sha_requires_a_full_lowercase_commit_id","kind":"function","node_id":"function:schiste/toolhub-evolved:dbyyvainfqxrmpzmxcgqmpjt2m","file":"tests/tools/test_release.py"}

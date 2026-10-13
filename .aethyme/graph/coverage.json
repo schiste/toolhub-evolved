@@ -3,8 +3,8 @@
   "available": true,
   "source_revision": "45aae4f3182340b84529fb44bab6d069a5787686",
   "indexed_revision": "45aae4f3182340b84529fb44bab6d069a5787686",
-  "source_tree_sha256": "fbdbc2f6f85f41fb2f428d824c6b7651fca8df367a3b848ebbb7f21ffa468d14",
-  "indexed_tree_sha256": "fbdbc2f6f85f41fb2f428d824c6b7651fca8df367a3b848ebbb7f21ffa468d14",
+  "source_tree_sha256": "c066491ab28db66fd5d94088afea3d962eb52ba7edcf7aad593901ddb39994cb",
+  "indexed_tree_sha256": "c066491ab28db66fd5d94088afea3d962eb52ba7edcf7aad593901ddb39994cb",
   "engine_version": "0.8.26",
   "coverage_mode": "partial",
   "safe_to_use": false,
@@ -22,14 +22,14 @@
     "excluded": 12
   },
   "bytes": {
-    "discovered": 10850447,
-    "eligible": 10675712,
-    "parsed": 8471571,
+    "discovered": 10852726,
+    "eligible": 10677991,
+    "parsed": 8473087,
     "partial": 0,
-    "unsupported": 39196,
-    "non_code": 2164945,
+    "unsupported": 39322,
+    "non_code": 2165582,
     "excluded": 174735,
-    "source_read": 10371550
+    "source_read": 10373703
   },
   "by_language": {
     "javascript": {
@@ -52,7 +52,7 @@
     },
     "markdown": {
       "files": 51,
-      "bytes": 925605,
+      "bytes": 926498,
       "parsed": 0,
       "partial": 0,
       "unsupported": 0,
@@ -79,7 +79,7 @@
     },
     "python": {
       "files": 329,
-      "bytes": 5703216,
+      "bytes": 5704732,
       "parsed": 329,
       "partial": 0,
       "unsupported": 0,
@@ -88,7 +88,7 @@
     },
     "shell": {
       "files": 7,
-      "bytes": 39196,
+      "bytes": 39322,
       "parsed": 0,
       "partial": 0,
       "unsupported": 7,
@@ -115,7 +115,7 @@
     },
     "yaml": {
       "files": 8,
-      "bytes": 80532,
+      "bytes": 80276,
       "parsed": 0,
       "partial": 0,
       "unsupported": 0,
@@ -126,7 +126,7 @@
   "by_parser": {
     "none": {
       "files": 110,
-      "bytes": 2164945,
+      "bytes": 2165582,
       "parsed": 0,
       "partial": 0,
       "unsupported": 0,
@@ -144,7 +144,7 @@
     },
     "ruff_python_parser": {
       "files": 329,
-      "bytes": 5703216,
+      "bytes": 5704732,
       "parsed": 329,
       "partial": 0,
       "unsupported": 0,
@@ -153,7 +153,7 @@
     },
     "unavailable": {
       "files": 7,
-      "bytes": 39196,
+      "bytes": 39322,
       "parsed": 0,
       "partial": 0,
       "unsupported": 7,
@@ -170,9 +170,9 @@
     "class": 307,
     "config_value": 1698,
     "credential_operation": 462,
-    "doc_section": 720,
+    "doc_section": 722,
     "file": 562,
-    "function": 7846,
+    "function": 7848,
     "global_variable": 2764,
     "interface": 15,
     "method": 356,
@@ -180,39 +180,39 @@
     "proxy_surface": 159,
     "route_surface": 3,
     "type_alias": 1,
-    "unresolved_symbol": 40766
+    "unresolved_symbol": 40774
   },
   "node_counts_by_category": {
-    "callable": 8202,
+    "callable": 8204,
     "container": 672,
-    "non_code": 2418,
-    "partial_knowledge": 40766,
+    "non_code": 2420,
+    "partial_knowledge": 40774,
     "sub_symbol": 2764,
     "surface_flow_node": 4796,
     "type_defining": 323
   },
   "edge_counts_by_kind": {
     "authorizes": 13,
-    "calls": 34380,
-    "contains": 13351,
+    "calls": 34388,
+    "contains": 13355,
     "defines": 356,
-    "documents": 354,
+    "documents": 358,
     "exposes": 3,
     "forwards_to": 159,
     "imports": 6386,
     "issues_credential": 53,
     "stores_credential": 22,
     "tested_by": 4172,
-    "tests": 2911,
+    "tests": 2912,
     "uses_credential": 347,
     "validates_credential": 4199
   },
   "edge_counts_by_category": {
-    "behavioral": 34380,
-    "documentation": 354,
-    "structural": 20093,
+    "behavioral": 34388,
+    "documentation": 358,
+    "structural": 20097,
     "surface_flow_edge": 8968,
-    "test": 2911
+    "test": 2912
   },
-  "unit_count": 16134
+  "unit_count": 16136
 }

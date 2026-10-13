@@ -2,6 +2,6 @@
   "schema_version": 1,
   "repository": "schiste/toolhub-evolved",
   "engine_version": "0.8.26",
-  "source_tree_sha256": "fbdbc2f6f85f41fb2f428d824c6b7651fca8df367a3b848ebbb7f21ffa468d14",
-  "fragment_set_sha256": "6d6a4e5497e4f534629370c1552c12e8686e410a07fa6e9e81c503f66fc905c2"
+  "source_tree_sha256": "c066491ab28db66fd5d94088afea3d962eb52ba7edcf7aad593901ddb39994cb",
+  "fragment_set_sha256": "d8b469195a11160a8b7ac187b5f0242a8a9d57761b4cad7c855f7ea3dccbb746"
 }
