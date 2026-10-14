@@ -1028,8 +1028,10 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
         )
         report["evolvedSkills"] = discovered_skills.catalog
         report["evolvedSkillsDiscovery"] = {
+            "status": discovered_skills.status,
             "discovered": discovered_skills.discovered,
             "failed": discovered_skills.failed,
+            "failedArtifacts": list(discovered_skills.failed_artifacts),
             "observedFiles": discovered_skills.observed_files,
         }
         _report_unknown_rights(tool_name, report)

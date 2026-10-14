@@ -176,10 +176,16 @@ def test_scan_tool_records_evolved_skill_discovery_with_sibling_failures(monkeyp
             select(SourceAnalysisReport).where(SourceAnalysisReport.tool_name == "skill-tool")
         ).scalar_one()
         catalog = report.report["evolvedSkills"]
-        assert catalog["source"]["commit"] == commit
-        assert catalog["refresh"]["status"] == "partial"
-        assert [artifact["name"] for artifact in catalog["artifacts"]] == ["lookup"]
-        assert report.report["evolvedSkillsDiscovery"] == {"discovered": 1, "failed": 1, "observedFiles": 3}
+        assert len(catalog) == 1
+        assert catalog[0]["evolved"]["source"]["commit"] == commit
+        assert catalog[0]["evolved"]["artifact_type"] == "skill"
+        assert [record["title"] for record in catalog] == ["lookup"]
+        discovery = report.report["evolvedSkillsDiscovery"]
+        assert discovery["status"] == "partial"
+        assert discovery["discovered"] == 1
+        assert discovery["failed"] == 1
+        assert discovery["observedFiles"] == 3
+        assert [failure["path"] for failure in discovery["failedArtifacts"]] == ["skills/broken/SKILL.md"]
 
 
 def _empty_checkout(monkeypatch, commit):

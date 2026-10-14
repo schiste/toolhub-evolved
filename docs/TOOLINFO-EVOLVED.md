@@ -1,148 +1,93 @@
-# Evolved toolinfo.json v1
+# Toolhub Evolved record contract
 
-Toolhub Evolved keeps the canonical Toolhub toolinfo.json contract intact
-and adds a versioned envelope for artifacts that the canonical catalog does
-not understand yet. The current envelope is:
+## Goal and compatibility boundary
 
-    {
-      "_schema": "/toolinfo/evolved/1.0.0",
-      "type": "evolved-catalog",
-      "source": {},
-      "artifacts": []
+Toolhub Evolved keeps the Wikimedia Toolhub 1.2.2 Toolinfo schema as its canonical base. Evolved adds typed metadata under the top-level `evolved` property. It does not replace the Toolinfo record, alter canonical required fields, or add values to canonical `tool_type`.
+
+A canonical record remains a Toolinfo record. The required canonical fields are `name`, `title`, `description`, and `url`; all other canonical constraints, including the `tool_type` enum, remain authoritative. A canonical consumer must continue to validate and project a record without depending on `evolved`.
+
+The vendored canonical schema is `schemas/toolinfo-1.2.2.schema.json`. Its upstream source is [Wikimedia Toolhub 1.2.2](https://raw.githubusercontent.com/wikimedia/wikimedia-toolhub/main/jsonschema/toolinfo/1.2.2.json), whose schema identifier is `/toolinfo/1.2.2`. Evolved's additive schema is `schemas/toolinfo-evolved-extension-1.0.0.schema.json`; it composes with the canonical schema instead of redefining canonical fields. Runtime validation uses the vendored canonical copy and does not fetch schemas over the network.
+
+The earlier root-level Evolved envelope described by `schemas/toolinfo-evolved-1.0.0.schema.json` is a transitional input format only. It is not the target record shape. Readers may keep compatibility handling while data is migrated; new records use the canonical Toolinfo shape with an optional `evolved` namespace.
+
+## Evolved namespace
+
+An enriched record has this high-level form:
+
+```json
+{
+  "_schema": "/toolinfo/1.2.2",
+  "name": "example-skill",
+  "title": "Example Skill",
+  "description": "A short description.",
+  "url": "https://example.org/skills/example",
+  "evolved": {
+    "schema_version": "1.0.0",
+    "artifact_type": "skill",
+    "artifact_id": "skill:example:example-skill",
+    "source": {
+      "id": "github:example/skills",
+      "repository": "https://github.com/example/skills",
+      "commit": "<immutable revision>"
+    },
+    "revision": "<immutable revision>",
+    "content_sha256": "sha256:<64 lowercase hexadecimal characters>",
+    "provenance": {
+      "run_id": "<discovery run identifier>"
+    },
+    "visibility": "private",
+    "review_status": "pending",
+    "skill": {
+      "root": "skills/example-skill",
+      "entrypoint": "SKILL.md",
+      "resources": []
     }
+  }
+}
+```
 
-The normative JSON Schema is
-[schemas/toolinfo-evolved-1.0.0.schema.json](../schemas/toolinfo-evolved-1.0.0.schema.json).
-The examples used by the parser tests live under
-[tests/proxy/fixtures/](../tests/proxy/fixtures/).
+The example uses placeholders and is explanatory, not a validator fixture. A discovered artifact defaults to private visibility and pending review. `revision` and `content_sha256` bind the record to the exact source snapshot; analysis metadata, when present, must identify the same revision and content hash. Resource hashes are computed over the raw resource bytes, including binary content when the source reader provides those bytes.
 
-## Why the envelope is separate
+`artifact_type` is the discriminator for Evolved payloads. The initial types are:
 
-The canonical Toolhub catalog describes tools. A skill is an Evolved artifact,
-not a new canonical tool_type that upstream Toolhub has to understand.
-Evolved reads the envelope when present and keeps it out of the canonical
-Toolhub tool serializers. A repository can therefore publish ordinary tools
-and several Agent Skills in the same observation without losing either type.
+- `skill`: manifest entrypoint, parsed frontmatter, and a resource inventory.
+- `mcp_server`: a descriptive server registration, with transport, endpoint or package reference, protocol version, capabilities, and authentication requirements.
+- `user_script`: a typed occurrence of a wiki user script. Consolidated identity and cross-wiki views must preserve each occurrence, owner, source page, license, and revision rather than merging on names alone.
 
-The artifacts array is the unit of identity, review, refresh, and publication.
-The repository itself is represented once by source; it must not be used as
-the identity of every skill.
+A record has at most one matching typed payload. For example, `artifact_type: "mcp_server"` requires `evolved.mcp_server` and forbids `evolved.skill` and `evolved.user_script`. No artifact type is encoded by extending canonical `tool_type`.
 
-## Fields
+## MCP descriptor safety
 
-### Envelope
+An MCP descriptor describes a server; it is not an instruction to execute it. Validation and catalog ingestion must not launch a process, make a network probe, or infer trust from a successful connection. The descriptor has no credential field. It records only whether authentication is required and the declared methods or permissions; unknown fields, including token/password fields, are rejected. URI-valued metadata and URI-shaped package references reject user-info credentials. Never put credential values in a package reference or endpoint.
 
-| Field        | Required | Meaning                                                                                                                |
-| ------------ | -------- | ---------------------------------------------------------------------------------------------------------------------- |
-| \_schema     | yes      | Exactly /toolinfo/evolved/1.0.0. A different major contract is not parsed as this contract.                            |
-| type         | yes      | Exactly evolved-catalog.                                                                                               |
-| source       | yes      | Repository and immutable observation context shared by artifacts.                                                      |
-| artifacts    | yes      | Array of independently addressable tool or skill artifacts. It may contain zero entries for an empty complete catalog. |
-| refresh      | no       | Run evidence. partial and failed runs must not remove a sibling's last-good snapshot.                                  |
-| generated_at | no       | RFC 3339 timestamp for the envelope.                                                                                   |
-| generator    | no       | Name/version of the producer. Unknown producer metadata is retained.                                                   |
+Transport-specific requirements are validated: `stdio` uses a package reference, while `streamable-http` and `sse` use an endpoint. Registration, review, catalog publication, and later MCP delivery remain separate operations with their own authorization and safety checks.
 
-### source
+## Validation and consumers
 
-source.id is the stable repository identity, for example
-github:example/skill-repository. source.repository is its canonical
-repository URL. ref, commit, and base_path describe the observed revision and
-scan root. A per-artifact source may refine the shared value, but does not
-replace the artifact identity.
+`proxy/backend/toolinfo_extension.py` validates the canonical schema and, when present, the Evolved extension schema. It also checks cross-field bindings that JSON Schema alone cannot express, including the artifact discriminator/payload match and analysis-to-source revision/hash match. Canonical-only records remain valid. An enriched record may be projected to its unchanged canonical fields without carrying Evolved-specific requirements into canonical readers.
 
-### artifacts
+The Skill discovery path now emits canonical Toolinfo records with `evolved.artifact_type="skill"`; the Skill catalog reads the typed payload and retains a transitional reader for the former envelope. MCP descriptors can be represented and validated by the same contract, but this does not by itself register or publish them.
 
-Every artifact requires:
+## Current implementation boundary
 
-| Field       | Meaning                                                                                                                                                                 |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| id          | Stable identity within the repository, for example github:org/repo#skills/review. Two skills with the same display name remain distinct when their IDs or roots differ. |
-| tool_type   | skill for an Agent Skill; other strings remain available for mixed tool/skill records.                                                                                  |
-| name        | Stable human-readable artifact name.                                                                                                                                    |
-| description | What the artifact does and when it is useful.                                                                                                                           |
-| projects    | Optional declared Wikimedia project targets; the data layer preserves this field.                                                                                       |
-| source      | Optional artifact-specific source override.                                                                                                                             |
-| evolved     | Optional Evolved visibility, review, provenance, and MCP metadata.                                                                                                      |
+This work establishes the additive schema and a local Skill discovery/validation slice. It is not yet the complete Skills/MCP registration lifecycle:
 
-For tool_type: skill, skill is required. Ordinary tool artifacts can carry
-their existing Toolhub fields alongside the envelope and are ignored by the
-Skills transport.
+1. Discovery currently places canonical Skill records in the repository analysis report. A dedicated immutable artifact snapshot/content store and a publishable catalog path are still required.
+2. MCP records have a typed schema and validator, but the MCP registry ingestion, review, public catalogue, and serving path are not implemented by this slice. No MCP server is executed or probed.
+3. Repository source acquisition remains bounded and source-oriented. The Skill parser preserves raw bytes when they are supplied, but the current repository tree reader filters to supported source paths and UTF-8 text. Binary assets and a complete resource manifest are therefore not yet proven end to end.
+4. The root-level legacy envelope is migration input only. All producers and consumers still need to be checked for canonical enriched records before removing compatibility code.
+5. UserScript family consolidation and cross-wiki views remain governed by the existing #196 work; the common identity contract belongs to #215. Continue using the existing issues rather than creating parallel tickets.
 
-### skill
+Related implementation work is tracked by the existing #214, #215, #196 and their downstream discovery, snapshot, analysis, catalogue, and MCP delivery issues. Do not treat schema validation or a discovery report as proof of persistence or publication.
 
-| Field       | Meaning                                                                                                                                  |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| root        | Repository-relative skill directory. Nested roots such as skills/reports/weekly are valid.                                               |
-| entrypoint  | Exactly SKILL.md in v1.                                                                                                                  |
-| frontmatter | The Agent Skills frontmatter; name and description are required. Unknown frontmatter keys are retained.                                  |
-| resources   | Either dynamic or a static manifest array. Static manifests must include the root SKILL.md, a byte size, and a lowercase SHA-256 digest. |
+## Verification
 
-Resource bytes are not part of the public toolinfo.json contract. They are
-stored in the Evolved snapshot/cache and are served only when already
-available locally. The parser may accept inline bytes in an internal cache
-record for tests and local staging, but producers must not rely on that
-extension in the published envelope.
+The focused proxy checks for the additive schema, Skill catalog, Skill discovery, and repository scan can be run with:
 
-### evolved
-
-visibility is one of private, unlisted, or public. review_status is one of
-draft, pending, approved, rejected, stale, or removed. review and provenance
-hold the evidence needed by the future review and snapshot lifecycle.
-mcp.resource_uri may pin the externally addressable skill root URI. These
-fields are Evolved metadata and do not alter the canonical Toolhub record.
-
-## Compatibility and refresh semantics
-
-The normative v1 shape is artifacts. The running catalog reader also accepts
-the earlier internal spellings skills, skill, and a single skill record so
-the deployed MCP endpoint remains backward compatible. New producers should
-emit only the versioned envelope.
-
-The parser isolates artifacts: one malformed skill is skipped without
-discarding valid siblings from the same repository. A refresh.status of
-partial or failed is evidence about the run, not proof that omitted siblings
-were removed. Snapshot storage must retain each sibling's last-good version
-until a complete observation explicitly changes its state. Unknown major
-schema versions are rejected rather than guessed.
-
-## Repository-scan discovery
-
-Repository analysis discovers every repository-relative `SKILL.md` in the
-acquired tree in sorted path order. Each entrypoint becomes one artifact whose
-stable ID is `<source.id>#<skill-root>`. A repository may therefore contain
-multiple skills, including a normal skill and a nested skill root. Resources
-belonging to a nested root are excluded from its parent manifest and are
-reported by the nested artifact instead.
-
-The discovery result is stored alongside the existing source-analysis report:
-
-| Report field               | Meaning                                                                                        |
-| -------------------------- | ---------------------------------------------------------------------------------------------- |
-| `evolvedSkills`            | The versioned Evolved catalog envelope, including source, refresh, artifacts, and provenance.  |
-| `evolvedSkillsDiscovery`   | Run counters: `discovered`, `failed`, and `observedFiles`.                                     |
-| `refresh.failed_artifacts` | Per-entrypoint errors with the candidate path, stable ID, bounded message, and retryable flag. |
-
-The bounded discovery parser accepts the Agent Skills frontmatter needed by
-the data layer (`name`, `description`, and declared fields such as `projects`)
-and retains unknown keys. Invalid UTF-8, missing frontmatter, malformed
-frontmatter, and unreadable entrypoints fail only that candidate. A run is
-`complete` when all candidates succeed, `partial` when at least one succeeds
-and one fails, and `failed` when every candidate fails. An empty repository
-scan is a complete catalog with zero artifacts.
-
-The scanner records immutable source evidence (`source.id`, repository URL,
-and commit) plus a run ID on each artifact. Resource contents remain outside
-the public envelope; the resource manifest records repository-relative paths,
-byte sizes, and SHA-256 digests so a later snapshot/cache stage can serve the
-skill without changing discovery semantics.
-
-Examples:
-
-- [toolinfo-evolved-multi-skill.json](../tests/proxy/fixtures/toolinfo-evolved-multi-skill.json):
-  three skills in one repository, including a nested skill root.
-- [toolinfo-evolved-mixed.json](../tests/proxy/fixtures/toolinfo-evolved-mixed.json):
-  an ordinary tool and a skill in one envelope.
-- [toolinfo-evolved-invalid.json](../tests/proxy/fixtures/toolinfo-evolved-invalid.json):
-  an invalid skill payload.
-- [toolinfo-evolved-partial-refresh.json](../tests/proxy/fixtures/toolinfo-evolved-partial-refresh.json):
-  one valid sibling and one failed sibling in a partial run.
+```sh
+uv run --no-project --with-requirements proxy/requirements.txt --with pytest --python 3.11 env PYTHONPATH=proxy pytest \
+  tests/proxy/test_toolinfo_evolved.py \
+  tests/proxy/test_skill_catalog.py \
+  tests/proxy/test_skill_discovery.py \
+  tests/proxy/test_repository_scan.py -q
+```
