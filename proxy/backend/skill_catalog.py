@@ -278,13 +278,18 @@ def _size(raw: object) -> int | None:
     return value if value >= 0 else None
 
 
-def _mime(resource: dict[str, Any], relative: str) -> str:
-    value = _first_text(resource.get("mime_type"), resource.get("mimeType"))
-    if value:
-        return value
+def resource_mime_type(relative: str, explicit: str = "") -> str:
+    """Return the shared MIME type for a declared or inferred Skill resource."""
+    if explicit:
+        return explicit
     if relative == SKILL_ENTRYPOINT:
         return "text/markdown"
     return mimetypes.guess_type(relative)[0] or _MIME_FALLBACK
+
+
+def _mime(resource: dict[str, Any], relative: str) -> str:
+    value = _first_text(resource.get("mime_type"), resource.get("mimeType"))
+    return resource_mime_type(relative, value)
 
 
 def _resource_uri(raw: dict[str, Any], relative: str, skill_uri: str, *, first: bool) -> str:
@@ -398,10 +403,15 @@ def _candidate_frontmatter(skill: dict[str, Any], candidate: dict[str, Any], rec
 
 
 def _candidate_records(record: dict[str, Any]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Return (candidate, repository source) pairs for all supported shapes."""
+    """Return (candidate, source) pairs for canonical and legacy records."""
     if _text(record.get("type")) == EVOLVED_CATALOG_TYPE and not is_evolved_catalog(record):
-        # The versioned envelope is fail-closed: guessing at a future major
-        # shape could publish the wrong artifact identity or review metadata.
+        # The legacy versioned envelope is fail-closed for unknown major shapes.
+        return []
+    evolved = _dict(record.get("evolved"))
+    artifact_type = _text(evolved.get("artifact_type"))
+    if artifact_type:
+        if artifact_type == "skill":
+            return [(evolved, _dict(evolved.get("source")))]
         return []
     source = _dict(record.get("source"))
     artifacts = record.get("artifacts")
@@ -410,7 +420,6 @@ def _candidate_records(record: dict[str, Any]) -> list[tuple[dict[str, Any], dic
     candidates: list[dict[str, Any]] = []
     candidates.extend(_candidate_list(record.get("skills")))
     candidates.extend(_candidate_list(record.get("skill")))
-    evolved = _dict(record.get("evolved"))
     if not candidates:
         candidates.extend(_candidate_list(evolved.get("skills")))
     if not candidates:
@@ -421,7 +430,11 @@ def _candidate_records(record: dict[str, Any]) -> list[tuple[dict[str, Any], dic
 
 
 def _entry_from_candidate(candidate: dict[str, Any], source: dict[str, Any], record: dict[str, Any]) -> SkillEntry:
-    canonical = is_evolved_catalog(record)
+    canonical = is_evolved_catalog(record) or _text(candidate.get("artifact_type")) in {
+        "skill",
+        "mcp_server",
+        "user_script",
+    }
     skill = _candidate_skill_payload(candidate)
     source = _dict(candidate.get("source")) or source or _dict(record.get("source"))
     frontmatter = _candidate_frontmatter(skill, candidate, record)
@@ -429,7 +442,8 @@ def _entry_from_candidate(candidate: dict[str, Any], source: dict[str, Any], rec
     description = _first_text(frontmatter.get("description"), skill.get("description"), candidate.get("description"))
     if not name or not description:
         _invalid("skill frontmatter requires name and description")
-    if canonical and not _text(candidate.get("id")):
+    artifact_id = _first_text(candidate.get("artifact_id"), candidate.get("id"))
+    if canonical and not artifact_id:
         _invalid("versioned skill artifacts require an id")
     frontmatter.setdefault("name", name)
     frontmatter.setdefault("description", description)
@@ -460,6 +474,15 @@ def _entry_from_candidate(candidate: dict[str, Any], source: dict[str, Any], rec
     )
     controls = {
         "id",
+        "artifact_id",
+        "artifact_type",
+        "schema_version",
+        "revision",
+        "content_sha256",
+        "provenance",
+        "visibility",
+        "review_status",
+        "analysis",
         "tool_type",
         "name",
         "title",
@@ -480,7 +503,7 @@ def _entry_from_candidate(candidate: dict[str, Any], source: dict[str, Any], rec
         uri=skill_uri,
         frontmatter=frontmatter,
         resources=resources,
-        artifact_id=_first_text(candidate.get("id")),
+        artifact_id=artifact_id,
         source=source,
         evolved=evolved,
         catalog_metadata=catalog_metadata,
@@ -491,8 +514,12 @@ def _entries_from_record(record: Any) -> list[SkillEntry]:  # noqa: ANN401 - cat
     if not isinstance(record, dict):
         return []
     entries: list[SkillEntry] = []
+    artifact_type = _text(_dict(record.get("evolved")).get("artifact_type"))
     for candidate, source in _candidate_records(record):
-        if _text(candidate.get("tool_type")).casefold() not in {"", "skill"}:
+        if artifact_type:
+            if artifact_type != "skill":
+                continue
+        elif _text(candidate.get("tool_type")).casefold() not in {"", "skill"}:
             continue
         try:
             entries.append(_entry_from_candidate(candidate, source, record))

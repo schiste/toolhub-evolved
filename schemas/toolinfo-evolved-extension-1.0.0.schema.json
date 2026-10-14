@@ -1,0 +1,593 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://toolhub-evolved.toolforge.org/schemas/toolinfo-evolved-extension-1.0.0.schema.json",
+  "title": "Toolhub Evolved extension 1.0.0 over canonical Toolhub toolinfo 1.2.2",
+  "description": "Validate canonical Toolhub records and arrays with optional typed Evolved metadata. The canonical schema remains the base; legacy Evolved envelopes are validated separately during migration.",
+  "allOf": [
+    {
+      "$ref": "https://raw.githubusercontent.com/wikimedia/wikimedia-toolhub/main/jsonschema/toolinfo/1.2.2.json"
+    },
+    {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "evolved": {
+              "$ref": "#/$defs/evolved"
+            }
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evolved": {
+                "$ref": "#/$defs/evolved"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "$defs": {
+    "non_empty_string": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "uri_without_userinfo": {
+      "type": "string",
+      "format": "uri",
+      "minLength": 1,
+      "not": {
+        "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/]*@"
+      }
+    },
+    "package_reference": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/]*@"
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "repository": {
+          "$ref": "#/$defs/uri_without_userinfo"
+        },
+        "uri": {
+          "$ref": "#/$defs/uri_without_userinfo"
+        },
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "commit": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "base_path": {
+          "type": "string"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "repository"
+          ]
+        },
+        {
+          "required": [
+            "uri"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "source_kind",
+        "run_id"
+      ],
+      "properties": {
+        "source_kind": {
+          "enum": [
+            "repository_scan",
+            "registry",
+            "manual",
+            "toolinfo",
+            "other"
+          ]
+        },
+        "run_id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "commit": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "ref": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "actor": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_uri": {
+          "$ref": "#/$defs/uri_without_userinfo"
+        }
+      },
+      "additionalProperties": false
+    },
+    "analysis": {
+      "type": "object",
+      "required": [
+        "reference",
+        "revision",
+        "content_sha256"
+      ],
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "revision": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "complete",
+            "failed",
+            "stale"
+          ]
+        },
+        "analyzer": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/non_empty_string"
+            },
+            "version": {
+              "$ref": "#/$defs/non_empty_string"
+            }
+          },
+          "required": [
+            "name",
+            "version"
+          ],
+          "additionalProperties": false
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/non_empty_string"
+              },
+              "severity": {
+                "enum": [
+                  "info",
+                  "low",
+                  "medium",
+                  "high",
+                  "critical",
+                  "unknown"
+                ]
+              },
+              "summary": {
+                "$ref": "#/$defs/non_empty_string"
+              },
+              "evidence_uri": {
+                "$ref": "#/$defs/uri_without_userinfo"
+              }
+            },
+            "required": [
+              "code",
+              "severity",
+              "summary"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "resource": {
+      "type": "object",
+      "required": [
+        "path",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "uri": {
+          "$ref": "#/$defs/uri_without_userinfo"
+        },
+        "mime_type": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{64}|sha256:[0-9a-f]{64})$"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "frontmatter": {
+      "type": "object",
+      "required": [
+        "name",
+        "description"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "description": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "license": {
+          "type": "string"
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "skill": {
+      "type": "object",
+      "required": [
+        "root",
+        "entrypoint",
+        "frontmatter",
+        "resources"
+      ],
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "entrypoint": {
+          "const": "SKILL.md"
+        },
+        "frontmatter": {
+          "$ref": "#/$defs/frontmatter"
+        },
+        "resources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/resource"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "authentication": {
+      "type": "object",
+      "required": [
+        "required"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "methods": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          },
+          "uniqueItems": true
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "mcp_server": {
+      "type": "object",
+      "required": [
+        "name",
+        "transport",
+        "protocol_version",
+        "capabilities",
+        "authentication"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "version": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "transport": {
+          "enum": [
+            "stdio",
+            "streamable-http",
+            "sse"
+          ]
+        },
+        "endpoint": {
+          "$ref": "#/$defs/uri_without_userinfo"
+        },
+        "package": {
+          "$ref": "#/$defs/package_reference"
+        },
+        "protocol_version": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/non_empty_string"
+          },
+          "uniqueItems": true
+        },
+        "authentication": {
+          "$ref": "#/$defs/authentication"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "transport": {
+                "const": "stdio"
+              }
+            },
+            "required": [
+              "transport"
+            ]
+          },
+          "then": {
+            "required": [
+              "package"
+            ],
+            "not": {
+              "required": [
+                "endpoint"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "transport": {
+                "enum": [
+                  "streamable-http",
+                  "sse"
+                ]
+              }
+            },
+            "required": [
+              "transport"
+            ]
+          },
+          "then": {
+            "required": [
+              "endpoint"
+            ],
+            "not": {
+              "required": [
+                "package"
+              ]
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "user_script": {
+      "type": "object",
+      "required": [
+        "wiki",
+        "page_title",
+        "source_url"
+      ],
+      "properties": {
+        "wiki": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "page_title": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "source_url": {
+          "$ref": "#/$defs/uri_without_userinfo"
+        },
+        "license": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/non_empty_string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "evolved": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "artifact_type",
+        "artifact_id",
+        "source",
+        "revision",
+        "content_sha256",
+        "provenance",
+        "visibility",
+        "review_status",
+        "analysis"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "artifact_type": {
+          "enum": [
+            "skill",
+            "mcp_server",
+            "user_script"
+          ]
+        },
+        "artifact_id": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "revision": {
+          "$ref": "#/$defs/non_empty_string"
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "unlisted",
+            "public"
+          ]
+        },
+        "review_status": {
+          "enum": [
+            "draft",
+            "pending",
+            "approved",
+            "rejected",
+            "stale",
+            "removed"
+          ]
+        },
+        "analysis": {
+          "$ref": "#/$defs/analysis"
+        },
+        "skill": {
+          "$ref": "#/$defs/skill"
+        },
+        "mcp_server": {
+          "$ref": "#/$defs/mcp_server"
+        },
+        "user_script": {
+          "$ref": "#/$defs/user_script"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "artifact_type": {
+              "const": "skill"
+            }
+          },
+          "required": [
+            "artifact_type",
+            "skill"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "mcp_server"
+                ]
+              },
+              {
+                "required": [
+                  "user_script"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "artifact_type": {
+              "const": "mcp_server"
+            }
+          },
+          "required": [
+            "artifact_type",
+            "mcp_server"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "skill"
+                ]
+              },
+              {
+                "required": [
+                  "user_script"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "artifact_type": {
+              "const": "user_script"
+            }
+          },
+          "required": [
+            "artifact_type",
+            "user_script"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "skill"
+                ]
+              },
+              {
+                "required": [
+                  "mcp_server"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

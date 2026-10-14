@@ -2,9 +2,9 @@
 """Discover Agent Skills from a bounded repository observation.
 
 Discovery is deliberately separate from MCP serialization. It turns the files
-that repository_scan already acquired into one versioned Evolved catalog
-envelope, keeping each skill independent when a sibling has malformed
-frontmatter or an unreadable entrypoint.
+that repository_scan already acquired into canonical Toolhub records with a
+namespaced Evolved Skill extension, keeping each skill independent when a
+sibling has malformed frontmatter or an unreadable entrypoint.
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
-from backend.skill_catalog import EVOLVED_CATALOG_TYPE, EVOLVED_TOOLINFO_SCHEMA, SKILL_ENTRYPOINT
+from backend.skill_catalog import SKILL_ENTRYPOINT, resource_mime_type
+from backend.toolinfo_extension import validate_toolinfo_document
 
 MAX_PATH_CHARS = 2048
 MAX_FRONTMATTER_BYTES = 64 * 1024
@@ -54,10 +55,12 @@ class DiscoveryFailure:
 class DiscoveryResult:
     """A complete or partial discovery run."""
 
-    catalog: dict[str, Any]
+    catalog: list[dict[str, Any]]
     discovered: int
     failed: int
     observed_files: int
+    status: str
+    failed_artifacts: tuple[dict[str, Any], ...]
 
 
 def _text(value: object) -> str:
@@ -84,6 +87,15 @@ def _content(value: object) -> str:
             message = "file is not valid UTF-8"
             raise SkillDiscoveryError(message) from exc
     message = "file content is not text"
+    raise SkillDiscoveryError(message)
+
+
+def _raw_content(value: object) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    message = "file content is not text or bytes"
     raise SkillDiscoveryError(message)
 
 
@@ -203,8 +215,8 @@ def _source_context(
     return result
 
 
-def _normalise_files(files: Sequence[Mapping[str, Any]]) -> tuple[dict[str, str], dict[str, str]]:
-    contents: dict[str, str] = {}
+def _normalise_files(files: Sequence[Mapping[str, Any]]) -> tuple[dict[str, bytes], dict[str, str]]:
+    contents: dict[str, bytes] = {}
     errors: dict[str, str] = {}
     for item in files:
         if not isinstance(item, Mapping):
@@ -213,7 +225,7 @@ def _normalise_files(files: Sequence[Mapping[str, Any]]) -> tuple[dict[str, str]
         if not path or path in contents or path in errors:
             continue
         try:
-            contents[path] = _content(item.get("content"))
+            contents[path] = _raw_content(item.get("content"))
         except SkillDiscoveryError as exc:
             errors[path] = str(exc)
     return contents, errors
@@ -238,25 +250,46 @@ def _resource_paths(root: str, contents: Mapping[str, str], roots: Sequence[str]
     return sorted(paths)
 
 
-def _resource(path: str, content: str) -> dict[str, Any]:
-    body = content.encode("utf-8")
+def _resource(path: str, body: bytes) -> dict[str, Any]:
     return {
         "path": path,
+        "mime_type": resource_mime_type(PurePosixPath(path).name),
         "size": len(body),
         "sha256": hashlib.sha256(body).hexdigest(),
     }
 
 
+def _snapshot_digest(resources: Sequence[Mapping[str, Any]], contents: Mapping[str, bytes]) -> str:
+    """Hash sorted paths and exact raw bytes with unambiguous length prefixes."""
+    digest = hashlib.sha256()
+    for resource in resources:
+        path = str(resource["path"])
+        path_bytes = path.encode("utf-8")
+        body = contents[path]
+        digest.update(len(path_bytes).to_bytes(8, byteorder="big"))
+        digest.update(path_bytes)
+        digest.update(len(body).to_bytes(8, byteorder="big"))
+        digest.update(body)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _canonical_tool_name(artifact_id: str, title: str) -> str:
+    """Create a stable canonical name without changing canonical tool_type."""
+    slug = re.sub(r"[^a-z0-9]+", "-", title.casefold()).strip("-")[:80] or "skill"
+    suffix = hashlib.sha256(artifact_id.encode("utf-8")).hexdigest()[:12]
+    return f"evolved-skill-{slug}-{suffix}"
+
+
 def _artifact(
     path: str,
-    contents: Mapping[str, str],
+    contents: Mapping[str, bytes],
     *,
     roots: Sequence[str],
     source: Mapping[str, Any],
     run_id: str,
 ) -> dict[str, Any]:
     root = _root(path)
-    frontmatter = _frontmatter(contents[path])
+    frontmatter = _frontmatter(_content(contents[path]))
     artifact_id = f"{source['id']}#{root}"
     resources = [
         _resource(resource_path, contents[resource_path]) for resource_path in _resource_paths(root, contents, roots)
@@ -264,30 +297,53 @@ def _artifact(
     if not resources or not any(resource["path"] == path for resource in resources):
         message = "skill resources do not include the root SKILL.md"
         raise SkillDiscoveryError(message)
-    artifact: dict[str, Any] = {
-        "id": artifact_id,
-        "tool_type": "skill",
-        "name": frontmatter["name"],
-        "description": frontmatter["description"],
-        "skill": {
-            "root": root,
-            "entrypoint": SKILL_ENTRYPOINT,
-            "frontmatter": frontmatter,
-            "resources": resources,
-        },
+    revision = _text(source.get("commit"))
+    if not revision:
+        message = "skill registration requires an immutable source commit"
+        raise SkillDiscoveryError(message)
+    content_sha256 = _snapshot_digest(resources, contents)
+    title = _text(frontmatter["name"])
+    record = {
+        "_schema": "/toolinfo/1.2.2",
+        "name": _canonical_tool_name(artifact_id, title),
+        "title": title,
+        "description": _text(frontmatter["description"]),
+        "url": source["repository"],
+        "repository": source["repository"],
         "evolved": {
-            "review_status": "pending",
+            "schema_version": "1.0.0",
+            "artifact_type": "skill",
+            "artifact_id": artifact_id,
+            "source": dict(source),
+            "revision": revision,
+            "content_sha256": content_sha256,
             "provenance": {
                 "source_kind": "repository_scan",
                 "run_id": run_id,
-                "commit": source.get("commit", ""),
+                "commit": revision,
+            },
+            "visibility": "private",
+            "review_status": "pending",
+            "analysis": {
+                "reference": f"source-analysis:{run_id}",
+                "revision": revision,
+                "content_sha256": content_sha256,
+                "status": "pending",
+            },
+            "skill": {
+                "root": root,
+                "entrypoint": SKILL_ENTRYPOINT,
+                "frontmatter": frontmatter,
+                "resources": resources,
             },
         },
     }
-    projects = frontmatter.get("projects")
-    if isinstance(projects, list) and all(isinstance(project, str) and project.strip() for project in projects):
-        artifact["projects"] = list(projects)
-    return artifact
+    try:
+        validate_toolinfo_document(record)
+    except ValueError as exc:
+        message = f"discovered Skill is not a valid canonical Evolved record: {exc}"
+        raise SkillDiscoveryError(message) from exc
+    return record
 
 
 def discover_catalog(  # noqa: PLR0913 - source and run context fields are independently meaningful evidence
@@ -323,14 +379,5 @@ def discover_catalog(  # noqa: PLR0913 - source and run context fields are indep
         else:
             artifacts.append(artifact)
     status = "complete" if not failures else ("partial" if artifacts else "failed")
-    refresh: dict[str, Any] = {"run_id": run_id, "status": status}
-    if failures:
-        refresh["failed_artifacts"] = [failure.as_dict() for failure in failures]
-    catalog = {
-        "_schema": EVOLVED_TOOLINFO_SCHEMA,
-        "type": EVOLVED_CATALOG_TYPE,
-        "source": context,
-        "refresh": refresh,
-        "artifacts": artifacts,
-    }
-    return DiscoveryResult(catalog, len(artifacts), len(failures), len(contents))
+    failed_artifacts = tuple(failure.as_dict() for failure in failures)
+    return DiscoveryResult(artifacts, len(artifacts), len(failures), len(contents), status, failed_artifacts)

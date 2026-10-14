@@ -131,8 +131,12 @@ def test_source_and_file_normalization_is_bounded_and_deterministic():
             {"path": "skills/missing/SKILL.md", "content": None},
         ]
     )
-    assert contents == {"README.md": "read me", "notes.md": "bytes"}
-    assert set(errors) == {"skills/bad/SKILL.md", "skills/missing/SKILL.md"}
+    assert contents == {
+        "README.md": b"read me",
+        "notes.md": b"bytes",
+        "skills/bad/SKILL.md": b"\xff",
+    }
+    assert set(errors) == {"skills/missing/SKILL.md"}
 
 
 def test_discovery_enumerates_nested_skills_and_isolates_failures():
@@ -151,45 +155,74 @@ def test_discovery_enumerates_nested_skills_and_isolates_failures():
     assert first.catalog == second.catalog
     assert first.discovered == 2
     assert first.failed == 2
-    assert first.observed_files == 6
-    assert first.catalog["refresh"]["status"] == "partial"
-    assert [artifact["name"] for artifact in first.catalog["artifacts"]] == ["alpha", "nested"]
-    alpha = first.catalog["artifacts"][0]
-    assert alpha["id"] == "github:example/skills#skills/alpha"
-    assert alpha["projects"] == ["enwiki"]
-    assert [resource["path"] for resource in alpha["skill"]["resources"]] == [
+    assert first.observed_files == 7
+    assert first.status == "partial"
+    assert [record["title"] for record in first.catalog] == ["alpha", "nested"]
+    alpha = first.catalog[0]
+    assert alpha["_schema"] == "/toolinfo/1.2.2"
+    assert alpha["evolved"]["artifact_id"] == "github:example/skills#skills/alpha"
+    assert "tool_type" not in alpha
+    assert alpha["evolved"]["skill"]["frontmatter"]["projects"] == ["enwiki"]
+    resources = alpha["evolved"]["skill"]["resources"]
+    assert [resource["path"] for resource in resources] == [
         "skills/alpha/0.md",
         "skills/alpha/SKILL.md",
         "skills/alpha/docs/guide.md",
     ]
+    assert resources[1]["mime_type"] == "text/markdown"
     assert alpha["evolved"]["provenance"] == {
         "source_kind": "repository_scan",
         "run_id": "run-1",
         "commit": "abc123",
     }
-    assert alpha["skill"]["resources"][1]["sha256"] == hashlib.sha256(
+    assert resources[1]["sha256"] == hashlib.sha256(
         b"---\nname: alpha\ndescription: A useful skill.\nprojects: \"enwiki\"\n---\n# alpha\n"
     ).hexdigest()
-    assert {failure["path"] for failure in first.catalog["refresh"]["failed_artifacts"]} == {
+    assert {failure["path"] for failure in first.failed_artifacts} == {
         "skills/broken/SKILL.md",
         "skills/bytes/SKILL.md",
     }
-    entries = skill_catalog._entries_from_record(first.catalog)  # noqa: SLF001
+    entries = [entry for record in first.catalog for entry in skill_catalog._entries_from_record(record)]  # noqa: SLF001
     assert [entry.frontmatter["name"] for entry in entries] == ["alpha", "nested"]
-    assert entries[0].catalog_metadata["projects"] == ["enwiki"]
+    assert entries[0].catalog_metadata == {}
+
+
+def test_discovery_preserves_binary_resources_and_hashes_raw_bytes():
+    binary = b"\x89PNG\r\n\x1a\n"
+    result = skill_discovery.discover_catalog(
+        [
+            _skill("skills/image/SKILL.md", "image"),
+            {"path": "skills/image/references/icon.png", "content": binary},
+        ],
+        _source(),
+        run_id="binary-run",
+        commit="b" * 40,
+    )
+
+    assert result.discovered == 1
+    resource = next(
+        resource
+        for resource in result.catalog[0]["evolved"]["skill"]["resources"]
+        if resource["path"].endswith("icon.png")
+    )
+    assert resource["mime_type"] == "image/png"
+    assert resource["size"] == len(binary)
+    assert resource["sha256"] == hashlib.sha256(binary).hexdigest()
 
 
 def test_discovery_reports_complete_empty_and_failed_runs():
     empty = skill_discovery.discover_catalog([], _source(), run_id="empty")
-    assert empty.catalog["refresh"] == {"run_id": "empty", "status": "complete"}
-    assert empty.catalog["artifacts"] == []
+    assert empty.status == "complete"
+    assert empty.catalog == []
+    assert empty.failed_artifacts == ()
 
     root_skill = skill_discovery.discover_catalog(
         [{"path": "SKILL.md", "content": "---\nname: root\ndescription: root\n---\n"}],
         _source(),
         run_id="root",
     )
-    assert root_skill.catalog["refresh"]["status"] == "failed"
+    assert root_skill.status == "failed"
+    assert root_skill.catalog == []
     assert root_skill.failed == 1
 
     with pytest.raises(skill_discovery.SkillDiscoveryError, match="run_id"):
