@@ -61,6 +61,9 @@ export const wikiShort = (a) =>
 			: a.length === 1
 				? a[0]
 				: t("labels.wikiCount", "$1 {{PLURAL:$2|wiki|wikis}}", fmt(a.length), a.length);
+/** Keywords with repeats removed (first occurrence wins), before any limit applies.
+ * @param {Tool} t @returns {string[]} */
+export const uniqueKeywords = (t) => [...new Set(t.keywords || [])];
 /**
  * @param {Tool} t
  * @param {{ limit?: number | null; empty?: string; projection?: Record<string, any> | null }} [opts]
@@ -70,9 +73,10 @@ export const wikiShort = (a) =>
  * @returns {string}
  */
 export function keywordTags(t, opts = {}) {
+	const all = uniqueKeywords(t);
 	const keys =
-		// Stryker disable next-line ConditionalExpression: mutating `opts.limit === undefined` to false only changes the undefined case, where the else-branch runs `.slice(0, undefined)` — a full shallow copy identical to `t.keywords || []` — so it is equivalent. (ArrayDeclaration mutants on this line stay killed.)
-		opts.limit === null || opts.limit === undefined ? t.keywords || [] : (t.keywords || []).slice(0, opts.limit);
+		// Stryker disable next-line ConditionalExpression: mutating `opts.limit === undefined` to false only changes the undefined case, where the else-branch runs `.slice(0, undefined)` — a full shallow copy identical to `all` — so it is equivalent. (ArrayDeclaration mutants on this line stay killed.)
+		opts.limit === null || opts.limit === undefined ? all : all.slice(0, opts.limit);
 	// `opts.projection` is optional and its absence means "no marks", not "all
 	// maintainer-supplied": a caller that never had the projection cannot tell
 	// the difference, and inventing an unmarked list would be the same false

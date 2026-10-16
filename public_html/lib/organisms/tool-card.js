@@ -7,7 +7,7 @@ import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
 import { toolIcon } from "../atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip } from "../atoms/badges.js";
-import { wikiShort } from "../atoms/labels.js";
+import { uniqueKeywords, wikiShort } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
 import { healthScoreChip } from "../molecules/tool-health-summary.js";
 
@@ -192,7 +192,7 @@ function healthCornerClass(summary) {
  */
 export function toolCard(tool, opts = {}) {
 	// (3) Tags: 2 + "+N" overflow chip so every card is the same height.
-	const allk = tool.keywords || [];
+	const allk = uniqueKeywords(tool);
 	const tags =
 		allk
 			.slice(0, CARD_TAG_LIMIT)
