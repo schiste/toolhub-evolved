@@ -117,6 +117,13 @@ test("keywordTags() applies a limit", () => {
 	);
 });
 
+test("keywordTags() renders each repeated keyword once, before the limit applies", () => {
+	assert.equal(
+		keywordTags({ keywords: ["x", "x", "y", "z"] }, { limit: 2 }),
+		'<a class="tag" href="/search?keywords__term=x" dir="auto">x</a><a class="tag" href="/search?keywords__term=y" dir="auto">y</a>'
+	);
+});
+
 test("keywordTags() renders all keywords when no limit option is given", () => {
 	assert.equal(
 		keywordTags({ keywords: ["x", "y"] }),
